@@ -68,42 +68,42 @@ premises changed, and each is taken in below. This is one pass against the code,
 
 **Verdict by part:**
 
-| Part | Verdict | Reason |
-|---|---|---|
-| F1, F2 | Done; keep | The code and tests match "As built". The baseline includes F |
-| 1 | Valid; migration 16 | `files_added` (`schema.rs:859`) is still the only INSERT trigger on `files`, so the plain INSERT is single-write once it goes. Change 3's `placeholder` flag belongs to an unbuilt design (`OPEN_ITEMS.md`, S-17.7), so that part is conditional |
-| 2 | Revised | Memory statistics landed (`bed9346`). Lookaside is open. The route is revised (see Phase 2) |
-| 3 | Valid; larger than written | `folder_rows` returns only `(volume, file_ref)` with `(size, mtime)` (`roots.rs:242`). `last_scan` is still read by `pair.rs`, and `seen_volumes` is still a whole-table scan (`pair.rs:307`), as written |
-| 4 | Valid | `read_only` is the worker connection's opener. The `Reader` borrowing argument stands |
-| 5 | Valid; catalog precondition met | `rarray` is loaded on the catalog's connections; the workers need it for items 6 and 8. Nothing calls `set_prepared_statement_cache_capacity`, so item 4 stands |
-| Allocator | Valid | `mimalloc` is not in `Cargo.lock`, so the trial adds the crate |
-| Not doing; D1, D5, D6 | Hold | D5's MFT text is updated (see that plan) |
-| D2 | Decided; route to confirm | Open item 1 |
-| D3 | Superseded | The scan gate is live (±1%). See D3 |
+| Part                  | Verdict                         | Reason                                                                                                                                                                                                                                           |
+|-----------------------|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| F1, F2                | Done; keep                      | The code and tests match "As built". The baseline includes F                                                                                                                                                                                     |
+| 1                     | Valid; migration 16             | `files_added` (`schema.rs:859`) is still the only INSERT trigger on `files`, so the plain INSERT is single-write once it goes. Change 3's `placeholder` flag belongs to an unbuilt design (`OPEN_ITEMS.md`, S-17.7), so that part is conditional |
+| 2                     | Revised                         | Memory statistics landed (`bed9346`). Lookaside is open. The route is revised (see Phase 2)                                                                                                                                                      |
+| 3                     | Valid; larger than written      | `folder_rows` returns only `(volume, file_ref)` with `(size, mtime)` (`roots.rs:242`). `last_scan` is still read by `pair.rs`, and `seen_volumes` is still a whole-table scan (`pair.rs:307`), as written                                        |
+| 4                     | Valid                           | `read_only` is the worker connection's opener. The `Reader` borrowing argument stands                                                                                                                                                            |
+| 5                     | Valid; catalog precondition met | `rarray` is loaded on the catalog's connections; the workers need it for items 6 and 8. Nothing calls `set_prepared_statement_cache_capacity`, so item 4 stands                                                                                  |
+| Allocator             | Valid                           | `mimalloc` is not in `Cargo.lock`, so the trial adds the crate                                                                                                                                                                                   |
+| Not doing; D1, D5, D6 | Hold                            | D5's MFT text is updated (see that plan)                                                                                                                                                                                                         |
+| D2                    | Decided; route to confirm       | Open item 1                                                                                                                                                                                                                                      |
+| D3                    | Superseded                      | The scan gate is live (±1%). See D3                                                                                                                                                                                                              |
 
 **Anchors (2026-11-17).** The body's line numbers are as of `a8a7eac`. Recount by the named symbol before each phase.
 The main anchors now:
 
-| Anchor | Now |
-|---|---|
-| `files_added` trigger; `files` table; `files_fresh` index | `schema.rs:859`; `schema.rs:653`; `schema.rs:372` |
-| `SETTINGS` (`temp_store = MEMORY`) | `schema.rs:529` |
-| `ScanWriter::new` (`stamp_held_exts` at line 91) | `writers.rs:84` |
-| `ScanWriter::upsert_file`; `seen_identity` | `writers.rs:169`; `writers.rs:228` |
-| `remove_root`; `begin_scan`; `mark_missing` | `roots.rs:91`; `roots.rs:124`; `roots.rs:170` |
-| `folder_rows`; `prior_states` | `roots.rs:242`; `roots.rs:273` |
-| `HeldLease::hold` | `lease.rs:26` |
-| `ScanLease`; `held`; `renew` | `core.rs:383`; `core.rs:413`; `core.rs:408` |
-| `Catalog::reader`; `register`; `read_only` | `core.rs:215`; `core.rs:240`; `core.rs:247` |
-| `pair_after_scan`; `in_batches`; `seen_volumes`; `fresh_rows` | `pair.rs:85`; `pair.rs:283`; `pair.rs:307`; `pair.rs:320` |
-| The stamp in each pairing batch | `pair.rs:298` |
-| `stamp_held_exts`; `mark_unheld_missing` | `lifecycle.rs:215`; `lifecycle.rs:197` |
-| Walk: `Listing`; `RENEW_EVERY`; `walk_leased` | `scan/src/lib.rs:83`; `:175`; `:458` |
-| Walk: `folder_rows` and `prior_states` calls | `scan/src/lib.rs:508`; `:605` |
-| Walk: `seen_identity` and `upsert_file` calls | `scan/src/lib.rs:719`; `:733` |
-| Walk: `pair_after_scan` and `mark_missing` calls | `scan/src/lib.rs:624`; `:627` |
-| `LIBSQLITE3_FLAGS` | `.cargo/config.toml`, `[env]` table |
-| `rusqlite` `array` feature; fork rev | the rusqlite entry in `[workspace.dependencies]`; the rusqlite entry in `[patch.crates-io]` |
+| Anchor                                                        | Now                                                                                         |
+|---------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| `files_added` trigger; `files` table; `files_fresh` index     | `schema.rs:859`; `schema.rs:653`; `schema.rs:372`                                           |
+| `SETTINGS` (`temp_store = MEMORY`)                            | `schema.rs:529`                                                                             |
+| `ScanWriter::new` (`stamp_held_exts` at line 91)              | `writers.rs:84`                                                                             |
+| `ScanWriter::upsert_file`; `seen_identity`                    | `writers.rs:169`; `writers.rs:228`                                                          |
+| `remove_root`; `begin_scan`; `mark_missing`                   | `roots.rs:91`; `roots.rs:124`; `roots.rs:170`                                               |
+| `folder_rows`; `prior_states`                                 | `roots.rs:242`; `roots.rs:273`                                                              |
+| `HeldLease::hold`                                             | `lease.rs:26`                                                                               |
+| `ScanLease`; `held`; `renew`                                  | `core.rs:383`; `core.rs:413`; `core.rs:408`                                                 |
+| `Catalog::reader`; `register`; `read_only`                    | `core.rs:215`; `core.rs:240`; `core.rs:247`                                                 |
+| `pair_after_scan`; `in_batches`; `seen_volumes`; `fresh_rows` | `pair.rs:85`; `pair.rs:283`; `pair.rs:307`; `pair.rs:320`                                   |
+| The stamp in each pairing batch                               | `pair.rs:298`                                                                               |
+| `stamp_held_exts`; `mark_unheld_missing`                      | `lifecycle.rs:215`; `lifecycle.rs:197`                                                      |
+| Walk: `Listing`; `RENEW_EVERY`; `walk_leased`                 | `scan/src/lib.rs:83`; `:175`; `:458`                                                        |
+| Walk: `folder_rows` and `prior_states` calls                  | `scan/src/lib.rs:508`; `:605`                                                               |
+| Walk: `seen_identity` and `upsert_file` calls                 | `scan/src/lib.rs:719`; `:733`                                                               |
+| Walk: `pair_after_scan` and `mark_missing` calls              | `scan/src/lib.rs:624`; `:627`                                                               |
+| `LIBSQLITE3_FLAGS`                                            | `.cargo/config.toml`, `[env]` table                                                         |
+| `rusqlite` `array` feature; fork rev                          | the rusqlite entry in `[workspace.dependencies]`; the rusqlite entry in `[patch.crates-io]` |
 
 **Open for you:**
 
@@ -116,14 +116,14 @@ The main anchors now:
 
 ## Summary
 
-| Phase | Change | Evidence |
-|---|---|---|
-| F | **Bug fixes, first.** F1: read a folder's rows before listing it, and keep the identity read safe for hard links. F2: removing a library folder ends the scans under it | **Done** (2026-11-15). Each bug's test failed before its fix, as the reading said |
-| 1 | New files: a plain INSERT that sets `pending`, `seq` and `changed`; `files_added` dropped. Changed files: an UPDATE by id | Measured in the app: first scan −42% Ir; at 200k, −47% flushed-warm and −37% cold wall time, −55% user CPU (−51% user and kernel) |
-| 2 | SQLite built with memory statistics off (**landed** in the fork, `8ec47c7`, as its `photo-gallery-defaults` feature) and lookaside `1200,200` (**landed**, the same feature) | −10% Ir (statistics, measured in the app); −51% of the fixed write on Windows (lookaside, probe) |
-| 3 | A rescan that changes nothing writes nothing: unchanged files are decided at listing time and skip the batch; "seen by this scan" moves into a temporary set; `last_scan` and `files_fresh` go; the root check folds into the known lookup; `mark_missing` and the pairing take the write lock only when they have something to write | The work it removes cost 30.9k of a rescan's 41k Ir per file (`seen`, `known`, `in_root`: measured costs). The saving is not measured |
-| 4 | Parallel listing in the walker: workers read each folder's rows and list it ahead of the walk, in walk order; the walk consumes in its own order; the worker count measured per kind of device | Up to 28% of a cold rescan, measured on the lister alone, unordered, flat, on one NVMe drive. The ordered design must be measured itself, nested and on the HDD too |
-| 5 | The small items: folder ids, statement reuse, name buffers, hash set, ASCII extensions; two gated by a probe run (per-folder known lookup, batched identity fallback); the allocator, gated | 0.2 to 2% each (measured costs; item 11 not measured) |
+| Phase | Change                                                                                                                                                                                                                                                                                                                                | Evidence                                                                                                                                                            |
+|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| F     | **Bug fixes, first.** F1: read a folder's rows before listing it, and keep the identity read safe for hard links. F2: removing a library folder ends the scans under it                                                                                                                                                               | **Done** (2026-11-15). Each bug's test failed before its fix, as the reading said                                                                                   |
+| 1     | New files: a plain INSERT that sets `pending`, `seq` and `changed`; `files_added` dropped. Changed files: an UPDATE by id                                                                                                                                                                                                             | Measured in the app: first scan −42% Ir; at 200k, −47% flushed-warm and −37% cold wall time, −55% user CPU (−51% user and kernel)                                   |
+| 2     | SQLite built with memory statistics off (**landed** in the fork, `8ec47c7`, as its `photo-gallery-defaults` feature) and lookaside `1200,200` (**landed**, the same feature)                                                                                                                                                          | −10% Ir (statistics, measured in the app); −51% of the fixed write on Windows (lookaside, probe)                                                                    |
+| 3     | A rescan that changes nothing writes nothing: unchanged files are decided at listing time and skip the batch; "seen by this scan" moves into a temporary set; `last_scan` and `files_fresh` go; the root check folds into the known lookup; `mark_missing` and the pairing take the write lock only when they have something to write | The work it removes cost 30.9k of a rescan's 41k Ir per file (`seen`, `known`, `in_root`: measured costs). The saving is not measured                               |
+| 4     | Parallel listing in the walker: workers read each folder's rows and list it ahead of the walk, in walk order; the walk consumes in its own order; the worker count measured per kind of device                                                                                                                                        | Up to 28% of a cold rescan, measured on the lister alone, unordered, flat, on one NVMe drive. The ordered design must be measured itself, nested and on the HDD too |
+| 5     | The small items: folder ids, statement reuse, name buffers, hash set, ASCII extensions; two gated by a probe run (per-folder known lookup, batched identity fallback); the allocator, gated                                                                                                                                           | 0.2 to 2% each (measured costs; item 11 not measured)                                                                                                               |
 
 Each phase is written in full, then built and tested once (no build between its steps). After each one, the
 **Measurement protocol** is repeated and its results added to the report.
@@ -322,14 +322,14 @@ On a first scan, each new file pays for two things together (the report, **Mecha
 
 Measured in a patched copy of the app (the report, **The fix in the app**, **The fix on Windows**):
 
-| | Shipped | Patched |
-|---|---:|---:|
-| First scan, 4k, callgrind | 895.0M Ir | 506.9M Ir (−43.4%) |
-| First scan, 200k, callgrind | 48.25G Ir | 28.15G Ir (−41.7%) |
-| First scan, 200k, Windows, flushed warm | 13.09 s | 6.88 s (−47%) |
-| First scan, 200k, Windows, cold | 15.26 s | 9.55 s (−37%) |
-| First scan, 200k, user CPU | 10.81 s | 4.84 s (−55%) |
-| First scan, 200k, user and kernel CPU, flushed warm | 11.77 s | 5.81 s (−51%) |
+|                                                     |   Shipped |            Patched |
+|-----------------------------------------------------|----------:|-------------------:|
+| First scan, 4k, callgrind                           | 895.0M Ir | 506.9M Ir (−43.4%) |
+| First scan, 200k, callgrind                         | 48.25G Ir | 28.15G Ir (−41.7%) |
+| First scan, 200k, Windows, flushed warm             |   13.09 s |      6.88 s (−47%) |
+| First scan, 200k, Windows, cold                     |   15.26 s |      9.55 s (−37%) |
+| First scan, 200k, user CPU                          |   10.81 s |      4.84 s (−55%) |
+| First scan, 200k, user and kernel CPU, flushed warm |   11.77 s |      5.81 s (−51%) |
 
 The cold row's medians pool two scripts' runs, 5 from `win_cold.ps1` and 5 from `win_cpu.ps1`, whose patched medians
 differ by about 0.5 s (9.67 and 9.15 s). The −37% holds in each set alone.
@@ -943,15 +943,15 @@ Their costs were measured in the app, except item 11.
 
 The rest are the right code regardless of their size.
 
-| Item | Change | Cost now |
-|---|---|---|
-| 6 | The known lookup per folder: one statement over the folder's identities (`rarray`), into a map, in place of one per file. Phase 3 has folded the root check into it, and leaves it only the files that need a write. Gated as above | 1.9% of a first scan; on a rescan only the changed files remain |
-| 8 | The identity read after the listing (Phase F1's `prior_states`) as one statement per folder (`rarray`). Gated as above | 4,000 empty lookups, 0.9% of a first scan |
-| 9 | Folder ids resolved once per batch | 0.3% |
-| 4 | Statements reused across batches: raise the connection's statement cache (`set_prepared_statement_cache_capacity`) to hold the scan's and the import's statements, and prepare them with `prepare_cached`. The comment at `writers.rs:24-26` chose `prepare` because the cache held 16 | 1.6M Ir per batch |
-| 11 | The listing's names moved into the batch, not cloned (`scan/src/lib.rs:558`) | Not measured |
-| 13 | The walk's identity set as a hash set (`FileIdentity` derives `Hash`; it is only queried) | 0.2% |
-| 10 | An ASCII fast path in `Ext::of_name_bytes` | 0.2% |
+| Item | Change                                                                                                                                                                                                                                                                                 | Cost now                                                        |
+|------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| 6    | The known lookup per folder: one statement over the folder's identities (`rarray`), into a map, in place of one per file. Phase 3 has folded the root check into it, and leaves it only the files that need a write. Gated as above                                                    | 1.9% of a first scan; on a rescan only the changed files remain |
+| 8    | The identity read after the listing (Phase F1's `prior_states`) as one statement per folder (`rarray`). Gated as above                                                                                                                                                                 | 4,000 empty lookups, 0.9% of a first scan                       |
+| 9    | Folder ids resolved once per batch                                                                                                                                                                                                                                                     | 0.3%                                                            |
+| 4    | Statements reused across batches: raise the connection's statement cache (`set_prepared_statement_cache_capacity`) to hold the scan's and the import's statements, and prepare them with `prepare_cached`. The comment at `writers.rs:24-26` chose `prepare` because the cache held 16 | 1.6M Ir per batch                                               |
+| 11   | The listing's names moved into the batch, not cloned (`scan/src/lib.rs:558`)                                                                                                                                                                                                           | Not measured                                                    |
+| 13   | The walk's identity set as a hash set (`FileIdentity` derives `Hash`; it is only queried)                                                                                                                                                                                              | 0.2%                                                            |
+| 10   | An ASCII fast path in `Ext::of_name_bytes`                                                                                                                                                                                                                                             | 0.2%                                                            |
 
 Item 17 (skipping `mark_missing` on folders with nothing missing) is covered by Phase 3: `mark_missing` reads first,
 and takes the write lock only when there are rows to mark.

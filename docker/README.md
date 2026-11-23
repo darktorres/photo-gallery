@@ -7,16 +7,16 @@ the checks, the callgrind benches, the fuzzer and the eval's Linux parts all run
 
 From the repository root, through the Justfile:
 
-| Command | What it does |
-|---|---|
-| `just linux-build` | builds the images: `pg-dev` (the checks), `pg-tools` (the benches and the fuzzer) and `pg-eval` (the eval's Linux parts) |
-| `just check-linux` | the Linux job of CI, step by step (`docker/check.py`), on the working tree |
-| `just check-linux-head` | the same, on the committed HEAD (a `git archive` of it), uncommitted changes left out |
-| `just perf` | the callgrind benches of HEAD, gated against `docs/perf/baseline.json` (±1%); `just perf --update` after a change that should move the counts |
-| `just fuzz-smoke 60` | each fuzz target for 60 seconds (`fuzz/`); a crash leaves its input in `fuzz/artifacts/` |
+| Command                       | What it does                                                                                                                                                                            |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `just linux-build`            | builds the images: `pg-dev` (the checks), `pg-tools` (the benches and the fuzzer) and `pg-eval` (the eval's Linux parts)                                                                |
+| `just check-linux`            | the Linux job of CI, step by step (`docker/check.py`), on the working tree                                                                                                              |
+| `just check-linux-head`       | the same, on the committed HEAD (a `git archive` of it), uncommitted changes left out                                                                                                   |
+| `just perf`                   | the callgrind benches of HEAD, gated against `docs/perf/baseline.json` (±1%); `just perf --update` after a change that should move the counts                                           |
+| `just fuzz-smoke 60`          | each fuzz target for 60 seconds (`fuzz/`); a crash leaves its input in `fuzz/artifacts/`                                                                                                |
 | `just linux-eval SCRIPT ARGS` | an eval script under `eval/` in `pg-eval`, on the working tree: the JPEG comparisons (`eval/jpeg-decoders/linux_build.py`, `linux.py`, `harness_linux.py`, `restart.py`, `encoders.py`) |
-| `just linux-gallery OUT` | a headless Linux `gallery` (release, no Qt) of the working tree, copied into the host folder `OUT`: a binary to run elsewhere (WSL only runs binaries) |
-| `just linux-shell` | a shell in `pg-dev`, on the working tree |
+| `just linux-gallery OUT`      | a headless Linux `gallery` (release, no Qt) of the working tree, copied into the host folder `OUT`: a binary to run elsewhere (WSL only runs binaries)                                  |
+| `just linux-shell`            | a shell in `pg-dev`, on the working tree                                                                                                                                                |
 
 `tools/linux.py` is what those recipes run. It builds an image when it is missing, passes the versions in, and mounts
 the repository. The images are built with the versions the Justfile pins (`just_version`,

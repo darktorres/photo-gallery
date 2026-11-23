@@ -299,17 +299,17 @@ pub mod job; pub mod ledger; pub mod removal;` to `lib.rs` (keep its alphabetica
 (the outcomes the front ends word: inbox entries and counts, the folder ledger, facet counts, removals, job events and
 causes, the thumbnail cache's cap). Item by item, with the source to move from:
 
-| New file | Items moved verbatim | From |
-|---|---|---|
-| `cache.rs` | `ThumbCap` (was `Cap`), `const MAX_CAP_BYTES`, its `impl`, the test `a_cap_is_a_positive_number_of_gib_as_text` | `thumbcache/src/config.rs:33-64, 77-91` |
-| `facets.rs` | `Facets` | `catalog/src/browse/read/facets.rs:20-32` |
-| `inbox.rs` | `InboxEntry`, `InboxEntryId` + `fn entry`, `InboxCounts` | `catalog/src/inbox.rs:72-`, `inbox/id.rs:5-27`, `ledger/state.rs:61-66` |
-| `ledger.rs` | `FolderFailure` + `key`/`from_key`, `FailedFolder`, `FailedFile` | `catalog/src/types.rs:151-177`, `ledger/state.rs:68-`, `ledger.rs:140-` |
-| `removal.rs` | `Begun` | `catalog/src/removal.rs:36-` |
-| `job.rs` | `Change`, `Cause` + its `Display` | `jobs/src/events.rs:128-143`, `jobs/src/failure.rs:163-191` |
-| `refusal.rs` (exists) | `CatalogRefusal` (was `Refusal`, no `message`) | `catalog/src/error.rs:97-125` |
-| `write.rs` (exists) | `WriteError` (no `Display`) | `writeback/src/lib.rs:90-98` |
-| `progress.rs` (exists) | `LaneProgress` | `library/src/shared.rs:125-` |
+| New file               | Items moved verbatim                                                                                            | From                                                                    |
+|------------------------|-----------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| `cache.rs`             | `ThumbCap` (was `Cap`), `const MAX_CAP_BYTES`, its `impl`, the test `a_cap_is_a_positive_number_of_gib_as_text` | `thumbcache/src/config.rs:33-64, 77-91`                                 |
+| `facets.rs`            | `Facets`                                                                                                        | `catalog/src/browse/read/facets.rs:20-32`                               |
+| `inbox.rs`             | `InboxEntry`, `InboxEntryId` + `fn entry`, `InboxCounts`                                                        | `catalog/src/inbox.rs:72-`, `inbox/id.rs:5-27`, `ledger/state.rs:61-66` |
+| `ledger.rs`            | `FolderFailure` + `key`/`from_key`, `FailedFolder`, `FailedFile`                                                | `catalog/src/types.rs:151-177`, `ledger/state.rs:68-`, `ledger.rs:140-` |
+| `removal.rs`           | `Begun`                                                                                                         | `catalog/src/removal.rs:36-`                                            |
+| `job.rs`               | `Change`, `Cause` + its `Display`                                                                               | `jobs/src/events.rs:128-143`, `jobs/src/failure.rs:163-191`             |
+| `refusal.rs` (exists)  | `CatalogRefusal` (was `Refusal`, no `message`)                                                                  | `catalog/src/error.rs:97-125`                                           |
+| `write.rs` (exists)    | `WriteError` (no `Display`)                                                                                     | `writeback/src/lib.rs:90-98`                                            |
+| `progress.rs` (exists) | `LaneProgress`                                                                                                  | `library/src/shared.rs:125-`                                            |
 
 "Verbatim" has one exception: rustdoc links to items that stay behind become plain code spans, because `pg-model` cannot
 link up the layers (`Entry`'s `[`crate::ledger::Summary::seen_to`]`, `Begun`'s `[`Catalog::begin_removal`]`,

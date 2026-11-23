@@ -13,25 +13,25 @@ GitHub README is the public page; **unreachable** = the site did not load.
 
 ## Projects
 
-| # | Project | Repository | Homepage / Pages | Status |
-|---|---------|------------|------------------|--------|
-| 1 | Chevereto | <https://github.com/chevereto/chevereto> | <https://chevereto.com/> | inspected |
-| 2 | Damselfly | <https://github.com/Webreaper/Damselfly> | <https://damselfly.info/> (blog-style site) | inspected |
-| 3 | Ente | <https://github.com/ente-io/ente> | <https://ente.com/> | inspected |
-| 4 | Foldergram | <https://github.com/foldergram/foldergram> | <https://foldergram.github.io/> (GitHub Pages; demo: <https://foldergram.intentdeep.com/>) | inspected |
-| 5 | HomeGallery | <https://github.com/xemle/home-gallery> | <https://home-gallery.org/> | inspected |
-| 6 | Immich | <https://github.com/immich-app/immich> | <https://immich.app/> | inspected |
-| 7 | LibrePhotos | <https://github.com/LibrePhotos/librephotos> | <https://docs.librephotos.com/> | inspected |
-| 8 | Lychee | <https://github.com/LycheeOrg/Lychee> | <https://lycheeorg.dev/> | inspected |
-| 9 | Nextcloud Photos | <https://github.com/nextcloud/photos> | none found; vendor blog post <https://nextcloud.com/blog/how-we-got-to-the-new-nextcloud-photos/> | README only |
-| 10 | Nextcloud Memories | <https://github.com/pulsejet/memories> | <https://memories.gallery/> | inspected |
-| 11 | Photonix | <https://github.com/photonixapp/photonix> | <https://photonix.org/> | inspected |
-| 12 | Photofield | <https://github.com/SmilyOrg/photofield> | <https://photofield.dev/> | inspected |
-| 13 | PiGallery2 | <https://github.com/bpatrik/pigallery2> | <https://bpatrik.github.io/pigallery2/> (GitHub Pages docs; demo: <https://pigallery2.onrender.com/>) | inspected |
-| 14 | Photoprism | <https://github.com/photoprism/photoprism> | <https://www.photoprism.app/> | inspected |
-| 15 | Photoview | <https://github.com/photoview/photoview> | <https://photoview.github.io/> (GitHub Pages) | inspected |
-| 16 | Piwigo | <https://github.com/Piwigo/Piwigo> | <https://piwigo.org/> | inspected |
-| 17 | Snapcrescent | <https://github.com/snapcrescent/snapcrescent> | <https://snapcrescent.app/> (DNS fails) | unreachable |
+| #  | Project            | Repository                                     | Homepage / Pages                                                                                      | Status      |
+|----|--------------------|------------------------------------------------|-------------------------------------------------------------------------------------------------------|-------------|
+| 1  | Chevereto          | <https://github.com/chevereto/chevereto>       | <https://chevereto.com/>                                                                              | inspected   |
+| 2  | Damselfly          | <https://github.com/Webreaper/Damselfly>       | <https://damselfly.info/> (blog-style site)                                                           | inspected   |
+| 3  | Ente               | <https://github.com/ente-io/ente>              | <https://ente.com/>                                                                                   | inspected   |
+| 4  | Foldergram         | <https://github.com/foldergram/foldergram>     | <https://foldergram.github.io/> (GitHub Pages; demo: <https://foldergram.intentdeep.com/>)            | inspected   |
+| 5  | HomeGallery        | <https://github.com/xemle/home-gallery>        | <https://home-gallery.org/>                                                                           | inspected   |
+| 6  | Immich             | <https://github.com/immich-app/immich>         | <https://immich.app/>                                                                                 | inspected   |
+| 7  | LibrePhotos        | <https://github.com/LibrePhotos/librephotos>   | <https://docs.librephotos.com/>                                                                       | inspected   |
+| 8  | Lychee             | <https://github.com/LycheeOrg/Lychee>          | <https://lycheeorg.dev/>                                                                              | inspected   |
+| 9  | Nextcloud Photos   | <https://github.com/nextcloud/photos>          | none found; vendor blog post <https://nextcloud.com/blog/how-we-got-to-the-new-nextcloud-photos/>     | README only |
+| 10 | Nextcloud Memories | <https://github.com/pulsejet/memories>         | <https://memories.gallery/>                                                                           | inspected   |
+| 11 | Photonix           | <https://github.com/photonixapp/photonix>      | <https://photonix.org/>                                                                               | inspected   |
+| 12 | Photofield         | <https://github.com/SmilyOrg/photofield>       | <https://photofield.dev/>                                                                             | inspected   |
+| 13 | PiGallery2         | <https://github.com/bpatrik/pigallery2>        | <https://bpatrik.github.io/pigallery2/> (GitHub Pages docs; demo: <https://pigallery2.onrender.com/>) | inspected   |
+| 14 | Photoprism         | <https://github.com/photoprism/photoprism>     | <https://www.photoprism.app/>                                                                         | inspected   |
+| 15 | Photoview          | <https://github.com/photoview/photoview>       | <https://photoview.github.io/> (GitHub Pages)                                                         | inspected   |
+| 16 | Piwigo             | <https://github.com/Piwigo/Piwigo>             | <https://piwigo.org/>                                                                                 | inspected   |
+| 17 | Snapcrescent       | <https://github.com/snapcrescent/snapcrescent> | <https://snapcrescent.app/> (DNS fails)                                                               | unreachable |
 
 ## Notes from the inspected homepages
 

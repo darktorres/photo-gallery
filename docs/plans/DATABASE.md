@@ -62,32 +62,32 @@ names, folders, tags and maybe captions or OCR, the duplicate groups.
 Checked against the catalog's needs, with each project's own documents and a hands-on test where a wheel or binary
 exists. "Two writers" means two processes writing one database.
 
-| Engine | Larger than RAM | Two writers | Row triggers, views | Partial indexes | Windows + Rust | Deciding fact |
-|---|---|---|---|---|---|---|
-| **SQLite** (current) | Yes | Yes (one at a time, WAL) | Yes | Yes | Yes (`rusqlite`) | Meets everything; one writer at a time |
-| **Turso** 0.8.3 | Yes | Experimental flag, "not production ready" | Yes (COMPAT.md; the manual is stale) | Used only on exact match | Yes | 2× slower than SQLite here; no `incremental_vacuum` |
-| **Embedded Postgres** 18.6 | Yes | Yes (server) | Yes | Yes | Yes (`postgresql_embedded`, MSVC binaries) | A server process to ship; triggers made inserts 7× slower |
-| **DuckDB** 2.0 | Yes | No (one read-write process) | Statement-level only; row-level "not yet supported" | No | Yes (`duckdb-rs`) | GROUP BY 150× faster than SQLite; point updates 50–70× slower |
-| **Stoolap** 0.4.2 | Cold data on disk, hot rows in RAM | No | No triggers | No | Yes | Indexes cover hot rows only: key lookup 14 ms, ordered page 592 ms at 2M |
-| **seekdb** 1.4.0 | Yes | Yes, through a shared server | Yes | No | Windows wheel; Rust crate | "Embedded" is a 127 MB server process; Windows startup bug #1544 |
-| **SurrealDB** 3.3 | Yes (LSM) | No (lock file since SurrealKV 1.0) | `DEFINE EVENT` in the transaction | No | Yes | GROUP BY over 1M rows took 19.8 s; no SQL joins |
-| **CozoDB** 0.7.6 | Yes | Only on its SQLite backend | Triggers, no views | No | Yes | Unmaintained since 2024; no storage stability before 1.0 |
-| **KiteSQL** 0.6 | Yes (RocksDB/LMDB) | No | No triggers | No | Rust | No BLOB type; TPC-C at one warehouse only |
-| **GlueSQL** 0.20 | Yes (redb) | No | No | No | Rust | No secondary indexes on redb; scans collect into memory |
-| **chDB** | — | — | — | — | No Windows build | ClickHouse doesn't compile on Windows |
-| **pgrust** 0.4-beta | Yes | Server | Yes | Yes | No Windows plans | Beta, "a lot of bugs" (README) |
-| **HelixDB** 3.5 | Yes | No ("detected newer DB client") | — | — | Wheel | One writer shuts the other out |
-| **Grafeo** 0.6 | Main graph store in RAM | No | — | — | Wheel | Graph database; LpgStore can't go to disk |
-| MatrixOne, HeliosDB-Nano | | | | | | A Kubernetes server; a README saying trigger bodies never run |
+| Engine                     | Larger than RAM                    | Two writers                               | Row triggers, views                                 | Partial indexes          | Windows + Rust                             | Deciding fact                                                            |
+|----------------------------|------------------------------------|-------------------------------------------|-----------------------------------------------------|--------------------------|--------------------------------------------|--------------------------------------------------------------------------|
+| **SQLite** (current)       | Yes                                | Yes (one at a time, WAL)                  | Yes                                                 | Yes                      | Yes (`rusqlite`)                           | Meets everything; one writer at a time                                   |
+| **Turso** 0.8.3            | Yes                                | Experimental flag, "not production ready" | Yes (COMPAT.md; the manual is stale)                | Used only on exact match | Yes                                        | 2× slower than SQLite here; no `incremental_vacuum`                      |
+| **Embedded Postgres** 18.6 | Yes                                | Yes (server)                              | Yes                                                 | Yes                      | Yes (`postgresql_embedded`, MSVC binaries) | A server process to ship; triggers made inserts 7× slower                |
+| **DuckDB** 2.0             | Yes                                | No (one read-write process)               | Statement-level only; row-level "not yet supported" | No                       | Yes (`duckdb-rs`)                          | GROUP BY 150× faster than SQLite; point updates 50–70× slower            |
+| **Stoolap** 0.4.2          | Cold data on disk, hot rows in RAM | No                                        | No triggers                                         | No                       | Yes                                        | Indexes cover hot rows only: key lookup 14 ms, ordered page 592 ms at 2M |
+| **seekdb** 1.4.0           | Yes                                | Yes, through a shared server              | Yes                                                 | No                       | Windows wheel; Rust crate                  | "Embedded" is a 127 MB server process; Windows startup bug #1544         |
+| **SurrealDB** 3.3          | Yes (LSM)                          | No (lock file since SurrealKV 1.0)        | `DEFINE EVENT` in the transaction                   | No                       | Yes                                        | GROUP BY over 1M rows took 19.8 s; no SQL joins                          |
+| **CozoDB** 0.7.6           | Yes                                | Only on its SQLite backend                | Triggers, no views                                  | No                       | Yes                                        | Unmaintained since 2024; no storage stability before 1.0                 |
+| **KiteSQL** 0.6            | Yes (RocksDB/LMDB)                 | No                                        | No triggers                                         | No                       | Rust                                       | No BLOB type; TPC-C at one warehouse only                                |
+| **GlueSQL** 0.20           | Yes (redb)                         | No                                        | No                                                  | No                       | Rust                                       | No secondary indexes on redb; scans collect into memory                  |
+| **chDB**                   | —                                  | —                                         | —                                                   | —                        | No Windows build                           | ClickHouse doesn't compile on Windows                                    |
+| **pgrust** 0.4-beta        | Yes                                | Server                                    | Yes                                                 | Yes                      | No Windows plans                           | Beta, "a lot of bugs" (README)                                           |
+| **HelixDB** 3.5            | Yes                                | No ("detected newer DB client")           | —                                                   | —                        | Wheel                                      | One writer shuts the other out                                           |
+| **Grafeo** 0.6             | Main graph store in RAM            | No                                        | —                                                   | —                        | Wheel                                      | Graph database; LpgStore can't go to disk                                |
+| MatrixOne, HeliosDB-Nano   |                                    |                                           |                                                     |                          |                                            | A Kubernetes server; a README saying trigger bodies never run            |
 
 Key-value stores (no SQL: the query layer, indexes, triggers and migrations would be ours to write):
 
-| Store | Two processes | Notes |
-|---|---|---|
-| **redb** 4.4 | Reads yes (3.0); writes "experimental" (4.3), `MultiWriter` unreleased (4.5) | B-tree, "the file format is stable" |
-| **fjall** 3.1 | "may **not** be loaded in parallel from separate processes" | LSM; 3.0 "comfortably beats sled and redb in most workloads" (its author) |
-| **heed / LMDB, libmdbx** | Yes (readers + one writer) | One report of LMDB degrading above tens of millions of keys with frequent writes (r/rust) |
-| canopydb, sled | — | "Do not trust it with production data"; sled is a stalled rewrite |
+| Store                    | Two processes                                                                | Notes                                                                                     |
+|--------------------------|------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| **redb** 4.4             | Reads yes (3.0); writes "experimental" (4.3), `MultiWriter` unreleased (4.5) | B-tree, "the file format is stable"                                                       |
+| **fjall** 3.1            | "may **not** be loaded in parallel from separate processes"                  | LSM; 3.0 "comfortably beats sled and redb in most workloads" (its author)                 |
+| **heed / LMDB, libmdbx** | Yes (readers + one writer)                                                   | One report of LMDB degrading above tens of millions of keys with frequent writes (r/rust) |
+| canopydb, sled           | —                                                                            | "Do not trust it with production data"; sled is a stalled rewrite                         |
 
 Published key-value numbers (canopydb's BENCHMARKS.md, older versions, 5M keys larger than a 4 GB memory limit, Linux):
 fjall did 7.37M writes and 3.95M reads in 3 minutes, sled 5.40M and 0.67M. Random inserts with fsync per commit:
@@ -96,12 +96,12 @@ random-key inserts, which is the one place the catalog could gain (BLAKE3 hashes
 
 ### Hands-on, 2M rows (random 32-byte keys, unique index, 100k-row transactions, default settings)
 
-| Engine | Insert | Size | Lookup by key | GROUP BY | Page of 200 by key | Point UPDATE |
-|---|---|---|---|---|---|---|
-| SQLite 3.49 (Python's build; the app ships 3.54.1) | 48–55k rows/s | 276 MiB | 11 µs | 610–860 ms | 0.15 ms | 76–101 µs |
-| DuckDB 2.0 | 74k rows/s | 391 MiB | 1.3 ms | 4 ms | 16 ms | 5.4 ms |
-| Stoolap 0.4.2 | 48k rows/s | 178 MiB | 14 ms | 42 ms | 592 ms | 32 µs |
-| Turso 0.8.3 (CLI, same SQL as SQLite) | 14k vs SQLite's 29k rows/s | | 20k lookups: 473 vs 216 ms | 242 vs 189 ms | | |
+| Engine                                             | Insert                     | Size    | Lookup by key              | GROUP BY      | Page of 200 by key | Point UPDATE |
+|----------------------------------------------------|----------------------------|---------|----------------------------|---------------|--------------------|--------------|
+| SQLite 3.49 (Python's build; the app ships 3.54.1) | 48–55k rows/s              | 276 MiB | 11 µs                      | 610–860 ms    | 0.15 ms            | 76–101 µs    |
+| DuckDB 2.0                                         | 74k rows/s                 | 391 MiB | 1.3 ms                     | 4 ms          | 16 ms              | 5.4 ms       |
+| Stoolap 0.4.2                                      | 48k rows/s                 | 178 MiB | 14 ms                      | 42 ms         | 592 ms             | 32 µs        |
+| Turso 0.8.3 (CLI, same SQL as SQLite)              | 14k vs SQLite's 29k rows/s |         | 20k lookups: 473 vs 216 ms | 242 vs 189 ms |                    |              |
 
 And 1M rows with an index on `(dir, key)`, GROUP BY over 5,000 dirs: SurrealDB 2.0 89 s insert, 19.8 s GROUP BY;
 Cozo/RocksDB 24 s, 1.8 s; seekdb 25 s, 0.05 s; Grafeo 36 s, 0.30 s; Postgres 16 s, 0.14 s (110 s with a row trigger).
@@ -174,16 +174,16 @@ which measures SQLite's lock, not its engine. Licence BSL 1.1 (desktop use allow
 
 ## 2. What other photo managers use
 
-| App | Catalog | Vectors | Text | Scale |
-|---|---|---|---|---|
-| Lightroom Classic | SQLite (`.lrcat`) | — | — | Catalogs "into millions of photos" (Lightroom Queen) |
-| digiKam | 4 SQLite files (core, thumbs, similarity, recognition) or MariaDB | in SQLite | — | A developer: SQLite with WAL on NVMe now does well, the docs' MariaDB advice needs correcting; users run 1–1.5M images on SQLite |
-| Spacedrive | SQLite (SeaORM/sqlx), splitting into one database per source | LanceDB (stub) | Dropped FTS5 for names: an in-RAM name registry is faster for prefixes | "microseconds at million-file scale" from an in-memory arena |
-| Urocissa | redb, memory-first | — | — | "one million photos on a 4 GB RAM server" |
-| Ente (mobile) | SQLite | usearch HNSW in Rust | — | — |
-| Immich | Postgres | VectorChord (moved from pgvecto.rs: index build 28 min → 29 s, RAM 1090 → 645 MiB on 166k faces) | pg_trgm | Users run 250k+ |
-| PhotoPrism | MariaDB; SQLite "not a good choice" (lock errors while indexing) | — | — | — |
-| lap | SQLite | BLOBs, scanned | `LIKE` | 100k+; "not validated" at 3M |
+| App               | Catalog                                                           | Vectors                                                                                          | Text                                                                   | Scale                                                                                                                            |
+|-------------------|-------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Lightroom Classic | SQLite (`.lrcat`)                                                 | —                                                                                                | —                                                                      | Catalogs "into millions of photos" (Lightroom Queen)                                                                             |
+| digiKam           | 4 SQLite files (core, thumbs, similarity, recognition) or MariaDB | in SQLite                                                                                        | —                                                                      | A developer: SQLite with WAL on NVMe now does well, the docs' MariaDB advice needs correcting; users run 1–1.5M images on SQLite |
+| Spacedrive        | SQLite (SeaORM/sqlx), splitting into one database per source      | LanceDB (stub)                                                                                   | Dropped FTS5 for names: an in-RAM name registry is faster for prefixes | "microseconds at million-file scale" from an in-memory arena                                                                     |
+| Urocissa          | redb, memory-first                                                | —                                                                                                | —                                                                      | "one million photos on a 4 GB RAM server"                                                                                        |
+| Ente (mobile)     | SQLite                                                            | usearch HNSW in Rust                                                                             | —                                                                      | —                                                                                                                                |
+| Immich            | Postgres                                                          | VectorChord (moved from pgvecto.rs: index build 28 min → 29 s, RAM 1090 → 645 MiB on 166k faces) | pg_trgm                                                                | Users run 250k+                                                                                                                  |
+| PhotoPrism        | MariaDB; SQLite "not a good choice" (lock errors while indexing)  | —                                                                                                | —                                                                      | —                                                                                                                                |
+| lap               | SQLite                                                            | BLOBs, scanned                                                                                   | `LIKE`                                                                 | 100k+; "not validated" at 3M                                                                                                     |
 
 The pattern: an embedded store for the catalog, hot metadata such as names in RAM, vectors in a separate index,
 trigram search for substrings, and caches in files of their own.
@@ -225,13 +225,13 @@ No published trigram index size for file names exists; measure on the real names
 
 Sizes at 70M:
 
-| Representation | 512-d (SSCD) | 1152-d (SigLIP 2 So400m/16) |
-|---|---|---|
-| fp16 (source of truth, PLAN §6) | 72 GB | 161 GB |
-| int8 | 36 GB | 81 GB |
-| 4-bit (RaBitQ, TurboQuant) | 18 GB | 40 GB |
-| 2-bit | 9 GB | 20 GB |
-| 1-bit | 4.5 GB | 10 GB |
+| Representation                  | 512-d (SSCD) | 1152-d (SigLIP 2 So400m/16) |
+|---------------------------------|--------------|-----------------------------|
+| fp16 (source of truth, PLAN §6) | 72 GB        | 161 GB                      |
+| int8                            | 36 GB        | 81 GB                       |
+| 4-bit (RaBitQ, TurboQuant)      | 18 GB        | 40 GB                       |
+| 2-bit                           | 9 GB         | 20 GB                       |
+| 1-bit                           | 4.5 GB       | 10 GB                       |
 
 The machine has 64 GB of RAM, a 6 GB RTX 2060, and D: is an NVMe SSD (Kingston NV2), so exact re-ranking from the fp16
 file is cheap. The approximate-index comparison (TIER2_ANN_BAKEOFF_PLAN.md "Nearest-neighbour search, first attempt") ran on synthetic data
@@ -243,14 +243,14 @@ comparison is being redone (PLAN §9 decision 5).
 Random data is the worst case for ANN recall, IVF most of all; the recall shows the quantizer, not SigLIP. Latency is
 one query at a time, with a VM running in the background.
 
-| Engine / index | Build | Build peak RAM | Index | Recall@10, p50 |
-|---|---|---|---|---|
-| turbovec 4-bit, flat scan | 25 s | 3.9 GB | 371 MB (26 GB at 70M) | 0.79, 25 ms |
-| turbovec 2-bit, flat scan | 10 s | 3.5 GB | 187 MB (13 GB at 70M) | 0.40, 12 ms |
-| turbovec + exact re-rank from the float file | | | | 4-bit, 100 candidates: 1.00, 69 ms; 2-bit, 300: 0.98, 48 ms |
-| zvec IVF-RaBitQ 4-bit, 1024 lists | 432 s | 14.1 GB | 405 MB + its own fp32 copy | all lists + refiner: 0.997, 98 ms; 10% filter: 1.0, 87 ms |
-| Lance IVF_RQ 4-bit, 1024 partitions | 113 s | 4.4 GB | 391 MB + the data column | all + re-rank: 0.99, 52 ms; 10% filter, 64 partitions: 0.145 |
-| zvec DiskANN, degree 64 | stopped after 54 CPU-minutes | 9.4 GB | | |
+| Engine / index                               | Build                        | Build peak RAM | Index                      | Recall@10, p50                                               |
+|----------------------------------------------|------------------------------|----------------|----------------------------|--------------------------------------------------------------|
+| turbovec 4-bit, flat scan                    | 25 s                         | 3.9 GB         | 371 MB (26 GB at 70M)      | 0.79, 25 ms                                                  |
+| turbovec 2-bit, flat scan                    | 10 s                         | 3.5 GB         | 187 MB (13 GB at 70M)      | 0.40, 12 ms                                                  |
+| turbovec + exact re-rank from the float file |                              |                |                            | 4-bit, 100 candidates: 1.00, 69 ms; 2-bit, 300: 0.98, 48 ms  |
+| zvec IVF-RaBitQ 4-bit, 1024 lists            | 432 s                        | 14.1 GB        | 405 MB + its own fp32 copy | all lists + refiner: 0.997, 98 ms; 10% filter: 1.0, 87 ms    |
+| Lance IVF_RQ 4-bit, 1024 partitions          | 113 s                        | 4.4 GB         | 391 MB + the data column   | all + re-rank: 0.99, 52 ms; 10% filter, 64 partitions: 0.145 |
+| zvec DiskANN, degree 64                      | stopped after 54 CPU-minutes | 9.4 GB         |                            |                                                              |
 
 At scale, from others:
 
@@ -265,17 +265,17 @@ At scale, from others:
 
 ### Engines
 
-| Engine | In-process Rust on Windows | Index for 70M | Inserts, deletes | Filters | Notes |
-|---|---|---|---|---|---|
-| **Lance / LanceDB** 14 / 0.41 | Yes (crates; Windows CI) | IVF_RQ (1-bit: d/8 + 20 B, ~8 GB), IVF_PQ (~7 GB), on disk, 6 GiB LRU cache | New rows scanned exactly until `optimize_indices()`, no retraining; deletion bitmaps, compaction | Prefilter with scalar indexes; recall drops with selective filters in IVF | Vectors must also live in a Lance column; MVCC multi-process |
-| **zvec** 0.8.0 | Yes (`zvec-rust`, FFI, MSVC prebuilt) | IVF-RaBitQ, HNSW-RaBitQ, DiskANN (PQ in RAM, 1 B per chunk) | Insert, upsert, delete, WAL | SQL-like | Its own fp32 copy; heavy builds; docs say Linux-only where the release notes and our test say Windows |
-| **Qdrant Edge** 0.9 (beta) | Yes (crate, wheel) | HNSW with binary/scalar/PQ/TurboQuant quantization, memory tiers | Brute force until `optimize()` | Payload indexes, all field types | Not tested; HNSW build at 70M is the open cost |
-| **turbovec** 1.1.2 | Yes (native crate) | Flat 2/4-bit TurboQuant | Add without training, µs removes | Id allowlist or bitmask | Whole index in RAM, cost linear in N |
-| **DiskANN3** 0.61 (Microsoft) | Yes (crates; Windows CI, IOCP) | Vamana on disk, PQ in RAM | Disk provider is build-and-search only; updates in the memory providers | Label filters | Implement `DataProvider` over our files; needs a cargo build |
-| hannoy / arroy | LMDB; arroy has Windows CI | HNSW / random projections | Yes | Bitmaps | Full vectors; no 70M figures |
-| RaBitQ-Library | C++/Python, Windows wheels, no Rust | IVF-RaBitQ, HNSW-RaBitQ, SymphonyQG | IVF add/remove | | Its authors' comparison: RaBitQ "consistently achieves higher recall" than TurboQuant |
-| sqlite-vector, sqlite-vec, vectorlite | SQLite extensions | Flat scans; vectorlite HNSW in RAM | | SQL | Too slow or too big at 70M |
-| Not usable here | | | | | VectorChord (Postgres only, no Windows package, AGPL/ELv2), PipeANN, vsag, SatoriDB (Linux only), AlayaLite (AGPL, static), DuckDB `vss`/USearch/hnswlib/Chroma (HNSW in RAM), rust-diskann (~215 GB file) |
+| Engine                                | In-process Rust on Windows            | Index for 70M                                                               | Inserts, deletes                                                                                 | Filters                                                                   | Notes                                                                                                                                                                                                      |
+|---------------------------------------|---------------------------------------|-----------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Lance / LanceDB** 14 / 0.41         | Yes (crates; Windows CI)              | IVF_RQ (1-bit: d/8 + 20 B, ~8 GB), IVF_PQ (~7 GB), on disk, 6 GiB LRU cache | New rows scanned exactly until `optimize_indices()`, no retraining; deletion bitmaps, compaction | Prefilter with scalar indexes; recall drops with selective filters in IVF | Vectors must also live in a Lance column; MVCC multi-process                                                                                                                                               |
+| **zvec** 0.8.0                        | Yes (`zvec-rust`, FFI, MSVC prebuilt) | IVF-RaBitQ, HNSW-RaBitQ, DiskANN (PQ in RAM, 1 B per chunk)                 | Insert, upsert, delete, WAL                                                                      | SQL-like                                                                  | Its own fp32 copy; heavy builds; docs say Linux-only where the release notes and our test say Windows                                                                                                      |
+| **Qdrant Edge** 0.9 (beta)            | Yes (crate, wheel)                    | HNSW with binary/scalar/PQ/TurboQuant quantization, memory tiers            | Brute force until `optimize()`                                                                   | Payload indexes, all field types                                          | Not tested; HNSW build at 70M is the open cost                                                                                                                                                             |
+| **turbovec** 1.1.2                    | Yes (native crate)                    | Flat 2/4-bit TurboQuant                                                     | Add without training, µs removes                                                                 | Id allowlist or bitmask                                                   | Whole index in RAM, cost linear in N                                                                                                                                                                       |
+| **DiskANN3** 0.61 (Microsoft)         | Yes (crates; Windows CI, IOCP)        | Vamana on disk, PQ in RAM                                                   | Disk provider is build-and-search only; updates in the memory providers                          | Label filters                                                             | Implement `DataProvider` over our files; needs a cargo build                                                                                                                                               |
+| hannoy / arroy                        | LMDB; arroy has Windows CI            | HNSW / random projections                                                   | Yes                                                                                              | Bitmaps                                                                   | Full vectors; no 70M figures                                                                                                                                                                               |
+| RaBitQ-Library                        | C++/Python, Windows wheels, no Rust   | IVF-RaBitQ, HNSW-RaBitQ, SymphonyQG                                         | IVF add/remove                                                                                   |                                                                           | Its authors' comparison: RaBitQ "consistently achieves higher recall" than TurboQuant                                                                                                                      |
+| sqlite-vector, sqlite-vec, vectorlite | SQLite extensions                     | Flat scans; vectorlite HNSW in RAM                                          |                                                                                                  | SQL                                                                       | Too slow or too big at 70M                                                                                                                                                                                 |
+| Not usable here                       |                                       |                                                                             |                                                                                                  |                                                                           | VectorChord (Postgres only, no Windows package, AGPL/ELv2), PipeANN, vsag, SatoriDB (Linux only), AlayaLite (AGPL, static), DuckDB `vss`/USearch/hnswlib/Chroma (HNSW in RAM), rust-diskann (~215 GB file) |
 
 Order to benchmark on the real embeddings once they exist: the flat 2-bit scan with re-ranking (about 20 GB at 1152-d, ~1 s, recall
 ~0.98, filters free, nothing to build), Lance IVF_RQ (lean build, prefilter), zvec IVF-RaBitQ, then Qdrant Edge and

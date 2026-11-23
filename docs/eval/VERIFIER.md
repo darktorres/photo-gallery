@@ -10,11 +10,11 @@ are in `D:\PhotoGallery\eval\archive-prefix-22ae0ff\` and `archive-postfix-26200
 reproduces the recorded labeled baseline exactly. Sets: labeled (1043 pairs); cross-groups (4637 pairs, floor 0.3);
 k-NN (8,344 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
 
-| Set | Pre-fix | Post-fix |
-|---|---|---|
-| Labeled | duplicates 698/698; similar 237 match / 108 unrelated; duplicate noise p99 0.0171 | duplicates 698/698; similar 236 / 109; duplicate p99 0.0171 |
-| Cross-groups | 7 matched; aligned noise p1 0.0858 | 8 matched; aligned p1 0.0852 |
-| k-NN | duplicates 698/698; cross 7 of 207 matched; similar 225 / 97; unlabeled 2981 / 4242 | duplicates 698/698; cross 7 of 207; similar 225 / 97; unlabeled 2978 / 4245 |
+| Set          | Pre-fix                                                                             | Post-fix                                                                    |
+|--------------|-------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| Labeled      | duplicates 698/698; similar 237 match / 108 unrelated; duplicate noise p99 0.0171   | duplicates 698/698; similar 236 / 109; duplicate p99 0.0171                 |
+| Cross-groups | 7 matched; aligned noise p1 0.0858                                                  | 8 matched; aligned p1 0.0852                                                |
+| k-NN         | duplicates 698/698; cross 7 of 207 matched; similar 225 / 97; unlabeled 2981 / 4242 | duplicates 698/698; cross 7 of 207; similar 225 / 97; unlabeled 2978 / 4245 |
 
 The criterion window (duplicate p99 to cross-group p1) is [0.0171, 0.0858] before the fix and [0.0171, 0.0852] after.
 The fix barely moves it.
@@ -22,15 +22,15 @@ The fix barely moves it.
 Sweep of `--max-noise` on the post-fix data (`eval/verify.py --rescore`, all three sets):
 
 | max-noise | duplicates unrelated (of 698) | cross matched (of 4637) | k-NN cross matched (of 207) | labeled similar match / unrelated | k-NN unlabeled match / unrelated |
-|---|---|---|---|---|---|
-| 0.02 | 6 | 3 | 3 | 96 / 249 | 2880 / 4343 |
-| 0.03 | 2 | 4 | 4 | 124 / 221 | 2914 / 4309 |
-| 0.04 | 1 | 4 | 4 | 156 / 189 | 2936 / 4287 |
-| 0.05 | 1 | 7 | 6 | 197 / 148 | 2958 / 4265 |
-| **0.06** | **0** | **8** | **7** | **236 / 109** | **2978 / 4245** |
-| 0.07 | 0 | 12 | 9 | 264 / 81 | 2998 / 4225 |
-| 0.08 | 0 | 21 | 11 | 283 / 62 | 3024 / 4199 |
-| 0.085 | 0 | 26 | 13 | 297 / 48 | 3043 / 4180 |
+|-----------|-------------------------------|-------------------------|-----------------------------|-----------------------------------|----------------------------------|
+| 0.02      | 6                             | 3                       | 3                           | 96 / 249                          | 2880 / 4343                      |
+| 0.03      | 2                             | 4                       | 4                           | 124 / 221                         | 2914 / 4309                      |
+| 0.04      | 1                             | 4                       | 4                           | 156 / 189                         | 2936 / 4287                      |
+| 0.05      | 1                             | 7                       | 6                           | 197 / 148                         | 2958 / 4265                      |
+| **0.06**  | **0**                         | **8**                   | **7**                       | **236 / 109**                     | **2978 / 4245**                  |
+| 0.07      | 0                             | 12                      | 9                           | 264 / 81                          | 2998 / 4225                      |
+| 0.08      | 0                             | 21                      | 11                          | 283 / 62                          | 3024 / 4199                      |
+| 0.085     | 0                             | 26                      | 13                          | 297 / 48                          | 3043 / 4180                      |
 
 Decision: `--max-noise` stays at 0.06 (the default in `eval/verify.py`). It is inside the post-fix window, keeps every
 duplicate, and gives 8 cross-group matches. The midpoint of the window (about 0.051) would be 0.05, which loses one
@@ -42,9 +42,9 @@ Not run: the full 187,808-image k-NN set (hours per run); `verify_synth.py` afte
 
 ### PDQ (`eval/pdq.py`, Meta's 256-bit perceptual hash)
 
-| Hamming distance ≤ | 0 | 8 | 16 | 22 | **31** (Meta's default) | 50 |
-|---|---|---|---|---|---|---|
-| Labeled pairs found (share) | 0.326 | 0.657 | 0.748 | 0.801 | **0.828** | 0.868 |
+| Hamming distance ≤          | 0     | 8     | 16    | 22    | **31** (Meta's default) | 50    |
+|-----------------------------|-------|-------|-------|-------|-------------------------|-------|
+| Labeled pairs found (share) | 0.326 | 0.657 | 0.748 | 0.801 | **0.828**               | 0.868 |
 
 - **Precise but narrow.** At d ≤ 22 (0.80 recall) it flags 0 cross-group pairs, and at d ≤ 78 only 1.
   But it can't reach 0.95 recall (that needs d ≤ 98, which flags 345 cross-group pairs and 18.8k
@@ -67,12 +67,12 @@ by its noise margin when it compared the pair, and nothing when it couldn't alig
 that don't overlap say nothing about each other). 7,300 of 8,344 pairs carry evidence: 3,908 match, 3,392
 "aligned but different".
 
-| Method | Groups (2+) | Largest | Labeled pairs precision / recall | Folders merged | Folders split | Loose files grouped |
-|---|---|---|---|---|---|---|
-| Connected components (union-find) | 2,869 | 17, 17, 7 | 0.9887 / 1.0 | 125+673, 670+671 | 0 | 4,458 / 4,574 |
-| Min-cut split of conflicts (tried, dropped) | 2,871 | 17, 17, 7 | 0.9943 / 0.9986 | 670+671 | 1 | 4,457 |
-| **Multicut (GAEC)** | 2,874 | 13, 12, 7 | **0.9943 / 1.0** | 670+671 | 0 | 4,458 |
-| Multicut + candidate motion rule | 2,847 | 12, 9, 6 | **1.0 / 0.9986** | none | 1 (429) | 4,434 |
+| Method                                      | Groups (2+) | Largest   | Labeled pairs precision / recall | Folders merged   | Folders split | Loose files grouped |
+|---------------------------------------------|-------------|-----------|----------------------------------|------------------|---------------|---------------------|
+| Connected components (union-find)           | 2,869       | 17, 17, 7 | 0.9887 / 1.0                     | 125+673, 670+671 | 0             | 4,458 / 4,574       |
+| Min-cut split of conflicts (tried, dropped) | 2,871       | 17, 17, 7 | 0.9943 / 0.9986                  | 670+671          | 1             | 4,457               |
+| **Multicut (GAEC)**                         | 2,874       | 13, 12, 7 | **0.9943 / 1.0**                 | 670+671          | 0             | 4,458               |
+| Multicut + candidate motion rule            | 2,847       | 12, 9, 6  | **1.0 / 0.9986**                 | none             | 1 (429)       | 4,434               |
 
 - **Connected components chain:** the two 17-image groups were a mirror-selfie series (one room, different
   outfits and poses) and AI portraits of different faces on one template. One false edge or a dense run of
@@ -128,10 +128,10 @@ are therefore not the basis of the current `--max-noise`; the re-pick this secti
 Ran on all 702 labeled duplicate pairs + the 345 `similiar_but_not_dups` pairs with SSCD ≥ 0.4,
 at 1.3 pairs/s:
 
-| Label | → duplicate | → variant | → unrelated |
-|---|---|---|---|
-| duplicate (702) | 666 (0.949) | 36 | 0 |
-| not duplicate (345) | 40 | 305 | 0 |
+| Label               | → duplicate | → variant | → unrelated |
+|---------------------|-------------|-----------|-------------|
+| duplicate (702)     | 666 (0.949) | 36        | 0           |
+| not duplicate (345) | 40          | 305       | 0           |
 
 - ~~Every non-duplicate above 0.4 aligns geometrically (0 unrelated)~~: wrong, the "≥ 20 inliers"
   alignment test also passes unrelated pictures (see "match vs unrelated" below). With the
@@ -166,11 +166,11 @@ reach SSCD 0.4 and 4 reach 0.8. Used every pair ≥ 0.3: 4,628 pairs, 57 min.
   unrelated pictures (similar poses, backgrounds, AI style).
 - **The residual after alignment separates them:**
 
-| Measure (p1 / p10 / p50 / p90 / p99) | Labeled duplicates | Similar folder | Cross-group |
-|---|---|---|---|
-| Inliers | 424 / 1151 / 1455 / 1735 / 2047 | 32 / 61 / 224 / 1172 / 1504 | 0 / 0 / 25 / 60 / 118 |
-| Inlier ratio | .66 / .89 / .96 / .99 / 1.0 | .15 / .23 / .45 / .92 / .98 | 0 / 0 / .22 / .33 / .50 |
-| Median residual (aligned only) | .001 / .003 / .006 / .009 / .025 | .005 / .010 / .046 / .111 / .263 | .092 / .187 / .255 / .343 / .427 |
+| Measure (p1 / p10 / p50 / p90 / p99) | Labeled duplicates               | Similar folder                   | Cross-group                      |
+|--------------------------------------|----------------------------------|----------------------------------|----------------------------------|
+| Inliers                              | 424 / 1151 / 1455 / 1735 / 2047  | 32 / 61 / 224 / 1172 / 1504      | 0 / 0 / 25 / 60 / 118            |
+| Inlier ratio                         | .66 / .89 / .96 / .99 / 1.0      | .15 / .23 / .45 / .92 / .98      | 0 / 0 / .22 / .33 / .50          |
+| Median residual (aligned only)       | .001 / .003 / .006 / .009 / .025 | .005 / .010 / .046 / .111 / .263 | .092 / .187 / .255 / .343 / .427 |
 
 - **New rule:** match if median residual ≤ 0.06, **or** ≥ 150 inliers making up ≥ 0.50 of the
   matches (the second clause catches extreme grades the color model can't undo, e.g. dups2/090).
@@ -211,11 +211,11 @@ are *different pictures*, not matches. dups2/090 held two such pairs and was spl
 
 **Reruns after the split (subset, 2026-10-29), strong clause off:**
 
-| Set | Match | Unrelated |
-|---|---|---|
-| Labeled duplicates | **698 / 698** | 0 |
-| Cross-group (4,632 pairs ≥ 0.3) | 5 (670/671 ×4, 125/673) | 4,627 |
-| Similar folder | 231 | 114 |
+| Set                                                            | Match                     | Unrelated                |
+|----------------------------------------------------------------|---------------------------|--------------------------|
+| Labeled duplicates                                             | **698 / 698**             | 0                        |
+| Cross-group (4,632 pairs ≥ 0.3)                                | 5 (670/671 ×4, 125/673)   | 4,627                    |
+| Similar folder                                                 | 231                       | 114                      |
 | k-NN candidates: duplicate / cross-group / similar / unlabeled | 698 / 5 / 224 / **2,973** | 0 / 200 / 98 / **4,146** |
 
 (k-NN = each image's 10 nearest SSCD neighbors ≥ 0.4: 8,344 pairs, 80 min. Before the split, with
@@ -241,14 +241,14 @@ the strong clause: unlabeled 2,985 / 4,134.)
 
   First test, 63 pairs with a by-eye truth:
 
-  | Pairs | moved_frac |
-  |---|---|
-  | 30 random labeled duplicates | **0.000** (all) |
-  | 8 duplicates with large edge changes (status bars, frames) | 0.000–0.001, except 448 (0.075) |
-  | Recompressed copies, recolor, beautify, face swap (same picture) | 0.000–0.008 |
-  | 670/671 (same beach, other pose) | **0.027–0.035** |
-  | Other frames of a shoot (2543, 6917, 7007, 224) | 0.017–0.196 |
-  | Different outfit/person/pose in the same place (6210, 6317, 6489, 7388, 7640, 5426) | 0.000–0.012 |
+  | Pairs                                                                               | moved_frac                      |
+  |-------------------------------------------------------------------------------------|---------------------------------|
+  | 30 random labeled duplicates                                                        | **0.000** (all)                 |
+  | 8 duplicates with large edge changes (status bars, frames)                          | 0.000–0.001, except 448 (0.075) |
+  | Recompressed copies, recolor, beautify, face swap (same picture)                    | 0.000–0.008                     |
+  | 670/671 (same beach, other pose)                                                    | **0.027–0.035**                 |
+  | Other frames of a shoot (2543, 6917, 7007, 224)                                     | 0.017–0.196                     |
+  | Different outfit/person/pose in the same place (6210, 6317, 6489, 7388, 7640, 5426) | 0.000–0.012                     |
 
   - **Motion catches small pose changes** (670/671 and similar), which nothing else did, and is
     zero on every plain duplicate.
@@ -262,23 +262,23 @@ the strong clause: unlabeled 2,985 / 4,134.)
 - **Rerun of all three sets with motion (subset, 2026-10-29; decisions unchanged, rules off).** Among
   pairs the verifier matches:
 
-  | Set / label | Matched | moved > 0 | moved p99 / max | interior change p99 / max |
-  |---|---|---|---|---|
-  | Labeled duplicates | 698 | 0.013 | 0.000 / 0.074 (448) | 0.041 / 0.132 |
-  | Cross-group (different pictures) | 5 | 1.00 | all 0.027–0.037 | 0.196 / 0.200 |
-  | Similar folder | 231 | 0.81 | 0.061 / 0.129 | 0.208 / 0.393 |
-  | k-NN unlabeled | 2,973 | 0.068 | 0.013 / 0.195 | 0.135 / 0.363 |
+  | Set / label                      | Matched | moved > 0 | moved p99 / max     | interior change p99 / max |
+  |----------------------------------|---------|-----------|---------------------|---------------------------|
+  | Labeled duplicates               | 698     | 0.013     | 0.000 / 0.074 (448) | 0.041 / 0.132             |
+  | Cross-group (different pictures) | 5       | 1.00      | all 0.027–0.037     | 0.196 / 0.200             |
+  | Similar folder                   | 231     | 0.81      | 0.061 / 0.129       | 0.208 / 0.393             |
+  | k-NN unlabeled                   | 2,973   | 0.068     | 0.013 / 0.195       | 0.135 / 0.363             |
 
   Candidate rules, pairs flipped from match to unrelated (k-NN set; cross-group = known errors,
   duplicate = known losses, the rest unknown until marked):
 
-  | Rule | Cross-group (of 5) | Duplicates (of 698) | Similar folder | Unlabeled |
-  |---|---|---|---|---|
-  | moved > 0.012 only | **5** | 1 (448) | 34 | 37 |
-  | interior > 0.15 only | 1 | 0 | 9 | 21 |
-  | **moved > 0.012 or interior > 0.15** | **5** | 1 (448) | 39 | 56 |
-  | moved > 0.005 or interior > 0.15 | 5 | 1 | 78 | 109 |
-  | moved > 0.02 or interior > 0.20 | 4 | 1 | 24 | 32 |
+  | Rule                                 | Cross-group (of 5) | Duplicates (of 698) | Similar folder | Unlabeled |
+  |--------------------------------------|--------------------|---------------------|----------------|-----------|
+  | moved > 0.012 only                   | **5**              | 1 (448)             | 34             | 37        |
+  | interior > 0.15 only                 | 1                  | 0                   | 9              | 21        |
+  | **moved > 0.012 or interior > 0.15** | **5**              | 1 (448)             | 39             | 56        |
+  | moved > 0.005 or interior > 0.15     | 5                  | 1                   | 78             | 109       |
+  | moved > 0.02 or interior > 0.20      | 4                  | 1                   | 24             | 32        |
 
   - **Motion alone removes every known false match** (all 5, including 125 vs 673, a different photo
     of the same person) at the cost of one labeled duplicate, 448, the liquify edit.
@@ -300,14 +300,14 @@ the strong clause: unlabeled 2,985 / 4,134.)
 The same 300 images and edits as the synthetic retrieval test below; each original verified against each edited
 copy (all should match). 3,900 pairs, 39 min.
 
-| Edit | Matched | Why the rest failed |
-|---|---|---|
-| JPEG q30, color shift, text overlay, letterbox 10%, mirror | 300 / 300 each | |
-| Crop 80% / 60% / 40%, crop 50% + mirror | 300 / 300 each | |
-| Crop 25% | 297 | 3 never aligned (0 inliers) |
-| **Downscale to 25%** | **260** | **40 never aligned:** the copy is tiny (originals p50 862 px → ~215 px); every original ≥ 923 px long side worked |
-| **Grayscale** | **210** | **90 aligned perfectly (p50 1,720 inliers) but noise 0.078 > 0.06:** the color model maps the copy onto the original, and gray can't be mapped back to color |
-| **Rotate 90°** | **28** | No rotation attempts (only mirror); the 28 are near-symmetric images |
+| Edit                                                       | Matched        | Why the rest failed                                                                                                                                          |
+|------------------------------------------------------------|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| JPEG q30, color shift, text overlay, letterbox 10%, mirror | 300 / 300 each |                                                                                                                                                              |
+| Crop 80% / 60% / 40%, crop 50% + mirror                    | 300 / 300 each |                                                                                                                                                              |
+| Crop 25%                                                   | 297            | 3 never aligned (0 inliers)                                                                                                                                  |
+| **Downscale to 25%**                                       | **260**        | **40 never aligned:** the copy is tiny (originals p50 862 px → ~215 px); every original ≥ 923 px long side worked                                            |
+| **Grayscale**                                              | **210**        | **90 aligned perfectly (p50 1,720 inliers) but noise 0.078 > 0.06:** the color model maps the copy onto the original, and gray can't be mapped back to color |
+| **Rotate 90°**                                             | **28**         | No rotation attempts (only mirror); the 28 are near-symmetric images                                                                                         |
 
 - **Crops, overlays and letterboxing are solved:** the stage SSCD's threshold failed on (a 25% crop scores ~0.54) the
   verifier accepts 0.99–1.00 of the time, so k-NN rank + verifier works as designed.
@@ -329,13 +329,13 @@ copy (all should match). 3,900 pairs, 39 min.
 
 8,344 k-NN pairs over 9,307 images = **0.9 pairs per image**; 0.28 of images have none (p90 4, max 48).
 
-| PDQ distance | Share of pairs | Verifier match rate | | SSCD cosine | Share of pairs | Verifier match rate |
-|---|---|---|---|---|---|---|
-| ≤ 8 | 0.277 | 1.00 | | 0.40–0.50 | **0.485** | **0.012** |
-| 9–22 | 0.047 | 0.995 | | 0.50–0.70 | 0.069 | 0.26 |
-| 23–31 | 0.017 | 0.986 | | 0.70–0.88 | 0.049 | 0.96 |
-| 32–60 | 0.033 | 0.953 | | 0.88–0.95 | 0.071 | 0.998 |
-| > 60 | 0.625 | 0.152 | | ≥ 0.95 | 0.327 | 1.00 |
+| PDQ distance | Share of pairs | Verifier match rate |   | SSCD cosine | Share of pairs | Verifier match rate |
+|--------------|----------------|---------------------|---|-------------|----------------|---------------------|
+| ≤ 8          | 0.277          | 1.00                |   | 0.40–0.50   | **0.485**      | **0.012**           |
+| 9–22         | 0.047          | 0.995               |   | 0.50–0.70   | 0.069          | 0.26                |
+| 23–31        | 0.017          | 0.986               |   | 0.70–0.88   | 0.049          | 0.96                |
+| 32–60        | 0.033          | 0.953               |   | 0.88–0.95   | 0.071          | 0.998               |
+| > 60         | 0.625          | 0.152               |   | ≥ 0.95      | 0.327          | 1.00                |
 
 - **Shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without verifying.** 0.35 of pairs. The verifier (with the motion
   rule) disagreed on 5 of 2,896, and by eye **the shortcut was right every time**: a heavy grade and a 236 px copy
@@ -346,14 +346,14 @@ copy (all should match). 3,900 pairs, 39 min.
   0.28 of pairs but loses verifier matches and edited copies, and pairs under 20 already skip it.
 - **Cost (`profile_verify`, 200 pairs, RTX 2060):**
 
-  | Stage | Cost |
-  |---|---|
-  | DISK features, image + mirrored | 2 × 109 ms **per image** |
-  | LightGlue, as-is + mirrored | 2 × 42 ms per pair |
-  | Robust color fit | 81 ms per aligned pair |
-  | Misalignment-tolerant residual (25 shifted copies, NumPy) | 102 ms per aligned pair |
-  | Optical flow (motion) | 36 ms per aligned pair |
-  | MAGSAC | 2 × 3 ms |
+  | Stage                                                     | Cost                     |
+  |-----------------------------------------------------------|--------------------------|
+  | DISK features, image + mirrored                           | 2 × 109 ms **per image** |
+  | LightGlue, as-is + mirrored                               | 2 × 42 ms per pair       |
+  | Robust color fit                                          | 81 ms per aligned pair   |
+  | Misalignment-tolerant residual (25 shifted copies, NumPy) | 102 ms per aligned pair  |
+  | Optical flow (motion)                                     | 36 ms per aligned pair   |
+  | MAGSAC                                                    | 2 × 3 ms                 |
 
   ≈ 240 ms per image + 330 ms per pair. Biggest levers: extract mirrored features only when the upright match
   fails (most pairs aren't mirrored), compute the residual and color fit on the GPU (both are simple array math),
@@ -387,18 +387,18 @@ Changes in `eval/verify.py`, all four pair sets rerun:
   the next pair. Per image 239 → 127 ms, per pair 334 → 265 ms serial. More workers don't help: the GPU
   main thread is the limit (DISK 0.61 of it, LightGlue 0.29).
 
-| Set | Baseline | Now (DISK) | ALIKED |
-|---|---|---|---|
-| Synthetic: downscale 25% | 260 / 300 | **300** | 300 |
-| Synthetic: grayscale | 210 / 300 | **300** | 300 |
-| Synthetic: crop 25% | 297 / 300 | 297 | 300 |
-| Synthetic: rotate 90° | 28 / 300 | 28 | **196** (9 of DISK's 28 lost) |
-| Synthetic: other 9 edits | 300 each | 300 each | 300 each |
-| Labeled duplicates | 698 / 698 | 698 | 698 |
-| Cross-group false matches | 5 / 4,632 | **5** | **9** |
-| k-NN: cross-group false matches | 5 / 205 | 5 | 7 |
-| k-NN: unlabeled matches | 2,973 / 7,119 | 2,979 (+6, none lost) | 3,005 (+32, −6 vs DISK) |
-| Throughput (pairs/s; synth / labeled / cross / k-NN) | 1.7 / – / – / 1.5 | 4.9 / 3.4 / 5.0 / 3.7 | 6.5 / 5.4 / 3.0* / 4.9 |
+| Set                                                  | Baseline          | Now (DISK)            | ALIKED                        |
+|------------------------------------------------------|-------------------|-----------------------|-------------------------------|
+| Synthetic: downscale 25%                             | 260 / 300         | **300**               | 300                           |
+| Synthetic: grayscale                                 | 210 / 300         | **300**               | 300                           |
+| Synthetic: crop 25%                                  | 297 / 300         | 297                   | 300                           |
+| Synthetic: rotate 90°                                | 28 / 300          | 28                    | **196** (9 of DISK's 28 lost) |
+| Synthetic: other 9 edits                             | 300 each          | 300 each              | 300 each                      |
+| Labeled duplicates                                   | 698 / 698         | 698                   | 698                           |
+| Cross-group false matches                            | 5 / 4,632         | **5**                 | **9**                         |
+| k-NN: cross-group false matches                      | 5 / 205           | 5                     | 7                             |
+| k-NN: unlabeled matches                              | 2,973 / 7,119     | 2,979 (+6, none lost) | 3,005 (+32, −6 vs DISK)       |
+| Throughput (pairs/s; synth / labeled / cross / k-NN) | 1.7 / – / – / 1.5 | 4.9 / 3.4 / 5.0 / 3.7 | 6.5 / 5.4 / 3.0* / 4.9        |
 
 \* the GPU was likely shared during that run; ALIKED extraction alone is 42 ms vs DISK's 116 ms per image
 (LightGlue ~30 ms per pair for both; DISK under fp16 autocast is 6× slower, ALIKED fp16 only 0.08 faster).
@@ -422,13 +422,13 @@ up to 1024 px); kornia's keypoint selection and LightGlue stay in PyTorch. Per i
 keypoints, descriptor cosine 0.9999 (a TensorRT fp32 engine gives no speedup, 108 ms). `--disk-runtime trt` is now
 the default. All four sets rerun:
 
-| Set | torch DISK | TensorRT DISK |
-|---|---|---|
-| Labeled duplicates | 698 / 698 | 698 / 698 |
-| Synthetic (13 edits × 300) | 3,625 match | 3,626 (3 rot90 pairs flip, ~20 inliers) |
-| Cross-group false matches | 5 / 4,632 | 7 |
-| k-NN: decisions changed | – | 30 / 8,344 (20 → match, 10 → unrelated) |
-| k-NN: cross-group false matches | 5 / 205 | 7 |
+| Set                             | torch DISK  | TensorRT DISK                           |
+|---------------------------------|-------------|-----------------------------------------|
+| Labeled duplicates              | 698 / 698   | 698 / 698                               |
+| Synthetic (13 edits × 300)      | 3,625 match | 3,626 (3 rot90 pairs flip, ~20 inliers) |
+| Cross-group false matches       | 5 / 4,632   | 7                                       |
+| k-NN: decisions changed         | –           | 30 / 8,344 (20 → match, 10 → unrelated) |
+| k-NN: cross-group false matches | 5 / 205     | 7                                       |
 
 - **The flips show a fragile measurement, not TensorRT drift.** Rerunning the two new cross-group matches (group
   125 vs 673, one shoot) in torch reproduces torch's numbers exactly, so the difference comes from the features.
@@ -439,15 +439,15 @@ the default. All four sets rerun:
 **Throughput** (labeled set, 1,043 pairs, quiet machine; the four-set runs above overlapped the M1 session's CPU
 load and read 4.3–4.7 pairs/s):
 
-| Configuration | Time | Pairs/s | Decisions |
-|---|---|---|---|
-| torch DISK (before) | 303 s | 3.4 | – |
-| torch DISK, images decoded ahead (`--loaders 4`) | 266 s | 3.9 | identical |
-| TensorRT DISK | 177 s | 5.9 | 9 similar-folder pairs flip (net +6 matches) |
-| TensorRT DISK, decoded ahead | 175–179 s | 5.9 | identical to TensorRT |
-| ... and 8 comparison workers (new default) | 155 s | **6.7** | identical |
-| ... at 768 px, 2,048 keypoints (4 workers) | 163 s | 6.4 | duplicates 698; similar-folder 232 (237) |
-| ... at 768 px, 1,024 keypoints (4 workers) | 141 s | 7.4 | duplicates 698; similar-folder 226 (237) |
+| Configuration                                    | Time      | Pairs/s | Decisions                                    |
+|--------------------------------------------------|-----------|---------|----------------------------------------------|
+| torch DISK (before)                              | 303 s     | 3.4     | –                                            |
+| torch DISK, images decoded ahead (`--loaders 4`) | 266 s     | 3.9     | identical                                    |
+| TensorRT DISK                                    | 177 s     | 5.9     | 9 similar-folder pairs flip (net +6 matches) |
+| TensorRT DISK, decoded ahead                     | 175–179 s | 5.9     | identical to TensorRT                        |
+| ... and 8 comparison workers (new default)       | 155 s     | **6.7** | identical                                    |
+| ... at 768 px, 2,048 keypoints (4 workers)       | 163 s     | 6.4     | duplicates 698; similar-folder 232 (237)     |
+| ... at 768 px, 1,024 keypoints (4 workers)       | 141 s     | 7.4     | duplicates 698; similar-folder 226 (237)     |
 
 - **Where the time goes now** (py-spy, TensorRT + decoding ahead, 175 s): the main thread is busy 133 s,
   LightGlue 68 s and DISK incl. keypoint selection 51 s. The comparison workers use 275 thread-s, decoding 41.
@@ -465,12 +465,12 @@ load and read 4.3–4.7 pairs/s):
 **Rotations.** New synthetic edits (`edits.py`, appended so the older edits keep their seeds): a 3–15° tilt cropped to
 the picture, and 30°, 45°, 135° and random 0–360° on an enlarged black canvas. 300 images each:
 
-| Verifier | tilt + crop | 30° | 45° | 135° | any | 90° | Time (1,800 pairs) |
-|---|---|---|---|---|---|---|---|
-| DISK | 300 | 300 | 283 | 0 | 87 | 29 | 551 s |
-| DISK, retry at 90° steps (`--rotations 90`) | 300 | 300 | 298 | 299 | 300 | 300 | (slowed by a concurrent GPU test) |
-| DISK, retry at 45° steps (`--rotations 45`) | 300 | 300 | **300** | **300** | **300** | **300** | 1,123 s |
-| SIFT (`--features sift`) | 300 | 300 | **300** | **300** | **300** | **300** | 511 s |
+| Verifier                                    | tilt + crop | 30° | 45°     | 135°    | any     | 90°     | Time (1,800 pairs)                |
+|---------------------------------------------|-------------|-----|---------|---------|---------|---------|-----------------------------------|
+| DISK                                        | 300         | 300 | 283     | 0       | 87      | 29      | 551 s                             |
+| DISK, retry at 90° steps (`--rotations 90`) | 300         | 300 | 298     | 299     | 300     | 300     | (slowed by a concurrent GPU test) |
+| DISK, retry at 45° steps (`--rotations 45`) | 300         | 300 | **300** | **300** | **300** | **300** | 1,123 s                           |
+| SIFT (`--features sift`)                    | 300         | 300 | **300** | **300** | **300** | **300** | 511 s                             |
 
 - **Retry:** a pair that doesn't match is matched again against B rotated by each step. The rotated copy's
   matched points are mapped back into B, so the homography, color fit and comparison use the images as they are.

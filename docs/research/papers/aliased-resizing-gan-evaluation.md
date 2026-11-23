@@ -60,13 +60,13 @@ Recommendation. Above, we have established that the implementations of FID are i
 the same images resized with PIL–bicubic. Right: the same on StyleGAN2 images. ✓: the filter width adapts to the
 downsampling factor; ✗: fixed width.]*
 
-| Resize function | FID ↓ | KID ×10³ ↓ | PSNR dB ↑ | StyleGAN2 FID ↓ | StyleGAN2 KID ×10³ ↓ |
-|---|---|---|---|---|---|
-| PIL–bicubic ✓ | 0 | 0 | ∞ | 2.98 | 0.51 |
-| PIL–bilinear ✓ | 0.64 | 0.61 | 45.7 | 4.03 | 1.52 |
-| TensorFlow–bilinear ✗ | 4.34 | 4.32 | 37.66 | 7.45 | 5.12 |
-| PyTorch–bilinear ✗ | 4.36 | 4.31 | 37.66 | 7.45 | 5.15 |
-| Naive nearest ✗ | 7.43 | 7.54 | 35.16 | 10.67 | 8.47 |
+| Resize function       | FID ↓ | KID ×10³ ↓ | PSNR dB ↑ | StyleGAN2 FID ↓ | StyleGAN2 KID ×10³ ↓ |
+|-----------------------|-------|------------|-----------|-----------------|----------------------|
+| PIL–bicubic ✓         | 0     | 0          | ∞         | 2.98            | 0.51                 |
+| PIL–bilinear ✓        | 0.64  | 0.61       | 45.7      | 4.03            | 1.52                 |
+| TensorFlow–bilinear ✗ | 4.34  | 4.32       | 37.66     | 7.45            | 5.12                 |
+| PyTorch–bilinear ✗    | 4.36  | 4.31       | 37.66     | 7.45            | 5.15                 |
+| Naive nearest ✗       | 7.43  | 7.54       | 35.16     | 10.67           | 8.47                 |
 
 Table 1. Deviations induced by varying resizing implementations. We measure the discrepancy between real images
 downsampled with PIL–bicubic (1024 → 299) vs. other functions (ψ̂FID) on the left. If all downsampling functions were

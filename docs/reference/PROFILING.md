@@ -7,15 +7,15 @@ leads that were not acted on are in [PROFILING_PLAN.md](../plans/PROFILING_PLAN.
 
 ## Tools
 
-| Tool | Gives | Runs on | Use |
-|---|---|---|---|
-| dhat (`--features dhat-heap`) | Every Rust heap allocation by backtrace: count, size, lifetime, what was live at the peak and at exit | Windows | Heap questions. Qt's, FFmpeg's and libjpeg-turbo's allocations are not in it |
-| Intel SDE | Exact instructions per thread and per function, with call counts | Windows | **Chosen** for CPU on Windows: no build changes, it reads our PDBs. No call graph |
-| Pin call graph (`tools/profiling/callgraph`) | SDE's counts plus the call graph and inclusive costs, in callgrind's format | Windows | Call graphs of the Windows app |
-| callgrind / gungraun | Per-function counts, call graph, cache simulation, run-to-run diffs | pg-dev container (`docker/`) | Regression benches. It measures the Linux build of the per-file code, not ours |
-| DynamoRIO (`inscount`, `drcachesim`) | Totals; cache simulation | Windows | Considered for cache questions; not used |
-| ETW PMC counting and sampling (WPR with a `HardwareCounter` profile) | Hardware counts per thread (instructions, cycles, mispredicts) at each context switch; cycles sampled by instruction address | Windows | Works with VBS on (checked 2026-11-15, i7-8700). One sampled source per trace; mispredict sampling records nothing here. See "The one-worker scan on the hardware" |
-| `-C instrument-coverage` | Exact execution counts per code region | Windows | A proxy for loop counts, not instructions |
+| Tool                                                                 | Gives                                                                                                                        | Runs on                      | Use                                                                                                                                                                |
+|----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| dhat (`--features dhat-heap`)                                        | Every Rust heap allocation by backtrace: count, size, lifetime, what was live at the peak and at exit                        | Windows                      | Heap questions. Qt's, FFmpeg's and libjpeg-turbo's allocations are not in it                                                                                       |
+| Intel SDE                                                            | Exact instructions per thread and per function, with call counts                                                             | Windows                      | **Chosen** for CPU on Windows: no build changes, it reads our PDBs. No call graph                                                                                  |
+| Pin call graph (`tools/profiling/callgraph`)                         | SDE's counts plus the call graph and inclusive costs, in callgrind's format                                                  | Windows                      | Call graphs of the Windows app                                                                                                                                     |
+| callgrind / gungraun                                                 | Per-function counts, call graph, cache simulation, run-to-run diffs                                                          | pg-dev container (`docker/`) | Regression benches. It measures the Linux build of the per-file code, not ours                                                                                     |
+| DynamoRIO (`inscount`, `drcachesim`)                                 | Totals; cache simulation                                                                                                     | Windows                      | Considered for cache questions; not used                                                                                                                           |
+| ETW PMC counting and sampling (WPR with a `HardwareCounter` profile) | Hardware counts per thread (instructions, cycles, mispredicts) at each context switch; cycles sampled by instruction address | Windows                      | Works with VBS on (checked 2026-11-15, i7-8700). One sampled source per trace; mispredict sampling records nothing here. See "The one-worker scan on the hardware" |
+| `-C instrument-coverage`                                             | Exact execution counts per code region                                                                                       | Windows                      | A proxy for loop counts, not instructions                                                                                                                          |
 
 ---
 
@@ -181,15 +181,15 @@ optional; `"max": -0.90` is "must fall by 90% or more"). The benches with no bud
 bench matches fails the gate (a renamed bench isn't passed unseen), a bench that misses its budget fails, and
 `--budgets` is refused with `--update`: a miss is not re-baselined. The budgets of the notifications fix plan's F1:
 
-| Bench | Budget | Why |
-|---|---|---|
-| `scan-walk.again` | ≤ +10% | batching and the scan lease |
-| `scan-walk.first` | ≤ +20% | the pairing reads the fresh rows once per tier, in each batch's own transaction |
-| `import-flush` | ≤ +30% | the import ledger's two triggers per analysis: a frame of 10-25k instructions each, firing or not |
-| `pending-import` | ≤ +2% | the larger schema's fixed cost around one probe |
-| `inbox-refresh.closed` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts |
-| `inbox-refresh.open` | ≤ −70% | the counts read while the inbox is shown are linear in the live rows |
-| `pending-thumbs` | ≤ +18% | the pass's ATTACH parses the catalog's larger schema: a fixed cost per pass |
+| Bench                  | Budget | Why                                                                                               |
+|------------------------|--------|---------------------------------------------------------------------------------------------------|
+| `scan-walk.again`      | ≤ +10% | batching and the scan lease                                                                       |
+| `scan-walk.first`      | ≤ +20% | the pairing reads the fresh rows once per tier, in each batch's own transaction                   |
+| `import-flush`         | ≤ +30% | the import ledger's two triggers per analysis: a frame of 10-25k instructions each, firing or not |
+| `pending-import`       | ≤ +2%  | the larger schema's fixed cost around one probe                                                   |
+| `inbox-refresh.closed` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts                               |
+| `inbox-refresh.open`   | ≤ −70% | the counts read while the inbox is shown are linear in the live rows                              |
+| `pending-thumbs`       | ≤ +18% | the pass's ATTACH parses the catalog's larger schema: a fixed cost per pass                       |
 
 What callgrind can't see (how long a write lock is held, an I/O wait) is measured by the scan crate's wall-clock tests
 (each write transaction of a 200k-file synthetic walk under a stated bound), not by a bench.
@@ -269,11 +269,11 @@ Heap allocations of the app's start on the default catalog (dhat, Rust side only
 fixes (2026-11-01, 2026-11-02). The dhat profiles are no longer on disk, so these totals cannot be re-derived; they are
 the record. Under dhat and offscreen the stage times were not comparable to the release ones below.
 
-| | Before | After the first fixes | After the second | After the third |
-|---|---:|---:|---:|---:|
-| Allocated | 38.9 MB in 16,523 blocks | 13.1 MB in 686 | 12.9 MB in 521 | 11.9 MB in 354 |
-| Peak | 17.2 MB in 2,125 blocks | 11.4 MB in 131 | 11.4 MB in 131 | 11.5 MB in 118 |
-| At exit | 1.9 KB in 26 blocks | 2.1 KB in 26 | 2.1 KB in 26 | 1.2 KB in 15 |
+|           |                   Before | After the first fixes | After the second | After the third |
+|-----------|-------------------------:|----------------------:|-----------------:|----------------:|
+| Allocated | 38.9 MB in 16,523 blocks |        13.1 MB in 686 |   12.9 MB in 521 |  11.9 MB in 354 |
+| Peak      |  17.2 MB in 2,125 blocks |        11.4 MB in 131 |   11.4 MB in 131 |  11.5 MB in 118 |
+| At exit   |      1.9 KB in 26 blocks |          2.1 KB in 26 |     2.1 KB in 26 |    1.2 KB in 15 |
 
 - **The list** is 189,518 entries of 56 bytes (`crates/model/src/grid.rs:41`), 10.6 MB. Before the fixes its `Vec` was
   built without a size hint, so it doubled to 262,144 slots (14.7 MB, 4.1 MB unused) and was the peak. After the third
@@ -293,15 +293,15 @@ five measured. The medians are in ms from `pg_stage_main`. The previous build's 
 19–20 ms in 2 runs, 122–126 ms in 3. That is before any of our code runs, and the new build's was 18–19 ms in all 5. So
 the stages are measured from `main`.
 
-| Stage, from `main` | 2e1b6ca | 1d3685b |
-|---|---:|---:|
-| `init_done` | 17.3 | 16.9 |
-| `qml_load` | 32.6 | 32.1 |
-| `qml_loaded` | 205.8 | 206.0 |
-| `tree_shown` | 273.3 | 273.6 |
-| `first_frame` | 289.6 | 289.2 |
-| `list_shown` | 601.1 (587–672) | 559.5 (548–571) |
-| `ready` | 601.2 (587–672) | 642.0 (635–668) |
+| Stage, from `main`                              |         2e1b6ca |         1d3685b |
+|-------------------------------------------------|----------------:|----------------:|
+| `init_done`                                     |            17.3 |            16.9 |
+| `qml_load`                                      |            32.6 |            32.1 |
+| `qml_loaded`                                    |           205.8 |           206.0 |
+| `tree_shown`                                    |           273.3 |           273.6 |
+| `first_frame`                                   |           289.6 |           289.2 |
+| `list_shown`                                    | 601.1 (587–672) | 559.5 (548–571) |
+| `ready`                                         | 601.2 (587–672) | 642.0 (635–668) |
 | `round_done` (the background job's first round) | 651.5 (636–722) | 645.3 (638–671) |
 
 - **The list is shown 42 ms sooner.** Reading and laying out 189,518 entries no longer grows the list's `Vec` (29.4 MB
@@ -321,14 +321,14 @@ Pin call graph, release `gallery.exe` with the trace stages, scratch copy of the
 **15.15 G instructions in 85 threads** from process start to `pg_stage_ready`. SDE's 17.4–18.1 G included threads that
 kept counting after it (a 0.96 G SQLite thread: the library's first import check, which starts at `ready`).
 
-| Thread | Instructions | What |
-|---|---:|---|
-| catalog reader | 10.90 G | the grid's `browse::list_files` (now `list_grid`, `crates/catalog/src/browse/read/grid.rs`) 10.25 G; the tree and the rest 0.65 G |
-| main | 1.24 G | QML creation, fonts, a Direct3D 9 probe |
-| QSGRenderThread | 1.18 G | the Direct3D 11 device |
-| video decoding | 0.93 G | `choose_video_decoding`'s own Direct3D 11 device (the AV1 probe) |
-| an NVIDIA driver thread | 0.32 G | driver internals |
-| QQmlThread | 0.30 G | QML type loading |
+| Thread                  | Instructions | What                                                                                                                              |
+|-------------------------|-------------:|-----------------------------------------------------------------------------------------------------------------------------------|
+| catalog reader          |      10.90 G | the grid's `browse::list_files` (now `list_grid`, `crates/catalog/src/browse/read/grid.rs`) 10.25 G; the tree and the rest 0.65 G |
+| main                    |       1.24 G | QML creation, fonts, a Direct3D 9 probe                                                                                           |
+| QSGRenderThread         |       1.18 G | the Direct3D 11 device                                                                                                            |
+| video decoding          |       0.93 G | `choose_video_decoding`'s own Direct3D 11 device (the AV1 probe)                                                                  |
+| an NVIDIA driver thread |       0.32 G | driver internals                                                                                                                  |
+| QQmlThread              |       0.30 G | QML type loading                                                                                                                  |
 
 - **The name sort, about 7.0 G (46%), is gone.** At the time, in `list_files`, SQLite's sorter (`vdbeSorterSort`) was
   7.59 G, nearly all of it `browse::path_collation`: 1.59 M comparisons at about 4,400 instructions each. Unicode
@@ -365,11 +365,11 @@ shell script `scan-timing.sh`. Its Python successor is `tools/profiling/scan_tim
   moved to the other range (0 to 999 and back).
 - **Machine:** 12 cores, 31 GB RAM, nothing else running. Times are wall clock, one run per line unless noted.
 
-| Caches | Run | first | unchanged | renumbered |
-|---|---|---|---|---|
-| as they are | 1 | 1.672 s | 0.227 s | 0.478 s |
-| as they are | 2 | 1.647 s | 0.485 s | 0.397 s |
-| dropped before each scan | 1 | 4.844 s | 0.888 s | 1.283 s |
+| Caches                   | Run | first   | unchanged | renumbered |
+|--------------------------|-----|---------|-----------|------------|
+| as they are              | 1   | 1.672 s | 0.227 s   | 0.478 s    |
+| as they are              | 2   | 1.647 s | 0.485 s   | 0.397 s    |
+| dropped before each scan | 1   | 4.844 s | 0.888 s   | 1.283 s    |
 
 - **What the renumbered run did:** the catalog has 10,000 file rows after all three scans, and none is missing (checked
   by reading the catalog), so the renamed files were paired with their rows. Its scan reports 10,000 new or changed,
@@ -417,42 +417,42 @@ even 0.1% shows. gungraun's estimated cycles, from callgrind's cache simulation,
 
 **`analyze::analyze` (the import's work per file): 63.5 M instructions**
 
-| Stage (inclusive, `cgtab.py`) | Instructions | Share | Calls |
-|---|---:|---:|---:|
-| `analyze` itself | 63.5 M | 100% | 1 |
-| JPEG decode (`Decoder::decode`; `tj3Decompress8` 21.2 M, Huffman `decode_mcu` alone 11.4 M) | 21.6 M | 34% | 1 |
-| Resizes (`resize::resize`: `fit_within` for PDQ, and the ThumbHash input) | 19.3 M | 30% | 2 |
-| ↳ Lanczos weights (`precompute_coefficients`, mostly `sin`) | 3.3 M | 5% | |
-| PDQ, 8 dihedral hashes (`hash_rgb_dihedral`) | 16.6 M | 26% | 1 |
-| ↳ `pdq::box_1d` | 13.6 M | 21% | 1,838 |
-| ThumbHash (with its resize) | 10.0 M | 16% | 1 |
-| `pixel_hash` (xxh3) | 0.77 M | 1.2% | 1 |
-| `file_hash` (BLAKE3 of 126 KB) | 0.33 M | 0.5% | 1 |
-| Metadata (rating, date taken) | 0.05 M | 0.1% | |
+| Stage (inclusive, `cgtab.py`)                                                               | Instructions | Share | Calls |
+|---------------------------------------------------------------------------------------------|-------------:|------:|------:|
+| `analyze` itself                                                                            |       63.5 M |  100% |     1 |
+| JPEG decode (`Decoder::decode`; `tj3Decompress8` 21.2 M, Huffman `decode_mcu` alone 11.4 M) |       21.6 M |   34% |     1 |
+| Resizes (`resize::resize`: `fit_within` for PDQ, and the ThumbHash input)                   |       19.3 M |   30% |     2 |
+| ↳ Lanczos weights (`precompute_coefficients`, mostly `sin`)                                 |        3.3 M |    5% |       |
+| PDQ, 8 dihedral hashes (`hash_rgb_dihedral`)                                                |       16.6 M |   26% |     1 |
+| ↳ `pdq::box_1d`                                                                             |       13.6 M |   21% | 1,838 |
+| ThumbHash (with its resize)                                                                 |       10.0 M |   16% |     1 |
+| `pixel_hash` (xxh3)                                                                         |       0.77 M |  1.2% |     1 |
+| `file_hash` (BLAKE3 of 126 KB)                                                              |       0.33 M |  0.5% |     1 |
+| Metadata (rating, date taken)                                                               |       0.05 M |  0.1% |       |
 
 The ThumbHash row includes its own resize, which is also in the resize row.
 
 **By crate**, self cost following inlined code to its source (`cgtab.py table --by crate`):
 
-| Crate | `analyze` | `thumbs::make` |
-|---|---:|---:|
-| libjpeg-turbo | 32.9% | 60.3% |
-| fast_image_resize | 23.9% | 30.5% |
-| pg_analysis (PDQ, mostly) | 25.5% | 0.0% |
-| thumbhash | 7.3% | — |
-| libm (`sin`, the Lanczos weights) | 4.0% | 4.5% |
-| libc (memset/memcpy, malloc) | 2.7% | 3.2% |
-| std | 1.8% | 1.4% |
-| xxhash_rust, blake3 | 1.7% | — |
+| Crate                             | `analyze` | `thumbs::make` |
+|-----------------------------------|----------:|---------------:|
+| libjpeg-turbo                     |     32.9% |          60.3% |
+| fast_image_resize                 |     23.9% |          30.5% |
+| pg_analysis (PDQ, mostly)         |     25.5% |           0.0% |
+| thumbhash                         |      7.3% |              — |
+| libm (`sin`, the Lanczos weights) |      4.0% |           4.5% |
+| libc (memset/memcpy, malloc)      |      2.7% |           3.2% |
+| std                               |      1.8% |           1.4% |
+| xxhash_rust, blake3               |      1.7% |              — |
 
 **`thumbs::make`, height 256: 50.6 M instructions**
 
-| Stage (inclusive) | Instructions | Share |
-|---|---:|---:|
-| JPEG decode (`tj3Decompress8`) | 28.5 M | 56% |
-| Resize to 256 px high (Lanczos3) | 19.4 M | 38% |
-| ↳ Lanczos weights (`precompute_coefficients`, mostly `sin`) | 3.2 M | 6.4% |
-| JPEG encode (`tj3Compress8`, q85 4:2:0) | 2.4 M | 4.8% |
+| Stage (inclusive)                                           | Instructions | Share |
+|-------------------------------------------------------------|-------------:|------:|
+| JPEG decode (`tj3Decompress8`)                              |       28.5 M |   56% |
+| Resize to 256 px high (Lanczos3)                            |       19.4 M |   38% |
+| ↳ Lanczos weights (`precompute_coefficients`, mostly `sin`) |        3.2 M |  6.4% |
+| JPEG encode (`tj3Compress8`, q85 4:2:0)                     |        2.4 M |  4.8% |
 
 **The decode is at full scale.** `DECODE_MARGIN = 4` (now `crates/render/src/display.rs:24`) asks for ≥ 1024 px high,
 and the image is 1017 high, so no DCT scaling is applied. That costs 28.5 M here against `analyze`'s 21.2 M. The margin
@@ -471,16 +471,16 @@ PDQ pairs, no thumbnails. 18 s under SDE.
 
 **1.05 G instructions on the main thread** (`sde -mix`):
 
-| Function | Instructions | Share | Calls |
-|---|---:|---:|---:|
-| `sqlite3VdbeExec` | 796 M | 75.7% | 88 |
-| `btreeParseCellPtr` | 71 M | 6.8% | 1.53 M |
-| `sqlite3VdbeSerialGet` | 40 M | 3.9% | 2.30 M |
-| `sqlite3BtreeTableMoveto` | 27 M | 2.5% | 579 k |
-| `getCellInfo` | 25 M | 2.4% | 2.86 M |
-| `sqlite3BtreeNext` | 9.2 M | 0.9% | 617 k |
-| `countStep` | 6.9 M | 0.7% | 384,252 |
-| `RtlAllocateHeap` (ntdll) | 5.3 M | 0.5% | 18 k |
+| Function                  | Instructions | Share |   Calls |
+|---------------------------|-------------:|------:|--------:|
+| `sqlite3VdbeExec`         |        796 M | 75.7% |      88 |
+| `btreeParseCellPtr`       |         71 M |  6.8% |  1.53 M |
+| `sqlite3VdbeSerialGet`    |         40 M |  3.9% |  2.30 M |
+| `sqlite3BtreeTableMoveto` |         27 M |  2.5% |   579 k |
+| `getCellInfo`             |         25 M |  2.4% |  2.86 M |
+| `sqlite3BtreeNext`        |        9.2 M |  0.9% |   617 k |
+| `countStep`               |        6.9 M |  0.7% | 384,252 |
+| `RtlAllocateHeap` (ntdll) |        5.3 M |  0.5% |    18 k |
 
 - About 96% of the instructions are SQLite running the 8 `count(*)` queries in `Catalog::status`
   (`crates/catalog/src/lookup.rs`). Each count now has its own index where one exists (`files_present`,
@@ -517,12 +517,12 @@ makes (`gallery --catalog-dir <copy> pair --again`, then `present_pdq_pairs` dum
 **The machine is shared.** The CPU load before runs varied from 24% to 82%. So every figure is a median of interleaved
 runs, and `sweep.ps1` flags and leaves out the runs that start above 30%.
 
-| Script (`tools/profiling/pairing/`) | Measures |
-|---|---|
+| Script (`tools/profiling/pairing/`)                                                       | Measures                                                                                  |
+|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
 | `sweep.ps1 -Catalog <src> -Workers 1,2,4,6,12 -Reps 4 [-Owed N] [-Slice N] [-CacheKib N]` | `pairs_probe`'s wall clock and its parts (`PairStats::timings`) per worker count; medians |
-| `peak_mem.ps1 -Catalog <src> -Owed 0,1,30000,187804 [-Slice N] [-CacheKib N]` | peak working set and peak commit (MiB, as the script prints them), sampled every 15 ms |
-| `set_owed.py <catalog> <N>` | makes N pictures owe their pairs, spread over the ids (either layout) |
-| `dhat_top.py <dhat-heap.json>` | the heap sites live at the peak (`target/dhat/gallery.exe --catalog-dir <copy> pair`) |
+| `peak_mem.ps1 -Catalog <src> -Owed 0,1,30000,187804 [-Slice N] [-CacheKib N]`             | peak working set and peak commit (MiB, as the script prints them), sampled every 15 ms    |
+| `set_owed.py <catalog> <N>`                                                               | makes N pictures owe their pairs, spread over the ids (either layout)                     |
+| `dhat_top.py <dhat-heap.json>`                                                            | the heap sites live at the peak (`target/dhat/gallery.exe --catalog-dir <copy> pair`)     |
 
 **Callgrind, one join at a time** (pg-dev container, `pairs_probe` built there, `PG_PROBE_WORKERS=1`):
 `valgrind --tool=callgrind --zero-before=<join entry point> --dump-after=<join entry point> pairs_probe <copy>`.
@@ -537,27 +537,27 @@ slices of 50,000 owed pictures, 4 for the whole library.
 
 Re-measured with `sweep.ps1` once the pass reported its timings, on a quieter machine (2 reps):
 
-| Workers | Total | Load | Join | Write statements | Commits |
-|---|---|---|---|---|---|
-| 1 | 10.63 s | 0.27 s | 9.27 s | 0.34 s | 0.71 s |
-| 12 | 6.56 s | 0.28 s | 5.15 s | 0.35 s | 0.74 s |
+| Workers | Total   | Load   | Join   | Write statements | Commits |
+|---------|---------|--------|--------|------------------|---------|
+| 1       | 10.63 s | 0.27 s | 9.27 s | 0.34 s           | 0.71 s  |
+| 12      | 6.56 s  | 0.28 s | 5.15 s | 0.35 s           | 0.74 s  |
 
 The join is 87% of the pass at 1 worker and 78% at 12. The commits cost twice the statements.
 
-| Part | Wall (12 workers) | Instructions (1 worker) | Cause |
-|---|---|---|---|
-| Join preparation | 1.5 - 1.7 s | 17.7 G | `is_symmetric` recomputed for every picture on every slice: a bit-by-bit 16x16 transpose, 486 ns each |
-| Sorts | 2.1 - 2.5 s | 2.6 G | 16 chunks x 4 slices x 2 sides of a 65,536-bucket counting sort of 40-byte entries (561 ms per slice on one thread); the stored side re-sorted every slice; 64 fresh 30 MB buffers |
-| Writes | 1.1 - 1.4 s | 2.8 G | 187,804 `UPDATE`s of the `analysis` row: 98.7 MB of WAL, 22 - 24 checkpoints; `commit()` alone 0.75 - 1.1 s |
-| Load | 0.34 - 0.56 s | 1.49 G | rusqlite decoding (0.93 G), three scans of `analysis JOIN files`, a temp B-tree for `ORDER BY`, a second 50 MB copy of the hashes |
-| Scan stages | 0.9 s (5.2 s on 1 worker) | 54.6 G | 1.78 G vector iterations, 7.1 G lane slots for 2.9 G useful candidates |
-| `Catalog::prepare` | about 130 ms | 0.41 G | `mark_unheld_missing` scans 190 k rows (64 ms); the expected schema built twice |
+| Part               | Wall (12 workers)         | Instructions (1 worker) | Cause                                                                                                                                                                              |
+|--------------------|---------------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Join preparation   | 1.5 - 1.7 s               | 17.7 G                  | `is_symmetric` recomputed for every picture on every slice: a bit-by-bit 16x16 transpose, 486 ns each                                                                              |
+| Sorts              | 2.1 - 2.5 s               | 2.6 G                   | 16 chunks x 4 slices x 2 sides of a 65,536-bucket counting sort of 40-byte entries (561 ms per slice on one thread); the stored side re-sorted every slice; 64 fresh 30 MB buffers |
+| Writes             | 1.1 - 1.4 s               | 2.8 G                   | 187,804 `UPDATE`s of the `analysis` row: 98.7 MB of WAL, 22 - 24 checkpoints; `commit()` alone 0.75 - 1.1 s                                                                        |
+| Load               | 0.34 - 0.56 s             | 1.49 G                  | rusqlite decoding (0.93 G), three scans of `analysis JOIN files`, a temp B-tree for `ORDER BY`, a second 50 MB copy of the hashes                                                  |
+| Scan stages        | 0.9 s (5.2 s on 1 worker) | 54.6 G                  | 1.78 G vector iterations, 7.1 G lane slots for 2.9 G useful candidates                                                                                                             |
+| `Catalog::prepare` | about 130 ms              | 0.41 G                  | `mark_unheld_missing` scans 190 k rows (64 ms); the expected schema built twice                                                                                                    |
 
-| Memory | Peak commit | Rust heap at the peak (dhat) |
-|---|---|---|
-| Nothing owed | 62 MB | |
-| One owed picture | 366 MB | 201.9 MB |
-| All 187,804 owed | 415 MB | 247.7 MB: `Vec<PairingPicture>` 79.7 MB (17 growth steps allocate 159 MB), the `Vec<Picture>` copy 48.3 MB, the join's base entries 30 + 21 MB, one stage 66 MB |
+| Memory           | Peak commit | Rust heap at the peak (dhat)                                                                                                                                    |
+|------------------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Nothing owed     | 62 MB       |                                                                                                                                                                 |
+| One owed picture | 366 MB      | 201.9 MB                                                                                                                                                        |
+| All 187,804 owed | 415 MB      | 247.7 MB: `Vec<PairingPicture>` 79.7 MB (17 growth steps allocate 159 MB), the `Vec<Picture>` copy 48.3 MB, the join's base entries 30 + 21 MB, one stage 66 MB |
 
 The other 167 MB of the all-owed peak is SQLite's page cache (the app's 256 MB `cache_size`, filled by the load), the
 binary and the stacks. A pass for one owed picture takes 1.3 - 1.6 s (0.18 s with nothing owed), almost all of it fixed
@@ -569,11 +569,11 @@ Block B made the stored hashes the 4 kept orientations (migration 13, with `pair
 keeps one permuted store, sorts with a radix into three arrays, applies the ordering rule as a suffix, and chunks on the
 diagonals. Slices are still 50,000. Medians of 3 quiet runs:
 
-| Workers | Total | Load | Join | Write statements | Commits |
-|---|---|---|---|---|---|
-| 1 | 7.79 s (10.63) | 0.08 s | 7.31 s | 0.18 s | 0.21 s |
-| 6 | 3.17 s | 0.08 s | 2.64 s | 0.16 s | 0.31 s |
-| 12 | 2.85 s (6.56) | 0.08 s | 2.27 s | 0.17 s | 0.31 s |
+| Workers | Total          | Load   | Join   | Write statements | Commits |
+|---------|----------------|--------|--------|------------------|---------|
+| 1       | 7.79 s (10.63) | 0.08 s | 7.31 s | 0.18 s           | 0.21 s  |
+| 6       | 3.17 s         | 0.08 s | 2.64 s | 0.16 s           | 0.31 s  |
+| 12      | 2.85 s (6.56)  | 0.08 s | 2.27 s | 0.17 s           | 0.31 s  |
 
 - **Correctness:** the migrated copy's pass gives the oracle's 5,277 pairs exactly. 0 of 187,808 blobs failed the
   transpose check, and integrity and foreign-key checks are clean.
@@ -592,21 +592,21 @@ cached current schema, and does its one-off work on a 16 MB cache. The probe now
 `pairs_again`, so it times the pass alone (cold cache, no WAL of its own to merge). Medians of 3 quiet runs, the default
 16 MB cache:
 
-| Workers | Total | Load | Join | Write statements | Commits |
-|---|---|---|---|---|---|
-| 1 | 7.78 s (10.63) | 0.15 s | 7.35 s | 0.22 s | 0.03 s |
-| 6 | 3.03 s | 0.14 s | 2.63 s | 0.23 s | 0.03 s |
-| 12 | 2.63 s (6.56) | 0.14 s | 2.22 s | 0.23 s | 0.03 s |
+| Workers | Total          | Load   | Join   | Write statements | Commits |
+|---------|----------------|--------|--------|------------------|---------|
+| 1       | 7.78 s (10.63) | 0.15 s | 7.35 s | 0.22 s           | 0.03 s  |
+| 6       | 3.03 s         | 0.14 s | 2.63 s | 0.23 s           | 0.03 s  |
+| 12      | 2.63 s (6.56)  | 0.14 s | 2.22 s | 0.23 s           | 0.03 s  |
 
 **The cache size** of the pass's connections (all 187,804 owed, 12 workers, owed rows set by `set_owed.py` so the probe
 reads nothing first; 2 runs each, which agreed within 2 MiB):
 
-| Cache | Peak commit, all owed | Peak commit, one owed | Load | Write statements |
-|---|---|---|---|---|
-| 16 MB (chosen) | 131 MiB | 92 MiB | 0.15 s | 0.19 s |
-| 32 MB | 150 MiB | 92 MiB | 0.15 - 0.18 s | 0.19 s |
-| 64 MB | 184 MiB | 100 MiB | 0.16 - 0.17 s | 0.19 s |
-| 256 MB (the app's) | 214 MiB | 147 MiB | 0.19 s | 0.21 s |
+| Cache              | Peak commit, all owed | Peak commit, one owed | Load          | Write statements |
+|--------------------|-----------------------|-----------------------|---------------|------------------|
+| 16 MB (chosen)     | 131 MiB               | 92 MiB                | 0.15 s        | 0.19 s           |
+| 32 MB              | 150 MiB               | 92 MiB                | 0.15 - 0.18 s | 0.19 s           |
+| 64 MB              | 184 MiB               | 100 MiB               | 0.16 - 0.17 s | 0.19 s           |
+| 256 MB (the app's) | 214 MiB               | 147 MiB               | 0.19 s        | 0.21 s           |
 
 Nothing owed peaks at 2 MiB of commit: the pass is one probe. Before the rebuild these peaks were 415 MB (all owed) and
 366 MB (one owed).
@@ -621,10 +621,10 @@ copy, 3 runs):
 
 *History (2026-11-21): this passage describes migration 13 of a past schema. The current schema is version 1 (`BASELINE_SCHEMA = 1` in `crates/catalog/src/schema.rs`, no migrations).*
 
-| | Wall | Peak commit | Peak WAL | File after |
-|---|---|---|---|---|
-| The app's 256 MB cache | 3.6 - 4.2 s | 438 MiB | 169 MiB | 176.4 MB |
-| A 16 MB cache for `prepare`'s work (kept) | 4.3 - 4.4 s | 221 MiB | 169 MiB | 176.4 MB |
+|                                           | Wall        | Peak commit | Peak WAL | File after |
+|-------------------------------------------|-------------|-------------|----------|------------|
+| The app's 256 MB cache                    | 3.6 - 4.2 s | 438 MiB     | 169 MiB  | 176.4 MB   |
+| A 16 MB cache for `prepare`'s work (kept) | 4.3 - 4.4 s | 221 MiB     | 169 MiB  | 176.4 MB   |
 
 The rest of the peak is `VACUUM`'s copy of the file, which `temp_store = MEMORY` builds in RAM. It happens once, at the
 first start of a build with migration 13. The pass on the migrated copy gives the oracle's 5,277 pairs exactly.
@@ -637,13 +637,13 @@ for this library), and, with several slices, writes a slice while the next one's
 join's parts: `prepare` (the slice's query side), `sort` (the time the scan waited for its sorts) and `scan`. Medians of
 3 quiet runs, default settings, all 187,804 owed:
 
-| Workers | Sorters | Total | Load | Join | Sort wait | Scan | Write statements | Commits |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 0 | 5.15 s (10.63) | 0.15 s | 4.70 s | 0.68 s | 3.91 s | 0.23 s | 0.04 s |
-| 2 | 0 | 3.37 s | 0.17 s | 2.87 s | 0.71 s | 2.06 s | 0.29 s | 0.04 s |
-| 4 | 1 | 2.02 s | 0.15 s | 1.58 s | 0.05 s | 1.44 s | 0.24 s | 0.04 s |
-| 6 | 1 | 1.50 s | 0.15 s | 1.09 s | 0.05 s | 0.93 s | 0.23 s | 0.04 s |
-| 12 | 2 | 1.27 s (6.56) | 0.14 s | 0.83 s | 0.06 s | 0.68 s | 0.24 s | 0.04 s |
+| Workers | Sorters | Total          | Load   | Join   | Sort wait | Scan   | Write statements | Commits |
+|---------|---------|----------------|--------|--------|-----------|--------|------------------|---------|
+| 1       | 0       | 5.15 s (10.63) | 0.15 s | 4.70 s | 0.68 s    | 3.91 s | 0.23 s           | 0.04 s  |
+| 2       | 0       | 3.37 s         | 0.17 s | 2.87 s | 0.71 s    | 2.06 s | 0.29 s           | 0.04 s  |
+| 4       | 1       | 2.02 s         | 0.15 s | 1.58 s | 0.05 s    | 1.44 s | 0.24 s           | 0.04 s  |
+| 6       | 1       | 1.50 s         | 0.15 s | 1.09 s | 0.05 s    | 0.93 s | 0.23 s           | 0.04 s  |
+| 12      | 2       | 1.27 s (6.56)  | 0.14 s | 0.83 s | 0.06 s    | 0.68 s | 0.24 s           | 0.04 s  |
 
 The plan's targets: at 12 workers 5x or better, met (5.2x). On one worker 3.5x, **not met** (2.1x; these baselines were
 timed with turbo, the results without: "Both rounds against the pass before them" times both alike): what is left there is
@@ -657,13 +657,13 @@ the few-owed path (300) and the sorted path (3,000 and 30,000, and 3,000 on one 
 
 **G3, the sorter threads** (total, 2 runs each):
 
-| Threads | 0 sorters | 1 sorter | 2 sorters |
-|---|---|---|---|
-| 2 | **3.17 s** | 4.37 s | 4.39 s |
-| 4 | 2.28 s | **1.96 s** | 2.63 s |
-| 6 | 1.99 s | **1.51 s** | 1.65 s |
-| 8 | 1.93 s | **1.41 s** | 1.46 s |
-| 12 | 1.80 s | 1.51 s | **1.22 s** |
+| Threads | 0 sorters  | 1 sorter   | 2 sorters  |
+|---------|------------|------------|------------|
+| 2       | **3.17 s** | 4.37 s     | 4.39 s     |
+| 4       | 2.28 s     | **1.96 s** | 2.63 s     |
+| 6       | 1.99 s     | **1.51 s** | 1.65 s     |
+| 8       | 1.93 s     | **1.41 s** | 1.46 s     |
+| 12      | 1.80 s     | 1.51 s     | **1.22 s** |
 
 Below 4 threads a sorter costs a worker the scan needs more; from 10 the scan is fast enough that one sorter falls
 behind (it waited 0.33 s at 12). `join::default_sorters`: 0 up to 3 threads, 1 from 4 to 9, 2 from 10. (Since the
@@ -672,11 +672,11 @@ sorter threads, this rule and `PG_PROBE_SORTERS` are gone: "One thread team" bel
 
 **G5, the slice** (total, 2 runs each, the machine busier than for the table above):
 
-| Slice | 1 worker | 6 workers | 12 workers |
-|---|---|---|---|
-| 50,000 (4 slices) | 7.50 s | 2.13 s | 1.85 s |
-| 100,000 (2 slices) | 5.88 s | 1.63 s | 1.47 s |
-| 200,000 (1 slice, kept) | 5.08 s | 1.57 s | 1.44 s |
+| Slice                   | 1 worker | 6 workers | 12 workers |
+|-------------------------|----------|-----------|------------|
+| 50,000 (4 slices)       | 7.50 s   | 2.13 s    | 1.85 s     |
+| 100,000 (2 slices)      | 5.88 s   | 1.63 s    | 1.47 s     |
+| 200,000 (1 slice, kept) | 5.08 s   | 1.57 s    | 1.44 s     |
 
 Every slice sorts the whole stored side again and sets up every probe again, so one slice is cheapest. The plan's
 400,000 on a synthetic 500,000-picture corpus was not run here: this library is one slice at 200,000. The second
@@ -686,13 +686,13 @@ only the query side.
 **G6, the few-owed path against the sorted path** (join, 2 runs each; the few-owed path forced on with `PG_PROBE_FEW`,
 the sorted path forced with 0):
 
-| Owed | Few-owed, 12 workers | Sorted, 12 workers | Few-owed, 1 worker | Sorted, 1 worker |
-|---|---|---|---|---|
-| 1 | 60 ms | | 169 ms | 274 ms |
-| 30 | | 256 ms | 260 ms | 264 ms |
-| 300 | 92 ms | 261 ms | 385 ms | 297 ms |
-| 1,000 | 189 ms | 264 ms | 880 ms | 388 ms |
-| 2,500 | 308 ms | 280 ms | 2,228 ms | 508 ms |
+| Owed  | Few-owed, 12 workers | Sorted, 12 workers | Few-owed, 1 worker | Sorted, 1 worker |
+|-------|----------------------|--------------------|--------------------|------------------|
+| 1     | 60 ms                |                    | 169 ms             | 274 ms           |
+| 30    |                      | 256 ms             | 260 ms             | 264 ms           |
+| 300   | 92 ms                | 261 ms             | 385 ms             | 297 ms           |
+| 1,000 | 189 ms               | 264 ms             | 880 ms             | 388 ms           |
+| 2,500 | 308 ms               | 280 ms             | 2,228 ms           | 508 ms           |
 
 The few-owed path's work is spread over every thread; the sorted path's floor (sorting the stored side, about 0.2 s) is
 not. So the threshold is per thread: 1,000 query entries (125 owed pictures) per thread, `FEW_ENTRIES_PER_THREAD`
@@ -710,14 +710,14 @@ scan, 3.9 s, is where a better kernel would show.
 
 **Peak memory** (default settings, 12 workers, 2 runs that agreed within 2 MiB):
 
-| Owed | Peak commit | Join | Path |
-|---|---|---|---|
-| 0 | 2 MiB | | (one probe) |
-| 1 | 75 MiB | 91 ms | few-owed |
-| 300 | 76 MiB | 184 ms | few-owed |
-| 3,000 | 118 MiB | 292 ms | sorted |
-| 30,000 | 148 MiB | 393 ms | sorted |
-| 187,804 | 254 MiB | 822 ms | sorted |
+| Owed    | Peak commit | Join   | Path        |
+|---------|-------------|--------|-------------|
+| 0       | 2 MiB       |        | (one probe) |
+| 1       | 75 MiB      | 91 ms  | few-owed    |
+| 300     | 76 MiB      | 184 ms | few-owed    |
+| 3,000   | 118 MiB     | 292 ms | sorted      |
+| 30,000  | 148 MiB     | 393 ms | sorted      |
+| 187,804 | 254 MiB     | 822 ms | sorted      |
 
 These met the plan's 330 MB cap, since removed: peak commit is recorded with each change, not held to a target. Before
 the rebuild these were 366 MB (one owed) and 415 MB (all owed). A pass with
@@ -732,15 +732,15 @@ of 5.1 G conditional branches), 120 M D1 read misses, 128 M D1 write misses. The
 scan; it counted the iterations right (670 M vector iterations, 204 M (stored entry x probe) setups, both as predicted)
 and the cost of each wrong.
 
-| Part | Instructions | Mispredicts | Cache | Where |
-|---|---|---|---|---|
-| The scan (`scan_avx2`, with its inlined intrinsics and bounds checks) | 26.8 G | 413 M | 66 M D1 read misses | `join.rs` `scan_avx2`, `suffix` |
-| - the ordering rule's pointer (`suffix`'s `while`) | 3.9 G | **216 M** | | a data-dependent walk per stored entry |
-| - the vector loop's exit (`while y < qhi`) | 1.8 G | **197 M** | | one per setup: the trip count changes with every stored entry |
-| - the popcounts and compares (intrinsics) | 11.4 G | | | 17 instructions per 4 lanes |
-| - the lanes that pass (`consider`) | small | 0.8 M | | 670 M lane tests, almost none pass |
-| The sorts (`StageSet::sort`, 16 stages) | 4.7 G | 12 M | 50 M D1 read, 126 M D1 write misses | the radix's second pass scatters into 256 buckets x 3 arrays |
-| The slice's query side (transposes, permutation) | 0.5 G | | | |
+| Part                                                                  | Instructions | Mispredicts | Cache                               | Where                                                         |
+|-----------------------------------------------------------------------|--------------|-------------|-------------------------------------|---------------------------------------------------------------|
+| The scan (`scan_avx2`, with its inlined intrinsics and bounds checks) | 26.8 G       | 413 M       | 66 M D1 read misses                 | `join.rs` `scan_avx2`, `suffix`                               |
+| - the ordering rule's pointer (`suffix`'s `while`)                    | 3.9 G        | **216 M**   |                                     | a data-dependent walk per stored entry                        |
+| - the vector loop's exit (`while y < qhi`)                            | 1.8 G        | **197 M**   |                                     | one per setup: the trip count changes with every stored entry |
+| - the popcounts and compares (intrinsics)                             | 11.4 G       |             |                                     | 17 instructions per 4 lanes                                   |
+| - the lanes that pass (`consider`)                                    | small        | 0.8 M       |                                     | 670 M lane tests, almost none pass                            |
+| The sorts (`StageSet::sort`, 16 stages)                               | 4.7 G        | 12 M        | 50 M D1 read, 126 M D1 write misses | the radix's second pass scatters into 256 buckets x 3 arrays  |
+| The slice's query side (transposes, permutation)                      | 0.5 G        |             |                                     |                                                               |
 
 Callgrind's branch model has no history, so its 413 M overstate the hardware's (289 M, next section), and its estimate
 of the mispredicts' cost here (6 - 8 G cycles, "roughly 1.5 s") is superseded by the cycle samples below. The full
@@ -761,13 +761,13 @@ sources kept only one.
 - **The scan's threads: 28.9 G instructions, 16.6 G cycles (1.74 per cycle), 289 M mispredicts.**
 - Cycle samples in `scan_avx2`: 267,367 (17.5 G cycles, the sampling run's scan 4.9 s against 3.9 s unsampled):
 
-| Part of `scan_avx2` | Share | Per unit |
-|---|---:|---|
-| The vector loop | 47.9% | about 12 cycles per iteration (669 M); its floor is about 6 (23 fused uops at 4 a cycle, 6 of them on port 5) |
-| The ordering rule's pointer (`suffix`'s walk) | 23.0% | about 19 cycles per setup (204 M) |
-| A stored entry's setup (code, head words, broadcasts) | 25.1% | of which 12.1% on the three instructions where the walk returns: its exit's recovery |
-| The bucket and probe loops | 3.1% | |
-| Lanes that pass, `consider`, the store reads | 0.9% | |
+| Part of `scan_avx2`                                   | Share | Per unit                                                                                                      |
+|-------------------------------------------------------|------:|---------------------------------------------------------------------------------------------------------------|
+| The vector loop                                       | 47.9% | about 12 cycles per iteration (669 M); its floor is about 6 (23 fused uops at 4 a cycle, 6 of them on port 5) |
+| The ordering rule's pointer (`suffix`'s walk)         | 23.0% | about 19 cycles per setup (204 M)                                                                             |
+| A stored entry's setup (code, head words, broadcasts) | 25.1% | of which 12.1% on the three instructions where the walk returns: its exit's recovery                          |
+| The bucket and probe loops                            |  3.1% |                                                                                                               |
+| Lanes that pass, `consider`, the store reads          |  0.9% |                                                                                                               |
 
 - The sorts: 46,616 samples (about 3 G cycles). The radix's second pass (three arrays) is 24% of them; zeroing the
   output and scratch arrays every stage (`clear` then `resize`) 9%.
@@ -788,12 +788,12 @@ with one branch that almost never fires (the pointer moves at most a bucket, abo
 build and the new one interleaved, 5 runs each, a fresh catalog copy per run, CPU load 10 - 34% before the runs;
 medians in ms:
 
-| Workers | Build | Pass | Join | Sort wait | Scan (min - max) |
-|---:|---|---:|---:|---:|---:|
-| 1 | `98c6973` | 5,003 | 4,576 | 683 | 3,802 (3,784 - 3,890) |
-| 1 | vector start | 4,356 | 3,890 | 667 | **3,109** (3,053 - 3,226) |
-| 12 | `98c6973` | 1,279 | 849 | 112 | 655 (637 - 688) |
-| 12 | vector start | 1,258 | 808 | 185 | **523** (513 - 547) |
+| Workers | Build        |  Pass |  Join | Sort wait |          Scan (min - max) |
+|--------:|--------------|------:|------:|----------:|--------------------------:|
+|       1 | `98c6973`    | 5,003 | 4,576 |       683 |     3,802 (3,784 - 3,890) |
+|       1 | vector start | 4,356 | 3,890 |       667 | **3,109** (3,053 - 3,226) |
+|      12 | `98c6973`    | 1,279 |   849 |       112 |           655 (637 - 688) |
+|      12 | vector start | 1,258 |   808 |       185 |       **523** (513 - 547) |
 
 The scan is 18% faster on one worker and 20% on 12; the oracle's 5,277 pairs are identical on all seven paths of the
 check (one slice, slices of 50,000, one worker, 300 / 3,000 / 30,000 owed). On 12 workers most of the gain moves into
@@ -811,24 +811,24 @@ build as above; turbo off (the power plan's maximum processor state at 99%).
 parentheses, the candidates tested in full when over 1 M; from 2 words on most stages are at the floor of about 19,500
 true near-pairs):
 
-| Stage | W = 1 | W = 2 | W = 3 | W = 4 | W = 5 | Chosen |
-|---:|---:|---:|---:|---:|---:|---:|
-| 0 | 2,441 (152.9 M) | 1,942 (57.6 M) | 312 | 335 | 360 | 3 |
-| 1 | 2,948 (149.1 M) | 1,678 (31.4 M) | 289 | 333 | 335 | 3 |
-| 2 | 2,598 (151.7 M) | 1,207 (14.8 M) | 289 | 334 | 349 | 3 |
-| 3 | 2,944 (148.0 M) | 779 (5.5 M) | 284 | 308 | 340 | 3 |
-| 4 | 2,701 (147.1 M) | 457 (1.7 M) | 378 | 321 | 340 | 3 |
-| 5 | 3,069 (140.6 M) | 340 | 272 | 316 | 367 | 3 |
-| 6 | 2,525 (123.3 M) | 286 | 289 | 333 | 350 | 2 |
-| 7 | 2,539 (88.3 M) | 258 | 275 | 367 | 345 | 2 |
-| 8 | 1,800 (48.4 M) | 270 | 341 | 316 | 360 | 2 |
-| 9 | 1,284 (18.3 M) | 266 | 324 | 313 | 343 | 2 |
-| 10 | 611 (4.6 M) | 382 | 294 | 324 | 343 | 2 |
-| 11 | 328 | 275 | 288 | 308 | 394 | 2 |
-| 12 | 231 | 270 | 304 | 339 | 343 | 1 |
-| 13 | 230 | 258 | 313 | 312 | 348 | 1 |
-| 14 | 221 | 330 | 319 | 328 | 356 | 1 |
-| 15 | 214 | 276 | 291 | 332 | 340 | 1 |
+| Stage |           W = 1 |          W = 2 | W = 3 | W = 4 | W = 5 | Chosen |
+|------:|----------------:|---------------:|------:|------:|------:|-------:|
+|     0 | 2,441 (152.9 M) | 1,942 (57.6 M) |   312 |   335 |   360 |      3 |
+|     1 | 2,948 (149.1 M) | 1,678 (31.4 M) |   289 |   333 |   335 |      3 |
+|     2 | 2,598 (151.7 M) | 1,207 (14.8 M) |   289 |   334 |   349 |      3 |
+|     3 | 2,944 (148.0 M) |    779 (5.5 M) |   284 |   308 |   340 |      3 |
+|     4 | 2,701 (147.1 M) |    457 (1.7 M) |   378 |   321 |   340 |      3 |
+|     5 | 3,069 (140.6 M) |            340 |   272 |   316 |   367 |      3 |
+|     6 | 2,525 (123.3 M) |            286 |   289 |   333 |   350 |      2 |
+|     7 |  2,539 (88.3 M) |            258 |   275 |   367 |   345 |      2 |
+|     8 |  1,800 (48.4 M) |            270 |   341 |   316 |   360 |      2 |
+|     9 |  1,284 (18.3 M) |            266 |   324 |   313 |   343 |      2 |
+|    10 |     611 (4.6 M) |            382 |   294 |   324 |   343 |      2 |
+|    11 |             328 |            275 |   288 |   308 |   394 |      2 |
+|    12 |             231 |            270 |   304 |   339 |   343 |      1 |
+|    13 |             230 |            258 |   313 |   312 |   348 |      1 |
+|    14 |             221 |            330 |   319 |   328 |   356 |      1 |
+|    15 |             214 |            276 |   291 |   332 |   340 |      1 |
 
 A stage scans about 150 M lanes. One more word costs about 24 ms a stage (0.16 ns a lane; the columns at 3 - 5 words,
 where the candidates are at the floor). A false candidate costs from 14 ns, when nearly every lane is one and the
@@ -849,14 +849,14 @@ mispredict that dominated the old kernel. It did remove them, but every stored e
 to build its slots (the suffix, its conversions, the list's bounds and pointers reloaded from the stack) on top of
 about 40 per slot. Counters on context switches, the whole pass, all owed:
 
-| Kernel | Workers | Cycles | Instructions | Mispredicts | Scan (ms) |
-|---|---:|---:|---:|---:|---:|
-| step 2 (4 lanes, 128-bit head) | 1 | 18.87 G | 34.3 G | 131 M | 4,411 |
-| flat list | 1 | 17.57 G | 43.8 G | 67 M | 3,994 |
-| each stored entry's slots in a loop | 1 | **16.36 G** | 33.9 G | 95 M | **3,605** |
-| step 2 | 12 | 25.15 G | 34.4 G | 134 M | 676 |
-| flat list | 12 | 27.03 G | 43.9 G | 73 M | 709 |
-| each stored entry's slots in a loop | 12 | **22.40 G** | 34.0 G | 97 M | **570** |
+| Kernel                              | Workers |      Cycles | Instructions | Mispredicts | Scan (ms) |
+|-------------------------------------|--------:|------------:|-------------:|------------:|----------:|
+| step 2 (4 lanes, 128-bit head)      |       1 |     18.87 G |       34.3 G |       131 M |     4,411 |
+| flat list                           |       1 |     17.57 G |       43.8 G |        67 M |     3,994 |
+| each stored entry's slots in a loop |       1 | **16.36 G** |       33.9 G |        95 M | **3,605** |
+| step 2                              |      12 |     25.15 G |       34.4 G |       134 M |       676 |
+| flat list                           |      12 |     27.03 G |       43.9 G |        73 M |       709 |
+| each stored entry's slots in a loop |      12 | **22.40 G** |       34.0 G |        97 M |   **570** |
 
 On one worker the list's fewer stalls outweighed its extra instructions; on 12, two threads to a core, the sibling
 already filled those stalls and the instructions are what cost, as the one-worker section above foresaw for fixed trip
@@ -874,14 +874,14 @@ head saves nothing there.
 **Kept** (6 pairs per workload against step 2, alternating, a fresh catalog copy per run; medians in ms, cycles in M;
 the change's Hodges-Lehmann estimate on cycles with its 95% interval):
 
-| Workload | Pass | Cycles | Sort wait | Scan | Cycles, estimate |
-|---|---:|---:|---:|---:|---|
-| all owed, 1 worker | 5,808 -> 4,974 | 18,312 -> 15,728 | 708 -> 764 | 4,410 -> 3,540 | -14.0% [-15.5, -10.2] |
-| all owed, 12 workers | 1,476 -> 1,476 | 25,168 -> 21,438 | 130 -> 272 | 670 -> 542 | -14.9% [-15.3, -14.4] |
-| 300 owed, 1 | 566 -> 577 | 1,773 -> 1,814 | 228 -> 242 | 68 -> 64 | +4.9% [-3.6, +27.5] |
-| 300 owed, 12 | 338 -> 344 | 3,300 -> 3,314 | 7 -> 6 | 70 -> 77 | +1.1% [-1.0, +2.0] |
-| 3,000 owed, 1 | 896 -> 873 | 2,793 -> 2,754 | 234 -> 248 | 360 -> 342 | -1.6% [-3.6, +21.5] |
-| 3,000 owed, 12 | 602 -> 582 | 3,966 -> 3,782 | 204 -> 212 | 82 -> 75 | -4.8% [-8.6, +0.7] |
+| Workload                  |           Pass |           Cycles |  Sort wait |           Scan | Cycles, estimate      |
+|---------------------------|---------------:|-----------------:|-----------:|---------------:|-----------------------|
+| all owed, 1 worker        | 5,808 -> 4,974 | 18,312 -> 15,728 | 708 -> 764 | 4,410 -> 3,540 | -14.0% [-15.5, -10.2] |
+| all owed, 12 workers      | 1,476 -> 1,476 | 25,168 -> 21,438 | 130 -> 272 |     670 -> 542 | -14.9% [-15.3, -14.4] |
+| 300 owed, 1               |     566 -> 577 |   1,773 -> 1,814 | 228 -> 242 |       68 -> 64 | +4.9% [-3.6, +27.5]   |
+| 300 owed, 12              |     338 -> 344 |   3,300 -> 3,314 |     7 -> 6 |       70 -> 77 | +1.1% [-1.0, +2.0]    |
+| 3,000 owed, 1             |     896 -> 873 |   2,793 -> 2,754 | 234 -> 248 |     360 -> 342 | -1.6% [-3.6, +21.5]   |
+| 3,000 owed, 12            |     602 -> 582 |   3,966 -> 3,782 | 204 -> 212 |       82 -> 75 | -4.8% [-8.6, +0.7]    |
 | four slices of 50,000, 12 | 2,300 -> 2,025 | 51,278 -> 39,215 | 330 -> 466 | 1,478 -> 1,046 | -23.3% [-24.2, -22.6] |
 
 No workload's interval lies above zero, and three are real gains. On 12 workers the full pass's wall clock does not
@@ -925,19 +925,19 @@ summed, with `starved` (a thread waiting at a phase's tail) and `paused` beside 
 
 Kept (6 pairs against step 1's remainder, gated on time; cycles beside):
 
-| Workload | Join (pass on four slices) | Cycles |
-|---|---|---|
-| all owed, 1 worker | +0.15% [−1.44, +1.77] | +0.6% |
-| all owed, 2 | −14.25% [−16.92, −10.28] | −0.2% |
-| all owed, 4 | −11.26% [−15.68, −6.72] | +1.2% |
-| all owed, 6 | −5.92% [−12.41, +4.59] | +3.7% |
-| all owed, 8 | −20.70% [−22.03, −18.65] | +5.4% |
-| all owed, 12 | −16.96% [−25.00, +3.74] | +8.3% |
-| 300 owed, 1 | −3.69% [−5.36, −1.23] | −1.3% |
-| 300 owed, 12 | −2.38% [−7.06, +2.53] | −0.8% |
-| 3,000 owed, 1 | −2.37% [−3.58, −0.66] | −0.5% |
-| 3,000 owed, 12 | −48.86% [−50.00, −48.08] | +24.9% |
-| four slices, 12 | −14.67% [−18.24, −11.20] | +6.7% |
+| Workload           | Join (pass on four slices) | Cycles |
+|--------------------|----------------------------|--------|
+| all owed, 1 worker | +0.15% [−1.44, +1.77]      | +0.6%  |
+| all owed, 2        | −14.25% [−16.92, −10.28]   | −0.2%  |
+| all owed, 4        | −11.26% [−15.68, −6.72]    | +1.2%  |
+| all owed, 6        | −5.92% [−12.41, +4.59]     | +3.7%  |
+| all owed, 8        | −20.70% [−22.03, −18.65]   | +5.4%  |
+| all owed, 12       | −16.96% [−25.00, +3.74]    | +8.3%  |
+| 300 owed, 1        | −3.69% [−5.36, −1.23]      | −1.3%  |
+| 300 owed, 12       | −2.38% [−7.06, +2.53]      | −0.8%  |
+| 3,000 owed, 1      | −2.37% [−3.58, −0.66]      | −0.5%  |
+| 3,000 owed, 12     | −48.86% [−50.00, −48.08]   | +24.9% |
+| four slices, 12    | −14.67% [−18.24, −11.20]   | +6.7%  |
 
 - **Cycles against time.** On 12 workers the team runs the same instructions as before (all owed: 32.6 G against
   32.7 G) and its cycles rise with the threads: about +3% at 6 workers (one a core), +8 - 13% at 12 (two). The old
@@ -965,17 +965,17 @@ and 5,277 pairs on a copy of the catalog: transactions of 2,000 owed pictures, t
 from `PG_PROBE_WRITE=2000` and `PG_PROBE_CACHE_KIB=16384` (they have no default, so a run names what it measured). Each variant changes one part
 (medians of 6 runs, ms):
 
-| Variant | Statements | Commits | Total | WAL after |
-|---|---:|---:|---:|---:|
-| today's `PairsWriter` (each pair and done guarded by the stored hashes) | 293 | 45 | 340 | 4.0 MB |
-| the same, `wal_autocheckpoint = 0` | 285 | 23 | 308 | 4.9 MB |
-| the same writes, unguarded | 106 | 45 | 151 | 4.0 MB |
-| the guards' reads alone | 172 | 1 | 173 | - |
-| the guards' reads, every `analysis` page cached | 117 | 1 | 117 | - |
-| a `SELECT` of each statement's parameters | 35 | 1 | 36 | - |
-| the transactions alone | 1 | 0 | 1 | - |
-| the set-based guard (one `rarray` read, one `rarray` delete a batch) | 271 | 43 | 315 | 4.0 MB |
-| its read alone / its delete alone | 151 / 94 | 1 / 16 | 152 / 109 | - / 3.3 MB |
+| Variant                                                                 | Statements | Commits |     Total |  WAL after |
+|-------------------------------------------------------------------------|-----------:|--------:|----------:|-----------:|
+| today's `PairsWriter` (each pair and done guarded by the stored hashes) |        293 |      45 |       340 |     4.0 MB |
+| the same, `wal_autocheckpoint = 0`                                      |        285 |      23 |       308 |     4.9 MB |
+| the same writes, unguarded                                              |        106 |      45 |       151 |     4.0 MB |
+| the guards' reads alone                                                 |        172 |       1 |       173 |          - |
+| the guards' reads, every `analysis` page cached                         |        117 |       1 |       117 |          - |
+| a `SELECT` of each statement's parameters                               |         35 |       1 |        36 |          - |
+| the transactions alone                                                  |          1 |       0 |         1 |          - |
+| the set-based guard (one `rarray` read, one `rarray` delete a batch)    |        271 |      43 |       315 |     4.0 MB |
+| its read alone / its delete alone                                       |   151 / 94 |  1 / 16 | 152 / 109 | - / 3.3 MB |
 
 - **The guard's reads are over half of it** (~190 ms): ~55 ms fetching the `analysis` pages (the cached variant's
   difference), the rest the seeks and the row decodes of ~198,000 reads (each statement ~0.18 µs).
@@ -993,15 +993,15 @@ the load's skips the read. `meta.pairing_version` is checked by every write tran
 Kept (6 pairs against step 6, `0c8401e`; build B on the catalog already at version 14). The time gate (join; the pass
 on four slices) is level everywhere: all workloads kept, median −0.09%. Where the change is:
 
-| Workload | Pass | Write | Write, ms (A → B) |
-|---|---|---|---|
-| all owed, 1 worker | −3.96% [−4.71, −3.22] | −61.2% [−63.8, −56.7] | 316 → 119 |
-| all owed, 12 | −14.98% [−37.59, −12.33] | −59.1% [−69.8, −54.8] | 291 → 121 |
-| 300 owed, 1 | +0.00% [−6.37, +2.74] | −66.7% | 3 → 1 |
-| 300 owed, 12 | −2.69% [−9.06, +3.61] | −71.1% | 3 → 1 |
-| 3,000 owed, 1 | −0.46% [−1.53, +1.84] | −83.8% | 19 → 3 |
-| 3,000 owed, 12 | −9.07% [−22.87, −3.60] | −76.5% | 19 → 4.5 |
-| four slices, 12 | −1.27% [−9.63, +0.70] | −51.9% [−60.9, −40.9] | 581 → 275 |
+| Workload           | Pass                     | Write                 | Write, ms (A → B) |
+|--------------------|--------------------------|-----------------------|-------------------|
+| all owed, 1 worker | −3.96% [−4.71, −3.22]    | −61.2% [−63.8, −56.7] | 316 → 119         |
+| all owed, 12       | −14.98% [−37.59, −12.33] | −59.1% [−69.8, −54.8] | 291 → 121         |
+| 300 owed, 1        | +0.00% [−6.37, +2.74]    | −66.7%                | 3 → 1             |
+| 300 owed, 12       | −2.69% [−9.06, +3.61]    | −71.1%                | 3 → 1             |
+| 3,000 owed, 1      | −0.46% [−1.53, +1.84]    | −83.8%                | 19 → 3            |
+| 3,000 owed, 12     | −9.07% [−22.87, −3.60]   | −76.5%                | 19 → 4.5          |
+| four slices, 12    | −1.27% [−9.63, +0.70]    | −51.9% [−60.9, −40.9] | 581 → 275         |
 
 - **The load** reads each picture's quality and the two marks too: level (estimates −1.9 to +3.5%; two intervals wide
   with one noisy pair each).
@@ -1020,12 +1020,12 @@ once its store is made; the guard takes a picture's from the store (`Joiner::ori
 alone with cycles level, kept when run again): no workload's time or cycles changed (estimates −1.6 to +3.2%, median
 −0.25%). The oracle's pairs are identical on all seven paths, with every write guarded too (`PG_PROBE_GUARD`).
 
-| Owed | Peak commit, A → B (MiB, 2 runs each) |
-|---|---|
-| 1 | 75 → 75 |
-| 300 | 76 - 77 → 76 - 77 |
-| 30,000 | 137 - 138 → 114 |
-| 187,804 | 202 - 203 → 179 - 180 |
+| Owed    | Peak commit, A → B (MiB, 2 runs each) |
+|---------|---------------------------------------|
+| 1       | 75 → 75                               |
+| 300     | 76 - 77 → 76 - 77                     |
+| 30,000  | 137 - 138 → 114                       |
+| 187,804 | 202 - 203 → 179 - 180                 |
 
 - **Two losses found on the way, both measured and removed.** The first build lost 14 - 21 ms on every join
   (+17% on 300 owed at 12 workers): timing the join's parts put all of it in `Joiner::new`, and the assembly showed
@@ -1041,19 +1041,19 @@ every picture owed, each on a fresh read-only connection with the pass's 16 MB c
 (the pages come from the OS's file cache, as after an import). Medians of 6 runs; the probe is one thread, so its
 cycles are the load's:
 
-| Variant | Wall | Cycles | What |
-|---|---:|---:|---|
-| the load (`459c8e0`) | 211.9 ms | 674 M | open, `count(*)`, the joined statement, the hashes decoded and kept |
-| the connection opened and closed | 2.0 ms | 7 M | |
-| `count(*)` of `analysis` | 8.3 ms | 27 M | the columns' capacity |
-| the joined statement, stepped | 178.1 ms | 565 M | `analysis`, a `files` lookup and a `pairs_owed` lookup per row |
-| the same, every column read | 198.9 ms | 632 M | |
-| the same, every page cached first | 104.9 ms | 334 M | |
-| `analysis` alone, scanned | 93.8 ms | 298 M | |
-| `analysis` alone, cached | 43.0 ms | 137 M | |
-| the files with an identity | 21.6 ms | 69 M | `UNIQUE(volume, file_ref)`'s index alone |
-| the displaced, present, and present pending files | 17.1 ms | 54 M | three indexes alone |
-| `pairs_owed`, in order | 14.9 ms | 47 M | |
+| Variant                                           |     Wall | Cycles | What                                                                |
+|---------------------------------------------------|---------:|-------:|---------------------------------------------------------------------|
+| the load (`459c8e0`)                              | 211.9 ms |  674 M | open, `count(*)`, the joined statement, the hashes decoded and kept |
+| the connection opened and closed                  |   2.0 ms |    7 M |                                                                     |
+| `count(*)` of `analysis`                          |   8.3 ms |   27 M | the columns' capacity                                               |
+| the joined statement, stepped                     | 178.1 ms |  565 M | `analysis`, a `files` lookup and a `pairs_owed` lookup per row      |
+| the same, every column read                       | 198.9 ms |  632 M |                                                                     |
+| the same, every page cached first                 | 104.9 ms |  334 M |                                                                     |
+| `analysis` alone, scanned                         |  93.8 ms |  298 M |                                                                     |
+| `analysis` alone, cached                          |  43.0 ms |  137 M |                                                                     |
+| the files with an identity                        |  21.6 ms |   69 M | `UNIQUE(volume, file_ref)`'s index alone                            |
+| the displaced, present, and present pending files |  17.1 ms |   54 M | three indexes alone                                                 |
+| `pairs_owed`, in order                            |  14.9 ms |   47 M |                                                                     |
 
 - **The lookups cost about 85 ms** (the joined statement against `analysis` alone), and fetching pages is about half
   of every statement (cached against not).
@@ -1068,15 +1068,15 @@ id does not size them. The columns' capacity is the identity set's size, so `cou
 The new load in the probe: **170.5 ms, 542 M cycles** (from 211.9 ms and 674 M). Kept (6 pairs against `459c8e0`; the
 join's gate on 300 owed at 12 workers, on the bound at first, kept when run again):
 
-| Workload | Load, ms (A → B) | Load | Pass |
-|---|---|---|---|
-| all owed, 1 worker | 208 → 168 | −19.23% [−22.22, −17.48] | −1.55% [−2.35, −1.00] |
-| all owed, 12 | 216 → 168 | −19.56% [−30.13, −2.37] | −2.73% [−9.67, +5.97] |
-| 300 owed, 1 | 220 → 154 | −28.65% [−39.84, −7.17] | −10.30% [−17.31, −3.26] |
-| 300 owed, 12 | 224 → 151 | −33.12% [−40.16, −26.15] | −22.97% [−28.16, −17.41] |
-| 3,000 owed, 1 | 227 → 152 | −35.04% [−43.77, −28.83] | −11.58% [−15.78, −6.12] |
-| 3,000 owed, 12 | 228 → 154 | −32.91% [−36.36, −29.60] | −18.41% [−21.48, +19.70] |
-| four slices, 12 | 210 → 166 | −20.57% [−22.54, −18.22] | −4.03% [−8.07, +3.39] |
+| Workload           | Load, ms (A → B) | Load                     | Pass                     |
+|--------------------|------------------|--------------------------|--------------------------|
+| all owed, 1 worker | 208 → 168        | −19.23% [−22.22, −17.48] | −1.55% [−2.35, −1.00]    |
+| all owed, 12       | 216 → 168        | −19.56% [−30.13, −2.37]  | −2.73% [−9.67, +5.97]    |
+| 300 owed, 1        | 220 → 154        | −28.65% [−39.84, −7.17]  | −10.30% [−17.31, −3.26]  |
+| 300 owed, 12       | 224 → 151        | −33.12% [−40.16, −26.15] | −22.97% [−28.16, −17.41] |
+| 3,000 owed, 1      | 227 → 152        | −35.04% [−43.77, −28.83] | −11.58% [−15.78, −6.12]  |
+| 3,000 owed, 12     | 228 → 154        | −32.91% [−36.36, −29.60] | −18.41% [−21.48, +19.70] |
+| four slices, 12    | 210 → 166        | −20.57% [−22.54, −18.22] | −4.03% [−8.07, +3.39]    |
 
 The oracle's pairs are identical on all seven paths. A differential test checks the load against the joined
 statement on random catalogs (sparse ids, two far past the others, every file state, owed rows of analyses that are no
@@ -1094,10 +1094,10 @@ ms with 4 at once and 28 - 37 ms with 12, against 2 ms alone, and the parts' sca
 twice as long as alone. The bundled SQLite kept its process-wide memory statistics, so every allocation took one
 global mutex. Without them (`.cargo/config.toml`, `SQLITE_DEFAULT_MEMSTATUS=0`, one of SQLite's recommended options):
 
-| Parts | Statistics on | Off |
-|---|---:|---:|
-| 4 | 101 ms | 85 ms |
-| 12 | 117 ms, 2,122 M cycles | 99 ms, 1,308 M cycles |
+| Parts |          Statistics on |                   Off |
+|-------|-----------------------:|----------------------:|
+| 4     |                 101 ms |                 85 ms |
+| 12    | 117 ms, 2,122 M cycles | 99 ms, 1,308 M cycles |
 
 On its own the flag is level on the pass (`bed9346` against `c5ee017`, kept everywhere). The import flush bench went
 from 148,321,771 instructions to **128,931,175 (−13.1%)**, below its count before the epoch (145,131,705), and the
@@ -1105,9 +1105,9 @@ catalog's test suite, whose tests run on parallel threads with connections of th
 
 The split load by parts (the probe, every picture owed, medians of 6):
 
-| Parts | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 12 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Wall, ms | 166 | 125 | 89 | 87 | 103 | 90 | 96 | 98 |
+| Parts     |   1 |   2 |   3 |   4 |   5 |   6 |     8 |    12 |
+|-----------|----:|----:|----:|----:|----:|----:|------:|------:|
+| Wall, ms  | 166 | 125 |  89 |  87 | 103 |  90 |    96 |    98 |
 | Cycles, M | 529 | 746 | 682 | 754 | 922 | 876 | 1,121 | 1,313 |
 
 From 3 parts on, the wall is the reader's own reads: the identity set before the cut (about 26 ms) and the other three
@@ -1116,15 +1116,15 @@ sets beside the parts. More parts only add cycles. The parts' count is the join'
 Kept (6 pairs against `bed9346`; the one-part load first lost 4 ms to filling and moving the columns, which a load in
 one part now skips):
 
-| Workload | Load, ms (A → B) | Load | Pass | Cycles |
-|---|---|---|---|---|
-| all owed, 1 worker | 167 → 168 | +1.16% [−1.79, +4.79] | −0.24% [−1.29, +1.51] | −0.17% |
-| all owed, 12 | 168 → 94 | −44.31% [−45.40, −42.86] | −8.34% [−12.81, −5.03] | +3.97% [+2.97, +4.88] |
-| 300 owed, 1 | 151 → 152 | −8.20% [−22.56, +3.38] | −2.29% [−6.98, +1.27] | +0.77% |
-| 300 owed, 12 | 154 → 80 | −45.23% [−49.36, −38.56] | −29.96% [−34.00, −25.51] | +40.00% [+37.25, +46.52] |
-| 3,000 owed, 1 | 154 → 154 | +2.31% [−18.03, +26.62] | −1.92% [−6.87, +0.49] | −2.88% |
-| 3,000 owed, 12 | 154 → 78 | −48.84% [−50.97, −46.05] | −21.81% [−22.67, −20.19] | +18.33% [+15.55, +19.84] |
-| four slices, 12 | 166 → 94 | −43.68% [−47.19, −31.52] | −3.75% [−8.66, +0.65] | +2.00% |
+| Workload           | Load, ms (A → B) | Load                     | Pass                     | Cycles                   |
+|--------------------|------------------|--------------------------|--------------------------|--------------------------|
+| all owed, 1 worker | 167 → 168        | +1.16% [−1.79, +4.79]    | −0.24% [−1.29, +1.51]    | −0.17%                   |
+| all owed, 12       | 168 → 94         | −44.31% [−45.40, −42.86] | −8.34% [−12.81, −5.03]   | +3.97% [+2.97, +4.88]    |
+| 300 owed, 1        | 151 → 152        | −8.20% [−22.56, +3.38]   | −2.29% [−6.98, +1.27]    | +0.77%                   |
+| 300 owed, 12       | 154 → 80         | −45.23% [−49.36, −38.56] | −29.96% [−34.00, −25.51] | +40.00% [+37.25, +46.52] |
+| 3,000 owed, 1      | 154 → 154        | +2.31% [−18.03, +26.62]  | −1.92% [−6.87, +0.49]    | −2.88%                   |
+| 3,000 owed, 12     | 154 → 78         | −48.84% [−50.97, −46.05] | −21.81% [−22.67, −20.19] | +18.33% [+15.55, +19.84] |
+| four slices, 12    | 166 → 94         | −43.68% [−47.19, −31.52] | −3.75% [−8.66, +0.65]    | +2.00%                   |
 
 The cycles a split load adds at 12 workers are the parts past the three the wall needs. Peak commit +2 - 4 MiB (75 - 77
 → 78 - 79 with 1 or 300 owed, 179 → 182 - 183 with all). The oracle's pairs are identical on all seven paths, with
@@ -1141,11 +1141,11 @@ owed, +22.64% [+18.29, +23.94] on four slices (proven losses), cycles −22 to �
 
 **The load's parts: the join's threads.** 12 parts against fewer, at 12 workers:
 
-| Parts | All owed, pass | 300 owed, pass | 3,000 owed, pass | Cycles, 300 owed |
-|---|---|---|---|---|
-| 3 | −1.23% [−9.52, +11.50] | +3.41% [+1.16, +6.55], a loss | +3.97% [+1.98, +6.00], a loss | 2,808 → 2,122 M |
-| 4 | −2.31% [−14.95, +8.98] | −13.87% [−52.08, +2.38] | +2.31% [+0.39, +6.25], a loss | 2,790 → 2,148 M |
-| 6 | −0.22% [−11.48, +22.14] | −6.30% [−41.78, +7.82] | −4.87% [−19.37, +3.69] | 2,806 → 2,306 M |
+| Parts | All owed, pass          | 300 owed, pass                | 3,000 owed, pass              | Cycles, 300 owed |
+|-------|-------------------------|-------------------------------|-------------------------------|------------------|
+| 3     | −1.23% [−9.52, +11.50]  | +3.41% [+1.16, +6.55], a loss | +3.97% [+1.98, +6.00], a loss | 2,808 → 2,122 M  |
+| 4     | −2.31% [−14.95, +8.98]  | −13.87% [−52.08, +2.38]       | +2.31% [+0.39, +6.25], a loss | 2,790 → 2,148 M  |
+| 6     | −0.22% [−11.48, +22.14] | −6.30% [−41.78, +7.82]        | −4.87% [−19.37, +3.69]        | 2,806 → 2,306 M  |
 
 Fewer than 6 loses time; 6 gains none anywhere, so the simplest rule stays (no number of its own). The parts past 6
 cost cycles only (about 500 M on 300 owed), which the gate, on time, does not weigh.
@@ -1155,35 +1155,35 @@ own part of the store). Fitting the two paths' join times by owed count showed a
 thread count, outside the team's time: `Joiner::new`, permuting 751,216 hashes on one thread. Kept (6 pairs; the
 one-worker 300 owed, whose code is unchanged, kept at its third run after two with one disturbed pair each):
 
-| Workload | Join, ms (A → B) | Join | Pass |
-|---|---|---|---|
-| all owed, 12 | 674 → 652 | −4.81% [−8.07, +1.93] | −3.96% [−12.48, +0.74] |
-| 300 owed, 12 | 80 → 50 | −37.25% [−43.75, −30.00]; −45.12% run again | −10.15% [−19.76, +0.60] |
-| 3,000 owed, 12 | 160 → 130 | −19.72% [−25.00, −6.87] | −9.88% [−14.74, +14.73] |
-| four slices, 12 | 1,241 → 1,241 | (pass) −0.08% [−10.44, +2.86] | |
+| Workload        | Join, ms (A → B) | Join                                        | Pass                    |
+|-----------------|------------------|---------------------------------------------|-------------------------|
+| all owed, 12    | 674 → 652        | −4.81% [−8.07, +1.93]                       | −3.96% [−12.48, +0.74]  |
+| 300 owed, 12    | 80 → 50          | −37.25% [−43.75, −30.00]; −45.12% run again | −10.15% [−19.76, +0.60] |
+| 3,000 owed, 12  | 160 → 130        | −19.72% [−25.00, −6.87]                     | −9.88% [−14.74, +14.73] |
+| four slices, 12 | 1,241 → 1,241    | (pass) −0.08% [−10.44, +2.86]               |                         |
 
 The one-worker workloads are level, as their code is.
 
 **The few-owed threshold: a line through the crossovers.** `few_sweep.ps1` times the join with each path forced at
 owed counts around the crossover, alternately, 6 runs each (medians; the background CPU 9 - 36%, one point at 48%):
 
-| Threads | 1 | 2 | 4 | 6 | 8 | 12 |
-|---|---:|---:|---:|---:|---:|---:|
-| Crossover (owed pictures, interpolated) | 253 | 309 | 357 | 415 | 585 | 652 |
-| The old rule (125 a thread) | 125 | 250 | 500 | 750 | 1,000 | 1,500 |
-| The least-squares line, 221 + 38 a thread | 259 | 297 | 373 | 449 | 525 | 677 |
+| Threads                                   |   1 |   2 |   4 |   6 |     8 |    12 |
+|-------------------------------------------|----:|----:|----:|----:|------:|------:|
+| Crossover (owed pictures, interpolated)   | 253 | 309 | 357 | 415 |   585 |   652 |
+| The old rule (125 a thread)               | 125 | 250 | 500 | 750 | 1,000 | 1,500 |
+| The least-squares line, 221 + 38 a thread | 259 | 297 | 373 | 449 |   525 |   677 |
 
 The sorted path gains little past the physical cores (its join near 90 - 100 ms from 6 threads to 12), while the
 few-owed path's keeps falling, so the crossover is no multiple of the threads: the old rule was 2.3x too high at 12
 threads and half too low at 1. Near the line the two paths are within about 5%. `FEW_BASE` and `FEW_PER_THREAD`
 replace `FEW_ENTRIES_PER_THREAD`. Kept, on the owed counts where the two rules choose differently (6 pairs):
 
-| Workload | Join, ms (old → new) | Join | Pass |
-|---|---|---|---|
-| 200 owed, 1 thread (sorted → few) | 296 → 242 | −16.53% [−25.08, −7.00] | −9.50% [−17.28, −0.66] |
-| 400 owed, 4 (few → sorted) | 152 → 102 | −31.38% [−58.68, +0.91] | −20.43% [−36.72, +0.52] |
-| 600 owed, 6 (few → sorted) | 123 → 97 | −21.28% [−37.32, −9.84] | −12.49% [−32.44, +11.82] |
-| 1,000 owed, 12 (few → sorted) | 118 → 98 | −18.30% [−30.56, −6.54] | −6.86% [−19.83, +4.67] |
+| Workload                          | Join, ms (old → new) | Join                    | Pass                     |
+|-----------------------------------|----------------------|-------------------------|--------------------------|
+| 200 owed, 1 thread (sorted → few) | 296 → 242            | −16.53% [−25.08, −7.00] | −9.50% [−17.28, −0.66]   |
+| 400 owed, 4 (few → sorted)        | 152 → 102            | −31.38% [−58.68, +0.91] | −20.43% [−36.72, +0.52]  |
+| 600 owed, 6 (few → sorted)        | 123 → 97             | −21.28% [−37.32, −9.84] | −12.49% [−32.44, +11.82] |
+| 1,000 owed, 12 (few → sorted)     | 118 → 98             | −18.30% [−30.56, −6.54] | −6.86% [−19.83, +4.67]   |
 
 The usual workloads take the same path under both (300 owed: few at 12, sorted at 1; 3,000: sorted).
 
@@ -1192,10 +1192,10 @@ slices): no real gain anywhere. At 2 MB the 12-worker load took 117 ms against 9
 gets a twelfth), and at 2 and 8 MB the four slices' write 55 - 62 ms more (it reads pages again for each slice).
 Peak commit (MiB, 2 runs each; recorded, not a target):
 
-| Cache | 2 MB | 4 MB | 8 MB | 16 MB |
-|---|---:|---:|---:|---:|
-| 300 owed | 59 - 60 | 61 | 61 - 62 | 63 |
-| 187,804 owed | 156 - 157 | 159 | 163 - 165 | 172 - 174 |
+| Cache        |      2 MB | 4 MB |      8 MB |     16 MB |
+|--------------|----------:|-----:|----------:|----------:|
+| 300 owed     |   59 - 60 |   61 |   61 - 62 |        63 |
+| 187,804 owed | 156 - 157 |  159 | 163 - 165 | 172 - 174 |
 
 **`WRITE`: 4,000.** Step 7's bound is the write lock held no longer than a 2,000-picture transaction did before it:
 ~3.6 ms ((291 + 44) ms over 94 transactions at 12 workers). A picture's statements and commit now take ~0.88 µs
@@ -1210,11 +1210,11 @@ ms of 12 x ~700), ~6% on four slices (622 - 1,019 of 12 x ~1,230). `Tuning::bloc
 query buckets at run time, and the brute-force tests now also cut the scan in blocks of 97 and of the whole stage.
 Against 128, 6 pairs, join:
 
-| Block | All owed, 1 worker | All owed, 12 | Four slices, 12 |
-|---|---|---|---|
-| 32 | +1.43% [−0.28, +17.18] | −5.50% [−43.20, +15.83]; again +6.75% [−5.28, +20.03] | −6.31% [−20.03, +23.16]; again +0.82% [−15.29, +9.39] |
-| 64 | +0.62% [−1.96, +7.66] | +3.81% [−8.15, +25.79] | +0.01% [−24.56, +16.93] |
-| 256 | −0.95% [−8.43, +3.47] | −6.75% [−26.69, +10.09]; again +4.77% [−0.58, +10.78] | −6.72% [−28.90, +13.27]; again −2.28% [−7.76, +3.53] |
+| Block | All owed, 1 worker     | All owed, 12                                          | Four slices, 12                                       |
+|-------|------------------------|-------------------------------------------------------|-------------------------------------------------------|
+| 32    | +1.43% [−0.28, +17.18] | −5.50% [−43.20, +15.83]; again +6.75% [−5.28, +20.03] | −6.31% [−20.03, +23.16]; again +0.82% [−15.29, +9.39] |
+| 64    | +0.62% [−1.96, +7.66]  | +3.81% [−8.15, +25.79]                                | +0.01% [−24.56, +16.93]                               |
+| 256   | −0.95% [−8.43, +3.47]  | −6.75% [−26.69, +10.09]; again +4.77% [−0.58, +10.78] | −6.72% [−28.90, +13.27]; again −2.28% [−7.76, +3.53]  |
 
 No real gain anywhere, and the first runs' estimates turned over when run again: the starved time is the stages'
 tails, not the block's size (a block is ~0.74 ms of a thread at 12 workers, from the trace in "What the round
@@ -1229,11 +1229,11 @@ grid under the eight dihedral maps): a copy holds the library's pairs again, exa
 slices) −12.05% [−17.99, −3.86]: each slice sorts the whole stored side again. Peak commit (MiB, 12 workers, every
 picture owed through `set_owed.py`, one run each):
 
-| Library | One slice | 500,000 | 250,000 | 200,000 | 125,000 |
-|---|---:|---:|---:|---:|---:|
-| 187,808 | 173 | | | 173 | 120 (47,000) |
-| 500,000 | 413 | 413 | 311 | 291 | 259 |
-| 1,000,000 | 779 | 582 | 483 | 462 | 432 |
+| Library   | One slice | 500,000 | 250,000 | 200,000 |      125,000 |
+|-----------|----------:|--------:|--------:|--------:|-------------:|
+| 187,808   |       173 |         |         |     173 | 120 (47,000) |
+| 500,000   |       413 |     413 |     311 |     291 |          259 |
+| 1,000,000 |       779 |     582 |     483 |     462 |          432 |
 
 About 37 MiB fixed, 0.35 KB per picture of the library and 0.41 KB per owed picture of a slice (one worker against 12:
 −8 MiB). So a slice bounds the query side only: the stored side, every picture in all its orientations, is in memory in
@@ -1251,10 +1251,10 @@ result is with turbo off, so "2.3x" set a turbo-off pass against a turbo-on base
 (`cfece55`, its own `pairs_probe`, every picture owed by `pairs_again`, only the pass timed) against `fc7b1cf`, each on
 a copy of the same library at its own schema version (12 and 15), 6 alternating pairs, turbo off:
 
-| Workers | `cfece55`, ms | `fc7b1cf`, ms | Speedup |
-|---:|---|---|---:|
-| 1 | 14,798 (14,695 - 15,081) | 4,686 (4,667 - 4,859) | **3.16x** |
-| 12 | 8,600 (8,414 - 8,706) | 920 (899 - 977) | **9.34x** |
+| Workers | `cfece55`, ms            | `fc7b1cf`, ms         |   Speedup |
+|--------:|--------------------------|-----------------------|----------:|
+|       1 | 14,798 (14,695 - 15,081) | 4,686 (4,667 - 4,859) | **3.16x** |
+|      12 | 8,600 (8,414 - 8,706)    | 920 (899 - 977)       | **9.34x** |
 
 Medians, with the six runs' range. Both builds make the oracle's 5,277 pairs. Against the first round's targets: 12
 workers 5x or better, met (9.3x); one worker 3.5x or better, not met (3.2x: 4.2 s or less would meet it, and the scan
@@ -1270,11 +1270,11 @@ the keep rule.
 the team, two runs at 12 workers: the threads were busy ~8,100 ms and waited 256 - 401 ms (3 - 5%), at three
 boundaries:
 
-| Where the threads waited | Run 1 | Run 2 |
-|---|---:|---:|
-| A stage's scan ending (its last blocks on other threads) | 82 ms | 84 ms |
-| The second pass's last regions, before the scan | 155 ms | 73 ms |
-| The first pass's last blocks, before the second | 28 ms | 27 ms |
+| Where the threads waited                                 |  Run 1 | Run 2 |
+|----------------------------------------------------------|-------:|------:|
+| A stage's scan ending (its last blocks on other threads) |  82 ms | 84 ms |
+| The second pass's last regions, before the scan          | 155 ms | 73 ms |
+| The first pass's last blocks, before the second          |  28 ms | 27 ms |
 
 A scan block takes 0.74 ms of a thread on average at 12 workers (6.09 s over 8,192), not the ~0.1 ms step 9 assumed.
 Per block, the lesser of its two runs (the work, without most interference): median 625 µs, p99 985 µs, p999 1.3 ms;
@@ -1289,10 +1289,10 @@ tail.
 **The 16-lane x 16-bit kernel (step 3): not built, by the replay.** The scan's loop counts on the real hashes, one
 worker (202.7 M setups, each a stored entry's suffix of a query bucket; the suffixes 11.8 entries on average):
 
-| | 8 lanes of 32 bits (built) | 16 lanes of 16 bits |
-|---|---:|---:|
-| Iterations | 384.9 M | 247.7 M |
-| Lane slots tested | 3.08 G (77% used) | 3.96 G (60% used) |
+|                   | 8 lanes of 32 bits (built) | 16 lanes of 16 bits |
+|-------------------|---------------------------:|--------------------:|
+| Iterations        |                    384.9 M |             247.7 M |
+| Lane slots tested |          3.08 G (77% used) |   3.96 G (60% used) |
 
 A lane's head bits cost the same either way (one load, xor and nibble count per 256 bits), so 16 lanes test 29% more
 of them on these short suffixes; counting uops per iteration, 16 lanes lose at 3 and 2 head words (stages 0 - 11) and
@@ -1305,25 +1305,25 @@ records), the first pass was 270 ms reading the entries and 185 - 194 ms scatter
 scatter wrote heads, codes and keys to three arrays at 256 places each, 768 lines open against the L1's 512. Two
 layouts, 4 runs each (ms):
 
-| Layout | Scatter | Second pass: count | Place | Sort |
-|---|---:|---:|---:|---:|
-| heads, codes, keys apart (before) | 184 - 194 | 56 - 60 | 206 - 217 | 722 - 756 |
-| one record (head, code, key) | 146 - 159 | 88 - 95 | 186 - 197 | 686 - 738 |
-| one record (head, code), the key's low byte apart (kept) | 141 - 145 | 56 - 57 | 201 - 207 | 666 - 691 |
+| Layout                                                   |   Scatter | Second pass: count |     Place |      Sort |
+|----------------------------------------------------------|----------:|-------------------:|----------:|----------:|
+| heads, codes, keys apart (before)                        | 184 - 194 |            56 - 60 | 206 - 217 | 722 - 756 |
+| one record (head, code, key)                             | 146 - 159 |            88 - 95 | 186 - 197 | 686 - 738 |
+| one record (head, code), the key's low byte apart (kept) | 141 - 145 |            56 - 57 | 201 - 207 | 666 - 691 |
 
 One record cut the scatter, but the second pass then counted a region's entries by reading whole records; the key's
 low byte alone (what the second pass places by) in an array of its own keeps the count's dense read. The plan's
 software buffers, a line per high byte, would add nothing here: the block is in L2 by its size, and 512 open lines
 already fit the L1. Kept (6 pairs against `669716b`; four slices, no verdict at first, kept when run again):
 
-| Workload | Sort, ms (A → B) | Sort | Join (pass on four slices) |
-|---|---|---|---|
-| all owed, 1 worker | 737 → 681 | −7.10% [−13.13, −0.28] | −1.35% [−5.32, +5.89] |
-| all owed, 12 | 1,944 → 1,808 | −6.81% [−12.18, −4.35] | −2.02% [−22.56, +7.04] |
-| 300 owed, 1 | 218 → 205 | −6.59% [−26.47, +5.14] | −5.53% [−25.21, +9.54] |
-| 3,000 owed, 1 | 228 → 208 | −10.33% [−16.26, −6.31] | −5.02% [−14.64, −0.70] |
-| 3,000 owed, 12 | 650 → 606 | −7.42% [−16.78, −3.81] | −14.29% [−26.42, +3.20] |
-| four slices, 12 | 3,796 → 3,502 | −9.00% [−12.88, −1.90] | −2.91% [−7.51, +8.73] |
+| Workload           | Sort, ms (A → B) | Sort                    | Join (pass on four slices) |
+|--------------------|------------------|-------------------------|----------------------------|
+| all owed, 1 worker | 737 → 681        | −7.10% [−13.13, −0.28]  | −1.35% [−5.32, +5.89]      |
+| all owed, 12       | 1,944 → 1,808    | −6.81% [−12.18, −4.35]  | −2.02% [−22.56, +7.04]     |
+| 300 owed, 1        | 218 → 205        | −6.59% [−26.47, +5.14]  | −5.53% [−25.21, +9.54]     |
+| 3,000 owed, 1      | 228 → 208        | −10.33% [−16.26, −6.31] | −5.02% [−14.64, −0.70]     |
+| 3,000 owed, 12     | 650 → 606        | −7.42% [−16.78, −3.81]  | −14.29% [−26.42, +3.20]    |
+| four slices, 12    | 3,796 → 3,502    | −9.00% [−12.88, −1.90]  | −2.91% [−7.51, +8.73]      |
 
 Sort times at 12 workers are the team's thread time. The oracle's pairs are identical on all seven paths.
 

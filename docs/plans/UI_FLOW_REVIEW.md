@@ -12,41 +12,41 @@ This report lists the findings of a flow-based review of the desktop UI: the QML
 
 ## Coverage
 
-| Measure | Value |
-|---|---:|
-| Flows traced | 74 |
-| Findings | 281 |
-| Sites recorded as not flows | 18 |
+| Measure                     | Value |
+|-----------------------------|------:|
+| Flows traced                |    74 |
+| Findings                    |   281 |
+| Sites recorded as not flows |    18 |
 
 Sites recorded as not flows were not traced; the mapping output gives a reason for each one.
 
 ## Summary
 
 | Severity | Count |
-|---|---:|
-| high | 11 |
-| medium | 85 |
-| low | 185 |
+|----------|------:|
+| high     |    11 |
+| medium   |    85 |
+| low      |   185 |
 
-| Category | Count |
-|---|---:|
-| stale-state | 60 |
-| ui-logic | 60 |
-| error-display | 59 |
-| input | 44 |
-| lifecycle | 16 |
-| text | 16 |
-| race | 15 |
-| focus | 7 |
-| missing-feedback | 2 |
-| null-read | 1 |
-| stuck-busy | 1 |
+| Category         | Count |
+|------------------|------:|
+| stale-state      |    60 |
+| ui-logic         |    60 |
+| error-display    |    59 |
+| input            |    44 |
+| lifecycle        |    16 |
+| text             |    16 |
+| race             |    15 |
+| focus            |     7 |
+| missing-feedback |     2 |
+| null-read        |     1 |
+| stuck-busy       |     1 |
 
-| Verdict | Count |
-|---|---:|
-| CONFIRMED | 248 |
-| PARTIAL | 33 |
-| REFUTED | 0 |
+| Verdict   | Count |
+|-----------|------:|
+| CONFIRMED |   248 |
+| PARTIAL   |    33 |
+| REFUTED   |     0 |
 
 Duplicates: 49 findings repeat a mechanism already recorded under another ID and are marked as such.
 
@@ -54,95 +54,95 @@ Duplicates: 49 findings repeat a mechanism already recorded under another ID and
 
 These findings cite a line past the end of the file. The rest of each finding was checked where the code could be found.
 
-| Finding | Cited site |
-|---|---|
-| UI-076 | `crates/desktop/src/filters.rs:270` |
-| UI-118 | `crates/desktop/qml/StatusBar.qml:564` |
-| UI-180 | `crates/desktop/src/animation.rs:76` |
-| UI-180 | `crates/desktop/src/animation.rs:112` |
-| UI-206 | `crates/desktop/src/yandex_bridge.rs:449` |
-| UI-206 | `crates/desktop/src/yandex_bridge.rs:453` |
-| UI-206 | `crates/desktop/src/yandex_bridge.rs:455` |
-| UI-207 | `crates/desktop/src/yandex_bridge.rs:464` |
+| Finding | Cited site                                |
+|---------|-------------------------------------------|
+| UI-076  | `crates/desktop/src/filters.rs:270`       |
+| UI-118  | `crates/desktop/qml/StatusBar.qml:564`    |
+| UI-180  | `crates/desktop/src/animation.rs:76`      |
+| UI-180  | `crates/desktop/src/animation.rs:112`     |
+| UI-206  | `crates/desktop/src/yandex_bridge.rs:449` |
+| UI-206  | `crates/desktop/src/yandex_bridge.rs:453` |
+| UI-206  | `crates/desktop/src/yandex_bridge.rs:455` |
+| UI-207  | `crates/desktop/src/yandex_bridge.rs:464` |
 
 ## Flows
 
-| ID | Name | Findings |
-|---|---|---:|
-| U01 | Startup and first list | 5 |
-| U02 | Start gate: test hooks, library start, first scan refresh | 5 |
-| U03 | Window close flushes the session | 2 |
-| U04 | Command-line test hooks | 9 |
-| U05 | Screenshot settle hook | 3 |
-| U06 | Crash box on panic | 5 |
-| U07 | Live reload of QML (development) | 4 |
-| U08 | Grid keyboard keys (through the shell) | 4 |
-| U09 | Global shortcuts (inbox, log, dev mode) | 1 |
-| U10 | Select a photo by click | 2 |
-| U11 | Open the viewer by double-click | 2 |
-| U12 | Thumbnail size: Ctrl+wheel, slider, keys | 4 |
-| U13 | Grid relayout and scroll position after a resize | 2 |
-| U14 | Grid scrollbar drag | 3 |
-| U15 | Folder tree: expand and open a folder | 3 |
-| U16 | Include subfolders toggle | 3 |
-| U17 | Sort box and descending toggle | 3 |
-| U18 | Apply a saved view | 5 |
-| U19 | Save the current view (dialog) | 2 |
-| U20 | Delete a saved view | 3 |
-| U21 | Filter bar open and close, facet counts | 4 |
-| U22 | Filter facet toggles | 4 |
-| U23 | Filter bounds and name field | 3 |
-| U24 | Duplicates and border-marked choosers | 4 |
-| U25 | Clear all filters | 3 |
-| U26 | Open the library panel | 7 |
-| U27 | Add a folder through the picker | 4 |
-| U28 | Remove a folder (with confirmation) | 5 |
-| U29 | Discard a pending removal | 5 |
-| U30 | Rescan all folders | 3 |
-| U31 | Library settings toggles | 2 |
-| U32 | Scan lanes: pause a lane, open its failed count | 3 |
-| U33 | Lane progress polling | 2 |
-| U34 | Folder picker dialog navigation | 4 |
-| U35 | Save cropped copies (dialog) | 6 |
-| U36 | Cut borders from originals (dialog) | 5 |
-| U37 | Popups for refused border actions | 4 |
-| U38 | Rate a photo in the viewer (star bar, keys) | 4 |
-| U39 | Turn a photo in the viewer | 5 |
-| U40 | Mark or unmark a border (viewer N key, HUD) | 5 |
-| U41 | Show or hide borders (viewer B key) | 3 |
-| U42 | Step through pictures in the viewer (wheel, keys, swipe) | 3 |
-| U43 | Zoom, pan, fit and 1:1 in the viewer | 5 |
-| U44 | Viewer re-render: fit size and region tiles | 5 |
-| U45 | Loupe (10x under the cursor) | 4 |
-| U46 | Close the viewer | 2 |
-| U47 | Video and animation transport | 7 |
-| U48 | Find similar from the viewer | 6 |
-| U49 | Yandex search results load | 6 |
-| U50 | Pick Yandex results, shift-range pick | 4 |
-| U51 | Select all of a Yandex group | 3 |
-| U52 | Yandex full-size preview | 4 |
-| U53 | Save picked Yandex results (dialog) | 5 |
-| U54 | Close the Yandex panel and its preview | 3 |
-| U55 | Yandex thumbnails settle | 3 |
-| U56 | Mascot click | 1 |
-| U57 | Status bar toast | 4 |
-| U58 | Open the inbox (status bell, shortcut) | 4 |
-| U59 | Inbox select and details | 5 |
-| U60 | Copy an inbox entry | 7 |
-| U61 | Dismiss an inbox entry, clear all | 6 |
-| U62 | Retry an inbox entry | 4 |
-| U63 | Inbox failed-file list | 3 |
-| U64 | Reveal a file from the inbox | 5 |
-| U65 | Reveal a folder from the inbox | 4 |
-| U66 | Show failed imports | 2 |
-| U67 | Inbox read state and unread count | 2 |
-| U68 | Close the inbox | 1 |
-| U69 | Log view (dev mode) | 6 |
-| U70 | Dismiss any modal panel (Escape or background click) | 1 |
-| U71 | Preferences (settings) read and saved | 1 |
-| U72 | Controller deadlines and pauses | 3 |
-| U73 | Command-line find similar | 4 |
-| U74 | Grid thumbnails load and cells display | 3 |
+| ID  | Name                                                      | Findings |
+|-----|-----------------------------------------------------------|---------:|
+| U01 | Startup and first list                                    |        5 |
+| U02 | Start gate: test hooks, library start, first scan refresh |        5 |
+| U03 | Window close flushes the session                          |        2 |
+| U04 | Command-line test hooks                                   |        9 |
+| U05 | Screenshot settle hook                                    |        3 |
+| U06 | Crash box on panic                                        |        5 |
+| U07 | Live reload of QML (development)                          |        4 |
+| U08 | Grid keyboard keys (through the shell)                    |        4 |
+| U09 | Global shortcuts (inbox, log, dev mode)                   |        1 |
+| U10 | Select a photo by click                                   |        2 |
+| U11 | Open the viewer by double-click                           |        2 |
+| U12 | Thumbnail size: Ctrl+wheel, slider, keys                  |        4 |
+| U13 | Grid relayout and scroll position after a resize          |        2 |
+| U14 | Grid scrollbar drag                                       |        3 |
+| U15 | Folder tree: expand and open a folder                     |        3 |
+| U16 | Include subfolders toggle                                 |        3 |
+| U17 | Sort box and descending toggle                            |        3 |
+| U18 | Apply a saved view                                        |        5 |
+| U19 | Save the current view (dialog)                            |        2 |
+| U20 | Delete a saved view                                       |        3 |
+| U21 | Filter bar open and close, facet counts                   |        4 |
+| U22 | Filter facet toggles                                      |        4 |
+| U23 | Filter bounds and name field                              |        3 |
+| U24 | Duplicates and border-marked choosers                     |        4 |
+| U25 | Clear all filters                                         |        3 |
+| U26 | Open the library panel                                    |        7 |
+| U27 | Add a folder through the picker                           |        4 |
+| U28 | Remove a folder (with confirmation)                       |        5 |
+| U29 | Discard a pending removal                                 |        5 |
+| U30 | Rescan all folders                                        |        3 |
+| U31 | Library settings toggles                                  |        2 |
+| U32 | Scan lanes: pause a lane, open its failed count           |        3 |
+| U33 | Lane progress polling                                     |        2 |
+| U34 | Folder picker dialog navigation                           |        4 |
+| U35 | Save cropped copies (dialog)                              |        6 |
+| U36 | Cut borders from originals (dialog)                       |        5 |
+| U37 | Popups for refused border actions                         |        4 |
+| U38 | Rate a photo in the viewer (star bar, keys)               |        4 |
+| U39 | Turn a photo in the viewer                                |        5 |
+| U40 | Mark or unmark a border (viewer N key, HUD)               |        5 |
+| U41 | Show or hide borders (viewer B key)                       |        3 |
+| U42 | Step through pictures in the viewer (wheel, keys, swipe)  |        3 |
+| U43 | Zoom, pan, fit and 1:1 in the viewer                      |        5 |
+| U44 | Viewer re-render: fit size and region tiles               |        5 |
+| U45 | Loupe (10x under the cursor)                              |        4 |
+| U46 | Close the viewer                                          |        2 |
+| U47 | Video and animation transport                             |        7 |
+| U48 | Find similar from the viewer                              |        6 |
+| U49 | Yandex search results load                                |        6 |
+| U50 | Pick Yandex results, shift-range pick                     |        4 |
+| U51 | Select all of a Yandex group                              |        3 |
+| U52 | Yandex full-size preview                                  |        4 |
+| U53 | Save picked Yandex results (dialog)                       |        5 |
+| U54 | Close the Yandex panel and its preview                    |        3 |
+| U55 | Yandex thumbnails settle                                  |        3 |
+| U56 | Mascot click                                              |        1 |
+| U57 | Status bar toast                                          |        4 |
+| U58 | Open the inbox (status bell, shortcut)                    |        4 |
+| U59 | Inbox select and details                                  |        5 |
+| U60 | Copy an inbox entry                                       |        7 |
+| U61 | Dismiss an inbox entry, clear all                         |        6 |
+| U62 | Retry an inbox entry                                      |        4 |
+| U63 | Inbox failed-file list                                    |        3 |
+| U64 | Reveal a file from the inbox                              |        5 |
+| U65 | Reveal a folder from the inbox                            |        4 |
+| U66 | Show failed imports                                       |        2 |
+| U67 | Inbox read state and unread count                         |        2 |
+| U68 | Close the inbox                                           |        1 |
+| U69 | Log view (dev mode)                                       |        6 |
+| U70 | Dismiss any modal panel (Escape or background click)      |        1 |
+| U71 | Preferences (settings) read and saved                     |        1 |
+| U72 | Controller deadlines and pauses                           |        3 |
+| U73 | Command-line find similar                                 |        4 |
+| U74 | Grid thumbnails load and cells display                    |        3 |
 
 ## U01: Startup and first list
 

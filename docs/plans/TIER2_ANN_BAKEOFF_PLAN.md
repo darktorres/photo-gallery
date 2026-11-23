@@ -73,9 +73,9 @@ The run starts at `validate`, because `tune` refuses to run until `cache/ann/val
 The 27 USearch configurations (M 16/32/64 × ef_add 128/256/512 × f32/f16/i8) are the only open cost lever. The full
 grid is 64 configurations: 1 exact, 9 GPU IVF, 27 USearch, 4 FAISS HNSW, 19 FAISS IVF and 4 NN-descent.
 
-| Option | Total run time |
-|---|---|
-| Keep the 64-configuration grid | ~2–7 h (guess) |
+| Option                                                                                                                                       | Total run time   |
+|----------------------------------------------------------------------------------------------------------------------------------------------|------------------|
+| Keep the 64-configuration grid                                                                                                               | ~2–7 h (guess)   |
 | **Recommended:** USearch M 16/32 × ef_add 128/256 × f32/i8 (8 configurations), plus f16 and M 64 as single extra points at the best settings | ~1.5–2 h (guess) |
 
 The totals are guesses, not derived from the cap. The cap bounds each sweep at 10 minutes. The 27 USearch sweeps take

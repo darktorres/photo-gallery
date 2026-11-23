@@ -29,16 +29,16 @@ read fine. They are left out of the old sums below, which therefore come to 15.1
 
 **15.15 G instructions in 85 threads → 3.70 G in 60 threads (−75.5%).**
 
-| Thread | Before | Now | What changed |
-|---|---:|---:|---|
-| catalog reader | 10.90 G | 1.43 G | the grid's list 10.25 G → 1.32 G; the folder tree 656 M → 115 M |
-| main | 1.24 G | 0.78 G | QML created when first needed; a cheaper Direct3D 9 probe; one regression (below) |
-| QSGRenderThread | 1.18 G | 0.10 G | renders with the app's device instead of making its own |
-| gpu device (was "video decoding") | 0.93 G | 0.92 G | now the app's only D3D11 device |
-| QQmlThread | 0.30 G | 0.30 G | QML type loading, unchanged |
-| unnamed (65 → 42 threads) | 0.37 G | 0.13 G | mostly NVIDIA's driver worker; varies with the frame count |
-| Thread (pooled) | 0.21 G | 0.03 G | mostly timing: 42 thumbnails served before `ready` then, 6 now |
-| others | 0.01 G | 0.00 G | vsync, pixmap reader; the WASAPI probe threads are gone |
+| Thread                            |  Before |    Now | What changed                                                                      |
+|-----------------------------------|--------:|-------:|-----------------------------------------------------------------------------------|
+| catalog reader                    | 10.90 G | 1.43 G | the grid's list 10.25 G → 1.32 G; the folder tree 656 M → 115 M                   |
+| main                              |  1.24 G | 0.78 G | QML created when first needed; a cheaper Direct3D 9 probe; one regression (below) |
+| QSGRenderThread                   |  1.18 G | 0.10 G | renders with the app's device instead of making its own                           |
+| gpu device (was "video decoding") |  0.93 G | 0.92 G | now the app's only D3D11 device                                                   |
+| QQmlThread                        |  0.30 G | 0.30 G | QML type loading, unchanged                                                       |
+| unnamed (65 → 42 threads)         |  0.37 G | 0.13 G | mostly NVIDIA's driver worker; varies with the frame count                        |
+| Thread (pooled)                   |  0.21 G | 0.03 G | mostly timing: 42 thumbnails served before `ready` then, 6 now                    |
+| others                            |  0.01 G | 0.00 G | vsync, pixmap reader; the WASAPI probe threads are gone                           |
 
 Across all threads, `D3D11CreateDevice` is called once instead of twice, and NVIDIA's signature scans
 (`imagehlp!RabinKarpFindPatternInBuffer`) dropped from 11 (2.01 G) to 5 (0.89 G).
@@ -47,11 +47,11 @@ Across all threads, `D3D11CreateDevice` is called once instead of twice, and NVI
 
 ### catalog reader, 1,435 M
 
-| Item | Instructions |
-|---|---:|
-| `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) | 1,317 M |
-| `browse::folder_tree` (`.../read/tree.rs`) | 115 M |
-| opening the connection | 2 M |
+| Item                                                           | Instructions |
+|----------------------------------------------------------------|-------------:|
+| `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) |      1,317 M |
+| `browse::folder_tree` (`.../read/tree.rs`)                     |        115 M |
+| opening the connection                                         |          2 M |
 
 - **The grid's list** has no sort and no collation left. SQLite reads the 189,518 rows from `files_order`: 667 M in
   the VM's own code (`sqlite3VdbeExec`, mostly decoding records), three B-tree lookups per row for the joins
@@ -63,13 +63,13 @@ Across all threads, `D3D11CreateDevice` is called once instead of twice, and NVI
 
 ### gpu device, 924 M
 
-| Item | Instructions |
-|---|---:|
-| `D3D11CreateDevice` | 922 M |
-| — NVIDIA's loader checking its signature (`OpenAdapter10_2` → `CryptQueryObject`) | 733 M |
-| — the rest of the device | 188 M |
-| DXGI factory and adapter | 1 M |
-| the AV1 decoder query (`GetVideoDecoderProfileCount`) | 0.13 M |
+| Item                                                                              | Instructions |
+|-----------------------------------------------------------------------------------|-------------:|
+| `D3D11CreateDevice`                                                               |        922 M |
+| — NVIDIA's loader checking its signature (`OpenAdapter10_2` → `CryptQueryObject`) |        733 M |
+| — the rest of the device                                                          |        188 M |
+| DXGI factory and adapter                                                          |          1 M |
+| the AV1 decoder query (`GetVideoDecoderProfileCount`)                             |       0.13 M |
 
 NVIDIA's loader (`nvldumdx.dll`) calls `CryptQueryObject` three times while it opens the adapter, and once more from
 `nvwgf2umx.dll`. Each call reads a DLL's embedded signature (`GetEmbeddedPKCS7`), which scans the whole file for
@@ -78,22 +78,22 @@ every device a process makes; making one device is the most the app can do.
 
 ### main, 778 M
 
-| Item | Instructions |
-|---|---:|
-| `QQmlApplicationEngine::load` | 385 M |
-| — Qt's first font fallback query (`QFontEngineMulti::ensureFallbackFamiliesQueried`) | 215 M |
-| — QML objects, bindings and text layout | ~170 M |
-| `pg::show_windows` | 181 M |
-| — window creation (`WindowCreationData::create`) | 166 M |
-| — of which the Direct3D 9 probe (`Direct3DCreate9`), one signature scan 152 M | 165 M |
-| `state::init` (now `App::open`, `crates/app/src/app.rs`) | 94 M |
-| — `thumbs::heal` (now `heal` in `crates/thumbcache/src/lib.rs`) | 91 M |
-| — `Catalog::open` | 2.5 M |
-| event loop up to `ready` (`QCoreApplication::exec`) | 75 M |
-| — the views' delegates (24 `createItem`, and 42 items their Repeaters make) | 63 M |
-| — `layout::justify` (now `justify_into`, `crates/client/src/layout.rs`), two passes over 189,518 aspects | 6 M |
-| `QGuiApplication` and `QQmlApplicationEngine` | 21 M |
-| process start before `main` (the DLL loader) | 18 M |
+| Item                                                                                                     | Instructions |
+|----------------------------------------------------------------------------------------------------------|-------------:|
+| `QQmlApplicationEngine::load`                                                                            |        385 M |
+| — Qt's first font fallback query (`QFontEngineMulti::ensureFallbackFamiliesQueried`)                     |        215 M |
+| — QML objects, bindings and text layout                                                                  |       ~170 M |
+| `pg::show_windows`                                                                                       |        181 M |
+| — window creation (`WindowCreationData::create`)                                                         |        166 M |
+| — of which the Direct3D 9 probe (`Direct3DCreate9`), one signature scan 152 M                            |        165 M |
+| `state::init` (now `App::open`, `crates/app/src/app.rs`)                                                 |         94 M |
+| — `thumbs::heal` (now `heal` in `crates/thumbcache/src/lib.rs`)                                          |         91 M |
+| — `Catalog::open`                                                                                        |        2.5 M |
+| event loop up to `ready` (`QCoreApplication::exec`)                                                      |         75 M |
+| — the views' delegates (24 `createItem`, and 42 items their Repeaters make)                              |         63 M |
+| — `layout::justify` (now `justify_into`, `crates/client/src/layout.rs`), two passes over 189,518 aspects |          6 M |
+| `QGuiApplication` and `QQmlApplicationEngine`                                                            |         21 M |
+| process start before `main` (the DLL loader)                                                             |         18 M |
 
 - **The font fallback query.** The first text with a character the main font lacks makes Qt ask for the fallback
   families: `QWindowsDirectWriteFontDatabase::fallbacksForFamily` → `populateFamily` for 184 families, creating a
@@ -115,17 +115,17 @@ every device a process makes; making one device is the most the app can do.
 
 Qt's type loader, on its own thread; the load waits for it.
 
-| Item | Instructions |
-|---|---:|
-| type registration of the imported modules (2,622 types from 18 modules) | 106 M |
-| — Qt Quick Templates | 47 M |
-| — Qt Quick | 30 M |
-| — Qt Quick Controls impl | 13 M |
-| — Qt Multimedia | 5 M |
-| — Layouts, Fusion impl, QtQml.Models and the rest | 11 M |
-| qrc lookups for the file selector (`QQmlFileSelectorInterceptor` → `QFileSelector::select`, 179 URLs) | 72 M |
-| — `QResourceRoot::findNode`, 62,580 calls | 65 M |
-| the rest: imports, qmldir lookups, type resolution, the 49 compiled units | ~125 M |
+| Item                                                                                                  | Instructions |
+|-------------------------------------------------------------------------------------------------------|-------------:|
+| type registration of the imported modules (2,622 types from 18 modules)                               |        106 M |
+| — Qt Quick Templates                                                                                  |         47 M |
+| — Qt Quick                                                                                            |         30 M |
+| — Qt Quick Controls impl                                                                              |         13 M |
+| — Qt Multimedia                                                                                       |          5 M |
+| — Layouts, Fusion impl, QtQml.Models and the rest                                                     |         11 M |
+| qrc lookups for the file selector (`QQmlFileSelectorInterceptor` → `QFileSelector::select`, 179 URLs) |         72 M |
+| — `QResourceRoot::findNode`, 62,580 calls                                                             |         65 M |
+| the rest: imports, qmldir lookups, type resolution, the 49 compiled units                             |       ~125 M |
 
 ### QSGRenderThread, 104 M, and NVIDIA's driver worker, 93 M
 
@@ -137,13 +137,13 @@ Qt rendering until the list arrives, so the count is far higher than at normal s
 
 ### The rest, about 70 M
 
-| Threads | Instructions |
-|---|---:|
-| image providers (10 pooled threads) | 28.5 M |
-| — opening a catalog connection on each (`Catalog::open`, 2.26 M each) | 22.6 M |
-| Windows' thread pool at process start (the DLL loader's parallel work) | 21 M |
-| small NVIDIA driver threads, COM's RPC thread | ~10 M |
-| QDxgiVSyncThread, QQuickPixmapReader, thumbnail cache | ~4 M |
+| Threads                                                                | Instructions |
+|------------------------------------------------------------------------|-------------:|
+| image providers (10 pooled threads)                                    |       28.5 M |
+| — opening a catalog connection on each (`Catalog::open`, 2.26 M each)  |       22.6 M |
+| Windows' thread pool at process start (the DLL loader's parallel work) |         21 M |
+| small NVIDIA driver threads, COM's RPC thread                          |        ~10 M |
+| QDxgiVSyncThread, QQuickPixmapReader, thumbnail cache                  |         ~4 M |
 
 A catalog connection costs 2.26 M to open, against 0.88 M before: `execute_batch`'s first statement makes SQLite
 parse the schema, which tracked work's triggers and indexes made larger.
@@ -156,16 +156,16 @@ its thumbnail cache (189,518 thumbnails at 220 px, 2 GB), release build, timesta
 
 ### Before
 
-| Step | Cold | Warm | On the GUI thread? |
-|---|---|---|---|
-| Process start → `main` (DLLs) | 0.3 s | 0.03 s | — |
-| D3D11 AV1 probe (`video_decoding`) | 0.33 s | 0.32 s | yes, before anything |
-| `state::init`: `SELECT sum(bytes) FROM thumbs` | **10.7 s** | 0.46 s | yes, **before any window** |
-| `engine.load` until `onCompleted` | 3.0 s | 2.1 s | yes |
-| — of which Qt Multimedia's hardware probe | 1.36 s | 1.36 s | yes |
-| `onCompleted`: the grid's list (`list_files`, 189k rows) and layout | 1.0 s | 0.75 s | yes |
-| **First frame** | **15.4 s** | **3.7 s** | |
-| The job's `pending()`, holding the cache mutex the thumbnails need | 1.7 s | 1.6 s | no, but it blocks them |
+| Step                                                                | Cold       | Warm      | On the GUI thread?         |
+|---------------------------------------------------------------------|------------|-----------|----------------------------|
+| Process start → `main` (DLLs)                                       | 0.3 s      | 0.03 s    | —                          |
+| D3D11 AV1 probe (`video_decoding`)                                  | 0.33 s     | 0.32 s    | yes, before anything       |
+| `state::init`: `SELECT sum(bytes) FROM thumbs`                      | **10.7 s** | 0.46 s    | yes, **before any window** |
+| `engine.load` until `onCompleted`                                   | 3.0 s      | 2.1 s     | yes                        |
+| — of which Qt Multimedia's hardware probe                           | 1.36 s     | 1.36 s    | yes                        |
+| `onCompleted`: the grid's list (`list_files`, 189k rows) and layout | 1.0 s      | 0.75 s    | yes                        |
+| **First frame**                                                     | **15.4 s** | **3.7 s** |                            |
+| The job's `pending()`, holding the cache mutex the thumbnails need  | 1.7 s      | 1.6 s     | no, but it blocks them     |
 
   Note 2026-11-06: the names in this section have since changed. `state::init` is not in the tree, and the cache file is
   `thumbs.sqlite` (`crates/thumbcache/src/lib.rs:130`), not `thumbs-v3.sqlite`. The measurements stand as recorded.
@@ -203,15 +203,15 @@ The same catalog copy, with the new cache filled (`gallery thumbs --height 220`,
 at idle priority). "First" is the first run after a new build, whose pages and the catalog's weren't in
 Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
 
-| Step | First | Warm |
-|---|---|---|
-| Process start → `main` | 0.07 s | 0.02 s |
-| `state::init` (the totals are one row) | 0.01 s | 0.01 s |
-| Qt starts, the D3D11 probe (on a thread) joined | 0.38 s | 0.33 s |
-| `engine.load` (no Qt probe: both lists set) | 1.33 s | 0.70 s |
-| **First frame**, "Loading…" | **1.80 s** | **1.07 s** |
-| The grid's list, read off the GUI thread, shown | 4.5 s | 2.2 s |
-| `gallery thumbs` with nothing pending: open, heal, `pending()`, all of it | 1.0 s | |
+| Step                                                                      | First      | Warm       |
+|---------------------------------------------------------------------------|------------|------------|
+| Process start → `main`                                                    | 0.07 s     | 0.02 s     |
+| `state::init` (the totals are one row)                                    | 0.01 s     | 0.01 s     |
+| Qt starts, the D3D11 probe (on a thread) joined                           | 0.38 s     | 0.33 s     |
+| `engine.load` (no Qt probe: both lists set)                               | 1.33 s     | 0.70 s     |
+| **First frame**, "Loading…"                                               | **1.80 s** | **1.07 s** |
+| The grid's list, read off the GUI thread, shown                           | 4.5 s      | 2.2 s      |
+| `gallery thumbs` with nothing pending: open, heal, `pending()`, all of it | 1.0 s      |            |
 
 - **The window paints 3.5× sooner warm, and no longer waits for the disk.** Nothing before the first frame
   reads the cache or the files; the catalog's only read there is opening it.

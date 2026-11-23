@@ -78,11 +78,11 @@ To actually compute the de-duplication, we loop over the entire dataset using al
 
 *[Table and Algorithm 1, transcribed. The table is captioned "Table 1" on the page; the text calls it Table 5.]*
 
-| Index | Duplicates Found | Precision |
-|---|---|---|
-| ViT-L-14 MSE (GPU, M16) | 624,636,782 | .91 |
-| ViT-L-14 SNIP (GPU, M16) | 640,402,551 | .92 |
-| ViT-H-14 SNIP (CPU, M4) | 682,146,751 | .91 |
+| Index                    | Duplicates Found | Precision |
+|--------------------------|------------------|-----------|
+| ViT-L-14 MSE (GPU, M16)  | 624,636,782      | .91       |
+| ViT-L-14 SNIP (GPU, M16) | 640,402,551      | .92       |
+| ViT-H-14 SNIP (CPU, M4)  | 682,146,751      | .91       |
 
 Table 1. De-duplication of L2B. The top two indices were sharded over 4-GPUs, with M=16 and the ViT-L-14 network. Below
 is on ViT-H-14 features, on the cpu and not sharded. Note, the precisions aren't directly comparable here as we use

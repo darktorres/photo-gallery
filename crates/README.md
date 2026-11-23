@@ -209,35 +209,35 @@ module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI run
 The crates were `core` (`pg-core`), `ingest` (`pg-ingest`), `desktop`, `gallery`, `testkit` and `bench` before the
 refactor. The dated logs in `docs/` keep the old paths; the table is for reading them.
 
-| Before (under `crates/`) | Now |
-|---|---|
-| `core/src/{date,format,media,orientation,path,detection,analysis,state,view,pdq}.rs` (the types) | `model/src/` (the same names; `pdq.rs` is the PDQ record, the hasher is in `analysis`) |
-| `core/src/query.rs` | the query's types in `model/src/query.rs`, its SQL in `query/src/lib.rs` |
-| `core/src/catalog.rs` | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `queue.rs`, `dups.rs`) |
-| `core/src/browse.rs`, `browse/` | `catalog/src/browse.rs`, `catalog/src/browse/` |
-| `core/src/analyze.rs`, `borders.rs`, `pdq.rs` | `analysis/src/` (the same names) |
-| `core/src/pdq_index.rs` | gone: the all-pairs join is `dedup/src/join.rs`, run by the pairing pass (`import/src/pairs.rs`) |
-| `core/src/decode.rs`, `codecs.rs`, `pixels.rs`, `resize.rs`, `animation.rs` | `codec/src/` (the same names); the animation player is `render/src/player.rs` |
-| `core/src/maker.rs`, `display.rs` | `render/src/` (the same names) |
-| `core/src/rotate.rs`, `crop.rs` | `edit/src/` (the same names) |
-| `core/src/rewrite.rs` | `codec/src/rewrite.rs` (with its modules in `codec/src/rewrite/`) |
-| `core/src/container.rs` | `container/src/lib.rs` |
-| `core/src/metadata.rs` | `metadata/src/lib.rs` |
-| `core/src/video.rs` | `video/src/lib.rs` |
-| `core/src/layout.rs` | `client/src/layout.rs` |
-| `core/src/thumbs.rs` | `thumbs/` (the pass); the cache is `thumbcache` |
-| `core/src/verbatim.rs` | `platform/src/native.rs` (the verbatim paths) |
-| `core/src/yandex.rs` | `app/src/yandex.rs` (the search); the HTTP client is `yandex` |
-| `core/examples/stage_times.rs` | `analysis/examples/stage_times.rs` |
-| `ingest/src/{import,scan,writeback,thumbs}.rs` | `import/`, `scan/`, `writeback/` and `thumbs/` (the crates of those names) |
-| `ingest/src/{runner,borders,crop,dups}.rs` | `library/src/runner.rs`; the passes `borders/src/lib.rs` and `crop/src/lib.rs` (crates of their own); `dups` with its report in `cli/src/dups.rs`, and the borders report in `cli/src/borders.rs` |
-| `ingest/src/pipeline.rs`, `control.rs` | `jobs/src/` (the same names) |
-| `ingest/src/cli.rs` | `cli/src/lib.rs` |
-| `ingest/tests/*` | `library/tests/*` |
-| `desktop/src/loader.rs` | `app/src/reader.rs` (the catalog reads off the UI thread) |
-| `desktop/src/state.rs` | `app/src/images.rs` (the image work behind the providers) |
-| `desktop/src/yandex.rs`, `library.rs`, `animation.rs` | `desktop/src/bridges/` (the Qt bridges), with the logic in `app/src/yandex.rs`, `app/src/library.rs` and `render/src/player.rs` |
-| `desktop/src/*` (the rest), `gallery/src/main.rs`, `testkit`, `bench` | the same paths |
+| Before (under `crates/`)                                                                         | Now                                                                                                                                                                                               |
+|--------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `core/src/{date,format,media,orientation,path,detection,analysis,state,view,pdq}.rs` (the types) | `model/src/` (the same names; `pdq.rs` is the PDQ record, the hasher is in `analysis`)                                                                                                            |
+| `core/src/query.rs`                                                                              | the query's types in `model/src/query.rs`, its SQL in `query/src/lib.rs`                                                                                                                          |
+| `core/src/catalog.rs`                                                                            | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `queue.rs`, `dups.rs`)                                                                                                   |
+| `core/src/browse.rs`, `browse/`                                                                  | `catalog/src/browse.rs`, `catalog/src/browse/`                                                                                                                                                    |
+| `core/src/analyze.rs`, `borders.rs`, `pdq.rs`                                                    | `analysis/src/` (the same names)                                                                                                                                                                  |
+| `core/src/pdq_index.rs`                                                                          | gone: the all-pairs join is `dedup/src/join.rs`, run by the pairing pass (`import/src/pairs.rs`)                                                                                                  |
+| `core/src/decode.rs`, `codecs.rs`, `pixels.rs`, `resize.rs`, `animation.rs`                      | `codec/src/` (the same names); the animation player is `render/src/player.rs`                                                                                                                     |
+| `core/src/maker.rs`, `display.rs`                                                                | `render/src/` (the same names)                                                                                                                                                                    |
+| `core/src/rotate.rs`, `crop.rs`                                                                  | `edit/src/` (the same names)                                                                                                                                                                      |
+| `core/src/rewrite.rs`                                                                            | `codec/src/rewrite.rs` (with its modules in `codec/src/rewrite/`)                                                                                                                                 |
+| `core/src/container.rs`                                                                          | `container/src/lib.rs`                                                                                                                                                                            |
+| `core/src/metadata.rs`                                                                           | `metadata/src/lib.rs`                                                                                                                                                                             |
+| `core/src/video.rs`                                                                              | `video/src/lib.rs`                                                                                                                                                                                |
+| `core/src/layout.rs`                                                                             | `client/src/layout.rs`                                                                                                                                                                            |
+| `core/src/thumbs.rs`                                                                             | `thumbs/` (the pass); the cache is `thumbcache`                                                                                                                                                   |
+| `core/src/verbatim.rs`                                                                           | `platform/src/native.rs` (the verbatim paths)                                                                                                                                                     |
+| `core/src/yandex.rs`                                                                             | `app/src/yandex.rs` (the search); the HTTP client is `yandex`                                                                                                                                     |
+| `core/examples/stage_times.rs`                                                                   | `analysis/examples/stage_times.rs`                                                                                                                                                                |
+| `ingest/src/{import,scan,writeback,thumbs}.rs`                                                   | `import/`, `scan/`, `writeback/` and `thumbs/` (the crates of those names)                                                                                                                        |
+| `ingest/src/{runner,borders,crop,dups}.rs`                                                       | `library/src/runner.rs`; the passes `borders/src/lib.rs` and `crop/src/lib.rs` (crates of their own); `dups` with its report in `cli/src/dups.rs`, and the borders report in `cli/src/borders.rs` |
+| `ingest/src/pipeline.rs`, `control.rs`                                                           | `jobs/src/` (the same names)                                                                                                                                                                      |
+| `ingest/src/cli.rs`                                                                              | `cli/src/lib.rs`                                                                                                                                                                                  |
+| `ingest/tests/*`                                                                                 | `library/tests/*`                                                                                                                                                                                 |
+| `desktop/src/loader.rs`                                                                          | `app/src/reader.rs` (the catalog reads off the UI thread)                                                                                                                                         |
+| `desktop/src/state.rs`                                                                           | `app/src/images.rs` (the image work behind the providers)                                                                                                                                         |
+| `desktop/src/yandex.rs`, `library.rs`, `animation.rs`                                            | `desktop/src/bridges/` (the Qt bridges), with the logic in `app/src/yandex.rs`, `app/src/library.rs` and `render/src/player.rs`                                                                   |
+| `desktop/src/*` (the rest), `gallery/src/main.rs`, `testkit`, `bench`                            | the same paths                                                                                                                                                                                    |
 
 ## Build
 

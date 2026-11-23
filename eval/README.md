@@ -167,25 +167,25 @@ Every script here fails one of two ways:
 
 ## Outputs (in the work dir)
 
-| File | Contents |
-|---|---|
-| `files.txt` | Canonical image list; row i of every embedding file is line i |
-| `emb_<model>.npy`, `ok_<model>.npy` | L2-normalized fp16 embeddings; load-success mask (`<model>_trim`: `--trim`) |
-| `results_<model>.json` | Recall@k and operating points (threshold for 80/90/95/98% recall) |
-| `misses_<model>.csv` | Labeled duplicate pairs the model scores lowest |
-| `hard_negatives_<model>.csv` | Non-duplicate pairs the model scores highest |
-| `review_<model>.csv` | Unlabeled pairs above the 95%-recall threshold, for hand-labeling precision |
-| `unpaired_pairs_<model>.csv` | Best match of each loose `dups2` file (`mutual` = each other's best) |
-| `synth_<model>.json` | Retrieval of originals after synthetic edits |
-| `verify_<model>.csv`, `.json` | Verifier decision and measurements per pair; confusion table |
-| `verify_<model>/<id>.jpg` | Verifier diagnostic per pair: reference · aligned + color-mapped · residual |
-| `verify_cross_<model>.csv`, `.json`, `/` | The same for the cross-group negative set |
-| `verify_knn_<model>.csv`, `.json`, `/` | The same for real k-NN candidate pairs (labeled where known) |
+| File                                     | Contents                                                                              |
+|------------------------------------------|---------------------------------------------------------------------------------------|
+| `files.txt`                              | Canonical image list; row i of every embedding file is line i                         |
+| `emb_<model>.npy`, `ok_<model>.npy`      | L2-normalized fp16 embeddings; load-success mask (`<model>_trim`: `--trim`)           |
+| `results_<model>.json`                   | Recall@k and operating points (threshold for 80/90/95/98% recall)                     |
+| `misses_<model>.csv`                     | Labeled duplicate pairs the model scores lowest                                       |
+| `hard_negatives_<model>.csv`             | Non-duplicate pairs the model scores highest                                          |
+| `review_<model>.csv`                     | Unlabeled pairs above the 95%-recall threshold, for hand-labeling precision           |
+| `unpaired_pairs_<model>.csv`             | Best match of each loose `dups2` file (`mutual` = each other's best)                  |
+| `synth_<model>.json`                     | Retrieval of originals after synthetic edits                                          |
+| `verify_<model>.csv`, `.json`            | Verifier decision and measurements per pair; confusion table                          |
+| `verify_<model>/<id>.jpg`                | Verifier diagnostic per pair: reference · aligned + color-mapped · residual           |
+| `verify_cross_<model>.csv`, `.json`, `/` | The same for the cross-group negative set                                             |
+| `verify_knn_<model>.csv`, `.json`, `/`   | The same for real k-NN candidate pairs (labeled where known)                          |
 | `verify_synth_<model>.csv`, `.json`, `/` | The same for original vs synthetic edited copy (label = the edit; `--prefix` renames) |
-| `groups_<model>.json` | `group.py`: edge counts, scores against the labels, and the groups (largest first) |
-| `quality_pdq.npy` | PDQ's own hash quality score per image (0–100) |
-| `synth_pdq.json` | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors |
-| `bench_decode.json` | Decode pipelines: img/s and SSCD cosine vs the PIL reference |
-| `bench_hdd.json` | Read order on the HDD: files/s and MB/s per order, layout correlations |
-| `bench_thumbs.json`, `_zoneplate.png` | Thumbnails: resize scores, bytes / score / ms per format and quality, SSCD re-use |
-| `bench_semantic.json` | CLIP / SigLIP 2 encoders: params, img/s (torch fp16, TensorRT fp16), cosine vs fp32 |
+| `groups_<model>.json`                    | `group.py`: edge counts, scores against the labels, and the groups (largest first)    |
+| `quality_pdq.npy`                        | PDQ's own hash quality score per image (0–100)                                        |
+| `synth_pdq.json`                         | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors                |
+| `bench_decode.json`                      | Decode pipelines: img/s and SSCD cosine vs the PIL reference                          |
+| `bench_hdd.json`                         | Read order on the HDD: files/s and MB/s per order, layout correlations                |
+| `bench_thumbs.json`, `_zoneplate.png`    | Thumbnails: resize scores, bytes / score / ms per format and quality, SSCD re-use     |
+| `bench_semantic.json`                    | CLIP / SigLIP 2 encoders: params, img/s (torch fp16, TensorRT fp16), cosine vs fp32   |

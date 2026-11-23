@@ -27,13 +27,13 @@ a Playwright browser session on the same test image (a generated 64×64 PNG).
 
 Measured with the same URLs and the same test image:
 
-| Client | Sites p0 | Sites p1 | Similar |
-|---|---|---|---|
-| Browser (Chrome, Playwright) | 160 records | 155 | 55 items |
-| Probe, no cookies | 118 records (79 unique sources) | 0 | 40 items |
-| Probe, homepage visited first (`yandex.com/`, cookie jar) | 118 | not measured | 40 |
-| Probe, `yp` cookie with screen metrics only | **160** | 0 | **55** |
-| Probe, `yp` + `spravka` | not measured | **155** | not measured |
+| Client                                                    | Sites p0                        | Sites p1     | Similar      |
+|-----------------------------------------------------------|---------------------------------|--------------|--------------|
+| Browser (Chrome, Playwright)                              | 160 records                     | 155          | 55 items     |
+| Probe, no cookies                                         | 118 records (79 unique sources) | 0            | 40 items     |
+| Probe, homepage visited first (`yandex.com/`, cookie jar) | 118                             | not measured | 40           |
+| Probe, `yp` cookie with screen metrics only               | **160**                         | 0            | **55**       |
+| Probe, `yp` + `spravka`                                   | not measured                    | **155**      | not measured |
 
 - **Not the cause:** HTTP/1.1 vs HTTP/2 (curl gives the same 118), compression, and browser-like request headers.
 - **`yp` cookie.** The browser's JavaScript writes screen metrics into `yp`, in the shape `<ts>.szm.1:WxH:WxH`.
@@ -58,10 +58,10 @@ the Sites list above was the wrong target for group 1:
 - **Measured on a public-domain photo** (Fronalpstock, Wikimedia Commons, 14.6 MB JPEG), same settings for both
   runs (`SIMILAR_PAGES_TO_DOWNLOAD = 5`):
 
-| Run | Other sizes | Similar |
-|---|---|---|
+| Run                     | Other sizes                 | Similar                                                           |
+|-------------------------|-----------------------------|-------------------------------------------------------------------|
 | As written (no cookies) | **18** (largest 10109×4542) | 40, page 1 fails (`Unexpected API response structure … 'blocks'`) |
-| With `yp` cookie (szm) | **18** | **55**, page 1 fails the same way |
+| With `yp` cookie (szm)  | **18**                      | **55**, page 1 fails the same way                                 |
 
 - **Group 1 needs no cookie.** The other-sizes block is in the initial HTML, and the count matched with and
   without `yp`.

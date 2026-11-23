@@ -27,14 +27,14 @@ paper name are from that paper. Measured figures are as recorded when measured; 
 
 ### Hardware budget (this machine)
 
-| Resource | Spec | Implication |
-|---|---|---|
-| CPU | i7-8700, 6C/12T, AVX2 (no AVX-512) | Decode, hashing and ANN search compete for 6 cores |
-| RAM | 64 GB | 70M float vectors do **not** fit (72 GB at 512-d fp16), so we need compressed or quantized indexes |
-| GPU | RTX 2060, **6 GB**, Turing sm_75, fp16/int8 tensor cores | Fine for inference with batched fp16/int8 TensorRT; too small to hold the vector index |
-| E: | 22 TB Exos HDD, 21.4 TB used (assumed to be the library) | **The full read is the bottleneck**: about 1–3 days, and only sequential, ordered reads are fast |
-| D: | 2 TB NVMe, **222 GB free** (2026-11-14; 116 GB on 2026-11-12, 802 GB on 2026-10-28) | Holds the catalog, vectors, ANN index and thumbnails. At 222 GB free, the 72 GB embedding store of §6 would fit, with little room to spare |
-| C: | **23 GB free** (2026-11-14; 65 GB on 2026-11-12, 22 GB on 2026-10-28) | Put **nothing** of ours here; no caches in `%LOCALAPPDATA%` |
+| Resource | Spec                                                                                | Implication                                                                                                                                |
+|----------|-------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| CPU      | i7-8700, 6C/12T, AVX2 (no AVX-512)                                                  | Decode, hashing and ANN search compete for 6 cores                                                                                         |
+| RAM      | 64 GB                                                                               | 70M float vectors do **not** fit (72 GB at 512-d fp16), so we need compressed or quantized indexes                                         |
+| GPU      | RTX 2060, **6 GB**, Turing sm_75, fp16/int8 tensor cores                            | Fine for inference with batched fp16/int8 TensorRT; too small to hold the vector index                                                     |
+| E:       | 22 TB Exos HDD, 21.4 TB used (assumed to be the library)                            | **The full read is the bottleneck**: about 1–3 days, and only sequential, ordered reads are fast                                           |
+| D:       | 2 TB NVMe, **222 GB free** (2026-11-14; 116 GB on 2026-11-12, 802 GB on 2026-10-28) | Holds the catalog, vectors, ANN index and thumbnails. At 222 GB free, the 72 GB embedding store of §6 would fit, with little room to spare |
+| C:       | **23 GB free** (2026-11-14; 65 GB on 2026-11-12, 22 GB on 2026-10-28)               | Put **nothing** of ours here; no caches in `%LOCALAPPDATA%`                                                                                |
 
 ---
 
@@ -127,13 +127,13 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 
 ## 5. Duplicate detection tiers
 
-| Tier | Signal | Catches | Index | Size at 70M (est.) |
-|---|---|---|---|---|
-| 0a | File-byte hash | Identical files | SQLite index | ~1 GB |
-| 0b | Decoded-pixel hash | Same pixels, different metadata or container | SQLite index | ~1 GB |
-| 1 | PDQ 256-bit (the 4 orientations are stored per file in `analysis.pdq_dihedral`, 4 × 32 bytes, and a query probes 8 variants) | Re-sizes (Pinterest 236x/474x/736x/originals), recompressions, mirrors and 90° rotations, light crops | Multi-index hashing: pigeonhole split → exact search within radius r | ~2.2 GB RAM |
-| 2 | Copy-detection embedding (SSCD baseline) | **Crops, edits, overlays, filters** | ANN radius search vs cluster heads + augmentation | see below |
-| 3 | Verifier on uncertain pairs | Rejects false positives; confirms heavy crops | — | — |
+| Tier | Signal                                                                                                                       | Catches                                                                                               | Index                                                                | Size at 70M (est.) |
+|------|------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|--------------------|
+| 0a   | File-byte hash                                                                                                               | Identical files                                                                                       | SQLite index                                                         | ~1 GB              |
+| 0b   | Decoded-pixel hash                                                                                                           | Same pixels, different metadata or container                                                          | SQLite index                                                         | ~1 GB              |
+| 1    | PDQ 256-bit (the 4 orientations are stored per file in `analysis.pdq_dihedral`, 4 × 32 bytes, and a query probes 8 variants) | Re-sizes (Pinterest 236x/474x/736x/originals), recompressions, mirrors and 90° rotations, light crops | Multi-index hashing: pigeonhole split → exact search within radius r | ~2.2 GB RAM        |
+| 2    | Copy-detection embedding (SSCD baseline)                                                                                     | **Crops, edits, overlays, filters**                                                                   | ANN radius search vs cluster heads + augmentation                    | see below          |
+| 3    | Verifier on uncertain pairs                                                                                                  | Rejects false positives; confirms heavy crops                                                         | —                                                                    | —                  |
 
 **Status (2026-11-14):** tiers 0a, 0b and 1 are built (`pg-dedup`, `pg-catalog`). The `dups` command groups them by
 plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in Rust; their prototypes are
@@ -193,14 +193,14 @@ plain connected components (`pg-dedup`'s `UnionFind`). Tiers 2 and 3 are not in 
 
 ## 6. Storage layout (D:)
 
-| Store | Tech | Size at 70M (est.) |
-|---|---|---|
-| Catalog: files, hashes, ratings, tags, groups, pair decisions, pipeline versions | SQLite (WAL), `rusqlite` | 20–30 GB |
-| Embeddings (source of truth) | Flat memory-mapped fp16 file, row = catalog id | ~72 GB |
-| ANN index | USearch or FAISS file | 3–30 GB |
-| PDQ multi-index | Rebuilt in RAM at startup from the catalog | (RAM) |
-| Thumbnail cache | **One SQLite file**, `thumbs.sqlite` (WAL): entries and JPEGs in separate tables, keyed by (file, height) | Byte cap, default 50 GB; least recently used evicted |
-| ThumbHash placeholders | Table `placeholders` in the catalog | ~2 GB |
+| Store                                                                            | Tech                                                                                                      | Size at 70M (est.)                                   |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|------------------------------------------------------|
+| Catalog: files, hashes, ratings, tags, groups, pair decisions, pipeline versions | SQLite (WAL), `rusqlite`                                                                                  | 20–30 GB                                             |
+| Embeddings (source of truth)                                                     | Flat memory-mapped fp16 file, row = catalog id                                                            | ~72 GB                                               |
+| ANN index                                                                        | USearch or FAISS file                                                                                     | 3–30 GB                                              |
+| PDQ multi-index                                                                  | Rebuilt in RAM at startup from the catalog                                                                | (RAM)                                                |
+| Thumbnail cache                                                                  | **One SQLite file**, `thumbs.sqlite` (WAL): entries and JPEGs in separate tables, keyed by (file, height) | Byte cap, default 50 GB; least recently used evicted |
+| ThumbHash placeholders                                                           | Table `placeholders` in the catalog                                                                       | ~2 GB                                                |
 
 **Thumbnails (user decision, 2026-10-30):** made by a **background task after the import**, never during it,
 at the size the grid currently uses. The size is **adjustable at runtime**: changing it queues new

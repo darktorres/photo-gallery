@@ -307,19 +307,19 @@ PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026
 
 ## Comparison
 
-| | A: own engine | B: libmpv |
-|---|---|---|
-| Our code | ~6–8k lines + C++ item and shaders | C++ item and bridge, bindings, watchdogs + mpv build |
-| FFmpeg copies | one (ours) | one (way 1) or two (way 2) |
-| Toolchain and runtime added | qsb (Creator's, or built once) | MSYS2 + meson, 23 MSYS2 DLLs + vulkan-1 + 6 FFmpeg DLLs, 210 MB (way 1) |
-| Hardware fallback | ours: table, decoder by name, 3 errors, watchdog | mpv's, plus our AV1 check and a watchdog |
-| HDR | our BT.2390 + HLG OOTF; DV 8.4 as HLG, no profile 5 | gl_video BT.2390; DV as base layer |
-| Audio device changes | ours | mpv's, plus a re-select when reopening fails |
-| Odd files | depends on us | mature |
-| Gallery-specific control | full | through mpv options |
-| Neighbour preloading | built in | a second core per neighbour |
-| Animations | same pipeline | our decoders, our upload |
-| Upstream risk | FFmpeg API only | new (0.42.0), "limited" render API |
+|                             | A: own engine                                       | B: libmpv                                                               |
+|-----------------------------|-----------------------------------------------------|-------------------------------------------------------------------------|
+| Our code                    | ~6–8k lines + C++ item and shaders                  | C++ item and bridge, bindings, watchdogs + mpv build                    |
+| FFmpeg copies               | one (ours)                                          | one (way 1) or two (way 2)                                              |
+| Toolchain and runtime added | qsb (Creator's, or built once)                      | MSYS2 + meson, 23 MSYS2 DLLs + vulkan-1 + 6 FFmpeg DLLs, 210 MB (way 1) |
+| Hardware fallback           | ours: table, decoder by name, 3 errors, watchdog    | mpv's, plus our AV1 check and a watchdog                                |
+| HDR                         | our BT.2390 + HLG OOTF; DV 8.4 as HLG, no profile 5 | gl_video BT.2390; DV as base layer                                      |
+| Audio device changes        | ours                                                | mpv's, plus a re-select when reopening fails                            |
+| Odd files                   | depends on us                                       | mature                                                                  |
+| Gallery-specific control    | full                                                | through mpv options                                                     |
+| Neighbour preloading        | built in                                            | a second core per neighbour                                             |
+| Animations                  | same pipeline                                       | our decoders, our upload                                                |
+| Upstream risk               | FFmpeg API only                                     | new (0.42.0), "limited" render API                                      |
 
 ## Validation (2026-11-14)
 

@@ -13,16 +13,16 @@ Seeded by [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) (item C2).
 
 ## How to read this
 
-| Section | What it holds |
-| --- | --- |
-| [Why](#why), [Goal](#goal-and-accepted-exceptions) | the measured problems, and what the plan promises |
-| [Design](#design) | the parts and how they work: the writer, opening the `Database`, the command thread, the Qt-side values, startup |
-| [Rules](#rules) | R1 to R10, which the rest of the document cites |
-| [Build order](#build-order) | Parts 1 to 6, in dependency order, and the tests |
-| [Shutdown](#shutdown) | closing the window, the system ending the session, and the shutdown's steps |
-| [Inventory](#inventory) | every site on the GUI thread today, and where each goes |
-| [Measurements](#measurements) | the numbers behind [Why](#why) |
-| [Open](#open) | what is not settled, and what was checked against the code |
+| Section                                            | What it holds                                                                                                    |
+|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| [Why](#why), [Goal](#goal-and-accepted-exceptions) | the measured problems, and what the plan promises                                                                |
+| [Design](#design)                                  | the parts and how they work: the writer, opening the `Database`, the command thread, the Qt-side values, startup |
+| [Rules](#rules)                                    | R1 to R10, which the rest of the document cites                                                                  |
+| [Build order](#build-order)                        | Parts 1 to 6, in dependency order, and the tests                                                                 |
+| [Shutdown](#shutdown)                              | closing the window, the system ending the session, and the shutdown's steps                                      |
+| [Inventory](#inventory)                            | every site on the GUI thread today, and where each goes                                                          |
+| [Measurements](#measurements)                      | the numbers behind [Why](#why)                                                                                   |
+| [Open](#open)                                      | what is not settled, and what was checked against the code                                                       |
 
 **Reasons.** Each choice is given with its reason where it is described. There is no separate list of decisions.
 
@@ -33,15 +33,15 @@ The site lists come from grepping `crates/desktop/src` for `app::get()` and from
 
 **Words used with one meaning.**
 
-| Word | Meaning | Not to be confused with |
-| --- | --- | --- |
-| the writer | the catalog's one writing thread | *the write-back*, which writes image files; *the preferences writer*, which writes the preferences file |
-| command | an edit the GUI sends to the command thread | the controller's own `Command` enum (`crates/client`), named in full; a *request*, which is a call to one of Part 5's workers; a *model command*, a closure queued to the gallery model that has not yet made a command |
-| pending | an edit the user made that is not yet acked or failed. An added folder is pending from the click, before its command is sent | the catalog's `files.pending` (the "pending files" of the Measurements); an entry's `pending_turns`, the turn queued in `file_writes` |
-| revision | the catalog's revision of Part 1 | |
-| worker | any thread that is not the GUI thread and not the writer | |
-| session | always qualified: the `Reader`'s session, the saved session (the listing the window reopens with), or the operating system's session | |
-| mark | always qualified: a border mark on a picture, the pending mark of R4, one of the preparation's version marks, or Part 2b's "checkpoint due" | |
+| Word       | Meaning                                                                                                                                     | Not to be confused with                                                                                                                                                                                                 |
+|------------|---------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| the writer | the catalog's one writing thread                                                                                                            | *the write-back*, which writes image files; *the preferences writer*, which writes the preferences file                                                                                                                 |
+| command    | an edit the GUI sends to the command thread                                                                                                 | the controller's own `Command` enum (`crates/client`), named in full; a *request*, which is a call to one of Part 5's workers; a *model command*, a closure queued to the gallery model that has not yet made a command |
+| pending    | an edit the user made that is not yet acked or failed. An added folder is pending from the click, before its command is sent                | the catalog's `files.pending` (the "pending files" of the Measurements); an entry's `pending_turns`, the turn queued in `file_writes`                                                                                   |
+| revision   | the catalog's revision of Part 1                                                                                                            |                                                                                                                                                                                                                         |
+| worker     | any thread that is not the GUI thread and not the writer                                                                                    |                                                                                                                                                                                                                         |
+| session    | always qualified: the `Reader`'s session, the saved session (the listing the window reopens with), or the operating system's session        |                                                                                                                                                                                                                         |
+| mark       | always qualified: a border mark on a picture, the pending mark of R4, one of the preparation's version marks, or Part 2b's "checkpoint due" |                                                                                                                                                                                                                         |
 
 ## Why
 
@@ -111,18 +111,18 @@ Change(...)          ◄───────────────  the chang
 By crate. `pg-catalog` may depend only on `dbfile`, `log`, `model`, `platform` and `query` (`tools/crate-layers.txt`),
 so it knows nothing of commands, the bus, the job or the write-back.
 
-| Component | Crate | What it is |
-| --- | --- | --- |
-| `Database` | `pg-catalog` | The one way the app, the command-line tool and the tests open a catalog file. It owns the file's shared hold, starts the writer and the watcher, and hands out read connections and the writer's handle. See [Opening the `Database`](#opening-the-database). |
-| The writer | `pg-catalog` | One thread with the one writable connection. See [The writer](#the-writer). |
-| Read connections | `pg-catalog` | Every other connection, opened `query_only`. |
-| The watcher | `pg-catalog` | One thread with its own read connection, started only when the `Database` is given a function to report to. With the writer it notices another process's writes (R3a). |
-| The thread role, `Stop`, the panic marker | `pg-platform` | Three small things `pg-catalog` must be able to use without `pg_jobs`. |
-| Command thread | `pg_app` | One thread that owns the GUI's commands: it coalesces them (R6), runs each as an edit-class write, and does what follows a commit. |
-| Point lane | `pg_app` | A FIFO executor with its own thread and read connection, opened at startup. It serves details, entry, `file_path`, views and roots. It never drops a request and never waits on the writer (a WAL read). It keeps its page cache. After stop it answers each queued request with an error. |
-| Listing lane | `pg_app` | The existing `Reader`, unchanged in behaviour (`crates/app/src/reader.rs:209-238`: the newest request per Reader session and kind replaces the waiting one and cancels the running one). Its connection becomes a read connection. |
-| Providers | `pg_app`, desktop | The image providers read through `Images` and the catalog pool on their own threads, as today (`crates/app/src/images.rs`). They do not use the point lane, so its one thread is not a bottleneck for them. |
-| Probe threads, the control lane, the pool | `pg_app` | Part 5's workers: see [Part 5](#part-5-the-worker-items). |
+| Component                                 | Crate             | What it is                                                                                                                                                                                                                                                                                 |
+|-------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Database`                                | `pg-catalog`      | The one way the app, the command-line tool and the tests open a catalog file. It owns the file's shared hold, starts the writer and the watcher, and hands out read connections and the writer's handle. See [Opening the `Database`](#opening-the-database).                              |
+| The writer                                | `pg-catalog`      | One thread with the one writable connection. See [The writer](#the-writer).                                                                                                                                                                                                                |
+| Read connections                          | `pg-catalog`      | Every other connection, opened `query_only`.                                                                                                                                                                                                                                               |
+| The watcher                               | `pg-catalog`      | One thread with its own read connection, started only when the `Database` is given a function to report to. With the writer it notices another process's writes (R3a).                                                                                                                     |
+| The thread role, `Stop`, the panic marker | `pg-platform`     | Three small things `pg-catalog` must be able to use without `pg_jobs`.                                                                                                                                                                                                                     |
+| Command thread                            | `pg_app`          | One thread that owns the GUI's commands: it coalesces them (R6), runs each as an edit-class write, and does what follows a commit.                                                                                                                                                         |
+| Point lane                                | `pg_app`          | A FIFO executor with its own thread and read connection, opened at startup. It serves details, entry, `file_path`, views and roots. It never drops a request and never waits on the writer (a WAL read). It keeps its page cache. After stop it answers each queued request with an error. |
+| Listing lane                              | `pg_app`          | The existing `Reader`, unchanged in behaviour (`crates/app/src/reader.rs:209-238`: the newest request per Reader session and kind replaces the waiting one and cancels the running one). Its connection becomes a read connection.                                                         |
+| Providers                                 | `pg_app`, desktop | The image providers read through `Images` and the catalog pool on their own threads, as today (`crates/app/src/images.rs`). They do not use the point lane, so its one thread is not a bottleneck for them.                                                                                |
+| Probe threads, the control lane, the pool | `pg_app`          | Part 5's workers: see [Part 5](#part-5-the-worker-items).                                                                                                                                                                                                                                  |
 
 **Read connections.** Every connection but the writer's is opened with `PRAGMA query_only = ON`, so SQLite refuses a
 write on it. `Catalog.conn` is `pub(crate)`, so nothing outside the crate can switch the pragma off. A read connection
@@ -162,21 +162,21 @@ closure's result and the revision. The GUI thread never calls it (R8).
 
 **Classes**, served in this order, first in first out inside each:
 
-| Class | Who | Why this place |
-| --- | --- | --- |
-| edits | the command thread | what the user is watching |
-| service | the write-back's and the inbox's writes | small and few |
-| job | the job's passes, the preparation's marks, the command-line tool's writes, the fixtures' | what can wait |
+| Class   | Who                                                                                      | Why this place            |
+|---------|------------------------------------------------------------------------------------------|---------------------------|
+| edits   | the command thread                                                                       | what the user is watching |
+| service | the write-back's and the inbox's writes                                                  | small and few             |
+| job     | the job's passes, the preparation's marks, the command-line tool's writes, the fixtures' | what can wait             |
 
 Edits come at a person's pace and service writes are small, so the job is not starved.
 
 **The result.** `write` returns `Result<(T, Revision), WriteError<E>>`, where `E` is the closure's own error type:
 
-| `WriteError` | Meaning |
-| --- | --- |
-| `Stopped` | the call ended while waiting; nothing was written |
-| `Failed(E)` | the closure returned its error; the transaction was rolled back |
-| `Catalog(_)` | beginning or committing failed |
+| `WriteError` | Meaning                                                         |
+|--------------|-----------------------------------------------------------------|
+| `Stopped`    | the call ended while waiting; nothing was written               |
+| `Failed(E)`  | the closure returned its error; the transaction was rolled back |
+| `Catalog(_)` | beginning or committing failed                                  |
 
 So `Stopped` is a variant of its own and is never looked for inside an error chain: a walk of the chain would miss it
 wherever an error is flattened (Part 1). The passes' closures return `anyhow` errors today
@@ -199,15 +199,15 @@ has no such type today.
   its stop between them, as `checkpoint_within` does (`control.rs:192-208`). The busy handler checks the current call's
   stop the same way; it reaches it through a slot, since the handler itself is `Send + 'static`.
 
-| Caller | Its stop | Grace | Notes |
-| --- | --- | --- | --- |
-| command thread | its own stop | none | By then its queue is empty, or the quit did not wait for it ([Shutdown](#shutdown), step 1). In Parts 1 to 3 each command also carries a 5 s deadline (Part 1). |
-| the job's passes | a new quit flag on `Control` | 4 s | Below. |
-| the write-back | its `Service`'s quit | 4 s | So a `write_done` after a finished copy is not dropped. Its `process`, `finish_copy` and `keep_turn_in_catalog` do not receive the `Waker` today (`crates/writeback/src/lib.rs:411`, `:579`, `:649`, `:697`); the stop is passed to them. |
-| the inbox | its close | 5 s | The drain (`crates/app/src/inbox.rs:79`), which `report_lost` (`inbox.rs:901`) uses too. Its stop is a `bool` under a mutex today, with the deadline set lazily (`inbox.rs:455`); it becomes the same flag type. |
-| `Database::open` | the one its caller passes | none | Part 1, R9. |
-| the command-line tool, the tests | never | | |
-| no call current (the close's `TRUNCATE`) | | gives up after 5 s | Today's timeout. |
+| Caller                                   | Its stop                     | Grace              | Notes                                                                                                                                                                                                                                     |
+|------------------------------------------|------------------------------|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| command thread                           | its own stop                 | none               | By then its queue is empty, or the quit did not wait for it ([Shutdown](#shutdown), step 1). In Parts 1 to 3 each command also carries a 5 s deadline (Part 1).                                                                           |
+| the job's passes                         | a new quit flag on `Control` | 4 s                | Below.                                                                                                                                                                                                                                    |
+| the write-back                           | its `Service`'s quit         | 4 s                | So a `write_done` after a finished copy is not dropped. Its `process`, `finish_copy` and `keep_turn_in_catalog` do not receive the `Waker` today (`crates/writeback/src/lib.rs:411`, `:579`, `:649`, `:697`); the stop is passed to them. |
+| the inbox                                | its close                    | 5 s                | The drain (`crates/app/src/inbox.rs:79`), which `report_lost` (`inbox.rs:901`) uses too. Its stop is a `bool` under a mutex today, with the deadline set lazily (`inbox.rs:455`); it becomes the same flag type.                          |
+| `Database::open`                         | the one its caller passes    | none               | Part 1, R9.                                                                                                                                                                                                                               |
+| the command-line tool, the tests         | never                        |                    |                                                                                                                                                                                                                                           |
+| no call current (the close's `TRUNCATE`) |                              | gives up after 5 s | Today's timeout.                                                                                                                                                                                                                          |
 
 - *Why a grace.* A stop that ended a write at once would drop what today gets 5 s to commit: the job's final flush and
   the lease's release, whenever the writer is briefly busy. A lease left unreleased makes a restart within 60 s wait on
@@ -301,11 +301,11 @@ every read connection open only after step 6. With another process already open 
 
 **The waits at open, and their stop.** Three things can wait behind another process:
 
-| Wait | Mechanism | Ends on |
-| --- | --- | --- |
-| the preparer's lock (step 1) | the file-lock layer's loop of 100 tries 50 ms apart (`crates/dbfile/src/lock.rs:12-13`, `:29-37`) | the open's stop, which `Lock::take` takes for the catalog |
-| the migration step's `BEGIN` (step 2) | SQLite's busy handler | the open's stop, which the handler's slot holds from step 3 until the open returns |
-| the marks (step 5) | the writer's queue and busy handler | the open's stop, which each `write` carries |
+| Wait                                  | Mechanism                                                                                         | Ends on                                                                            |
+|---------------------------------------|---------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| the preparer's lock (step 1)          | the file-lock layer's loop of 100 tries 50 ms apart (`crates/dbfile/src/lock.rs:12-13`, `:29-37`) | the open's stop, which `Lock::take` takes for the catalog                          |
+| the migration step's `BEGIN` (step 2) | SQLite's busy handler                                                                             | the open's stop, which the handler's slot holds from step 3 until the open returns |
+| the marks (step 5)                    | the writer's queue and busy handler                                                               | the open's stop, which each `write` carries                                        |
 
 - Only the preparer's lock can wait in the file-lock layer: the shared hold is taken while that lock is held, and the
   only exclusive taker is `prepare` itself (`core.rs:92`), which does not wait. A preparer holds its lock for as long as
@@ -407,12 +407,12 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
 
 **How the open can end.**
 
-| The worker reports | The GUI thread |
-| --- | --- |
-| Ready | loads the main content |
-| a failed open | shows the native error box, then leaves through `QCoreApplication::exit(1)` |
-| a stopped open | shows no box and runs the ordinary shutdown |
-| anything, after a close before Ready | loads nothing, shows no box, and runs the ordinary shutdown |
+| The worker reports                   | The GUI thread                                                              |
+|--------------------------------------|-----------------------------------------------------------------------------|
+| Ready                                | loads the main content                                                      |
+| a failed open                        | shows the native error box, then leaves through `QCoreApplication::exit(1)` |
+| a stopped open                       | shows no box and runs the ordinary shutdown                                 |
+| anything, after a close before Ready | loads nothing, shows no box, and runs the ordinary shutdown                 |
 
 - *A failed open.* Today it is fatal before Qt exists: a native error box, then `process::exit(1)`
   (`crates/desktop/src/lib.rs:164-166`, `alert.rs`). There is no app and so no inbox for a notice. It uses
@@ -436,13 +436,13 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   request, as the `Reader` does, would drop results; it does neither ([Components](#components)).
 - **R2, every stored value carries its revision and only moves forward; a change that a result missed is read again.**
 
-  | Stored value | Read by | Applies when | Read again on |
-  | --- | --- | --- | --- |
-  | the grid's listing; the listing held under the viewer | listing lane | its revision is at least the held listing's | `Scanned`, `Imported`, a refresh of everything |
-  | one entry of a listing | an ack, or the point lane | its revision is at least that entry's own (the sparse map) or, without one, the listing's | a file change above its revision; a note |
-  | a details slot | point lane | its revision is at least the slot's | a file change above its revision; a note; a listing applied above its revision; the slot's file changing |
-  | the folder tree, the facets | listing lane | its generation is the newest asked for (`folders.rs:174-199`, `filters.rs:154-183`) | `Scanned` (tree), a filter change (facets), a refresh of everything |
-  | the saved views, the roots | an ack, or the point lane | its revision is at least the held one | a refresh of everything |
+  | Stored value                                          | Read by                   | Applies when                                                                              | Read again on                                                                                            |
+  |-------------------------------------------------------|---------------------------|-------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+  | the grid's listing; the listing held under the viewer | listing lane              | its revision is at least the held listing's                                               | `Scanned`, `Imported`, a refresh of everything                                                           |
+  | one entry of a listing                                | an ack, or the point lane | its revision is at least that entry's own (the sparse map) or, without one, the listing's | a file change above its revision; a note                                                                 |
+  | a details slot                                        | point lane                | its revision is at least the slot's                                                       | a file change above its revision; a note; a listing applied above its revision; the slot's file changing |
+  | the folder tree, the facets                           | listing lane              | its generation is the newest asked for (`folders.rs:174-199`, `filters.rs:154-183`)       | `Scanned` (tree), a filter change (facets), a refresh of everything                                      |
+  | the saved views, the roots                            | an ack, or the point lane | its revision is at least the held one                                                     | a refresh of everything                                                                                  |
 
   - *Forward only.* A result or an ack applies only if its revision is at least the held one. A refused result is always
     older than what is held. So a roots read made before a folder's removal cannot land over the removal's ack.
@@ -556,13 +556,13 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
     the ack's revision. It goes to the stored layer under R2, and the command leaves the pending set. A command that
     changed nothing is acked with the revision it read.
 
-    | Command | Its ack carries |
-    | --- | --- |
-    | a file command (rate, turn, border mark) | the file's entry. For a file in no listing the GUI holds it has nowhere to apply; the command just leaves the pending set |
-    | saving or deleting a view | the saved views, whole (`views().all()` already returns them, `crates/app/src/views.rs:46-63`) |
-    | the session's save | nothing |
-    | adding a folder | the roots, the root's normalized path and whether it was added, as `add_folder` returns today (`crates/app/src/library.rs:298`, used at `desktop/src/library.rs:212-223`) |
-    | removing a folder | the roots and the removed root's path |
+    | Command                                  | Its ack carries                                                                                                                                                           |
+    |------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+    | a file command (rate, turn, border mark) | the file's entry. For a file in no listing the GUI holds it has nowhere to apply; the command just leaves the pending set                                                 |
+    | saving or deleting a view                | the saved views, whole (`views().all()` already returns them, `crates/app/src/views.rs:46-63`)                                                                            |
+    | the session's save                       | nothing                                                                                                                                                                   |
+    | adding a folder                          | the roots, the root's normalized path and whether it was added, as `add_folder` returns today (`crates/app/src/library.rs:298`, used at `desktop/src/library.rs:212-223`) |
+    | removing a folder                        | the roots and the removed root's path                                                                                                                                     |
 
   - *A command that fails* leaves the pending set, and the stored value shows again. No read is needed: the stored layer
     never held the failed value. The user is told as today, by the edit's failure notice (`edit_failed`,
@@ -691,14 +691,14 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
 
 Parts are in dependency order: no part uses what a later one builds, and the app works after each one.
 
-| Part | Builds | Why here |
-| --- | --- | --- |
-| 1 | the `Database`, the writer, read-only connections, the revision, the command thread | Everything else stands on it: the revision is bumped in one place only once there is one writer. It makes the pool read-only, so the GUI's writes need the command thread at once |
-| 2 | the import's pairing outside its transaction; the checkpoint, if measured to be needed | The pairing would otherwise hold the writer |
-| 3 | the read side: reads that return their revision, the point lane, R2, the change payloads, startup | A write whose result the GUI cannot read back consistently is worse than a write that waits |
-| 4 | the GUI stops waiting: the pending set, the mark, the close | It needs Part 3's revisions |
-| 5 | the file, lock and log work that is still on the GUI thread | Independent of the catalog |
-| 6 | enforcement and visibility | The checks forbid what Parts 1 to 5 removed |
+| Part | Builds                                                                                            | Why here                                                                                                                                                                          |
+|------|---------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1    | the `Database`, the writer, read-only connections, the revision, the command thread               | Everything else stands on it: the revision is bumped in one place only once there is one writer. It makes the pool read-only, so the GUI's writes need the command thread at once |
+| 2    | the import's pairing outside its transaction; the checkpoint, if measured to be needed            | The pairing would otherwise hold the writer                                                                                                                                       |
+| 3    | the read side: reads that return their revision, the point lane, R2, the change payloads, startup | A write whose result the GUI cannot read back consistently is worse than a write that waits                                                                                       |
+| 4    | the GUI stops waiting: the pending set, the mark, the close                                       | It needs Part 3's revisions                                                                                                                                                       |
+| 5    | the file, lock and log work that is still on the GUI thread                                       | Independent of the catalog                                                                                                                                                        |
+| 6    | enforcement and visibility                                                                        | The checks forbid what Parts 1 to 5 removed                                                                                                                                       |
 
 ### Part 1, the `Database`: one writer, read-only connections, the revision
 
@@ -707,20 +707,20 @@ give the design. This part says what moves onto them and what changes on the way
 
 **Every site that opens a connection or begins a write transaction:**
 
-| Today | Site | Becomes |
-| --- | --- | --- |
-| the job's connection, kept between rounds | `round`, `crates/library/src/runner.rs` | a read connection; each pass's transactions are `write(job, ...)` |
-| the scan | `lease.tx()`, `crates/scan/src/lib.rs:623`; `begin_scan`, `finish_scan`, `mark_missing` and `folder_refused`, `crates/catalog/src/roots.rs:79-163`; the pairing tiers, `crates/catalog/src/pair.rs:266-283` | job writes; the lease is below. `pair_after_scan`, `in_batches` (`pair.rs:79`, `:266-283`) and `mark_missing` (`roots.rs:118-155`) mix reads with several write transactions, so they take a read connection, the writer's handle, the class and the stop |
-| the import | `catalog.tx()`, `crates/import/src/lib.rs:51` | one job write per flush (Part 2a) |
-| the borders pass | `catalog.tx()`, `crates/borders/src/lib.rs:61` | job writes |
-| the thumbnail pass | its own `Catalog::open`, `crates/thumbs/src/lib.rs:202` | a read connection; its only catalog writes are the failure ledger's (`record_failures`, `clear_failures`), which are job writes. The cache's attach stays as it is ([Components](#components)) |
-| the write-back | its own connection, `crates/writeback/src/lib.rs:326`; `fault.rs:73-74` | a read connection; `write_done` and the queue's writes are service writes |
-| the inbox | its own connection, `crates/app/src/inbox.rs:742` | a read connection; each step stays its own transaction, as today (`inbox.rs:813-849`), and is one service write |
-| the listing lane | `crates/app/src/reader.rs:172` | a read connection |
-| the GUI's pool writes | `crates/app/src/edit.rs:29`, `:36`; `views.rs:42`, `:52`, `:57`; `library.rs:300`, `:315`, `:338` | commands (below) |
-| the pool | `Catalogs::with_catalog`, `crates/app/src/catalogs.rs:38-43` | read connections only |
-| the keeper | `pg_library::open_catalog`, `crates/app/src/app.rs:62` | `Database::open`; the writer's connection takes its place |
-| the command-line tool | `pg_library::open_catalog`, `crates/cli/src/lib.rs:136` | `Database::open` |
+| Today                                     | Site                                                                                                                                                                                                        | Becomes                                                                                                                                                                                                                                                   |
+|-------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| the job's connection, kept between rounds | `round`, `crates/library/src/runner.rs`                                                                                                                                                                     | a read connection; each pass's transactions are `write(job, ...)`                                                                                                                                                                                         |
+| the scan                                  | `lease.tx()`, `crates/scan/src/lib.rs:623`; `begin_scan`, `finish_scan`, `mark_missing` and `folder_refused`, `crates/catalog/src/roots.rs:79-163`; the pairing tiers, `crates/catalog/src/pair.rs:266-283` | job writes; the lease is below. `pair_after_scan`, `in_batches` (`pair.rs:79`, `:266-283`) and `mark_missing` (`roots.rs:118-155`) mix reads with several write transactions, so they take a read connection, the writer's handle, the class and the stop |
+| the import                                | `catalog.tx()`, `crates/import/src/lib.rs:51`                                                                                                                                                               | one job write per flush (Part 2a)                                                                                                                                                                                                                         |
+| the borders pass                          | `catalog.tx()`, `crates/borders/src/lib.rs:61`                                                                                                                                                              | job writes                                                                                                                                                                                                                                                |
+| the thumbnail pass                        | its own `Catalog::open`, `crates/thumbs/src/lib.rs:202`                                                                                                                                                     | a read connection; its only catalog writes are the failure ledger's (`record_failures`, `clear_failures`), which are job writes. The cache's attach stays as it is ([Components](#components))                                                            |
+| the write-back                            | its own connection, `crates/writeback/src/lib.rs:326`; `fault.rs:73-74`                                                                                                                                     | a read connection; `write_done` and the queue's writes are service writes                                                                                                                                                                                 |
+| the inbox                                 | its own connection, `crates/app/src/inbox.rs:742`                                                                                                                                                           | a read connection; each step stays its own transaction, as today (`inbox.rs:813-849`), and is one service write                                                                                                                                           |
+| the listing lane                          | `crates/app/src/reader.rs:172`                                                                                                                                                                              | a read connection                                                                                                                                                                                                                                         |
+| the GUI's pool writes                     | `crates/app/src/edit.rs:29`, `:36`; `views.rs:42`, `:52`, `:57`; `library.rs:300`, `:315`, `:338`                                                                                                           | commands (below)                                                                                                                                                                                                                                          |
+| the pool                                  | `Catalogs::with_catalog`, `crates/app/src/catalogs.rs:38-43`                                                                                                                                                | read connections only                                                                                                                                                                                                                                     |
+| the keeper                                | `pg_library::open_catalog`, `crates/app/src/app.rs:62`                                                                                                                                                      | `Database::open`; the writer's connection takes its place                                                                                                                                                                                                 |
+| the command-line tool                     | `pg_library::open_catalog`, `crates/cli/src/lib.rs:136`                                                                                                                                                     | `Database::open`                                                                                                                                                                                                                                          |
 
 Crops are not in the table: `pg_crop::save` only reads the catalog (`crates/crop/src/lib.rs:68-78`). Outside
 `pg-catalog` the calls to `Catalog::open`, `prepare` or `open_catalog`, tests included, number about 30 in `library`, 8
@@ -841,15 +841,15 @@ thread runs on the prepared connection before it moves it to the writer; and the
 
 **How long one transaction can be.** A new edit waits for the transaction in progress. The known ones:
 
-| Transaction | Size | Hold |
-| --- | --- | --- |
-| import flush | 500 files (`crates/import/src/lib.rs:18`) | 0.19 to 0.56 s once Part 2a is in; 2.0 to 2.5 s before it (release) |
-| scan batch | 10,000 entries, and a larger folder is one batch (`crates/scan/src/lib.rs:136-138`) | not measured; the test's bound is 3 s in debug (`:1306`) |
-| borders | 500 (`crates/borders/src/lib.rs:22`) | not measured |
-| pairing tiers, `mark_missing` | 1,000 (`crates/catalog/src/types.rs:85`) | not measured; tier 2's first batch runs a `SELECT DISTINCT volume` inside it (`pair.rs:128-131`) |
-| thumbs ledger | 200, or every 2 s (`crates/thumbs/src/lib.rs:27`, `:30`) | small |
-| `remove_root` | one `UPDATE` over the folder | 2.3 to 3.6 s (debug, the larger root) |
-| the preparation's marks, in another process | every file row, twice | seconds; not measured |
+| Transaction                                 | Size                                                                                | Hold                                                                                             |
+|---------------------------------------------|-------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| import flush                                | 500 files (`crates/import/src/lib.rs:18`)                                           | 0.19 to 0.56 s once Part 2a is in; 2.0 to 2.5 s before it (release)                              |
+| scan batch                                  | 10,000 entries, and a larger folder is one batch (`crates/scan/src/lib.rs:136-138`) | not measured; the test's bound is 3 s in debug (`:1306`)                                         |
+| borders                                     | 500 (`crates/borders/src/lib.rs:22`)                                                | not measured                                                                                     |
+| pairing tiers, `mark_missing`               | 1,000 (`crates/catalog/src/types.rs:85`)                                            | not measured; tier 2's first batch runs a `SELECT DISTINCT volume` inside it (`pair.rs:128-131`) |
+| thumbs ledger                               | 200, or every 2 s (`crates/thumbs/src/lib.rs:27`, `:30`)                            | small                                                                                            |
+| `remove_root`                               | one `UPDATE` over the folder                                                        | 2.3 to 3.6 s (debug, the larger root)                                                            |
+| the preparation's marks, in another process | every file row, twice                                                               | seconds; not measured                                                                            |
 
 **The revision.** One number for the whole catalog. A sequence kept by the GUI's commands alone could not order the
 import's, the scan's and the removal's writes, and a read must be able to say which writes it includes. A migration adds
@@ -1129,11 +1129,11 @@ thread's in Part 5.
 The file, lock and log work that the GUI thread still does moves off it. See [Not the
 catalog](#not-the-catalog-but-on-the-gui-thread--worker-part-5). Three kinds of worker take it:
 
-| Worker | For | Order |
-| --- | --- | --- |
-| a probe thread, one per probe | a file or volume probe that can hang on a dead drive: an add's checks (R7), the picker's start folder | none: a probe is never queued behind another and holds nothing else back. One that never returns is abandoned at exit |
-| the control lane, one thread | every request that changes the library job: the thumbnail height, pause, the saving of crops, a wake, a rescan's scans | in the order the GUI made them. On a pool, two heights or a pause and an unpause could be applied reversed: the height is last-writer-wins (`crates/library/src/runner.rs`, `HeightCell::set`) and pause is a toggle (`desktop/src/library.rs:245-249`) |
-| the pool | blocking work that depends on nothing else: joining an old animation player, opening a video's file, the non-native picker's folder listing | none |
+| Worker                        | For                                                                                                                                         | Order                                                                                                                                                                                                                                                   |
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| a probe thread, one per probe | a file or volume probe that can hang on a dead drive: an add's checks (R7), the picker's start folder                                       | none: a probe is never queued behind another and holds nothing else back. One that never returns is abandoned at exit                                                                                                                                   |
+| the control lane, one thread  | every request that changes the library job: the thumbnail height, pause, the saving of crops, a wake, a rescan's scans                      | in the order the GUI made them. On a pool, two heights or a pause and an unpause could be applied reversed: the height is last-writer-wins (`crates/library/src/runner.rs`, `HeightCell::set`) and pause is a toggle (`desktop/src/library.rs:245-249`) |
+| the pool                      | blocking work that depends on nothing else: joining an old animation player, opening a video's file, the non-native picker's folder listing | none                                                                                                                                                                                                                                                    |
 
 The session-end handler's wait on the preferences writer is added here, with that writer.
 
@@ -1215,11 +1215,11 @@ itself when the system's session really ends (`qwindowscontext.cpp:1159-1175`). 
 close. If each close decided again from the pending set, the window's own second close would be refused, and "quit
 anyway" would never close it.
 
-| State | Meaning |
-| --- | --- |
-| idle | no close is under way |
-| waiting | the user asked to close, and something holds it; input is blocked |
-| complete | the window may close; the next `onClosing` accepts |
+| State    | Meaning                                                           |
+|----------|-------------------------------------------------------------------|
+| idle     | no close is under way                                             |
+| waiting  | the user asked to close, and something holds it; input is blocked |
+| complete | the window may close; the next `onClosing` accepts                |
 
 *What holds a close.* The window waits, because a drain with a deadline after it has gone would lose edits silently. Two
 things hold it: a command that has been sent and is neither acked nor failed; and an edit that has been dispatched but
@@ -1230,18 +1230,18 @@ the closure is dropped, run or not: `gallery::post` discards a closure when ther
 (`gallery.rs:64-66`), and a live reload destroys the model; a count lowered only by a run could stay above zero for
 good. An add whose command has not been sent holds nothing: its probe may never return (R7).
 
-| Event | idle | waiting | complete |
-| --- | --- | --- | --- |
-| `onClosing` | flush, then the closing event. Nothing holds: complete, accept. Otherwise: waiting, refuse (`close.accepted = false`, which the code does not use today) | refuse, no flush | accept, no flush |
-| nothing holds any more | | complete; the window closes itself | |
-| a file, view or folder command fails | its notice, as today | back to idle, by the keep-working event | nothing |
-| the session's save fails | its notice, as today | it stops holding; nothing else | nothing |
-| "quit anyway" | | complete; the window closes itself | |
-| "keep working" | | back to idle | |
-| a probe's result for an unsent add | the command is sent, or the refusal shown | kept | kept |
-| a quit is requested (harness, session's real end) | complete | complete | complete |
-| `commitDataRequest` (session end asked) | save-now, then block up to 3 s | block up to 3 s | nothing |
-| a live reload | | back to idle, by the keep-working event | |
+| Event                                             | idle                                                                                                                                                     | waiting                                 | complete         |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------|------------------|
+| `onClosing`                                       | flush, then the closing event. Nothing holds: complete, accept. Otherwise: waiting, refuse (`close.accepted = false`, which the code does not use today) | refuse, no flush                        | accept, no flush |
+| nothing holds any more                            |                                                                                                                                                          | complete; the window closes itself      |                  |
+| a file, view or folder command fails              | its notice, as today                                                                                                                                     | back to idle, by the keep-working event | nothing          |
+| the session's save fails                          | its notice, as today                                                                                                                                     | it stops holding; nothing else          | nothing          |
+| "quit anyway"                                     |                                                                                                                                                          | complete; the window closes itself      |                  |
+| "keep working"                                    |                                                                                                                                                          | back to idle                            |                  |
+| a probe's result for an unsent add                | the command is sent, or the refusal shown                                                                                                                | kept                                    | kept             |
+| a quit is requested (harness, session's real end) | complete                                                                                                                                                 | complete                                | complete         |
+| `commitDataRequest` (session end asked)           | save-now, then block up to 3 s                                                                                                                           | block up to 3 s                         | nothing          |
+| a live reload                                     |                                                                                                                                                          | back to idle, by the keep-working event |                  |
 
 Complete is final: nothing takes a complete close back.
 
@@ -1312,12 +1312,12 @@ GUI thread, inside its handler for the query, and closes no window. Windows can 
 then does nothing. If it is not cancelled, Qt emits `aboutToQuit` and quits (`qwindowscontext.cpp:1139-1176`). So the
 handler of `commitDataRequest` must leave the window able to go on as before.
 
-| The decision | What the handler does |
-| --- | --- |
+| The decision | What the handler does                                                                                                        |
+|--------------|------------------------------------------------------------------------------------------------------------------------------|
 | before Ready | nothing. There is nothing to save, and stopping the open would leave a cancelled session end with a window that cannot start |
-| idle | sends the controller a save-now event, then blocks |
-| waiting | blocks. The close's flush has run |
-| complete | nothing. The window is already closing |
+| idle         | sends the controller a save-now event, then blocks                                                                           |
+| waiting      | blocks. The close's flush has run                                                                                            |
+| complete     | nothing. The window is already closing                                                                                       |
 
 - *The save-now event* is not the flush. It returns the session save, with the last-file save that goes with it
   (`controller.rs:532-535`), when the session's timer or the query's is waiting: the listing already holds a query typed
@@ -1357,15 +1357,15 @@ pools), then `app::shutdown()`. Two things order the new steps:
 
 The event loop has returned by now, and the main thread has given up the GUI role, so its joins are not refused (R8).
 
-| Step | What stops | Notes |
-| --- | --- | --- |
-| 1 | the command thread | Its queue is empty, or the quit did not wait for it (the user chose "quit anyway", the session ended, or the harness quit), and what is left is dropped and logged |
-| 2 | `app::stop()`, as today (`crates/app/src/app.rs:148-154`): the Yandex search (up to 2 s), the listing lane, then the library (the write-back, then the job, whose quit flag is raised here) | Below |
-| 3 | `drop(engine)`: the providers finish and their pools join (`crates/desktop/cpp/providers.cpp:131-136`) | The providers only read, so they may run through steps 1 and 2. The pumps' threads are detached (`pump.rs`), and their passes are queued to a Qt thread that no longer runs its loop, so they do nothing more |
-| 4 | the point lane and Part 5's workers | The point lane answers its queued requests with an error. The control lane and the pool drop what they have not started. A probe thread that has not returned is abandoned |
-| 5 | `app::shutdown` (`app.rs:160-177`): the thumbnail cache (`thumbs.close()`, `:164`), the event forwarder (`:166-170`), the preferences writer, the inbox (`crates/app/src/inbox.rs:454-463`), the pool of read connections | The preferences writer drains first. The inbox abandons what it cannot write within its 5 s drain. The pool's connections are dropped |
-| 6 | the `Database`: the watcher, then the writer | Below |
-| 7 | the log thread | It flushes and ends last |
+| Step | What stops                                                                                                                                                                                                                | Notes                                                                                                                                                                                                         |
+|------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1    | the command thread                                                                                                                                                                                                        | Its queue is empty, or the quit did not wait for it (the user chose "quit anyway", the session ended, or the harness quit), and what is left is dropped and logged                                            |
+| 2    | `app::stop()`, as today (`crates/app/src/app.rs:148-154`): the Yandex search (up to 2 s), the listing lane, then the library (the write-back, then the job, whose quit flag is raised here)                               | Below                                                                                                                                                                                                         |
+| 3    | `drop(engine)`: the providers finish and their pools join (`crates/desktop/cpp/providers.cpp:131-136`)                                                                                                                    | The providers only read, so they may run through steps 1 and 2. The pumps' threads are detached (`pump.rs`), and their passes are queued to a Qt thread that no longer runs its loop, so they do nothing more |
+| 4    | the point lane and Part 5's workers                                                                                                                                                                                       | The point lane answers its queued requests with an error. The control lane and the pool drop what they have not started. A probe thread that has not returned is abandoned                                    |
+| 5    | `app::shutdown` (`app.rs:160-177`): the thumbnail cache (`thumbs.close()`, `:164`), the event forwarder (`:166-170`), the preferences writer, the inbox (`crates/app/src/inbox.rs:454-463`), the pool of read connections | The preferences writer drains first. The inbox abandons what it cannot write within its 5 s drain. The pool's connections are dropped                                                                         |
+| 6    | the `Database`: the watcher, then the writer                                                                                                                                                                              | Below                                                                                                                                                                                                         |
+| 7    | the log thread                                                                                                                                                                                                            | It flushes and ends last                                                                                                                                                                                      |
 
 - *Step 2 and the write-back's slot mutex.* `Library::stop` holds that mutex while it joins the write-back
   (`crates/app/src/library.rs:166-171`). Nothing that holds it calls `write`: the command thread, which takes it to wake
@@ -1386,12 +1386,12 @@ The facade returns an error at once once stop has begun, so no call made during 
 
 **The bound.** The joins run on the main thread after the window has closed, when no UI remains to block.
 
-| Wait | Bound |
-| --- | --- |
-| the Yandex stop | 2 s (`STOP_WAIT`, `crates/app/src/yandex.rs:102`) |
-| the job's stop | 5 s (`JOB_STOP_WAIT`, `crates/app/src/library.rs:32`) |
-| the inbox's drain | 5 s |
-| together | about 12 s |
+| Wait              | Bound                                                 |
+|-------------------|-------------------------------------------------------|
+| the Yandex stop   | 2 s (`STOP_WAIT`, `crates/app/src/yandex.rs:102`)     |
+| the job's stop    | 5 s (`JOB_STOP_WAIT`, `crates/app/src/library.rs:32`) |
+| the inbox's drain | 5 s                                                   |
+| together          | about 12 s                                            |
 
 Not in that bound, and not measured: the listing lane's stop; `~Provider`'s `waitForDone`, which has no bound
 (`providers.cpp:135`), while a Yandex pool job can be in a network fetch (`crates/desktop/src/providers.rs:99`); the
@@ -1422,32 +1422,32 @@ is under `crates/desktop/src`.
 
 ### In memory, stays on the GUI thread
 
-| Call | What it takes | Why it stays |
-| --- | --- | --- |
-| `prefs().get()` | a clone under the store's lock (`crates/app/src/store.rs:46`) | Part 5 keeps that lock free of I/O |
-| `library().running()` | the started library from a cell | no I/O |
-| `inbox().subscribe()` | the `first` mutex (`inbox.rs:448-450`) | held across no I/O |
-| the Yandex `search().subscribe()` (`yandex.rs:120`) | its bus's mutex | held across no I/O |
-| `inbox().idle()` | `shared.work` (`inbox.rs:467`) | the inbox thread holds it only around its condvar wait and its queue bookkeeping (`:776-784`, `:879-890`, `:914`), never across SQL |
-| `inbox().listing()` | a separate `listing` mutex (`inbox.rs:443`) | the inbox thread holds it only for a pointer swap (`:959`) |
+| Call                                                | What it takes                                                 | Why it stays                                                                                                                        |
+|-----------------------------------------------------|---------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `prefs().get()`                                     | a clone under the store's lock (`crates/app/src/store.rs:46`) | Part 5 keeps that lock free of I/O                                                                                                  |
+| `library().running()`                               | the started library from a cell                               | no I/O                                                                                                                              |
+| `inbox().subscribe()`                               | the `first` mutex (`inbox.rs:448-450`)                        | held across no I/O                                                                                                                  |
+| the Yandex `search().subscribe()` (`yandex.rs:120`) | its bus's mutex                                               | held across no I/O                                                                                                                  |
+| `inbox().idle()`                                    | `shared.work` (`inbox.rs:467`)                                | the inbox thread holds it only around its condvar wait and its queue bookkeeping (`:776-784`, `:879-890`, `:914`), never across SQL |
+| `inbox().listing()`                                 | a separate `listing` mutex (`inbox.rs:443`)                   | the inbox thread holds it only for a pointer swap (`:959`)                                                                          |
 
 The Goal accepts a mutex that no thread holds across I/O or a wait.
 
 ### Catalog reads on the GUI thread → point lane
 
-| Site | Call | Reached from | Target |
-| --- | --- | --- | --- |
-| `gallery/state.rs` `with_details` | `reading().details` | `gallery/model.rs` `refresh_viewed` (from `set_viewing_holding` and `bump_revision`) and `refresh_derived` (`model.rs:264-272`); the `info` and `border_rejected` callers are Rust, not QML | point lane, into a details slot ([Qt-side values](#qt-side-values)) |
-| `gallery/state.rs` `fresh_entry` | `reading().entry` | `Grid::arrive` (`crates/client/src/grid.rs:289`, for edited ids) and `refresh_turned` (`gallery/edits.rs`) | removed in Part 3. For `arrive`: the reply applied as an ack, and R2's notes (below). For `refresh_turned`: the point lane's re-read at `Turned` |
-| `gallery/state.rs` memo | two entries (`state.rs:129-130`) | `with_details` | replaced by the details slots |
-| `animation.rs` `restart` | `catalogs().file_path` | the viewer starting an animation | point lane |
-| `video_source.rs` `play` | `catalogs().file_path` | the viewer starting a video | point lane |
-| `yandex.rs` `search_file` | `catalogs().file_path` | the Yandex panel's search of a file | point lane |
-| `library.rs` `load_roots` | `library().roots()` | `start`, `add_path`, `remove_folder` | the startup worker's slot at start ([Startup](#startup)); the command's ack after an add or a removal (R4); the point lane on a refresh of everything |
-| `library.rs` `rescan` | the roots read (`crates/app/src/library.rs:327-329`) | `rescan` (`library.rs:240`), before it queues the scans | point lane, then the control lane queues the scans (R7) |
-| `shell.rs` `view_names` | `views().all()` | the saved views' list, after each save and delete, and at startup (`shell.rs:48`) | the startup worker's slot at start; the command's ack after a save or delete (R4) |
-| `shell.rs` `apply_view` | `views().view` | the views menu, called synchronously from QML | an in-memory lookup in the saved views the GUI holds (R4) |
-| `controller.rs` `Core::new` | `views().listing()`, `views().view`, `prefs().get()` | `Shell`'s construction during QML load, before the first frame | read on the startup worker and taken from the slot |
+| Site                              | Call                                                 | Reached from                                                                                                                                                                                | Target                                                                                                                                                |
+|-----------------------------------|------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `gallery/state.rs` `with_details` | `reading().details`                                  | `gallery/model.rs` `refresh_viewed` (from `set_viewing_holding` and `bump_revision`) and `refresh_derived` (`model.rs:264-272`); the `info` and `border_rejected` callers are Rust, not QML | point lane, into a details slot ([Qt-side values](#qt-side-values))                                                                                   |
+| `gallery/state.rs` `fresh_entry`  | `reading().entry`                                    | `Grid::arrive` (`crates/client/src/grid.rs:289`, for edited ids) and `refresh_turned` (`gallery/edits.rs`)                                                                                  | removed in Part 3. For `arrive`: the reply applied as an ack, and R2's notes (below). For `refresh_turned`: the point lane's re-read at `Turned`      |
+| `gallery/state.rs` memo           | two entries (`state.rs:129-130`)                     | `with_details`                                                                                                                                                                              | replaced by the details slots                                                                                                                         |
+| `animation.rs` `restart`          | `catalogs().file_path`                               | the viewer starting an animation                                                                                                                                                            | point lane                                                                                                                                            |
+| `video_source.rs` `play`          | `catalogs().file_path`                               | the viewer starting a video                                                                                                                                                                 | point lane                                                                                                                                            |
+| `yandex.rs` `search_file`         | `catalogs().file_path`                               | the Yandex panel's search of a file                                                                                                                                                         | point lane                                                                                                                                            |
+| `library.rs` `load_roots`         | `library().roots()`                                  | `start`, `add_path`, `remove_folder`                                                                                                                                                        | the startup worker's slot at start ([Startup](#startup)); the command's ack after an add or a removal (R4); the point lane on a refresh of everything |
+| `library.rs` `rescan`             | the roots read (`crates/app/src/library.rs:327-329`) | `rescan` (`library.rs:240`), before it queues the scans                                                                                                                                     | point lane, then the control lane queues the scans (R7)                                                                                               |
+| `shell.rs` `view_names`           | `views().all()`                                      | the saved views' list, after each save and delete, and at startup (`shell.rs:48`)                                                                                                           | the startup worker's slot at start; the command's ack after a save or delete (R4)                                                                     |
+| `shell.rs` `apply_view`           | `views().view`                                       | the views menu, called synchronously from QML                                                                                                                                               | an in-memory lookup in the saved views the GUI holds (R4)                                                                                             |
+| `controller.rs` `Core::new`       | `views().listing()`, `views().view`, `prefs().get()` | `Shell`'s construction during QML load, before the first frame                                                                                                                              | read on the startup worker and taken from the slot                                                                                                    |
 
 **The listing's `arrive`.** `Grid::arrive` reloads the edited ids (`crates/client/src/grid.rs:282-292`) through the
 synchronous `fresh_entry`, for the ids the GUI has edited while the list loaded. The design needs no such reload. The
@@ -1458,15 +1458,15 @@ listing's row for it is refused, and R2's notes ask for its details again.
 
 ### Catalog writes on the GUI thread → commands
 
-| Site | Call | What it does today | Target |
-| --- | --- | --- | --- |
-| `gallery/edits.rs` `rotate` | `library().turn` | writes the `file_writes` turn row, then `wake_writer` (`crates/app/src/library.rs:176-180`, `:339`: the write-back's slot mutex and `tend`). The image write happens on the write-back thread | command (R6: turns add up); the command thread wakes the write-back after the commit |
-| `gallery/edits.rs` `set_rating` | `edit().rate` | `set_rating` (and its write-back) | command (R6: last value) |
-| `gallery/edits.rs` `set_border_marked` | `edit().set_border_mark` | writes `border_marks` | command (R6: last value) |
-| `shell.rs` `save_view`, `delete_view` | `views().save`, `views().delete` | writes `views` | command |
-| `shell.rs` `execute` (`SaveSession`) | `views().save_listing` | writes `session` | command |
-| `library.rs` `add_path` | `library().add_folder` | normalize and `check_folder`, then `add_root`, then `Runner::scan` | pending from the click; the probes on a probe thread, then one command for `add_root`; the command thread queues the scan after the commit (R7) |
-| `library.rs` `remove_folder` | `library().remove_folder` | a roots read in its own statement (`crates/app/src/library.rs:315-322`), then `remove_root` (one transaction, `crates/catalog/src/roots.rs:58-72`), then `Runner::folder_removed` with the root's path (the job's queue and busy mutexes, and a stop request) | one command, one transaction, without the outer read; the write returns the path, and the command thread calls `folder_removed` after the commit (R7) |
+| Site                                   | Call                             | What it does today                                                                                                                                                                                                                                            | Target                                                                                                                                                |
+|----------------------------------------|----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `gallery/edits.rs` `rotate`            | `library().turn`                 | writes the `file_writes` turn row, then `wake_writer` (`crates/app/src/library.rs:176-180`, `:339`: the write-back's slot mutex and `tend`). The image write happens on the write-back thread                                                                 | command (R6: turns add up); the command thread wakes the write-back after the commit                                                                  |
+| `gallery/edits.rs` `set_rating`        | `edit().rate`                    | `set_rating` (and its write-back)                                                                                                                                                                                                                             | command (R6: last value)                                                                                                                              |
+| `gallery/edits.rs` `set_border_marked` | `edit().set_border_mark`         | writes `border_marks`                                                                                                                                                                                                                                         | command (R6: last value)                                                                                                                              |
+| `shell.rs` `save_view`, `delete_view`  | `views().save`, `views().delete` | writes `views`                                                                                                                                                                                                                                                | command                                                                                                                                               |
+| `shell.rs` `execute` (`SaveSession`)   | `views().save_listing`           | writes `session`                                                                                                                                                                                                                                              | command                                                                                                                                               |
+| `library.rs` `add_path`                | `library().add_folder`           | normalize and `check_folder`, then `add_root`, then `Runner::scan`                                                                                                                                                                                            | pending from the click; the probes on a probe thread, then one command for `add_root`; the command thread queues the scan after the commit (R7)       |
+| `library.rs` `remove_folder`           | `library().remove_folder`        | a roots read in its own statement (`crates/app/src/library.rs:315-322`), then `remove_root` (one transaction, `crates/catalog/src/roots.rs:58-72`), then `Runner::folder_removed` with the root's path (the job's queue and busy mutexes, and a stop request) | one command, one transaction, without the outer read; the write returns the path, and the command thread calls `folder_removed` after the commit (R7) |
 
 **What an add's probes do.** `add_path` (`library.rs:211-212`) calls `app::get().library().add_folder`
 (`crates/app/src/library.rs:298`), which calls `normalize_path` (`crates/library/src/folders.rs:29-31`) and
@@ -1477,22 +1477,22 @@ query, a handle open, the reparse-point test, the final-path call and the file-s
 
 ### Not the catalog, but on the GUI thread → worker (Part 5)
 
-| Site | What it does on the GUI thread | Target |
-| --- | --- | --- |
-| **Preferences**: `prefs().update` (`settings.rs`, `shell.rs` `prefs_effect`), and the Yandex save (`yandex.rs:357`, which reaches `prefs.update` in `crates/app/src/yandex.rs:550`) | writes the preferences file. `JsonStore::update` holds its lock across the serialize and the fsync (`crates/app/src/store.rs:51-55`), and `get` takes the same lock (`store.rs:46`), so a GUI `get()` waits for a save's fsync | `update` changes and serializes under the lock, then releases it. The file write goes to the preferences writer, a thread of its own that always writes the newest snapshot, so queued saves cannot land out of order. It drains and closes in `app::shutdown`, so a save queued at exit is not lost. A failed save posts its notice from there |
-| **Logging**: every `pg_log` call | takes the ring lock (`crates/log/src/lib.rs:269`) and the logger's `writing` lock, and appends synchronously: it stats the file, checks that it exists, and opens it, for each line (`lib.rs:240-249`, `crates/log/src/file.rs:53-63`) | a channel to a log thread, flushed on exit, on panic, and before the fatal exit (`crates/desktop/src/lib.rs:236-239`). A crash can lose the last lines, which is accepted for the GUI's own calls. `Inbox::post`'s log line goes the same way |
-| **The log panel**: `pg_log::subscribe()` (`log_model.rs:112-113`) | takes the logger's `ring` mutex and clones the kept records (`crates/log/src/lib.rs:299-305`) | the subscribe moves to the thread that already reads the file |
-| **`picker.rs` `start_for`** | `yandex().start_folder()` stats the saved folder (`is_dir`) and takes the search's state lock (`crates/app/src/yandex.rs:520-527`); `picker.rs:53` canonicalizes (`crates/platform/src/picker.rs:44-50`) | a probe thread |
-| **The non-native picker's folder listing** (`picker.rs:102`, `:170`, Linux only) | lists a directory | the pool |
-| **`set_thumb_height`** (`crates/app/src/library.rs:252`) | takes a mutex and stops a running pass (`HeightCell::set`, `crates/library/src/runner.rs:57-76`, which wakes the job after releasing its own mutex; the stop is `request_stop`, `crates/jobs/src/control.rs:117-121`, which takes the `paused` mutex) | the control lane, which keeps two heights in order. The GUI keeps its own copy of the height, because the layout uses it |
-| **`set_paused`, `is_paused`** | take the job's pause and queue mutexes (`runner.rs`, by symbol) | the control lane, which keeps a pause and an unpause in order; the state is pushed back |
-| **`save_crops`** (`gallery/edits.rs:124`) | takes the job's queue mutex and wakes it (`runner.rs`, `save_crops`) | the control lane |
-| **`wake_job()`** in `on_pass`'s `turned` branch (`library.rs:142-144`) | `request_stop` and `wake` (`runner.rs`, `wake` and `wake_up`) | the control lane |
-| **`Runner::scan`** after `rescan` | the queue mutex and `request_stop` | the control lane. The one after an add, and `folder_removed` after a removal, run on the command thread after the commit (Part 1) |
-| **`library().status()`** in `refresh_progress` and `refresh_writes` (`library.rs:166`, `:193`) | takes the write-back's slot mutex (`crates/app/src/library.rs:211-213`), and `tend` restarts a dead write-back thread under it (`:125`) | the library pump's thread reads the status when an event arrives and hands it to the Qt pass with the folded changes (Part 3). It is not a `Change`, which stays `Copy` and small. The GUI keeps the last status it was handed |
-| **The Yandex search**: `search().start` (`yandex.rs:102`, from `search_file` and `search_command_line`), `search().save` (`yandex.rs:357`, `crates/app/src/yandex.rs:533-551`), `search().poll()` on every pump pass (`yandex.rs:263`) | `start` and `save` take the search's `shared` mutex, publish and spawn a thread (`app/src/yandex.rs:421-436`); `poll` takes the same mutex and the pictures' `take_dead` (`:485-489`). How long the search's workers hold `shared` is not checked | `start` and `save` are requests to the pool, and the search pushes its state, as the library's status is |
-| **The animation player's join**: dropping a `Player` (`crates/render/src/player.rs:55-65`), which `restart` does on every change of an animated item (`animation.rs:54`) | joins the player's thread, which may be inside `std::fs::read`. The drop also closes the player's sink, and the sink's thread-safety rests on that close happening on the GUI thread (`frame_sink.rs:20-23`). The join also makes sure the old player's last frame comes before the new player starts on the same video sink (`animation.rs:54-68`) | the GUI thread closes the old player's sink, so none of its frames is shown any more, and then hands the player to the pool to join |
-| **Video**: `video_player.rs:14-16`, `cpp/video_source.cpp:47-60` | `File::open` (`crates/platform/src/file.rs:164-166`, the Windows variant; the other is not checked), then that handle opened as a `QFile` (`_open_osfhandle`, `QFile::open(fd)`). `Player::start` (`animation.rs:68`) reads its file on its own thread (`player.rs:72`), so it is not a GUI call | the pool opens the file and hands the handle to the GUI, which closes it unused if the viewer has moved on (`MediaView.qml:57-64`) |
+| Site                                                                                                                                                                                                                                   | What it does on the GUI thread                                                                                                                                                                                                                                                                                                                      | Target                                                                                                                                                                                                                                                                                                                                          |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Preferences**: `prefs().update` (`settings.rs`, `shell.rs` `prefs_effect`), and the Yandex save (`yandex.rs:357`, which reaches `prefs.update` in `crates/app/src/yandex.rs:550`)                                                    | writes the preferences file. `JsonStore::update` holds its lock across the serialize and the fsync (`crates/app/src/store.rs:51-55`), and `get` takes the same lock (`store.rs:46`), so a GUI `get()` waits for a save's fsync                                                                                                                      | `update` changes and serializes under the lock, then releases it. The file write goes to the preferences writer, a thread of its own that always writes the newest snapshot, so queued saves cannot land out of order. It drains and closes in `app::shutdown`, so a save queued at exit is not lost. A failed save posts its notice from there |
+| **Logging**: every `pg_log` call                                                                                                                                                                                                       | takes the ring lock (`crates/log/src/lib.rs:269`) and the logger's `writing` lock, and appends synchronously: it stats the file, checks that it exists, and opens it, for each line (`lib.rs:240-249`, `crates/log/src/file.rs:53-63`)                                                                                                              | a channel to a log thread, flushed on exit, on panic, and before the fatal exit (`crates/desktop/src/lib.rs:236-239`). A crash can lose the last lines, which is accepted for the GUI's own calls. `Inbox::post`'s log line goes the same way                                                                                                   |
+| **The log panel**: `pg_log::subscribe()` (`log_model.rs:112-113`)                                                                                                                                                                      | takes the logger's `ring` mutex and clones the kept records (`crates/log/src/lib.rs:299-305`)                                                                                                                                                                                                                                                       | the subscribe moves to the thread that already reads the file                                                                                                                                                                                                                                                                                   |
+| **`picker.rs` `start_for`**                                                                                                                                                                                                            | `yandex().start_folder()` stats the saved folder (`is_dir`) and takes the search's state lock (`crates/app/src/yandex.rs:520-527`); `picker.rs:53` canonicalizes (`crates/platform/src/picker.rs:44-50`)                                                                                                                                            | a probe thread                                                                                                                                                                                                                                                                                                                                  |
+| **The non-native picker's folder listing** (`picker.rs:102`, `:170`, Linux only)                                                                                                                                                       | lists a directory                                                                                                                                                                                                                                                                                                                                   | the pool                                                                                                                                                                                                                                                                                                                                        |
+| **`set_thumb_height`** (`crates/app/src/library.rs:252`)                                                                                                                                                                               | takes a mutex and stops a running pass (`HeightCell::set`, `crates/library/src/runner.rs:57-76`, which wakes the job after releasing its own mutex; the stop is `request_stop`, `crates/jobs/src/control.rs:117-121`, which takes the `paused` mutex)                                                                                               | the control lane, which keeps two heights in order. The GUI keeps its own copy of the height, because the layout uses it                                                                                                                                                                                                                        |
+| **`set_paused`, `is_paused`**                                                                                                                                                                                                          | take the job's pause and queue mutexes (`runner.rs`, by symbol)                                                                                                                                                                                                                                                                                     | the control lane, which keeps a pause and an unpause in order; the state is pushed back                                                                                                                                                                                                                                                         |
+| **`save_crops`** (`gallery/edits.rs:124`)                                                                                                                                                                                              | takes the job's queue mutex and wakes it (`runner.rs`, `save_crops`)                                                                                                                                                                                                                                                                                | the control lane                                                                                                                                                                                                                                                                                                                                |
+| **`wake_job()`** in `on_pass`'s `turned` branch (`library.rs:142-144`)                                                                                                                                                                 | `request_stop` and `wake` (`runner.rs`, `wake` and `wake_up`)                                                                                                                                                                                                                                                                                       | the control lane                                                                                                                                                                                                                                                                                                                                |
+| **`Runner::scan`** after `rescan`                                                                                                                                                                                                      | the queue mutex and `request_stop`                                                                                                                                                                                                                                                                                                                  | the control lane. The one after an add, and `folder_removed` after a removal, run on the command thread after the commit (Part 1)                                                                                                                                                                                                               |
+| **`library().status()`** in `refresh_progress` and `refresh_writes` (`library.rs:166`, `:193`)                                                                                                                                         | takes the write-back's slot mutex (`crates/app/src/library.rs:211-213`), and `tend` restarts a dead write-back thread under it (`:125`)                                                                                                                                                                                                             | the library pump's thread reads the status when an event arrives and hands it to the Qt pass with the folded changes (Part 3). It is not a `Change`, which stays `Copy` and small. The GUI keeps the last status it was handed                                                                                                                  |
+| **The Yandex search**: `search().start` (`yandex.rs:102`, from `search_file` and `search_command_line`), `search().save` (`yandex.rs:357`, `crates/app/src/yandex.rs:533-551`), `search().poll()` on every pump pass (`yandex.rs:263`) | `start` and `save` take the search's `shared` mutex, publish and spawn a thread (`app/src/yandex.rs:421-436`); `poll` takes the same mutex and the pictures' `take_dead` (`:485-489`). How long the search's workers hold `shared` is not checked                                                                                                   | `start` and `save` are requests to the pool, and the search pushes its state, as the library's status is                                                                                                                                                                                                                                        |
+| **The animation player's join**: dropping a `Player` (`crates/render/src/player.rs:55-65`), which `restart` does on every change of an animated item (`animation.rs:54`)                                                               | joins the player's thread, which may be inside `std::fs::read`. The drop also closes the player's sink, and the sink's thread-safety rests on that close happening on the GUI thread (`frame_sink.rs:20-23`). The join also makes sure the old player's last frame comes before the new player starts on the same video sink (`animation.rs:54-68`) | the GUI thread closes the old player's sink, so none of its frames is shown any more, and then hands the player to the pool to join                                                                                                                                                                                                             |
+| **Video**: `video_player.rs:14-16`, `cpp/video_source.cpp:47-60`                                                                                                                                                                       | `File::open` (`crates/platform/src/file.rs:164-166`, the Windows variant; the other is not checked), then that handle opened as a `QFile` (`_open_osfhandle`, `QFile::open(fd)`). `Player::start` (`animation.rs:68`) reads its file on its own thread (`player.rs:72`), so it is not a GUI call                                                    | the pool opens the file and hands the handle to the GUI, which closes it unused if the viewer has moved on (`MediaView.qml:57-64`)                                                                                                                                                                                                              |
 
 **Accepted, and staying on the GUI thread** (see the [Goal](#goal-and-accepted-exceptions)):
 
@@ -1524,35 +1524,35 @@ figures agree with the second pass; its release batch total (1,833.6 ms) is lowe
 
 ### Idle GUI-thread calls (debug, ms)
 
-| Call | p50 | p95 | max | n |
-| --- | --- | --- | --- | --- |
-| `reading().details` | 0.118 | 0.210 | 0.390 | 300 |
-| `reading().entry` | 0.082 | 0.129 | 0.232 | 300 |
-| `catalogs().file_path` | 0.048 | 0.068 | 0.136 | 300 |
-| `views().all` | 0.013 | 0.020 | 0.160 | 50 |
-| `views().listing` | 0.018 | 0.026 | 0.156 | 50 |
-| `views().view` | 0.014 | 0.018 | 0.025 | 50 |
-| `library().roots` | 0.013 | 0.019 | 0.078 | 50 |
-| `edit().rate` (write) | 0.276 | 0.433 | 4.406 | 60 |
-| `edit().set_border_mark` (write) | 0.060 | 0.130 | 0.179 | 60 |
-| `library().turn` (write) | 0.182 | 0.308 | 736.847 | 60 |
+| Call                             | p50   | p95   | max     | n   |
+|----------------------------------|-------|-------|---------|-----|
+| `reading().details`              | 0.118 | 0.210 | 0.390   | 300 |
+| `reading().entry`                | 0.082 | 0.129 | 0.232   | 300 |
+| `catalogs().file_path`           | 0.048 | 0.068 | 0.136   | 300 |
+| `views().all`                    | 0.013 | 0.020 | 0.160   | 50  |
+| `views().listing`                | 0.018 | 0.026 | 0.156   | 50  |
+| `views().view`                   | 0.014 | 0.018 | 0.025   | 50  |
+| `library().roots`                | 0.013 | 0.019 | 0.078   | 50  |
+| `edit().rate` (write)            | 0.276 | 0.433 | 4.406   | 60  |
+| `edit().set_border_mark` (write) | 0.060 | 0.130 | 0.179   | 60  |
+| `library().turn` (write)         | 0.182 | 0.308 | 736.847 | 60  |
 
 The first `details` call on a cold pool took 3.041 ms.
 
 ### With another connection holding the write lock (first pass, ms)
 
-| Case | Result |
-| --- | --- |
+| Case                                             | Result                                       |
+|--------------------------------------------------|----------------------------------------------|
 | 200 reads (`details`, `entry`) during a 2 s hold | p50 0.076, p95 0.103, max 0.163. No waiting. |
-| `edit().rate` during a 2 s hold | 2,090 ms, succeeded |
-| `edit().rate` during a 7 s hold | 5,327 ms, failed with "database is locked" |
+| `edit().rate` during a 2 s hold                  | 2,090 ms, succeeded                          |
+| `edit().rate` during a 7 s hold                  | 5,327 ms, failed with "database is locked"   |
 
 ### Turn stall (second pass; 3,000 turns on image files, debug)
 
-| Setting | Runs | Stalls of 100 ms or more | Slowest (ms) | WAL before the stall |
-| --- | --- | --- | --- | --- |
-| Auto-checkpoint on (default) | 4 | one each, always at sample 142 | 838.7, 548.7, 553.9, 512.7 | 4,111,792 bytes (about 1,000 frames) |
-| Auto-checkpoint off (temporary) | 3 | none | 3.2 to 5.0 | none; the WAL reached 90,030,272 bytes |
+| Setting                         | Runs | Stalls of 100 ms or more       | Slowest (ms)               | WAL before the stall                   |
+|---------------------------------|------|--------------------------------|----------------------------|----------------------------------------|
+| Auto-checkpoint on (default)    | 4    | one each, always at sample 142 | 838.7, 548.7, 553.9, 512.7 | 4,111,792 bytes (about 1,000 frames)   |
+| Auto-checkpoint off (temporary) | 3    | none                           | 3.2 to 5.0                 | none; the WAL reached 90,030,272 bytes |
 
 Only one stall of 100 ms or more was seen per run, at the first 1000-frame checkpoint. The later checkpoints (about 20
 of the 21 in a 3,000-turn run, at roughly 7 frames per turn) were not timed separately. So the data show that this
@@ -1562,11 +1562,11 @@ The typical turn took 0.16 to 0.22 ms (p50) in both settings.
 ### Import flush, release (second pass; 2,000 pending files, four batches of 500)
 
 | Batch | Flush (ms) | Pairing inside the flush (ms) | Pairing share | SQL share (flush minus pairing, ms) |
-| --- | --- | --- | --- | --- |
-| 1 | 2,333.5 | 1,775.1 | 76% | 558.4 |
-| 2 | 2,386.2 | 2,193.3 | 92% | 192.9 |
-| 3 | 2,066.1 | 1,875.3 | 91% | 190.8 |
-| 4 | 2,235.1 | 2,041.6 | 91% | 193.5 |
+|-------|------------|-------------------------------|---------------|-------------------------------------|
+| 1     | 2,333.5    | 1,775.1                       | 76%           | 558.4                               |
+| 2     | 2,386.2    | 2,193.3                       | 92%           | 192.9                               |
+| 3     | 2,066.1    | 1,875.3                       | 91%           | 190.8                               |
+| 4     | 2,235.1    | 2,041.6                       | 91%           | 193.5                               |
 
 The import took 15.15 s, with 854 pairs and no failed file. With a rating loop during the import, the flushes were 2,035
 to 2,467 ms and the pairing 1,821 to 2,142 ms. Pairing is in-memory work (`crates/dedup/src/pairer.rs`), so the pairing
@@ -1584,26 +1584,26 @@ loop spent blocked on the import's lock (about 12 s of the debug run, the one 12
 run, its four flushes). An unblocked iteration took about 30 ms: the call plus a 20 ms sleep at the Windows timer's
 granularity.
 
-| Build | Import | Ratings ok | Failed | Wait p50 / p95 / max (ms) |
-| --- | --- | --- | --- | --- |
-| Debug, 500 files | 35.8 s | 688 | 2, both "database is locked" after 5.3 s | 0.41 / 1.18 / 1,582 |
-| Release, 2,000 files | 15.1 s | 228 | 0 | 0.49 / 2.26 / 2,345 |
+| Build                | Import | Ratings ok | Failed                                   | Wait p50 / p95 / max (ms) |
+|----------------------|--------|------------|------------------------------------------|---------------------------|
+| Debug, 500 files     | 35.8 s | 688        | 2, both "database is locked" after 5.3 s | 0.41 / 1.18 / 1,582       |
+| Release, 2,000 files | 15.1 s | 228        | 0                                        | 0.49 / 2.26 / 2,345       |
 
 ### Bulk writes (second pass; debug, three runs each, a fresh copy each time)
 
-| Operation | Rows | Time (ms) |
-| --- | --- | --- |
-| `remove_root`, the 189,519-file root | 189,519 hidden | 3,622.8, 2,303.8, 2,373.4 |
-| `remove_root`, the 41,293-file root | 41,293 hidden | 992.8, 910.6, 897.1 |
-| `add_folder`, synchronous part (normalize, NTFS check, `add_root`; the scan is not run) | one folder | 1.8, 2.3, 1.5 |
+| Operation                                                                               | Rows           | Time (ms)                 |
+|-----------------------------------------------------------------------------------------|----------------|---------------------------|
+| `remove_root`, the 189,519-file root                                                    | 189,519 hidden | 3,622.8, 2,303.8, 2,373.4 |
+| `remove_root`, the 41,293-file root                                                     | 41,293 hidden  | 992.8, 910.6, 897.1       |
+| `add_folder`, synchronous part (normalize, NTFS check, `add_root`; the scan is not run) | one folder     | 1.8, 2.3, 1.5             |
 
 ### Cold reads (second pass; debug, 300 random `file_path` reads each)
 
-| Phase | p50 (ms) | p95 (ms) | max (ms) |
-| --- | --- | --- | --- |
-| After reading 2.9 GB of other data | 0.027 | 0.030 | 0.123 |
-| Fresh connection, same ids | 0.027 | 0.049 | 0.126 |
-| Same connection, same ids | 0.020 | 0.022 | 0.033 |
+| Phase                              | p50 (ms) | p95 (ms) | max (ms) |
+|------------------------------------|----------|----------|----------|
+| After reading 2.9 GB of other data | 0.027    | 0.030    | 0.123    |
+| Fresh connection, same ids         | 0.027    | 0.049    | 0.126    |
+| Same connection, same ids          | 0.020    | 0.022    | 0.033    |
 
 The machine has 64 GB of RAM with 21.7 GB free, so reading 2.9 GB did not evict the OS cache. The first phase is
 therefore not a cold-cache measurement, and the cold cost is not established ([Open](#open)). The `Reader` clears its
@@ -1660,17 +1660,17 @@ section is what is not settled, and what was checked.
 
 ### Chosen values, not measured
 
-| Value | For | Where |
-| --- | --- | --- |
-| 200 ms | before the pending mark shows, and before the "saving" state shows | R4, [Closing the window](#closing-the-window) |
-| 5 s | between refreshes of everything | R3 |
-| 10 s | before the busy state shows | R5 |
-| 10,000 | file commands in the pending set | R5 |
-| 256 | file changes in one pump pass before it becomes a refresh of everything | Part 3 |
-| 3 s | the wait at session end | [The operating system ending the session](#the-operating-system-ending-the-session) |
-| 1 s | the watcher's poll | R3a |
-| 4 s | the grace on the job's and the write-back's stops | [The writer](#the-writer) |
-| 50 ms | the slice a waiting caller polls its stop in | [The writer](#the-writer) |
+| Value  | For                                                                     | Where                                                                               |
+|--------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| 200 ms | before the pending mark shows, and before the "saving" state shows      | R4, [Closing the window](#closing-the-window)                                       |
+| 5 s    | between refreshes of everything                                         | R3                                                                                  |
+| 10 s   | before the busy state shows                                             | R5                                                                                  |
+| 10,000 | file commands in the pending set                                        | R5                                                                                  |
+| 256    | file changes in one pump pass before it becomes a refresh of everything | Part 3                                                                              |
+| 3 s    | the wait at session end                                                 | [The operating system ending the session](#the-operating-system-ending-the-session) |
+| 1 s    | the watcher's poll                                                      | R3a                                                                                 |
+| 4 s    | the grace on the job's and the write-back's stops                       | [The writer](#the-writer)                                                           |
+| 50 ms  | the slice a waiting caller polls its stop in                            | [The writer](#the-writer)                                                           |
 
 The 5 s deadlines of Parts 1 to 3 (on each command, and on the open) and the busy handler's 5 s when no call is current
 are today's busy timeout, kept, not chosen.

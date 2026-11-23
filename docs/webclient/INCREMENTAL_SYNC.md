@@ -25,25 +25,25 @@ changes since the client's last seq. A client that has been away for any length 
 
 ## Approaches
 
-| # | Approach | Summary | Main cost |
-|---|---|---|---|
-| 1 | Stamps and tombstones (current design) | Per-row seq on change; a delete trigger writes a tombstone; delta = stamped rows plus tombstones since seq | Every membership, order and shape write must stamp; retention needed |
-| 2 | Change journal | Every mutation appends an operation record; delta replays since seq | One row per change, no coalescing; same risk of a missed write |
-| 3 | Per-device outbox over WebSocket | Server queues changes per device; pushes; trims on ack | Per-device state and fan-out; cap needed for sleeping devices |
-| 4 | Chunk digests | Client compares digests per chunk; fetches differing chunks | Cost scales with the catalog; a digest per listing can't be kept |
-| 5 | Frozen server snapshot | Server keeps the frozen list per device and listing | Server memory per listing; expiry means full resync (rejected earlier) |
-| 6 | Key-addressed or index-addressed deltas | Cuts across the others. Key: (order_key, FileId). Index: final positions | Index deltas renumber every later row on insert |
-| 7 | Hybrid: 1 as the engine, 4 as backstop | Stamps and tombstones with ack-based retention; digest checks periodically and after bulk events | Two mechanisms; stamping coverage still to fix |
+| # | Approach                                | Summary                                                                                                    | Main cost                                                              |
+|---|-----------------------------------------|------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|
+| 1 | Stamps and tombstones (current design)  | Per-row seq on change; a delete trigger writes a tombstone; delta = stamped rows plus tombstones since seq | Every membership, order and shape write must stamp; retention needed   |
+| 2 | Change journal                          | Every mutation appends an operation record; delta replays since seq                                        | One row per change, no coalescing; same risk of a missed write         |
+| 3 | Per-device outbox over WebSocket        | Server queues changes per device; pushes; trims on ack                                                     | Per-device state and fan-out; cap needed for sleeping devices          |
+| 4 | Chunk digests                           | Client compares digests per chunk; fetches differing chunks                                                | Cost scales with the catalog; a digest per listing can't be kept       |
+| 5 | Frozen server snapshot                  | Server keeps the frozen list per device and listing                                                        | Server memory per listing; expiry means full resync (rejected earlier) |
+| 6 | Key-addressed or index-addressed deltas | Cuts across the others. Key: (order_key, FileId). Index: final positions                                   | Index deltas renumber every later row on insert                        |
+| 7 | Hybrid: 1 as the engine, 4 as backstop  | Stamps and tombstones with ack-based retention; digest checks periodically and after bulk events           | Two mechanisms; stamping coverage still to fix                         |
 
-| # | For | Against |
-|---|---|---|
-| 1 | Cost scales with changes; each id once (stamps coalesce); works for any listing; no time cliff | Stamp coverage must be complete; tombstones need ack-based retention; bulk events need a marker |
-| 2 | Exact history; does not depend on stamps being complete | No coalescing (a phone replays every edit); same risk of a missed write as a missed stamp |
-| 3 | Real-time; simple client logic | Per-device state and fan-out; a sleeping device's queue grows to a cap, then a fallback. A shared log with a cursor per device gives the same behaviour with less state |
-| 4 | No logs or tombstones; catches bulk changes and any drift; self-healing | Cost scales with the catalog: about 17k digests (about 280 KB) per check at 70M, even with no changes. A digest per listing can't be kept, so each check scans the listing (tens of seconds at 70M, an estimate from DATABASE.md) |
-| 5 | Exact diff | Server memory per listing per device; expiry brings back full resync |
-| 6 | Key: independent deltas, safe to reorder or batch; sorted-structure apply. Index: flat-array apply | Index: an insert renumbers every later row |
-| 7 | Cost scales with changes; works for any listing; no time cliff; the backstop covers missed stamps | Two mechanisms to build and test; stamp coverage still to fix |
+| # | For                                                                                                | Against                                                                                                                                                                                                                           |
+|---|----------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | Cost scales with changes; each id once (stamps coalesce); works for any listing; no time cliff     | Stamp coverage must be complete; tombstones need ack-based retention; bulk events need a marker                                                                                                                                   |
+| 2 | Exact history; does not depend on stamps being complete                                            | No coalescing (a phone replays every edit); same risk of a missed write as a missed stamp                                                                                                                                         |
+| 3 | Real-time; simple client logic                                                                     | Per-device state and fan-out; a sleeping device's queue grows to a cap, then a fallback. A shared log with a cursor per device gives the same behaviour with less state                                                           |
+| 4 | No logs or tombstones; catches bulk changes and any drift; self-healing                            | Cost scales with the catalog: about 17k digests (about 280 KB) per check at 70M, even with no changes. A digest per listing can't be kept, so each check scans the listing (tens of seconds at 70M, an estimate from DATABASE.md) |
+| 5 | Exact diff                                                                                         | Server memory per listing per device; expiry brings back full resync                                                                                                                                                              |
+| 6 | Key: independent deltas, safe to reorder or batch; sorted-structure apply. Index: flat-array apply | Index: an insert renumbers every later row                                                                                                                                                                                        |
+| 7 | Cost scales with changes; works for any listing; no time cliff; the backstop covers missed stamps  | Two mechanisms to build and test; stamp coverage still to fix                                                                                                                                                                     |
 
 ## Recommendation
 
@@ -52,15 +52,15 @@ from a restored catalog.
 
 ## Decisions so far
 
-| Item | Status | Where |
-|---|---|---|
-| Client-held replica (O16, option A) | Accepted as recommended. Amends the decided listing stamp | `WEB_CLIENT_TECH_DECISIONS.md` |
-| Migration 10 after cutover (O17, option c) | Accepted, **but conflicts with the bounded-memory plan's Phase 2 freeze** (see Open) | Same |
-| Tombstones are the removal signal | Agreed. A replica keeps showing a deleted file without one | Same |
-| Time-based tombstone retention (90 days) | **Replace** with acknowledged-seq retention. Recommended, not accepted | Same, "Sync" section |
-| Migration 10 keeps `files.id` and `seq` values | Recommended | Same |
-| `listing_key` as an explicit, versioned encoding | Recommended. The key doesn't exist in code yet | Same |
-| Quarantine dropped; delete goes to the Recycle Bin | Accepted. No purge command | Same |
+| Item                                               | Status                                                                               | Where                          |
+|----------------------------------------------------|--------------------------------------------------------------------------------------|--------------------------------|
+| Client-held replica (O16, option A)                | Accepted as recommended. Amends the decided listing stamp                            | `WEB_CLIENT_TECH_DECISIONS.md` |
+| Migration 10 after cutover (O17, option c)         | Accepted, **but conflicts with the bounded-memory plan's Phase 2 freeze** (see Open) | Same                           |
+| Tombstones are the removal signal                  | Agreed. A replica keeps showing a deleted file without one                           | Same                           |
+| Time-based tombstone retention (90 days)           | **Replace** with acknowledged-seq retention. Recommended, not accepted               | Same, "Sync" section           |
+| Migration 10 keeps `files.id` and `seq` values     | Recommended                                                                          | Same                           |
+| `listing_key` as an explicit, versioned encoding   | Recommended. The key doesn't exist in code yet                                       | Same                           |
+| Quarantine dropped; delete goes to the Recycle Bin | Accepted. No purge command                                                           | Same                           |
 
 ## Open
 

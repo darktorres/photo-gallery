@@ -7,14 +7,14 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   (no Windows cache), each order on its own block of 7,500 consecutive files of the test folder on E:
   (`--dense 7500`):
 
-  | Order | files/s | MB/s | 70M files, I/O only |
-  |---|---|---|---|
-  | path (sorted walk), 1 read at a time | 557 | 64 | 1.5 days |
-  | **MFT record number** | **1,699** | **228** | **0.5 days** |
-  | physical cluster (LCN) | 1,657 | 234 | 0.5 days |
-  | path, 8 reads in flight (drive NCQ reorders) | 1,603 | 235 | 0.5 days |
-  | physical cluster, 8 in flight | 1,399 | 252 | 0.6 days |
-  | random | 188 | 28 | 4.3 days |
+  | Order                                        | files/s   | MB/s    | 70M files, I/O only |
+  |----------------------------------------------|-----------|---------|---------------------|
+  | path (sorted walk), 1 read at a time         | 557       | 64      | 1.5 days            |
+  | **MFT record number**                        | **1,699** | **228** | **0.5 days**        |
+  | physical cluster (LCN)                       | 1,657     | 234     | 0.5 days            |
+  | path, 8 reads in flight (drive NCQ reorders) | 1,603     | 235     | 0.5 days            |
+  | physical cluster, 8 in flight                | 1,399     | 252     | 0.6 days            |
+  | random                                       | 188       | 28      | 4.3 days            |
 
   - Even though path, MFT and cluster order almost coincide in this folder (rank correlation
     0.996–0.999), path order one read at a time loses 2/3 of the speed. Small local reorderings
@@ -34,14 +34,14 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   a camera folder on another drive, in on-disk order, purged from the file cache before each run (an unbuffered
   open drops a file's cached pages), three runs each in rotating order, medians:
 
-  | Buffers | MB/s |
-  |---|---|
-  | no pool (HEAD 2e1b6ca: a channel of 32 files, a `Vec` per file) | 255 |
-  | 64 MiB | 221 |
-  | 128 MiB | 250 |
-  | 240 MiB (12 MiB × (8 + 12), the default) | 268 (HEAD in the same rounds: 270) |
-  | 256 MiB | 268 |
-  | 512 MiB | 266 |
+  | Buffers                                                         | MB/s                               |
+  |-----------------------------------------------------------------|------------------------------------|
+  | no pool (HEAD 2e1b6ca: a channel of 32 files, a `Vec` per file) | 255                                |
+  | 64 MiB                                                          | 221                                |
+  | 128 MiB                                                         | 250                                |
+  | 240 MiB (12 MiB × (8 + 12), the default)                        | 268 (HEAD in the same rounds: 270) |
+  | 256 MiB                                                         | 268                                |
+  | 512 MiB                                                         | 266                                |
 
   - The disk, not the CPU, sets the pace: ~40 files/s. Below a file per slot, readers wait for workers to
     hand buffers back.
@@ -61,12 +61,12 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     many buffers, reused and grown in place, and the readers' channel has that many places), 2026-11-02. The
     first 400 of the same files (2.6 GB), the same method, three rounds of slots × budget, medians in MB/s:
 
-    | Slots \ budget | 128 MiB | 240 MiB | 512 MiB |
-    |---|---:|---:|---:|
-    | 20 (readers + workers) | 249 | 271 | 272 |
-    | 32 (readers + 2 × workers, the default) | 261 | 273 | 273 |
-    | 56 (readers + 4 × workers) | 265 | 274 | 273 |
-    | no bound by count | 261 | 273 | 273 |
+    | Slots \ budget                          | 128 MiB | 240 MiB | 512 MiB |
+    |-----------------------------------------|--------:|--------:|--------:|
+    | 20 (readers + workers)                  |     249 |     271 |     272 |
+    | 32 (readers + 2 × workers, the default) |     261 |     273 |     273 |
+    | 56 (readers + 4 × workers)              |     265 |     274 |     273 |
+    | no bound by count                       |     261 |     273 |     273 |
 
     The runs of a configuration were within 0.4 s of each other (9.6–10.1 s, but for 20 at 128 MiB). The bound by
     count costs nothing from 32 slots on, and 240 MiB is still the knee, so both defaults are those. A first try

@@ -5,23 +5,23 @@ links them in instead of loading DLLs. The shared build (the default) is unchang
 
 Status as of 2026-11-14. Build order: libjpeg-turbo, then FFmpeg, then Qt, then the app.
 
-| Part | Where | Status |
-|---|---|---|
-| libjpeg-turbo (JPEG 8.0 API) | `tools/build_jpeg_turbo.py` | Built and checked 2026-11-09 (by hand). The Python recipe ran from an empty folder on 2026-11-13 and wrote its manifest. |
-| FFmpeg 9.0 (static) | `tools/build_static_ffmpeg.py` | The Python recipe ran from an empty folder on 2026-11-13: every check passes. Earlier, the PowerShell recipe (runs 1, 7 and 8). |
-| Qt 6.12.0 (static) | `tools/build_static_qt.py` | Configure verified 2026-11-13: Schannel, system libjpeg, WebP and FFmpeg are all on. Its build and install steps are not run by the recipe yet (see Qt). |
-| App on static Qt | `crates/desktop/build.rs` and `crates/video/build.rs` (env-gated) | Moved from the two patch files into the sources. The shared build checks. The static configuration (`PG_QT_STATIC`, `PG_FFMPEG_STATIC`) checks, including the C++ registration file. The static link is not run yet (see Open items). |
+| Part                         | Where                                                             | Status                                                                                                                                                                                                                                |
+|------------------------------|-------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| libjpeg-turbo (JPEG 8.0 API) | `tools/build_jpeg_turbo.py`                                       | Built and checked 2026-11-09 (by hand). The Python recipe ran from an empty folder on 2026-11-13 and wrote its manifest.                                                                                                              |
+| FFmpeg 9.0 (static)          | `tools/build_static_ffmpeg.py`                                    | The Python recipe ran from an empty folder on 2026-11-13: every check passes. Earlier, the PowerShell recipe (runs 1, 7 and 8).                                                                                                       |
+| Qt 6.12.0 (static)           | `tools/build_static_qt.py`                                        | Configure verified 2026-11-13: Schannel, system libjpeg, WebP and FFmpeg are all on. Its build and install steps are not run by the recipe yet (see Qt).                                                                              |
+| App on static Qt             | `crates/desktop/build.rs` and `crates/video/build.rs` (env-gated) | Moved from the two patch files into the sources. The shared build checks. The static configuration (`PG_QT_STATIC`, `PG_FFMPEG_STATIC`) checks, including the C++ registration file. The static link is not run yet (see Open items). |
 
 ## Pins
 
-| Input | Pin | Where it is set |
-|---|---|---|
-| FFmpeg source | commit `7adfbe40dcde598f93a6963d2f7b22cd75202ccc` (`n9.0.2-39-g7adfbe40dc`), release `9.0.2` | `build_static_ffmpeg.py` |
-| libjpeg-turbo | `darktorres/rust-turbojpeg` commit `28b8b86af795d5e6f1402c978e62facd61952da2`, the same commit as `turbojpeg-sys` in the root `Cargo.toml` | `build_jpeg_turbo.py` |
-| Qt source | `qt-everywhere-src-6.12.0.zip`, 604,643,023 bytes, SHA-256 `a72e89c33726d742e67edf494abf7b625eaffc756673221c9823322ecd1a32d1`, MD5 `64889aee0623311cce096be5f445c7d1` | `build_static_qt.py`. Qt publishes no SHA-256 file; the SHA-256 was computed from the zip, and its MD5 matches Qt's `md5sums.txt`. |
-| MSVC toolset | `14.44.35207` (`vcvars64 -vcvars_ver`) | all three Python recipes |
-| Windows SDK | `10.0.26100.0` | `build_static_ffmpeg.py` checks for `dxva.h` |
-| MSYS2 packages | `make 4.4.1-3`, `diffutils 3.12-1` | `build_static_ffmpeg.py` installs them if missing |
+| Input          | Pin                                                                                                                                                                   | Where it is set                                                                                                                    |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| FFmpeg source  | commit `7adfbe40dcde598f93a6963d2f7b22cd75202ccc` (`n9.0.2-39-g7adfbe40dc`), release `9.0.2`                                                                          | `build_static_ffmpeg.py`                                                                                                           |
+| libjpeg-turbo  | `darktorres/rust-turbojpeg` commit `28b8b86af795d5e6f1402c978e62facd61952da2`, the same commit as `turbojpeg-sys` in the root `Cargo.toml`                            | `build_jpeg_turbo.py`                                                                                                              |
+| Qt source      | `qt-everywhere-src-6.12.0.zip`, 604,643,023 bytes, SHA-256 `a72e89c33726d742e67edf494abf7b625eaffc756673221c9823322ecd1a32d1`, MD5 `64889aee0623311cce096be5f445c7d1` | `build_static_qt.py`. Qt publishes no SHA-256 file; the SHA-256 was computed from the zip, and its MD5 matches Qt's `md5sums.txt`. |
+| MSVC toolset   | `14.44.35207` (`vcvars64 -vcvars_ver`)                                                                                                                                | all three Python recipes                                                                                                           |
+| Windows SDK    | `10.0.26100.0`                                                                                                                                                        | `build_static_ffmpeg.py` checks for `dxva.h`                                                                                       |
+| MSYS2 packages | `make 4.4.1-3`, `diffutils 3.12-1`                                                                                                                                    | `build_static_ffmpeg.py` installs them if missing                                                                                  |
 
 MSYS2 is expected at `C:\tools\msys64`. Visual Studio Build Tools 18 (2026) is expected at its default path. The pilot
 also used CMake 4.4.4, Ninja 1.13.2, NASM 3.02 and Python 3.12.10.

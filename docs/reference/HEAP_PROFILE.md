@@ -23,18 +23,18 @@ The costs those would add are estimates from the code, not measurements.
 
 ## Totals
 
-| Run | Before (2026-11-01) | After the first fixes | After the second | After the third |
-|---|---|---|---|---|
-| Scan, 305 files: allocated | 544 KB in 2,472 blocks | 198 KB in 836 | 201 KB in 535 | 201 KB in 543 |
-| Scan: peak | 101 KB in 318 | 101 KB in 321 | 101 KB in 321 | 101 KB in 321 |
-| Import, 1 worker: allocated | 425.6 MB in 167,437 | 12.8 MB in 1,718 | 8.4 MB in 1,275 | 5.8 MB in 440 |
-| Import, 1 worker: peak | 27.6 MB in 1,041 | 7.2 MB in 924 | 7.2 MB in 662 | 3.6 MB in 128 |
-| Import, 12 workers: allocated | 425.6 MB in 167,454 | 53.2 MB in 2,400 | 46.4 MB in 1,500 | 43.2 MB in 841 |
-| Import, 12 workers: peak | 33.2 MB in 1,380 | 32.1 MB in 995 | 31.0 MB in 728 | 28.5 MB in 359 |
-| Borders, 898 files: allocated | 5,946 MB in 559,711 | 1,972 MB in 26,861 | 830 MB in 2,637 | 658 MB in 513 |
-| Borders: peak | 845.6 MB in 1,807 | 500.4 MB in 942 | 496.3 MB in 89 | 496.5 MB in 52 |
-| Thumbnails, 898 files: allocated | 5,413 MB in 479,146 | 1,998 MB in 24,032 | 879 MB in 3,443 | 698 MB in 1,165 |
-| Thumbnails: peak | 846.7 MB in 1,932 | 502.2 MB in 1,046 | 502.5 MB in 160 | 505.6 MB in 280 |
+| Run                              | Before (2026-11-01)    | After the first fixes | After the second | After the third |
+|----------------------------------|------------------------|-----------------------|------------------|-----------------|
+| Scan, 305 files: allocated       | 544 KB in 2,472 blocks | 198 KB in 836         | 201 KB in 535    | 201 KB in 543   |
+| Scan: peak                       | 101 KB in 318          | 101 KB in 321         | 101 KB in 321    | 101 KB in 321   |
+| Import, 1 worker: allocated      | 425.6 MB in 167,437    | 12.8 MB in 1,718      | 8.4 MB in 1,275  | 5.8 MB in 440   |
+| Import, 1 worker: peak           | 27.6 MB in 1,041       | 7.2 MB in 924         | 7.2 MB in 662    | 3.6 MB in 128   |
+| Import, 12 workers: allocated    | 425.6 MB in 167,454    | 53.2 MB in 2,400      | 46.4 MB in 1,500 | 43.2 MB in 841  |
+| Import, 12 workers: peak         | 33.2 MB in 1,380       | 32.1 MB in 995        | 31.0 MB in 728   | 28.5 MB in 359  |
+| Borders, 898 files: allocated    | 5,946 MB in 559,711    | 1,972 MB in 26,861    | 830 MB in 2,637  | 658 MB in 513   |
+| Borders: peak                    | 845.6 MB in 1,807      | 500.4 MB in 942       | 496.3 MB in 89   | 496.5 MB in 52  |
+| Thumbnails, 898 files: allocated | 5,413 MB in 479,146    | 1,998 MB in 24,032    | 879 MB in 3,443  | 698 MB in 1,165 |
+| Thumbnails: peak                 | 846.7 MB in 1,932      | 502.2 MB in 1,046     | 502.5 MB in 160  | 505.6 MB in 280 |
 
 At exit, every run holds 1–2 KB in 4–9 blocks: thread state and statics, by design.
 

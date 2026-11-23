@@ -4,14 +4,14 @@ Hardware, the test set and its labels, and the eval tooling. Measurements elsewh
 
 ## Environment
 
-| Item | Value |
-|---|---|
-| CPU / RAM | i7-8700 (6C/12T, AVX2), 64 GB |
-| GPU | RTX 2060, 6 GB, sm_75 |
-| Library | E: 22 TB Exos HDD (21.4 TB used); C: has ~60 GB free after the 2026-10-28 cleanup (keep everything off it) |
-| Fast storage | D: 2 TB NVMe |
-| Eval Python | `D:\PhotoGallery\venv-eval` (torch 2.15 + CUDA 13.4 since 2026-10-30, NVIDIA driver 621.01); global Python's torch is CPU-only |
-| Port 8765 | Used by a local test server outside the repo; the viewer takes the next free port (8766) |
+| Item         | Value                                                                                                                          |
+|--------------|--------------------------------------------------------------------------------------------------------------------------------|
+| CPU / RAM    | i7-8700 (6C/12T, AVX2), 64 GB                                                                                                  |
+| GPU          | RTX 2060, 6 GB, sm_75                                                                                                          |
+| Library      | E: 22 TB Exos HDD (21.4 TB used); C: has ~60 GB free after the 2026-10-28 cleanup (keep everything off it)                     |
+| Fast storage | D: 2 TB NVMe                                                                                                                   |
+| Eval Python  | `D:\PhotoGallery\venv-eval` (torch 2.15 + CUDA 13.4 since 2026-10-30, NVIDIA driver 621.01); global Python's torch is CPU-only |
+| Port 8765    | Used by a local test server outside the repo; the viewer takes the next free port (8766)                                       |
 
 ## Test set (2026-10-28)
 

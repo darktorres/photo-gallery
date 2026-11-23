@@ -42,17 +42,17 @@ re-quantizes almost without loss, so it scores far higher at the same nominal qu
 
 The camera files (their own tables, at high quality) are the fair test, and their median is the headline figure.
 
-| Encoder | Settings | Built |
-|---|---|---|
-| `turbo` (the reference) | `cjpeg -quality Q -sample 1x1 -optimize` | libjpeg-turbo 3.1.0, the vendored copy |
-| `turbo-prog` | the same, `-progressive` | |
-| `mozjpeg` | `cjpeg -quality Q -sample 1x1` (its defaults: trellis, its tables, progressive) | mozjpeg 5.0.0 (0826579) |
-| `mozjpeg-base` | the same, `-baseline` | |
-| `jpegli` | `cjpegli -q Q --chroma_subsampling=444` (progressive by default) | jpegli 031a007 |
-| `jpegli-base` | the same, `-p 0` | |
-| `guetzli` | `guetzli --quality Q` | guetzli 214f2bb |
-| `nvjpeg` | nvImageCodec encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline | CUDA 13; nvImageCodec 0.9.0.20 as measured. The pinned 0.10.0.9 gives byte-identical output on the 40 camera originals at Q75 and Q80 (80 files, 2026-11-14), so these figures stand for it too; the seven inputs above were not rerun, as their source folder isn't on this machine |
-| `gpujpeg` | `gpujpegtool -e -q Q --subsampled=4:4:4 -i` (its default restart interval, 8) | GPUJPEG 37ab481 |
+| Encoder                 | Settings                                                                        | Built                                                                                                                                                                                                                                                                                |
+|-------------------------|---------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `turbo` (the reference) | `cjpeg -quality Q -sample 1x1 -optimize`                                        | libjpeg-turbo 3.1.0, the vendored copy                                                                                                                                                                                                                                               |
+| `turbo-prog`            | the same, `-progressive`                                                        |                                                                                                                                                                                                                                                                                      |
+| `mozjpeg`               | `cjpeg -quality Q -sample 1x1` (its defaults: trellis, its tables, progressive) | mozjpeg 5.0.0 (0826579)                                                                                                                                                                                                                                                              |
+| `mozjpeg-base`          | the same, `-baseline`                                                           |                                                                                                                                                                                                                                                                                      |
+| `jpegli`                | `cjpegli -q Q --chroma_subsampling=444` (progressive by default)                | jpegli 031a007                                                                                                                                                                                                                                                                       |
+| `jpegli-base`           | the same, `-p 0`                                                                |                                                                                                                                                                                                                                                                                      |
+| `guetzli`               | `guetzli --quality Q`                                                           | guetzli 214f2bb                                                                                                                                                                                                                                                                      |
+| `nvjpeg`                | nvImageCodec encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline    | CUDA 13; nvImageCodec 0.9.0.20 as measured. The pinned 0.10.0.9 gives byte-identical output on the 40 camera originals at Q75 and Q80 (80 files, 2026-11-14), so these figures stand for it too; the seven inputs above were not rerun, as their source folder isn't on this machine |
+| `gpujpeg`               | `gpujpegtool -e -q Q --subsampled=4:4:4 -i` (its default restart interval, 8)   | GPUJPEG 37ab481                                                                                                                                                                                                                                                                      |
 
 ## Bytes for the same quality
 
@@ -60,17 +60,17 @@ Bytes each encoder needs to match `turbo` Q75's SSIMULACRA2 score, as a ratio of
 smaller. ">" marks files where even the encoder's highest quality scored lower than the reference (its ratio at
 Q95 is shown); guetzli ran on the Pinterest files only.
 
-| Input | `turbo` Q75 score / bpp | jpegli | jpegli-base | mozjpeg | mozjpeg-base | guetzli | turbo-prog | nvjpeg | gpujpeg |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 86.9 / 0.68 | 0.988 | 1.025 | 0.958 | 0.972 | 1.011 | 1.028 | 0.998 | 1.286 |
-| pin-base444-3mp | 94.4 / 0.51 | >1.248 | >1.294 | >1.279 | >1.320 | >1.061 | 1.014 | >1.000 | >1.340 |
-| pin-prog420-1mp | 84.5 / 0.68 | 0.852 | 0.889 | 0.950 | 0.985 | 0.962 | 1.001 | 1.005 | 1.281 |
-| pin-base420-1mp | 84.9 / 0.82 | 0.825 | 0.869 | 0.877 | 0.902 | 0.977 | 0.999 | 1.000 | 1.219 |
-| phone-base420-4mp | 77.5 / 3.10 | 0.891 | 0.925 | 0.973 | 1.022 | — | 0.956 | 0.998 | 1.041 |
-| sony-base422-7mp | 77.4 / 0.62 | 0.748 | 0.793 | 0.810 | 0.827 | — | 0.998 | 0.991 | 1.218 |
-| a6000-base422-24mp | 76.9 / 0.47 | **0.691** | 0.753 | 0.769 | 0.779 | — | 1.006 | 0.987 | 1.340 |
-| **median, camera files** | | **0.748** | 0.793 | 0.810 | 0.827 | — | 0.998 | 0.991 | 1.218 |
-| median, all | | 0.839 | 0.879 | 0.914 | 0.937 | 0.977 | 1.001 | 0.998 | 1.250 |
+| Input                    | `turbo` Q75 score / bpp |    jpegli | jpegli-base | mozjpeg | mozjpeg-base | guetzli | turbo-prog | nvjpeg | gpujpeg |
+|--------------------------|------------------------:|----------:|------------:|--------:|-------------:|--------:|-----------:|-------:|--------:|
+| pin-base444-1mp          |             86.9 / 0.68 |     0.988 |       1.025 |   0.958 |        0.972 |   1.011 |      1.028 |  0.998 |   1.286 |
+| pin-base444-3mp          |             94.4 / 0.51 |    >1.248 |      >1.294 |  >1.279 |       >1.320 |  >1.061 |      1.014 | >1.000 |  >1.340 |
+| pin-prog420-1mp          |             84.5 / 0.68 |     0.852 |       0.889 |   0.950 |        0.985 |   0.962 |      1.001 |  1.005 |   1.281 |
+| pin-base420-1mp          |             84.9 / 0.82 |     0.825 |       0.869 |   0.877 |        0.902 |   0.977 |      0.999 |  1.000 |   1.219 |
+| phone-base420-4mp        |             77.5 / 3.10 |     0.891 |       0.925 |   0.973 |        1.022 |       — |      0.956 |  0.998 |   1.041 |
+| sony-base422-7mp         |             77.4 / 0.62 |     0.748 |       0.793 |   0.810 |        0.827 |       — |      0.998 |  0.991 |   1.218 |
+| a6000-base422-24mp       |             76.9 / 0.47 | **0.691** |       0.753 |   0.769 |        0.779 |       — |      1.006 |  0.987 |   1.340 |
+| **median, camera files** |                         | **0.748** |       0.793 |   0.810 |        0.827 |       — |      0.998 |  0.991 |   1.218 |
+| median, all              |                         |     0.839 |       0.879 |   0.914 |        0.937 |   0.977 |      1.001 |  0.998 |   1.250 |
 
 - **jpegli's lead grows with resolution on these three:** 0.89 on the 4 MP phone photo, 0.75 on the 7.5 MP Sony,
   0.69 on the 24 MP A6000. Three files don't show why.
@@ -89,15 +89,15 @@ one at a time in WSL. That includes process start and reading the PPM, which inf
 in-process through nvImageCodec, host pixels in and JPEG bytes out. GPUJPEG: its own per-iteration average, first
 iteration excluded, also including the copies to and from the GPU.
 
-| Input | turbo | turbo-prog | mozjpeg | mozjpeg-base | jpegli | jpegli-base | guetzli | nvjpeg | gpujpeg |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 13.2 | 23.1 | 115.9 | 62.4 | 33.8 | 21.0 | 36,765 | 1.0 | 0.6 |
-| pin-base444-3mp | 11.7 | 20.4 | 97.4 | 57.2 | 26.8 | 15.1 | 38,925 | 0.8 | 0.5 |
-| pin-prog420-1mp | 13.5 | 22.4 | 101.9 | 64.2 | 37.9 | 28.2 | 43,730 | 1.1 | 0.7 |
-| pin-base420-1mp | 35.8 | 57.3 | 200.6 | 115.5 | 65.9 | 35.2 | 50,747 | 0.9 | 0.6 |
-| phone-base420-4mp | 21.1 | 40.8 | 224.8 | 136.9 | 43.3 | 29.3 | — | 0.9 | 0.5 |
-| sony-base422-7mp | 16.2 | 25.7 | 101.9 | 62.7 | 24.4 | 11.8 | — | 0.7 | 0.5 |
-| a6000-base422-24mp | 11.5 | 18.9 | 94.7 | 53.2 | 22.5 | 10.3 | — | 0.8 | 0.5 |
+| Input              | turbo | turbo-prog | mozjpeg | mozjpeg-base | jpegli | jpegli-base | guetzli | nvjpeg | gpujpeg |
+|--------------------|------:|-----------:|--------:|-------------:|-------:|------------:|--------:|-------:|--------:|
+| pin-base444-1mp    |  13.2 |       23.1 |   115.9 |         62.4 |   33.8 |        21.0 |  36,765 |    1.0 |     0.6 |
+| pin-base444-3mp    |  11.7 |       20.4 |    97.4 |         57.2 |   26.8 |        15.1 |  38,925 |    0.8 |     0.5 |
+| pin-prog420-1mp    |  13.5 |       22.4 |   101.9 |         64.2 |   37.9 |        28.2 |  43,730 |    1.1 |     0.7 |
+| pin-base420-1mp    |  35.8 |       57.3 |   200.6 |        115.5 |   65.9 |        35.2 |  50,747 |    0.9 |     0.6 |
+| phone-base420-4mp  |  21.1 |       40.8 |   224.8 |        136.9 |   43.3 |        29.3 |       — |    0.9 |     0.5 |
+| sony-base422-7mp   |  16.2 |       25.7 |   101.9 |         62.7 |   24.4 |        11.8 |       — |    0.7 |     0.5 |
+| a6000-base422-24mp |  11.5 |       18.9 |    94.7 |         53.2 |   22.5 |        10.3 |       — |    0.8 |     0.5 |
 
 - **jpegli baseline costs about what libjpeg-turbo does:** 0.7–1.4× on the camera files. Its progressive default
   costs 1.5–2.2× more.
@@ -116,26 +116,26 @@ ImageReduce decodes it, both encoders get the same 8-bit sRGB pixels, and every 
 scored with SSIMULACRA2 against those pixels. Inputs are the originals ImageReduce would still receive: the library
 copy's files without "mozjpeg" in the name, since ImageReduce never reprocesses its own outputs.
 
-| Set | Files | Today's output bigger than input (kept as original) | Matched score: jpegli / vips image bytes |
-|---|---:|---:|---:|
-| Pinterest originals | 1,215 (1,035 JPEG, 140 PNG, 40 WebP; 53 have alpha, kept as RGB) | 981 (81%) | 0.923 |
-| Camera originals | 40 (20 on the thumbnail path) | 2 (5%) | 0.833 |
+| Set                 |                                                            Files | Today's output bigger than input (kept as original) | Matched score: jpegli / vips image bytes |
+|---------------------|-----------------------------------------------------------------:|----------------------------------------------------:|-----------------------------------------:|
+| Pinterest originals | 1,215 (1,035 JPEG, 140 PNG, 40 WebP; 53 have alpha, kept as RGB) |                                           981 (81%) |                                    0.923 |
+| Camera originals    |                                    40 (20 on the thumbnail path) |                                              2 (5%) |                                    0.833 |
 
 The matched figure is the jpegli bytes needed for the score vips got, per file. ImageReduce can't search per file, so
 the switch has to use one jpegli quality. Totals use the keep-original rule (keep the input when the output is bigger),
 with the vips metadata (573 Pinterest files, 39 camera files carry ICC or EXIF) copied onto the jpegli side:
 
 | jpegli Q | Pinterest: median Δscore / size vs vips / total bytes | Camera: median Δscore / size vs vips / total bytes |
-|---|---|---|
-| 65 | −5.38 / 0.785 / −18.1% | −5.57 / 0.663 / −35.2% |
-| 70 | −2.70 / 0.853 / −12.1% | −3.70 / 0.716 / −29.4% |
-| 75 | −0.55 / 0.893 / −7.6% | −2.00 / 0.767 / −23.3% |
-| 76 | +0.09 / 0.901 / −6.8% | −1.56 / 0.775 / −22.2% |
-| 77 | −0.02 / 0.913 / −5.8% | −1.00 / 0.798 / −20.3% |
-| 78 | **+0.35 / 0.931 / −3.9%** | **−0.01 / 0.826 / −17.0%** |
-| 80 | +0.45 / 0.950 / −2.5% | +0.28 / 0.860 / −13.8% |
-| 85 | +3.08 / 1.036 / +1.9% | +3.20 / 1.031 / +2.4% |
-| 90 | +4.88 / 1.140 / +8.4% | +6.07 / 1.353 / +34.7% |
+|----------|-------------------------------------------------------|----------------------------------------------------|
+| 65       | −5.38 / 0.785 / −18.1%                                | −5.57 / 0.663 / −35.2%                             |
+| 70       | −2.70 / 0.853 / −12.1%                                | −3.70 / 0.716 / −29.4%                             |
+| 75       | −0.55 / 0.893 / −7.6%                                 | −2.00 / 0.767 / −23.3%                             |
+| 76       | +0.09 / 0.901 / −6.8%                                 | −1.56 / 0.775 / −22.2%                             |
+| 77       | −0.02 / 0.913 / −5.8%                                 | −1.00 / 0.798 / −20.3%                             |
+| 78       | **+0.35 / 0.931 / −3.9%**                             | **−0.01 / 0.826 / −17.0%**                         |
+| 80       | +0.45 / 0.950 / −2.5%                                 | +0.28 / 0.860 / −13.8%                             |
+| 85       | +3.08 / 1.036 / +1.9%                                 | +3.20 / 1.031 / +2.4%                              |
+| 90       | +4.88 / 1.140 / +8.4%                                 | +6.07 / 1.353 / +34.7%                             |
 
 - **Q78 is the setting.** It's the matched point on the camera files (median score change −0.01) and slightly better
   on the Pinterest files (+0.35), with 4–17% fewer bytes. Q80 scores better still but saves less: 2.5% and 13.8%.
@@ -144,10 +144,10 @@ with the vips metadata (573 Pinterest files, 39 camera files carry ICC or EXIF) 
 - **Encode time** (`eval/jpeg-decoders/imagereduce_timing.py`, same files, one thread for libvips, three runs each,
   median): per megapixel, jpegli is about even with ImageReduce's encode, but a per-file cjpegli call costs more.
 
-  | Set | vips Q75 ms/MP | cjpegli Q80 ms/MP, net of process start | cjpegli, wall time, total ratio |
-  |---|---:|---:|---:|
-  | Pinterest originals, 500 random (median 0.99 MP) | 13.5 | 11.2 (24.9 with startup) | 1.63× |
-  | Camera originals, all 40 (median 3.8 MP) | 11.5 | 12.9 (15.9 with startup) | 1.39× |
+  | Set                                              | vips Q75 ms/MP | cjpegli Q80 ms/MP, net of process start | cjpegli, wall time, total ratio |
+  |--------------------------------------------------|---------------:|----------------------------------------:|--------------------------------:|
+  | Pinterest originals, 500 random (median 0.99 MP) |           13.5 |                11.2 (24.9 with startup) |                           1.63× |
+  | Camera originals, all 40 (median 3.8 MP)         |           11.5 |                12.9 (15.9 with startup) |                           1.39× |
 
   cjpegli starts in about 13 ms, which is most of a one-megapixel encode, so a per-file call is slower than the net
   column. The vips side encodes from memory without metadata; cjpegli runs one thread.

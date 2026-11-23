@@ -6,14 +6,14 @@ Removed as resolved in code: U-029, U-030, U-043, PF-024, P-025. The full audit 
 
 Kept: open findings, partly resolved findings, findings resolved in code but not yet run in CI, and one finding whose recorded status was wrong.
 
-| Status | n |
-|---|---:|
-| Open | 6 |
-| Still true, guarded by a test | 1 |
-| Partly resolved | 3 |
-| Resolved in code, not run in CI | 1 |
-| Resolved, but its record was wrong | 1 |
-| **Total kept** | **12** |
+| Status                             |      n |
+|------------------------------------|-------:|
+| Open                               |      6 |
+| Still true, guarded by a test      |      1 |
+| Partly resolved                    |      3 |
+| Resolved in code, not run in CI    |      1 |
+| Resolved, but its record was wrong |      1 |
+| **Total kept**                     | **12** |
 
 ## doc-accuracy
 

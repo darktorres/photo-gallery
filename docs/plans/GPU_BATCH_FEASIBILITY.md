@@ -17,12 +17,12 @@ Status: evaluation, 2026-11-17. Nothing is implemented. Reads with the batched e
 
 ## Summary
 
-| Option | Batch API | Feasibility | Progressive | Output | Licence | Verdict |
-|---|---|---|---|---|---|---|
-| nvJPEG (`nvjpegDecodeBatched`, `GPU_HYBRID`) | Yes | High | CPU Huffman | RGB, device or host | NVIDIA EULA, redistributable component | **Primary for baseline files** |
-| jpeggpu (our fork) | No; we would add one | High with effort | Rejected | YCbCr planes | GPL-3.0 (we can change it) | **Fallback and fully owned path** |
-| GPUJPEG | No; N decoders on N streams | Medium-low | Rejected | RGB 4:4:4 | BSD-2-Clause | Not for this dataset |
-| parajpeg CUDA | No; a rewrite | Low | Yes, CPU entropy | RGB | MIT | Not worth it |
+| Option                                       | Batch API                   | Feasibility      | Progressive      | Output              | Licence                                | Verdict                           |
+|----------------------------------------------|-----------------------------|------------------|------------------|---------------------|----------------------------------------|-----------------------------------|
+| nvJPEG (`nvjpegDecodeBatched`, `GPU_HYBRID`) | Yes                         | High             | CPU Huffman      | RGB, device or host | NVIDIA EULA, redistributable component | **Primary for baseline files**    |
+| jpeggpu (our fork)                           | No; we would add one        | High with effort | Rejected         | YCbCr planes        | GPL-3.0 (we can change it)             | **Fallback and fully owned path** |
+| GPUJPEG                                      | No; N decoders on N streams | Medium-low       | Rejected         | RGB 4:4:4           | BSD-2-Clause                           | Not for this dataset              |
+| parajpeg CUDA                                | No; a rewrite               | Low              | Yes, CPU entropy | RGB                 | MIT                                    | Not worth it                      |
 
 ## 1. nvJPEG, batched
 

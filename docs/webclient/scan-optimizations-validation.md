@@ -24,17 +24,17 @@ The scan's main per-file cost on a first scan comes from two things together:
 Folding the trigger's values into a plain INSERT for files the writer didn't find removes both. Measured in a patched
 copy of the app:
 
-| | Shipped | Patched | Change |
-|---|---:|---:|---:|
-| First scan, 4,000 files (callgrind) | 895.0M Ir | 506.9M Ir | −43.4% |
-| First scan, 200,000 files (callgrind) | 48.25G Ir | 28.15G Ir | −41.7% |
-| First scan, 4,000 files (Windows, warm, median of 5) | 0.195 s | 0.096 s | −51% |
-| First scan, 4,000 files (Windows, cold, median of 5) | 0.247 s | 0.141 s | −43% |
-| First scan, 200,000 files (Windows, warm with dirty pages flushed, median of 5) | 13.09 s | 6.88 s | −47% |
-| First scan, 200,000 files (Windows, CPU time of the same runs) | 10.81 s user | 4.84 s user | −55% |
-| First scan, 200,000 files (Windows, cold, median of 10) | 15.26 s | 9.55 s | −37% |
-| Rescan, 4,000 / 200,000 files (callgrind) | 158.0M / 8.23G Ir | 156.8M / 8.22G Ir | none (no new files) |
-| Rescan, 200,000 files (Windows, cold, median of 5) | 3.29 s | (same code path) | |
+|                                                                                 |           Shipped |           Patched |              Change |
+|---------------------------------------------------------------------------------|------------------:|------------------:|--------------------:|
+| First scan, 4,000 files (callgrind)                                             |         895.0M Ir |         506.9M Ir |              −43.4% |
+| First scan, 200,000 files (callgrind)                                           |         48.25G Ir |         28.15G Ir |              −41.7% |
+| First scan, 4,000 files (Windows, warm, median of 5)                            |           0.195 s |           0.096 s |                −51% |
+| First scan, 4,000 files (Windows, cold, median of 5)                            |           0.247 s |           0.141 s |                −43% |
+| First scan, 200,000 files (Windows, warm with dirty pages flushed, median of 5) |           13.09 s |            6.88 s |                −47% |
+| First scan, 200,000 files (Windows, CPU time of the same runs)                  |      10.81 s user |       4.84 s user |                −55% |
+| First scan, 200,000 files (Windows, cold, median of 10)                         |           15.26 s |            9.55 s |                −37% |
+| Rescan, 4,000 / 200,000 files (callgrind)                                       | 158.0M / 8.23G Ir | 156.8M / 8.22G Ir | none (no new files) |
+| Rescan, 200,000 files (Windows, cold, median of 5)                              |            3.29 s |  (same code path) |                     |
 
 Two build settings add to it:
 
@@ -106,11 +106,11 @@ The rescan has its own costs:
 
 ### First experiments (scan probe, 4,000 files, whole process)
 
-| Pass | `pg_scan::scan` | Change | Process | Change |
-|---|---:|---:|---:|---:|
-| Baseline | 895.0M | | 1,081.3M | |
-| Memory statistics off (`sqlite3_config`) | 800.6M | −94.4M (−10.5%) | 956.2M | −125.0M (−11.6%) |
-| `files_added` dropped | 678.8M | −216.2M (−24.2%) | 868.8M | −212.5M (−19.6%) |
+| Pass                                     | `pg_scan::scan` |           Change |  Process |           Change |
+|------------------------------------------|----------------:|-----------------:|---------:|-----------------:|
+| Baseline                                 |          895.0M |                  | 1,081.3M |                  |
+| Memory statistics off (`sqlite3_config`) |          800.6M |  −94.4M (−10.5%) |   956.2M | −125.0M (−11.6%) |
+| `files_added` dropped                    |          678.8M | −216.2M (−24.2%) |   868.8M | −212.5M (−19.6%) |
 
 - **The trigger's 216.2M is all in `write_batch`** (610.1M → 393.5M). Pairing is unchanged (259.9M → 260.2M).
 - **The 3.7M gap between scan and process** in the trigger pass is the experiment's own cost. The child process changed
@@ -119,16 +119,16 @@ The rescan has its own costs:
 
 ### The fix in the app (patched copy, callgrind)
 
-| Run | Scan | `write_batch` | Pairing | `prior_states` | `mark_missing` | Statement journal |
-|---|---:|---:|---:|---:|---:|---:|
-| Shipped, 4k, first | 895.0M | 610.1M | 260.0M | 9.2M | 5.4M | 215.1M |
-| Patched, 4k, first | 506.9M | 222.1M | 259.9M | 9.2M | 5.4M | 1.8M |
-| Shipped, 200k, first | 48.25G | 32.69G | 13.98G | 0.92G | 0.18G | 10.89G |
-| Patched, 200k, first | 28.15G | 12.60G | 13.97G | 0.92G | 0.18G | 0.06G |
-| Shipped, 4k, rescan | 158.0M | 121.3M | 7.6M | 13.7M | 5.0M | 11.9M |
-| Patched, 4k, rescan | 156.8M | 120.1M | 7.6M | 13.7M | 5.1M | 12.4M |
-| Shipped, 200k, rescan | 8.23G | 6.42G | 0.41G | 0.73G | 0.18G | 0.60G |
-| Patched, 200k, rescan | 8.22G | 6.41G | 0.41G | 0.72G | 0.18G | 0.60G |
+| Run                   |   Scan | `write_batch` | Pairing | `prior_states` | `mark_missing` | Statement journal |
+|-----------------------|-------:|--------------:|--------:|---------------:|---------------:|------------------:|
+| Shipped, 4k, first    | 895.0M |        610.1M |  260.0M |           9.2M |           5.4M |            215.1M |
+| Patched, 4k, first    | 506.9M |        222.1M |  259.9M |           9.2M |           5.4M |              1.8M |
+| Shipped, 200k, first  | 48.25G |        32.69G |  13.98G |          0.92G |          0.18G |            10.89G |
+| Patched, 200k, first  | 28.15G |        12.60G |  13.97G |          0.92G |          0.18G |             0.06G |
+| Shipped, 4k, rescan   | 158.0M |        121.3M |    7.6M |          13.7M |           5.0M |             11.9M |
+| Patched, 4k, rescan   | 156.8M |        120.1M |    7.6M |          13.7M |           5.1M |             12.4M |
+| Shipped, 200k, rescan |  8.23G |         6.42G |   0.41G |          0.73G |          0.18G |             0.60G |
+| Patched, 200k, rescan |  8.22G |         6.41G |   0.41G |          0.72G |          0.18G |             0.60G |
 
 - **First scan:** `write_batch` falls 63.6% (4k) and 61.5% (200k). The journal all but goes.
 - **Scale:** the cost per file grows with the library. The first scan's `write_batch` is 152.5k Ir per file at 4k and
@@ -140,17 +140,17 @@ The rescan has its own costs:
 
 ### The fix on Windows (wall clock)
 
-| Run | Shipped | Patched |
-|---|---:|---:|
-| 4k, first scan, warm (5 runs) | 0.195 s | 0.096 s (−51%) |
-| 4k, first scan, cold (5 runs) | 0.247 s | 0.141 s (−43%) |
-| 4k, rescan, warm (5 runs) | 0.056 s | 0.056 s |
-| 4k, rescan, cold (5 runs) | 0.138 s | (same code path) |
-| 200k, first scan, warm, back to back (5 runs) | 12.81 s | 7.91 s (−38%) |
-| 200k, first scan, warm with dirty pages flushed (5 runs) | 13.09 s | 6.88 s (−47%) |
-| 200k, first scan, cold (10 runs) | 15.26 s | 9.55 s (−37%) |
-| 200k, rescan, warm (3 runs) | 2.27 s | 2.65 s (noise: the code path is the same) |
-| 200k, rescan, cold (5 runs) | 3.29 s | (same code path) |
+| Run                                                      | Shipped |                                   Patched |
+|----------------------------------------------------------|--------:|------------------------------------------:|
+| 4k, first scan, warm (5 runs)                            | 0.195 s |                            0.096 s (−51%) |
+| 4k, first scan, cold (5 runs)                            | 0.247 s |                            0.141 s (−43%) |
+| 4k, rescan, warm (5 runs)                                | 0.056 s |                                   0.056 s |
+| 4k, rescan, cold (5 runs)                                | 0.138 s |                          (same code path) |
+| 200k, first scan, warm, back to back (5 runs)            | 12.81 s |                             7.91 s (−38%) |
+| 200k, first scan, warm with dirty pages flushed (5 runs) | 13.09 s |                             6.88 s (−47%) |
+| 200k, first scan, cold (10 runs)                         | 15.26 s |                             9.55 s (−37%) |
+| 200k, rescan, warm (3 runs)                              |  2.27 s | 2.65 s (noise: the code path is the same) |
+| 200k, rescan, cold (5 runs)                              |  3.29 s |                          (same code path) |
 
 - **CPU time** of the flushed-warm 200k first scans: shipped 10.81 s user and 0.97 s kernel, patched 4.84 s and 0.92 s.
   Cold, the same within 0.4 s. About 1.1 to 1.3 s of each run is off the CPU.
@@ -166,29 +166,29 @@ The rescan has its own costs:
 
 Instruction counts are inside the timed part. Windows times are medians of 5 native runs, with memory statistics on.
 
-| Variant | Ir | Statement journal | Lookaside miss path | Windows |
-|---|---:|---:|---:|---:|
-| a: the app's upsert | 578.7M | 202.4M | 31.9M | 136.8 ms |
-| b: plain INSERT, trigger kept | 571.3M | 200.1M | 31.7M | 136.6 ms |
-| **c: plain INSERT, trigger folded** | **197.9M** | **0** | 13.1M | **44.4 ms** |
-| d: upsert, `files_added` dropped | 356.5M | 150.3M | 13.3M | 84.3 ms |
-| f: as d, foreign keys off | 346.4M | 152.5M | 11.8M | 84.4 ms |
-| g: upsert, every trigger on `files` dropped | 338.0M | 148.9M | 3.7M | 65.5 ms |
-| h: as g, foreign keys off | 173.5M | 0 | 2.3M | 22.6 ms |
-| t1: upsert, `files_added` with its `meta` bump only | 396.8M | 169.3M | 16.9M | 104.3 ms |
-| t2: upsert, `files_added` with its `files` UPDATE only | 541.3M | 177.9M | 29.1M | 128.1 ms |
-| k: one upsert statement for the batch, trigger kept | 468.8M | 3.1M | 6.0M | 53.8 ms |
-| k2: one folded INSERT for the batch (`json_each`) | 340.4M | 1.9M | 6.7M | 38.9 ms |
-| i: changed files, through the upsert | 638.0M | 142.5M | 45.6M | 146.7 ms |
-| j: changed files, plain UPDATE of the known row | 602.3M | 143.0M | 42.3M | 149.0 ms |
-| e: `seen` UPDATE per file | 100.2M | 30.8M | 2.2M | 16.4 ms |
-| e2: as e, foreign keys off | 61.6M | 0 | 2.2M | 7.7 ms |
-| e3: one `seen` UPDATE for the batch | 66.0M | 1.4M | 0.05M | 8.5 ms |
-| la-a-200: as a, lookaside 1200 × 200 | 528.8M | 203.1M | 3.3M | 103.7 ms |
-| la-c-200: as c, lookaside 1200 × 200 | 175.1M | 0 | 0.01M | 21.6 ms |
-| a, memory statistics off | 497.3M | 157.3M | 12.9M | 122.5 ms |
-| c, memory statistics off | 182.9M | 0 | 4.8M | 40.3 ms |
-| e, memory statistics off | 86.2M | 19.7M | 0.8M | 14.5 ms |
+| Variant                                                |         Ir | Statement journal | Lookaside miss path |     Windows |
+|--------------------------------------------------------|-----------:|------------------:|--------------------:|------------:|
+| a: the app's upsert                                    |     578.7M |            202.4M |               31.9M |    136.8 ms |
+| b: plain INSERT, trigger kept                          |     571.3M |            200.1M |               31.7M |    136.6 ms |
+| **c: plain INSERT, trigger folded**                    | **197.9M** |             **0** |               13.1M | **44.4 ms** |
+| d: upsert, `files_added` dropped                       |     356.5M |            150.3M |               13.3M |     84.3 ms |
+| f: as d, foreign keys off                              |     346.4M |            152.5M |               11.8M |     84.4 ms |
+| g: upsert, every trigger on `files` dropped            |     338.0M |            148.9M |                3.7M |     65.5 ms |
+| h: as g, foreign keys off                              |     173.5M |                 0 |                2.3M |     22.6 ms |
+| t1: upsert, `files_added` with its `meta` bump only    |     396.8M |            169.3M |               16.9M |    104.3 ms |
+| t2: upsert, `files_added` with its `files` UPDATE only |     541.3M |            177.9M |               29.1M |    128.1 ms |
+| k: one upsert statement for the batch, trigger kept    |     468.8M |              3.1M |                6.0M |     53.8 ms |
+| k2: one folded INSERT for the batch (`json_each`)      |     340.4M |              1.9M |                6.7M |     38.9 ms |
+| i: changed files, through the upsert                   |     638.0M |            142.5M |               45.6M |    146.7 ms |
+| j: changed files, plain UPDATE of the known row        |     602.3M |            143.0M |               42.3M |    149.0 ms |
+| e: `seen` UPDATE per file                              |     100.2M |             30.8M |                2.2M |     16.4 ms |
+| e2: as e, foreign keys off                             |      61.6M |                 0 |                2.2M |      7.7 ms |
+| e3: one `seen` UPDATE for the batch                    |      66.0M |              1.4M |               0.05M |      8.5 ms |
+| la-a-200: as a, lookaside 1200 × 200                   |     528.8M |            203.1M |                3.3M |    103.7 ms |
+| la-c-200: as c, lookaside 1200 × 200                   |     175.1M |                 0 |               0.01M |     21.6 ms |
+| a, memory statistics off                               |     497.3M |            157.3M |               12.9M |    122.5 ms |
+| c, memory statistics off                               |     182.9M |                 0 |                4.8M |     40.3 ms |
+| e, memory statistics off                               |      86.2M |             19.7M |                0.8M |     14.5 ms |
 
 - **Calibration:** variant a costs 578.7M against `upsert_file`'s 603.2M in the scan, and its journal 202.4M against
   213.9M. The probe is within 5% of the app. The app-level run then confirmed the probe's prediction: c − a = −380.8M in
@@ -199,39 +199,39 @@ Instruction counts are inside the timed part. Windows times are medians of 5 nat
   alone 40.3M (t1 − d). On Windows: 44 ms and 20 ms.
 - **Indexes** (each dropped from c, in Ir; Windows differences were within noise, 0 to 10%):
 
-  | Index | Saving |
-  |---|---:|
-  | `files_order` | 20.9M |
-  | `files_to_import` | 17.9M |
-  | `files_changed` | 16.4M |
-  | `files_seq` | 16.3M |
-  | `files_fresh` | 16.2M |
-  | `files_folder` | 16.0M |
-  | `files_present` | 14.5M |
-  | `files_ref` | 12.4M |
+  | Index             | Saving |
+  |-------------------|-------:|
+  | `files_order`     |  20.9M |
+  | `files_to_import` |  17.9M |
+  | `files_changed`   |  16.4M |
+  | `files_seq`       |  16.3M |
+  | `files_fresh`     |  16.2M |
+  | `files_folder`    |  16.0M |
+  | `files_present`   |  14.5M |
+  | `files_ref`       |  12.4M |
 
   Together, 131M: two thirds of the fixed write.
 
 ### Build options (scan probe, 4,000 files, whole process)
 
-| Build | Scan | Change in scan | Process |
-|---|---:|---:|---:|
-| Fork copy, no extra flags | 896.1M | | 1,082.3M |
-| `-DSQLITE_DEFAULT_MEMSTATUS=0` | 805.7M | −90.4M (−10.1%) | 961.3M |
-| … and `-DSQLITE_DEFAULT_LOOKASIDE=1200,200` | 784.6M | −111.5M (−12.4%) | 940.4M |
-| … and the `SQLITE_OMIT_*` set below | 787.7M | +3.1M on the line above | 943.0M |
-| Shipped tree, fat LTO, one codegen unit | 888.4M (vs 895.0M) | −6.6M (−0.7%) | 1,072.8M |
+| Build                                       |               Scan |          Change in scan |  Process |
+|---------------------------------------------|-------------------:|------------------------:|---------:|
+| Fork copy, no extra flags                   |             896.1M |                         | 1,082.3M |
+| `-DSQLITE_DEFAULT_MEMSTATUS=0`              |             805.7M |         −90.4M (−10.1%) |   961.3M |
+| … and `-DSQLITE_DEFAULT_LOOKASIDE=1200,200` |             784.6M |        −111.5M (−12.4%) |   940.4M |
+| … and the `SQLITE_OMIT_*` set below         |             787.7M | +3.1M on the line above |   943.0M |
+| Shipped tree, fat LTO, one codegen unit     | 888.4M (vs 895.0M) |           −6.6M (−0.7%) | 1,072.8M |
 
 The `SQLITE_OMIT_*` set was `-DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_LIKE_DOESNT_MATCH_BLOBS
 -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_USE_ALLOCA`. Every build scanned the 4,000 files the same way.
 
 ### The Windows lister
 
-| Library | 1 thread | 2 threads | 4 threads | 8 threads |
-|---|---:|---:|---:|---:|
-| 4k (80 folders), warm | 3.07 ms (767 ns/file) | 1.70 ms | 1.29 ms | 1.11 ms |
-| 200k (400 folders), warm | 38.1 ms (190 ns/file) | 26.4 ms | 12.5 ms | 8.6 ms (43 ns/file) |
-| 200k (400 folders), cold (median of 5) | 1,091 ms (5.5 µs/file) | 491 ms | 268 ms | 164 ms |
+| Library                                |               1 thread | 2 threads | 4 threads |           8 threads |
+|----------------------------------------|-----------------------:|----------:|----------:|--------------------:|
+| 4k (80 folders), warm                  |  3.07 ms (767 ns/file) |   1.70 ms |   1.29 ms |             1.11 ms |
+| 200k (400 folders), warm               |  38.1 ms (190 ns/file) |   26.4 ms |   12.5 ms | 8.6 ms (43 ns/file) |
+| 200k (400 folders), cold (median of 5) | 1,091 ms (5.5 µs/file) |    491 ms |    268 ms |              164 ms |
 
 - **Warm**, listing all 200,000 files takes 38 ms on one thread, 0.3% of the first scan.
 - **Cold** it takes 1.09 s: 7% of a cold first scan (15.3 s), and a third of a cold rescan (3.29 s). Eight threads list
@@ -334,38 +334,38 @@ The `SQLITE_OMIT_*` set was `-DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE
 
 Numbering follows the optimization list; 3b and 29 are new.
 
-| # | Item | Verdict | Evidence |
-|---|---|---|---|
-| 1 | Fold trigger values into the INSERT | **Confirmed, measured in the app** | With 3b: −43.4% of the scan at 4k, −41.7% at 200k, −51% and −38% on Windows. Needs 3b: folding alone keeps the journal (variant d) |
-| 2 | Reserve `seq` per batch | **Confirmed** | One bump per batch in the patched copy. The `meta` bump is 40.3M of the trigger's 222M (t1). A shared value is safe for today's readers (see **Design checks**) |
-| 3 | Set-based insert per batch | **Not worth it** | One statement per batch removes the journal, but its JSON costs more than the journal saved. In Ir, k2 is 340.4M against c's 197.9M. On Windows k2 is 12% faster than c, but c with lookaside (21.6 ms) beats both |
-| 3b | Plain INSERT for files the `known` lookup didn't find | **Confirmed, measured in the app** | Together with item 1 (see 1). Alone it saves nothing (variant b) |
-| 4 | `prepare_cached` for scan statements | Valid, small | `ScanWriter::new` prepares 10 statements per batch: 1.6M Ir per batch of up to 10,000 entries (32.6M for the 20 batches of the 200k rescan, 0.4% of it) |
-| 5 | Reduce per-row index maintenance | **Measured** | 12.4M to 20.9M per index per 4,000 files; together 131M, two thirds of the fixed write. `files_changed` (16.4M) has no production reader yet. `files_fresh` exists for pairing. Dropping any index is a design decision |
-| 6 | Batch the known-row lookup | Valid | 17.2M (1.9%) on a first scan. On a rescan it is 11.5k Ir per file (it finds and reads the row) |
-| 7 | Merge `prior_states` into the known lookup | **Refuted** | `prior_states` reads in its own snapshot when the folder is listed, before the batch's write transaction, so a write-back committed in between is kept. Read inside the write transaction, it would be overwritten |
-| 8 | Batch the identity fallback (`by_identity`) | Valid | 4,000 empty `query_row` calls on a first scan: 7.9M (0.9%) |
-| 9 | Resolve folder ids once per batch | Valid, minor | 80 calls: 3.0M (0.3%) |
-| 10 | ASCII fast path for extensions | Valid, minor | `Ext::of_name_bytes`: 1.9M (0.2%) |
-| 11 | Reuse name buffers | Valid | Each entry's `Name` is allocated at listing and cloned into the batch (`scan/src/lib.rs:558`) |
-| 12 | Profile the NTFS lister | **Measured** | Warm: 190 ns per file at 200k, 0.3% of the first scan. Cold: 5.5 µs per file, 1.09 s: 7% of a cold first scan, 33% of a cold rescan |
-| 13 | `seen` `BTreeSet` to a hash set | Valid, minor | Membership only, never iterated; `FileIdentity` derives `Hash`. 1.6M (0.2%) |
-| 14 | Clone of a folder key per file | **Refuted** | The 4,000 clones are the per-file `Name` (item 11) |
-| 15 | Larger batches | Small | A batch is up to 10,000 entries. On the 200k rescan the 20 commits cost 25.8M and the 20 writers 32.6M, together 0.7% of that scan |
-| 16 | The rescan's unchanged rows | **Measured** | They take the `seen` UPDATE, not the upsert: 14.2k Ir per file in the app, with a statement journal because `last_scan` is an FK column. One statement per batch: −48% on Windows (probe). Foreign keys off: −53% (probe). Not tried in the app |
-| 17 | Skip `mark_missing` on folders with no missing rows | Small | 5.4M at 4k, 0.18G at 200k (0.4 to 2.2% of the scan) |
-| 18 | Memory statistics off | **Confirmed, flag route measured** | −90.4M (−10.1%) with `-DSQLITE_DEFAULT_MEMSTATUS=0` in the fork. Windows: −10.5% (a), −9.2% (c). Nothing uses the statistics |
-| 19 | SQLite lookaside | **Confirmed, sizes measured** | 1200 × 200 removes the full-pool misses: −50M (a) and −23M (c) in Ir, −24% and −51% on Windows. 500 and 1,000 slots add nothing. As a build flag it costs 240 KB per connection (48 KB now), for every connection the app opens. Setting it only on the writer's connection (raw `sqlite3_db_config`) is the alternative |
-| 20 | Faster allocator | Valid, mostly downstream | glibc malloc and free are 14.0% of the process. The lookaside's Windows result shows allocations cost far more there. Items 1, 3b and 19 remove most SQLite allocations. A different allocator was not tried |
-| 21 | LTO, `codegen-units` | **Measured: −0.7%** | Fat LTO with one codegen unit: scan 895.0M → 888.4M. SQLite is C, built by `cc`, and is not part of Rust's LTO |
-| 22 | `SQLITE_OMIT_*` | **Measured: no gain** | The set in **Build options** changed the scan by +3.1M. JSON1 is in use, so it can't be omitted |
-| 23 | mmap to reduce `memcpy` | **Refuted** | Two thirds of `memcpy` is statement-journal copies, which `mmap_size` doesn't touch |
-| 24 | Smaller rows | **Corrected** | `files` has no `key` column. The name bytes appear three times per row: `name`, then in `order_key` lower-cased and then exact (`name.rs:120`) |
-| 25 | Fewer trigger-maintained columns | Confirmed | Same as item 1 |
-| 26 | Overlap listing with writing | **Pays cold, not warm** | The walk is single-threaded. Listing is 0.3% of a warm first scan, but a third of a cold rescan (1.09 of 3.29 s), which overlapping could hide behind the writes. Not tried |
-| 27 | Parallel listing | **Pays cold, not warm** | 8 threads list 4.4× faster warm (38 → 8.6 ms at 200k) and 6.7× faster cold (1.09 → 0.16 s). On a cold rescan that is up to 0.9 s of 3.29 s (28%). Constrained by the W2 rules and the lease (listing is outside transactions already). Not tried in the scan |
-| 28 | Cold-cache runs on Windows with `--drop-caches` | **Refuted** | `scan_timing.py --drop-caches` writes `/proc/sys/vm/drop_caches`: Linux only |
-| 29 | Skip `in_root` when the row is in the folder being written | **New, measured cost** | `in_root` runs for every present row: 11% of a rescan (17.8M at 4k, 0.91G at 200k). A `hit.folder_id != folder.id` guard skips it for unchanged files. Saving not measured |
+| #  | Item                                                       | Verdict                            | Evidence                                                                                                                                                                                                                                                                                                                 |
+|----|------------------------------------------------------------|------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | Fold trigger values into the INSERT                        | **Confirmed, measured in the app** | With 3b: −43.4% of the scan at 4k, −41.7% at 200k, −51% and −38% on Windows. Needs 3b: folding alone keeps the journal (variant d)                                                                                                                                                                                       |
+| 2  | Reserve `seq` per batch                                    | **Confirmed**                      | One bump per batch in the patched copy. The `meta` bump is 40.3M of the trigger's 222M (t1). A shared value is safe for today's readers (see **Design checks**)                                                                                                                                                          |
+| 3  | Set-based insert per batch                                 | **Not worth it**                   | One statement per batch removes the journal, but its JSON costs more than the journal saved. In Ir, k2 is 340.4M against c's 197.9M. On Windows k2 is 12% faster than c, but c with lookaside (21.6 ms) beats both                                                                                                       |
+| 3b | Plain INSERT for files the `known` lookup didn't find      | **Confirmed, measured in the app** | Together with item 1 (see 1). Alone it saves nothing (variant b)                                                                                                                                                                                                                                                         |
+| 4  | `prepare_cached` for scan statements                       | Valid, small                       | `ScanWriter::new` prepares 10 statements per batch: 1.6M Ir per batch of up to 10,000 entries (32.6M for the 20 batches of the 200k rescan, 0.4% of it)                                                                                                                                                                  |
+| 5  | Reduce per-row index maintenance                           | **Measured**                       | 12.4M to 20.9M per index per 4,000 files; together 131M, two thirds of the fixed write. `files_changed` (16.4M) has no production reader yet. `files_fresh` exists for pairing. Dropping any index is a design decision                                                                                                  |
+| 6  | Batch the known-row lookup                                 | Valid                              | 17.2M (1.9%) on a first scan. On a rescan it is 11.5k Ir per file (it finds and reads the row)                                                                                                                                                                                                                           |
+| 7  | Merge `prior_states` into the known lookup                 | **Refuted**                        | `prior_states` reads in its own snapshot when the folder is listed, before the batch's write transaction, so a write-back committed in between is kept. Read inside the write transaction, it would be overwritten                                                                                                       |
+| 8  | Batch the identity fallback (`by_identity`)                | Valid                              | 4,000 empty `query_row` calls on a first scan: 7.9M (0.9%)                                                                                                                                                                                                                                                               |
+| 9  | Resolve folder ids once per batch                          | Valid, minor                       | 80 calls: 3.0M (0.3%)                                                                                                                                                                                                                                                                                                    |
+| 10 | ASCII fast path for extensions                             | Valid, minor                       | `Ext::of_name_bytes`: 1.9M (0.2%)                                                                                                                                                                                                                                                                                        |
+| 11 | Reuse name buffers                                         | Valid                              | Each entry's `Name` is allocated at listing and cloned into the batch (`scan/src/lib.rs:558`)                                                                                                                                                                                                                            |
+| 12 | Profile the NTFS lister                                    | **Measured**                       | Warm: 190 ns per file at 200k, 0.3% of the first scan. Cold: 5.5 µs per file, 1.09 s: 7% of a cold first scan, 33% of a cold rescan                                                                                                                                                                                      |
+| 13 | `seen` `BTreeSet` to a hash set                            | Valid, minor                       | Membership only, never iterated; `FileIdentity` derives `Hash`. 1.6M (0.2%)                                                                                                                                                                                                                                              |
+| 14 | Clone of a folder key per file                             | **Refuted**                        | The 4,000 clones are the per-file `Name` (item 11)                                                                                                                                                                                                                                                                       |
+| 15 | Larger batches                                             | Small                              | A batch is up to 10,000 entries. On the 200k rescan the 20 commits cost 25.8M and the 20 writers 32.6M, together 0.7% of that scan                                                                                                                                                                                       |
+| 16 | The rescan's unchanged rows                                | **Measured**                       | They take the `seen` UPDATE, not the upsert: 14.2k Ir per file in the app, with a statement journal because `last_scan` is an FK column. One statement per batch: −48% on Windows (probe). Foreign keys off: −53% (probe). Not tried in the app                                                                          |
+| 17 | Skip `mark_missing` on folders with no missing rows        | Small                              | 5.4M at 4k, 0.18G at 200k (0.4 to 2.2% of the scan)                                                                                                                                                                                                                                                                      |
+| 18 | Memory statistics off                                      | **Confirmed, flag route measured** | −90.4M (−10.1%) with `-DSQLITE_DEFAULT_MEMSTATUS=0` in the fork. Windows: −10.5% (a), −9.2% (c). Nothing uses the statistics                                                                                                                                                                                             |
+| 19 | SQLite lookaside                                           | **Confirmed, sizes measured**      | 1200 × 200 removes the full-pool misses: −50M (a) and −23M (c) in Ir, −24% and −51% on Windows. 500 and 1,000 slots add nothing. As a build flag it costs 240 KB per connection (48 KB now), for every connection the app opens. Setting it only on the writer's connection (raw `sqlite3_db_config`) is the alternative |
+| 20 | Faster allocator                                           | Valid, mostly downstream           | glibc malloc and free are 14.0% of the process. The lookaside's Windows result shows allocations cost far more there. Items 1, 3b and 19 remove most SQLite allocations. A different allocator was not tried                                                                                                             |
+| 21 | LTO, `codegen-units`                                       | **Measured: −0.7%**                | Fat LTO with one codegen unit: scan 895.0M → 888.4M. SQLite is C, built by `cc`, and is not part of Rust's LTO                                                                                                                                                                                                           |
+| 22 | `SQLITE_OMIT_*`                                            | **Measured: no gain**              | The set in **Build options** changed the scan by +3.1M. JSON1 is in use, so it can't be omitted                                                                                                                                                                                                                          |
+| 23 | mmap to reduce `memcpy`                                    | **Refuted**                        | Two thirds of `memcpy` is statement-journal copies, which `mmap_size` doesn't touch                                                                                                                                                                                                                                      |
+| 24 | Smaller rows                                               | **Corrected**                      | `files` has no `key` column. The name bytes appear three times per row: `name`, then in `order_key` lower-cased and then exact (`name.rs:120`)                                                                                                                                                                           |
+| 25 | Fewer trigger-maintained columns                           | Confirmed                          | Same as item 1                                                                                                                                                                                                                                                                                                           |
+| 26 | Overlap listing with writing                               | **Pays cold, not warm**            | The walk is single-threaded. Listing is 0.3% of a warm first scan, but a third of a cold rescan (1.09 of 3.29 s), which overlapping could hide behind the writes. Not tried                                                                                                                                              |
+| 27 | Parallel listing                                           | **Pays cold, not warm**            | 8 threads list 4.4× faster warm (38 → 8.6 ms at 200k) and 6.7× faster cold (1.09 → 0.16 s). On a cold rescan that is up to 0.9 s of 3.29 s (28%). Constrained by the W2 rules and the lease (listing is outside transactions already). Not tried in the scan                                                             |
+| 28 | Cold-cache runs on Windows with `--drop-caches`            | **Refuted**                        | `scan_timing.py --drop-caches` writes `/proc/sys/vm/drop_caches`: Linux only                                                                                                                                                                                                                                             |
+| 29 | Skip `in_root` when the row is in the folder being written | **New, measured cost**             | `in_root` runs for every present row: 11% of a rescan (17.8M at 4k, 0.91G at 200k). A `hit.folder_id != folder.id` guard skips it for unchanged files. Saving not measured                                                                                                                                               |
 
 One more claim in the original list does not hold: running the probe on a catalog copy with the trigger dropped.
 `Catalog::prepare` compares the schema (`schema.rs`, `mismatch`) and rebuilds a mismatched catalog, so the experiment

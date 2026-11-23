@@ -7,19 +7,19 @@ when measured (the current build's schema is version 1, with no migrations; see 
 `path_rules = windows`) was analysed with `dbstat` (file 495.1 MiB; 155 pages are pointer-map pages because
 `auto_vacuum = incremental`; `freelist_count` 0):
 
-| Object | MiB | Note |
-|---|---|---|
-| `files` table | 186.8 | 237 B/row; `order_key` is 117 B of it |
-| `files_order` index | 104.1 | `order_key` again |
-| `analysis` table | 56.6 | 56 B/row, 26 columns; 14 MiB unused |
-| `files_folder` (folder_id, name) | 43.6 | duplicates the name |
-| `UNIQUE(volume, file_ref)` | 25.2 | |
-| `files_ref` | 16.2 | |
-| `analysis_borders_due` | 10.6 | transient (712,576 rows due) |
-| `files_changed` / `files_seq` / `files_present` | 9.3 / 9.3 / 8.4 | |
-| `analysis_file_hash` + `analysis_pixel_hash` | 8.0 + 8.0 | index only NULLs today |
-| `hashes_owed` | 7.1 | transient queue |
-| unused space inside pages | about 75 | |
+| Object                                          | MiB             | Note                                  |
+|-------------------------------------------------|-----------------|---------------------------------------|
+| `files` table                                   | 186.8           | 237 B/row; `order_key` is 117 B of it |
+| `files_order` index                             | 104.1           | `order_key` again                     |
+| `analysis` table                                | 56.6            | 56 B/row, 26 columns; 14 MiB unused   |
+| `files_folder` (folder_id, name)                | 43.6            | duplicates the name                   |
+| `UNIQUE(volume, file_ref)`                      | 25.2            |                                       |
+| `files_ref`                                     | 16.2            |                                       |
+| `analysis_borders_due`                          | 10.6            | transient (712,576 rows due)          |
+| `files_changed` / `files_seq` / `files_present` | 9.3 / 9.3 / 8.4 |                                       |
+| `analysis_file_hash` + `analysis_pixel_hash`    | 8.0 + 8.0       | index only NULLs today                |
+| `hashes_owed`                                   | 7.1             | transient queue                       |
+| unused space inside pages                       | about 75        |                                       |
 
 Today `order_key` = folder key (lowercase folder path, 32.6 B, repeated per file) + `0x00` + lower(name) + `0x00` +
 exact name.
@@ -281,14 +281,14 @@ CREATE INDEX files_seq ON files(seq);                               -- files_to_
 
 ## Expected result (dbstat MiB on the real rows)
 
-| Layout | MiB | vs 494.4 |
-|---|---|---|
-| Today | 494.4 | |
-| Today, repacked (`VACUUM`: 428.3 file) | 426.6 | -13.7% |
-| Earlier in-place design (Phase 1 + `mfolders`/`mid`/`name_key`), repacked, measured | 284.8 | -42% |
-| Stored lowercase sparse key, new layout: files side 156.7 + analysis 43.0 + borders_due 8.1 + hashes_owed 5.5 + placeholders 1.0, measured | about 214 | -57% |
+| Layout                                                                                                                                                    | MiB                                      | vs 494.4       |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------|----------------|
+| Today                                                                                                                                                     | 494.4                                    |                |
+| Today, repacked (`VACUUM`: 428.3 file)                                                                                                                    | 426.6                                    | -13.7%         |
+| Earlier in-place design (Phase 1 + `mfolders`/`mid`/`name_key`), repacked, measured                                                                       | 284.8                                    | -42%           |
+| Stored lowercase sparse key, new layout: files side 156.7 + analysis 43.0 + borders_due 8.1 + hashes_owed 5.5 + placeholders 1.0, measured                | about 214                                | -57%           |
 | **This plan: expression key, so no key column (about -7.5 estimated; the name part measured equal to an exact-bytes index) + `analysis` integers (-6.6)** | **about 200 (estimate; G3 measures it)** | **about -60%** |
-| Stored upcase key (the fallback): +31.8 over the expression key | about 232 | -53% |
+| Stored upcase key (the fallback): +31.8 over the expression key                                                                                           | about 232                                | -53%           |
 
 The borders (8.1) and hashes (5.5) queues are inside these totals and leave by themselves; the hashes pass then grows the file
 (see Context).

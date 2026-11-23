@@ -29,17 +29,17 @@ Out:
 
 ## 3. Decisions
 
-| Decision | Reason |
-| --- | --- |
-| Edge-to-edge pieces, PNG output, gallery UI in the first delivery | Chosen by the user. |
-| Pairwise edge score: the relative seam score in §4 | Correct on all photo neighbours measured. The flat-area score is 0, so acceptance depends on the ratio and the layout checks, not the value. |
-| Mutual-best links with a ratio of 1.3 | 1.3 gave no wrong layouts on 80 measured images; 1.6 gave three, from one 2×2 photo. |
-| Adjacency rule: every pair of pieces side by side in the result needs an accepted link | Without it, one wrong link plus correct ones can form a valid rectangle. With it, the 1.6 errors are gone. |
-| A preview must be confirmed before anything is written | The checks reduce wrong layouts but cannot prove one correct. |
-| Output beside the first piece, in the library, then rescan that folder | Stacking must show the merged file, and the file is only shown once it is catalogued (§8). |
-| Metadata: copy the tags, then set orientation to 1 | Verified: the copy carries the source's orientation, which would turn the merged picture sideways. |
-| Output never overwrites: a numbered name is used | A merge is a new picture; an earlier one must not be lost. |
-| Stacking: hidden members everywhere the library lists files | Counts must match what is shown. |
+| Decision                                                                               | Reason                                                                                                                                       |
+|----------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| Edge-to-edge pieces, PNG output, gallery UI in the first delivery                      | Chosen by the user.                                                                                                                          |
+| Pairwise edge score: the relative seam score in §4                                     | Correct on all photo neighbours measured. The flat-area score is 0, so acceptance depends on the ratio and the layout checks, not the value. |
+| Mutual-best links with a ratio of 1.3                                                  | 1.3 gave no wrong layouts on 80 measured images; 1.6 gave three, from one 2×2 photo.                                                         |
+| Adjacency rule: every pair of pieces side by side in the result needs an accepted link | Without it, one wrong link plus correct ones can form a valid rectangle. With it, the 1.6 errors are gone.                                   |
+| A preview must be confirmed before anything is written                                 | The checks reduce wrong layouts but cannot prove one correct.                                                                                |
+| Output beside the first piece, in the library, then rescan that folder                 | Stacking must show the merged file, and the file is only shown once it is catalogued (§8).                                                   |
+| Metadata: copy the tags, then set orientation to 1                                     | Verified: the copy carries the source's orientation, which would turn the merged picture sideways.                                           |
+| Output never overwrites: a numbered name is used                                       | A merge is a new picture; an earlier one must not be lost.                                                                                   |
+| Stacking: hidden members everywhere the library lists files                            | Counts must match what is shown.                                                                                                             |
 
 ## 4. Algorithm
 
@@ -62,15 +62,15 @@ layout the checks found, numbered, so the user can see a wrong order before writ
 
 ## 5. Failure cases
 
-| Case | Behaviour |
-| --- | --- |
-| Fewer than two pieces | Action disabled. |
-| A piece cannot be decoded | Refused, naming the file. |
-| Layout refused by a step in §4 | Refused, with the step named. No output. |
-| Canvas over the decoder cap (`max_decode_bytes`, 512 MiB) | Refused before allocation. Four 24-megapixel pieces (288 MB) fit. |
-| Output name taken | Numbered name. Never overwritten. |
-| An original changed since the scan | Refused, using the crop's check (size and mtime against the catalog). |
-| Stop during the job | The partial file is removed (the crop's `TempFile` pattern). |
+| Case                                                      | Behaviour                                                             |
+|-----------------------------------------------------------|-----------------------------------------------------------------------|
+| Fewer than two pieces                                     | Action disabled.                                                      |
+| A piece cannot be decoded                                 | Refused, naming the file.                                             |
+| Layout refused by a step in §4                            | Refused, with the step named. No output.                              |
+| Canvas over the decoder cap (`max_decode_bytes`, 512 MiB) | Refused before allocation. Four 24-megapixel pieces (288 MB) fit.     |
+| Output name taken                                         | Numbered name. Never overwritten.                                     |
+| An original changed since the scan                        | Refused, using the crop's check (size and mtime against the catalog). |
+| Stop during the job                                       | The partial file is removed (the crop's `TempFile` pattern).          |
 
 ## 6. The gallery and the dialog
 
@@ -132,15 +132,15 @@ Measurements were run on 2026-11-22 with throwaway scripts outside the repo. Tho
 the repo. The layout rows below are reproduced by `tools/merge_measure.py` (same files, same settings, same totals), so
 they can be checked. The neighbour and seam rows are not reproduced by it. These are evidence, not a proof.
 
-| Test | Result |
-| --- | --- |
-| Pairwise neighbour checks, 6 photos, JPEG q90/q75 and PNG pieces, grids 2×2, 3×2, 2×4 | The correct neighbour won all 378 checks. Smallest ratio of second-best to best: 1.67. |
-| Flat white control | Score 0 for every pair; ratio 1.00. |
-| One real pair from the user's catalog (local only) | Correct order: score 0.90. Reversed: 24.86. |
-| Layouts, 40 photos (360 grids), plan's formula with the adjacency rule, ratio 1.3 | 248 correct, 0 wrong, 112 refused. Reproduced by the tool. |
-| Layouts, 40 UI screenshots (360 grids), same rule | 31 correct, 0 wrong, 329 refused. Reproduced by the tool. |
-| Same photos, without the adjacency rule, ratio 1.3 | 257 correct, 0 wrong, 103 refused. |
-| Same photos, without the adjacency rule, ratio 1.6 | 302 correct, 3 wrong (one 2×2 photo, all three formats). |
+| Test                                                                                   | Result                                                                                                                    |
+|----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| Pairwise neighbour checks, 6 photos, JPEG q90/q75 and PNG pieces, grids 2×2, 3×2, 2×4  | The correct neighbour won all 378 checks. Smallest ratio of second-best to best: 1.67.                                    |
+| Flat white control                                                                     | Score 0 for every pair; ratio 1.00.                                                                                       |
+| One real pair from the user's catalog (local only)                                     | Correct order: score 0.90. Reversed: 24.86.                                                                               |
+| Layouts, 40 photos (360 grids), plan's formula with the adjacency rule, ratio 1.3      | 248 correct, 0 wrong, 112 refused. Reproduced by the tool.                                                                |
+| Layouts, 40 UI screenshots (360 grids), same rule                                      | 31 correct, 0 wrong, 329 refused. Reproduced by the tool.                                                                 |
+| Same photos, without the adjacency rule, ratio 1.3                                     | 257 correct, 0 wrong, 103 refused.                                                                                        |
+| Same photos, without the adjacency rule, ratio 1.6                                     | 302 correct, 3 wrong (one 2×2 photo, all three formats).                                                                  |
 | Flat black, rendered text, line art (9 grids each), with the adjacency rule, ratio 1.3 | All 27 refused. (Flat black and line art are reproducible with the tool; the rendered-text image is not generated by it.) |
 
 Also measured: the catalog holds 715,051 present files; the largest folder holds 55,517; a recursive listing can cover

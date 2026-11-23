@@ -12,11 +12,11 @@ This report lists the findings of a flow-based review of the photo-gallery repos
 
 ## Coverage
 
-| Measure | Value |
-|---|---:|
-| Flows traced | 37 |
-| Findings | 189 |
-| Sites recorded as not flows | 17 |
+| Measure                     | Value |
+|-----------------------------|------:|
+| Flows traced                |    37 |
+| Findings                    |   189 |
+| Sites recorded as not flows |    17 |
 
 Sites recorded as not flows are mostly test-only code (test modules and integration tests).
 
@@ -25,65 +25,65 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 ## Summary
 
 | Severity | Count |
-|---|---:|
-| high | 4 |
-| medium | 56 |
-| low | 129 |
+|----------|------:|
+| high     |     4 |
+| medium   |    56 |
+| low      |   129 |
 
-| Category | Count |
-|---|---:|
-| data-integrity | 148 |
-| security | 41 |
+| Category       | Count |
+|----------------|------:|
+| data-integrity |   148 |
+| security       |    41 |
 
 ## Verdicts
 
-| Verdict | Count |
-|---|---:|
-| CONFIRMED | 175 |
-| PARTIAL | 13 |
-| REFUTED | 1 |
+| Verdict   | Count |
+|-----------|------:|
+| CONFIRMED |   175 |
+| PARTIAL   |    13 |
+| REFUTED   |     1 |
 
 ## Flows
 
-| ID | Kind | Name | Findings |
-|---|---|---|---:|
-| F01 | untrusted-input | Library folder scan: directory listing and file identity | 5 |
-| F02 | untrusted-input | Image decode for thumbnails and grid pictures | 3 |
-| F03 | untrusted-input | Header and metadata parsing: EXIF, TIFF, XMP, PNG/JPEG/WebP containers during import | 1 |
-| F04 | boundary | Video container and frame reading through FFmpeg FFI | 5 |
-| F05 | untrusted-input | Catalog database file opened and read (untrusted local SQLite file) | 8 |
-| F06 | persistent-write | Thumbnail cache file open, read and write | 5 |
-| F07 | untrusted-input | Environment and default paths resolving the catalog, prefs and home folders | 4 |
-| F08 | untrusted-input | Desktop command-line options that trigger file writes or network calls | 7 |
-| F09 | untrusted-input | CLI arguments and borders tool file reads and writes | 5 |
-| F10 | untrusted-input | Folder picker result and start folder | 2 |
-| F11 | untrusted-input | QML file dialogs, drag and drop and external URL opens | 3 |
-| F12 | network | Yandex reverse-image search: upload and similar-page requests | 4 |
-| F13 | untrusted-input | Yandex response parsing (JSON and HTML state) | 6 |
-| F14 | network | Yandex result image download and decode check | 4 |
-| F15 | persistent-write | Yandex save: writing a result into the user's chosen folder | 4 |
-| F16 | untrusted-input | Recorded Yandex session replay (fixture folder) | 5 |
-| F17 | persistent-write | Original file write-back (ratings and tags written into user photos) | 5 |
-| F18 | boundary | ExifTool process spawn and stdin command protocol | 6 |
-| F19 | persistent-write | Crop and copy export to an output folder | 5 |
-| F20 | persistent-write | Catalog migration backup, rebuild and replacement | 5 |
-| F21 | persistent-write | Catalog sidecar deletion and move-aside | 5 |
-| F22 | persistent-write | Lock and live sidecar files beside catalog and log | 3 |
-| F23 | persistent-write | Log file append, rotation and perf-log sinks | 6 |
-| F24 | persistent-write | Preferences and unreadable-file quarantine (JSON store) | 8 |
-| F25 | persistent-write | Recording and screenshot writes to caller-named paths | 5 |
-| F26 | boundary | Qt and cxx-qt bridge boundary (QML, images, file watcher) | 3 |
-| F27 | boundary | Unsafe Windows API calls (file, volume, directory, console, dialog, message box) | 7 |
-| F28 | untrusted-input | Linux and POSIX system file reads (sysfs, udev, /proc, statfs) | 3 |
-| F29 | boundary | Audio backend library load (PipeWire) | 1 |
-| F30 | boundary | FFmpeg and ExifTool discovery by file path | 5 |
-| F31 | boundary | Build scripts reading environment and resource folders | 5 |
-| F32 | network | Python tool: ExifTool download, verify and extract | 3 |
-| F33 | network | Python tool: FFmpeg archive download and zip extraction | 6 |
-| F34 | boundary | Python tools: source download and build outputs (Qt, FFmpeg, libjpeg-turbo) | 9 |
-| F35 | persistent-write | PowerShell scripts: deletes, moves and writes under repo or chosen folders | 13 |
-| F36 | persistent-write | Eval harnesses: decoded output and benchmark file writes (C++ and Python) | 13 |
-| F37 | persistent-write | Developer tool: catalog-copy probe examples (copy and delete trees) | 2 |
+| ID  | Kind             | Name                                                                                 | Findings |
+|-----|------------------|--------------------------------------------------------------------------------------|---------:|
+| F01 | untrusted-input  | Library folder scan: directory listing and file identity                             |        5 |
+| F02 | untrusted-input  | Image decode for thumbnails and grid pictures                                        |        3 |
+| F03 | untrusted-input  | Header and metadata parsing: EXIF, TIFF, XMP, PNG/JPEG/WebP containers during import |        1 |
+| F04 | boundary         | Video container and frame reading through FFmpeg FFI                                 |        5 |
+| F05 | untrusted-input  | Catalog database file opened and read (untrusted local SQLite file)                  |        8 |
+| F06 | persistent-write | Thumbnail cache file open, read and write                                            |        5 |
+| F07 | untrusted-input  | Environment and default paths resolving the catalog, prefs and home folders          |        4 |
+| F08 | untrusted-input  | Desktop command-line options that trigger file writes or network calls               |        7 |
+| F09 | untrusted-input  | CLI arguments and borders tool file reads and writes                                 |        5 |
+| F10 | untrusted-input  | Folder picker result and start folder                                                |        2 |
+| F11 | untrusted-input  | QML file dialogs, drag and drop and external URL opens                               |        3 |
+| F12 | network          | Yandex reverse-image search: upload and similar-page requests                        |        4 |
+| F13 | untrusted-input  | Yandex response parsing (JSON and HTML state)                                        |        6 |
+| F14 | network          | Yandex result image download and decode check                                        |        4 |
+| F15 | persistent-write | Yandex save: writing a result into the user's chosen folder                          |        4 |
+| F16 | untrusted-input  | Recorded Yandex session replay (fixture folder)                                      |        5 |
+| F17 | persistent-write | Original file write-back (ratings and tags written into user photos)                 |        5 |
+| F18 | boundary         | ExifTool process spawn and stdin command protocol                                    |        6 |
+| F19 | persistent-write | Crop and copy export to an output folder                                             |        5 |
+| F20 | persistent-write | Catalog migration backup, rebuild and replacement                                    |        5 |
+| F21 | persistent-write | Catalog sidecar deletion and move-aside                                              |        5 |
+| F22 | persistent-write | Lock and live sidecar files beside catalog and log                                   |        3 |
+| F23 | persistent-write | Log file append, rotation and perf-log sinks                                         |        6 |
+| F24 | persistent-write | Preferences and unreadable-file quarantine (JSON store)                              |        8 |
+| F25 | persistent-write | Recording and screenshot writes to caller-named paths                                |        5 |
+| F26 | boundary         | Qt and cxx-qt bridge boundary (QML, images, file watcher)                            |        3 |
+| F27 | boundary         | Unsafe Windows API calls (file, volume, directory, console, dialog, message box)     |        7 |
+| F28 | untrusted-input  | Linux and POSIX system file reads (sysfs, udev, /proc, statfs)                       |        3 |
+| F29 | boundary         | Audio backend library load (PipeWire)                                                |        1 |
+| F30 | boundary         | FFmpeg and ExifTool discovery by file path                                           |        5 |
+| F31 | boundary         | Build scripts reading environment and resource folders                               |        5 |
+| F32 | network          | Python tool: ExifTool download, verify and extract                                   |        3 |
+| F33 | network          | Python tool: FFmpeg archive download and zip extraction                              |        6 |
+| F34 | boundary         | Python tools: source download and build outputs (Qt, FFmpeg, libjpeg-turbo)          |        9 |
+| F35 | persistent-write | PowerShell scripts: deletes, moves and writes under repo or chosen folders           |       13 |
+| F36 | persistent-write | Eval harnesses: decoded output and benchmark file writes (C++ and Python)            |       13 |
+| F37 | persistent-write | Developer tool: catalog-copy probe examples (copy and delete trees)                  |        2 |
 
 ## F01: Library folder scan: directory listing and file identity
 

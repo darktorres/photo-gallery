@@ -31,10 +31,10 @@ Out:
 
 Read from the GitHub API (`gh api`), not from the repo text:
 
-| Project | Licence | What it means for us |
-| --- | --- | --- |
-| `upscayl/upscayl` (the app) | AGPL-3.0 | Copying its code, or shipping its binary, brings AGPL terms to the app. Not used. |
-| `upscayl/upscayl-ncnn` (its backend) | AGPL-3.0 | Same. Not used. |
+| Project                                                      | Licence      | What it means for us                                                                                            |
+|--------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------|
+| `upscayl/upscayl` (the app)                                  | AGPL-3.0     | Copying its code, or shipping its binary, brings AGPL terms to the app. Not used.                               |
+| `upscayl/upscayl-ncnn` (its backend)                         | AGPL-3.0     | Same. Not used.                                                                                                 |
 | `xinntao/Real-ESRGAN` (the architecture and weights' source) | BSD-3-Clause | The licence of the copy in the Upscayl repo (`Real-ESRGAN_LICENSE.txt`) is also BSD 3-Clause. Permissive; used. |
 
 Decision (default): use the **Real-ESRGAN architecture and model weights** under their BSD-3 terms, run through ONNX

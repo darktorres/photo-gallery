@@ -321,13 +321,13 @@ URL: `GET /api/thumbs/{catalog_id}/t{THUMBS_VERSION}/{file_id}@{mtime}.{rotation
 
 Responses (after gate steps 1, 2, 4, 6, 7; the request never reads an original, never waits and never queues):
 
-| Case | Response |
-|---|---|
-| Exact key cached (or in the recent-fill map) | 200 image/jpeg; Cache-Control per O11 |
+| Case                                                                  | Response                                                                                                     |
+|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| Exact key cached (or in the recent-fill map)                          | 200 image/jpeg; Cache-Control per O11                                                                        |
 | Exact missing; a height in S cached for this file, mtime and rotation | 307 to that height's exact URL; no-store (lookup `get_nearest_into`, thumbcache lib.rs:138, restricted to S) |
-| Nothing cached for this file | 200 image/png, a 1x1 transparent image; no-store; X-Thumb-State: pending |
-| Key not current (catalog_id, THUMBS_VERSION, mtime, rotation) | 409 stale-key; no-store; the client re-reads the item |
-| File missing | 404 not-found; no-store |
+| Nothing cached for this file                                          | 200 image/png, a 1x1 transparent image; no-store; X-Thumb-State: pending                                     |
+| Key not current (catalog_id, THUMBS_VERSION, mtime, rotation)         | 409 stale-key; no-store; the client re-reads the item                                                        |
+| File missing                                                          | 404 not-found; no-store                                                                                      |
 
 Only the exact 200 is immutable, so non-exact bytes never enter a browser cache under the requested URL. The X-Thumb header is retired. `get_exact_into` is new.
 
@@ -439,32 +439,32 @@ Numbering follows TO_9 (schema.rs:36-44, 350). Migration 10 is the union of the 
 
 ### 1.10 Route table and body caps
 
-| Routes | Gate | Body cap |
-|---|---|---|
-| GET /login | pre-login | 0 |
-| POST /api/auth/login | pre-login | 4 KiB |
-| POST /api/auth/logout, GET /api/auth/session, POST /api/auth/elevate | LAN session | 0; 0; 4 KiB |
-| POST /api/auth/password/setup (loopback), change (LAN or loopback), reset (loopback), sign-out-everywhere | per section 2.8 | 4 KiB |
-| GET /api/devices, PATCH/DELETE /api/devices/{id}, POST /api/devices/{id}/revoke, POST /api/devices/revoke-others | per section 2.10 | 0; 4 KiB |
-| GET /api/hello | loopback, no bearer | 0 |
-| POST /api/server/stop | loopback bearer, build-exempt | 0 |
-| GET /api/settings; PUT /api/settings/{key} | session or bearer | 0; 4 KiB |
-| PUT /api/session/listing | session or bearer | 4 KiB |
-| POST /api/changes | session or bearer | 16 KiB |
-| GET /api/tree; GET /api/items/{file_id} | session or bearer | 0 |
-| PUT /api/items/{file_id}/rating, PUT .../mark, POST .../turns | session or bearer | 16 KiB |
-| POST /api/listings/full, /delta, /facets (option A) | session or bearer | 16 KiB |
-| POST /api/records (option A) | session or bearer | 16 KiB |
-| POST /api/selections/apply | session or bearer | 128 KiB |
-| POST /api/thumbs/wants | session or bearer | 64 KiB |
-| GET thumbnails; GET images | image (cookie or bearer; no build header) | 0 |
-| GET/PUT/DELETE /api/views/{name}; GET /api/views | session or bearer | 0; 16 KiB |
-| GET /api/inbox, entry actions, retries, ledgers, PUT /api/inbox/viewing | session or bearer | 0; 16 KiB |
-| GET /api/jobs/{job}; POST /api/jobs/{job}/cancel; GET /api/ops/{request_id} | session or bearer | 0 |
-| Library routes (status, roots, scans, rescan, paused, write-errors) | session or bearer | 4 KiB; 0 |
-| GET /api/fs/roots, GET /api/fs/folders | session or bearer | 0 |
-| Yandex searches and saves; GET save-folder | session or bearer | 16 KiB; 64 KiB; 0 |
-| GET /notices | session | 0 |
+| Routes                                                                                                           | Gate                                      | Body cap          |
+|------------------------------------------------------------------------------------------------------------------|-------------------------------------------|-------------------|
+| GET /login                                                                                                       | pre-login                                 | 0                 |
+| POST /api/auth/login                                                                                             | pre-login                                 | 4 KiB             |
+| POST /api/auth/logout, GET /api/auth/session, POST /api/auth/elevate                                             | LAN session                               | 0; 0; 4 KiB       |
+| POST /api/auth/password/setup (loopback), change (LAN or loopback), reset (loopback), sign-out-everywhere        | per section 2.8                           | 4 KiB             |
+| GET /api/devices, PATCH/DELETE /api/devices/{id}, POST /api/devices/{id}/revoke, POST /api/devices/revoke-others | per section 2.10                          | 0; 4 KiB          |
+| GET /api/hello                                                                                                   | loopback, no bearer                       | 0                 |
+| POST /api/server/stop                                                                                            | loopback bearer, build-exempt             | 0                 |
+| GET /api/settings; PUT /api/settings/{key}                                                                       | session or bearer                         | 0; 4 KiB          |
+| PUT /api/session/listing                                                                                         | session or bearer                         | 4 KiB             |
+| POST /api/changes                                                                                                | session or bearer                         | 16 KiB            |
+| GET /api/tree; GET /api/items/{file_id}                                                                          | session or bearer                         | 0                 |
+| PUT /api/items/{file_id}/rating, PUT .../mark, POST .../turns                                                    | session or bearer                         | 16 KiB            |
+| POST /api/listings/full, /delta, /facets (option A)                                                              | session or bearer                         | 16 KiB            |
+| POST /api/records (option A)                                                                                     | session or bearer                         | 16 KiB            |
+| POST /api/selections/apply                                                                                       | session or bearer                         | 128 KiB           |
+| POST /api/thumbs/wants                                                                                           | session or bearer                         | 64 KiB            |
+| GET thumbnails; GET images                                                                                       | image (cookie or bearer; no build header) | 0                 |
+| GET/PUT/DELETE /api/views/{name}; GET /api/views                                                                 | session or bearer                         | 0; 16 KiB         |
+| GET /api/inbox, entry actions, retries, ledgers, PUT /api/inbox/viewing                                          | session or bearer                         | 0; 16 KiB         |
+| GET /api/jobs/{job}; POST /api/jobs/{job}/cancel; GET /api/ops/{request_id}                                      | session or bearer                         | 0                 |
+| Library routes (status, roots, scans, rescan, paused, write-errors)                                              | session or bearer                         | 4 KiB; 0          |
+| GET /api/fs/roots, GET /api/fs/folders                                                                           | session or bearer                         | 0                 |
+| Yandex searches and saves; GET save-folder                                                                       | session or bearer                         | 16 KiB; 64 KiB; 0 |
+| GET /notices                                                                                                     | session                                   | 0                 |
 
 Every route declares its cap. The table is the input to the route-table test. Reads of bodies use the cap plus one byte (fetch.rs:49-52 pattern).
 
@@ -513,12 +513,12 @@ Every route declares its cap. The table is the input to the route-table test. Re
 
 ### 2.2 Verdicts at start
 
-| Verdict | Action | LAN |
-|---|---|---|
-| New (judge.rs:113-114) | Create the store. Seed the remembered rows from gallery.json when it parses, else defaults. If the catalog meta row server_store is set, post a store-missing notice. | off until an owner row exists |
-| Usable | Open it. | per settings and owner row |
-| Damaged (judge.rs:120) | Under Live::exclusive, move_aside to server.db.damaged (remove.rs:21, never overwrites), create as New, post a notice. | off |
-| Foreign (judge.rs:131-132) or Differs (judge.rs:134-135, including a newer schema) | Do not touch the file. Exit with the reason; the desktop shows it. The owner moves it aside with the offline command `gallery store move-aside`, or runs the newer build. | not started |
+| Verdict                                                                            | Action                                                                                                                                                                    | LAN                           |
+|------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------|
+| New (judge.rs:113-114)                                                             | Create the store. Seed the remembered rows from gallery.json when it parses, else defaults. If the catalog meta row server_store is set, post a store-missing notice.     | off until an owner row exists |
+| Usable                                                                             | Open it.                                                                                                                                                                  | per settings and owner row    |
+| Damaged (judge.rs:120)                                                             | Under Live::exclusive, move_aside to server.db.damaged (remove.rs:21, never overwrites), create as New, post a notice.                                                    | off                           |
+| Foreign (judge.rs:131-132) or Differs (judge.rs:134-135, including a newer schema) | Do not touch the file. Exit with the reason; the desktop shows it. The owner moves it aside with the offline command `gallery store move-aside`, or runs the newer build. | not started                   |
 
 The catalog meta row server_store is set once, when the server first creates server.db. A missing server.db with that row set means the store was lost; the notice says that sign-ins, devices and the password are gone.
 
@@ -711,13 +711,13 @@ Migration timing is O17; contents are section 1.9. The AUTOINCREMENT rebuild and
 
 ### 3.4 Stores after the flip
 
-| Store | Owner from C8 | Contents |
-|---|---|---|
-| catalog.sqlite | server | files, folders, views, inbox rows, analysis, ratings, border marks, pairs, job tables, ops table |
-| server.db | server | remembered (preferences, LAN settings, session listing, cutover marker), login and credential tables (section 2.3), request_ledger, job_reports |
-| gallery.json | server writes a mirror; read only by a rollback build and by the first import | the seven keys: write_back, real_size, row_height, dev_mode, yandex_folder, show_borders, last_file |
-| thumbs cache | server | thumbnails |
-| library files | server | crop copies, XMP and turn copies, Yandex saves |
+| Store          | Owner from C8                                                                 | Contents                                                                                                                                        |
+|----------------|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| catalog.sqlite | server                                                                        | files, folders, views, inbox rows, analysis, ratings, border marks, pairs, job tables, ops table                                                |
+| server.db      | server                                                                        | remembered (preferences, LAN settings, session listing, cutover marker), login and credential tables (section 2.3), request_ledger, job_reports |
+| gallery.json   | server writes a mirror; read only by a rollback build and by the first import | the seven keys: write_back, real_size, row_height, dev_mode, yandex_folder, show_borders, last_file                                             |
+| thumbs cache   | server                                                                        | thumbnails                                                                                                                                      |
+| library files  | server                                                                        | crop copies, XMP and turn copies, Yandex saves                                                                                                  |
 
 Remembered table: `remembered(scope_kind, scope_id, field, version INTEGER NOT NULL, value JSON, updated, PRIMARY KEY (scope_kind, scope_id, field))`, version 0 meaning never written. Each applied write is one FULL transaction that sets value and version + 1. After commit the server rewrites gallery.json through the JsonStore pattern (temp, sync, rename, temp removed on failure). A mirror failure after commit posts a notice and the write stays applied; the mirror is retried at the next write and at start.
 
@@ -775,13 +775,13 @@ Resolved: ops' exclusive-wait direct write (a refusal in disguise) and cutover's
 
 Fields and stores:
 
-| Field | Scope | Store |
-|---|---|---|
-| listing | remembered, user | remembered table; catalog session row copied on clean stop |
-| show_borders, last_file | remembered, user | remembered table; mirrored |
-| row_height, dev_mode | remembered, device | remembered table; mirrored |
-| real_size (desktop only) | remembered, device this_computer | remembered table; mirrored (O29) |
-| current, viewer_open, filters_open, scroll anchor, format | session | sessionStorage on the phone; memory on the desktop |
+| Field                                                     | Scope                            | Store                                                      |
+|-----------------------------------------------------------|----------------------------------|------------------------------------------------------------|
+| listing                                                   | remembered, user                 | remembered table; catalog session row copied on clean stop |
+| show_borders, last_file                                   | remembered, user                 | remembered table; mirrored                                 |
+| row_height, dev_mode                                      | remembered, device               | remembered table; mirrored                                 |
+| real_size (desktop only)                                  | remembered, device this_computer | remembered table; mirrored (O29)                           |
+| current, viewer_open, filters_open, scroll anchor, format | session                          | sessionStorage on the phone; memory on the desktop         |
 
 Not in ViewState: yandex_folder (a server setting); StartGate (start.rs:36-47); Deadlines (deadlines.rs:33-34); generation and reveal (controller.rs:204-208); grid_width (controller.rs:203); GridSize scale and shown_thumb (size.rs:40-44); saved_row; Input count; the listing id; modal panels (panels.rs:79-80) in v1; apply_view and StartOverrides (run-only); the filter bar's Counts.
 
@@ -861,14 +861,14 @@ Option A (O16, recommended by this cluster): a client-held replica. No server li
 
 ### 4.3 Routes and reply format (option A)
 
-| Route | Body | Reply |
-|---|---|---|
-| POST /api/listings/full | {listing, anchor?} (anchor is a decimal FileId) | Full reply |
-| POST /api/listings/delta | {listing, seq, catalog_id} | Delta, or Full |
-| POST /api/listings/facets | {listing} | {seq, counts} |
-| POST /api/records | {ids}, at most 500 decimal strings | GridRecord binary, with a gone flag per id |
-| POST /api/changes | listing entries (section 4.9) | moved listing keys |
-| POST /api/selections/apply | section 1.7 | 202 job, or 409 |
+| Route                      | Body                                            | Reply                                      |
+|----------------------------|-------------------------------------------------|--------------------------------------------|
+| POST /api/listings/full    | {listing, anchor?} (anchor is a decimal FileId) | Full reply                                 |
+| POST /api/listings/delta   | {listing, seq, catalog_id}                      | Delta, or Full                             |
+| POST /api/listings/facets  | {listing}                                       | {seq, counts}                              |
+| POST /api/records          | {ids}, at most 500 decimal strings              | GridRecord binary, with a gone flag per id |
+| POST /api/changes          | listing entries (section 4.9)                   | moved listing keys                         |
+| POST /api/selections/apply | section 1.7                                     | 202 job, or 409                            |
 
 Every reply is private, no-store, with brotli or gzip by Accept-Encoding. FileIds in JSON bodies are decimal strings, since an i64 may exceed 2^53.
 

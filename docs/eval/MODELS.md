@@ -4,16 +4,16 @@ Measured results for the models: their speed, their retrieval quality, and the a
 
 ## Model speed (RTX 2060, GPU only, synthetic input, batch 64)
 
-| Model | img/s | GPU hours for 70M |
-|---|---|---|
-| SSCD fp32 320px | 241 | 81 |
-| **SSCD fp16 320px** | **410** | **47** |
-| SSCD fp16 288px | 499 | 39 |
-| SSCD fp16 256px | 653 | 30 |
-| SSCD large (ResNeXt101) fp32 | 105 | 185 |
-| DINOv2-S fp16 224px | 1020 | 19 |
-| DINOv2-B fp16 224px | 356 | 55 |
-| CLIP B/32 fp16 224px | 1498 | 13 |
+| Model                        | img/s   | GPU hours for 70M |
+|------------------------------|---------|-------------------|
+| SSCD fp32 320px              | 241     | 81                |
+| **SSCD fp16 320px**          | **410** | **47**            |
+| SSCD fp16 288px              | 499     | 39                |
+| SSCD fp16 256px              | 653     | 30                |
+| SSCD large (ResNeXt101) fp32 | 105     | 185               |
+| DINOv2-S fp16 224px          | 1020    | 19                |
+| DINOv2-B fp16 224px          | 356     | 55                |
+| CLIP B/32 fp16 224px         | 1498    | 13                |
 
 ## Model quality
 
@@ -23,16 +23,16 @@ Measured results for the models: their speed, their retrieval quality, and the a
 `dups2` groups, i.e. different pictures) above each threshold, the false-positive measure that
 replaces `similiar_but_not_dups` (mostly matches now, see VERIFIER.md, "Superseded the same day").
 
-| Model | R@1 / R@10 | Thr @95% | Loose dups2 with partner | Cross-group flagged @90% | @95% |
-|---|---|---|---|---|---|
-| sscd (fp32) | 0.964 / 1.000 | 0.879 | 92.4% | 0 | 0 |
-| **sscd_fp16** | 0.964 / 1.000 | 0.879 | 92.4% | **0** | **0** |
-| sscd_288_fp16 | 0.964 / 1.000 | 0.874 | 92.5% | 0 | 0 |
-| sscd_large | 0.962 / 1.000 | 0.859 | 91.3% | 0 | 2 |
-| dinov2_s | 0.962 / 1.000 | 0.945 | 92.8% | 4 | 4 |
-| dinov2_b | 0.963 / 1.000 | 0.943 | 93.1% | 0 | 4 |
-| clip_b32 | 0.959 / 1.000 | 0.929 | 89.5% | 7 | 17 |
-| pdq | 0.924 / 0.957 | 0.234 (d ≤ 98) | 97.9% | 1 | 345 |
+| Model         | R@1 / R@10    | Thr @95%       | Loose dups2 with partner | Cross-group flagged @90% | @95%  |
+|---------------|---------------|----------------|--------------------------|--------------------------|-------|
+| sscd (fp32)   | 0.964 / 1.000 | 0.879          | 92.4%                    | 0                        | 0     |
+| **sscd_fp16** | 0.964 / 1.000 | 0.879          | 92.4%                    | **0**                    | **0** |
+| sscd_288_fp16 | 0.964 / 1.000 | 0.874          | 92.5%                    | 0                        | 0     |
+| sscd_large    | 0.962 / 1.000 | 0.859          | 91.3%                    | 0                        | 2     |
+| dinov2_s      | 0.962 / 1.000 | 0.945          | 92.8%                    | 4                        | 4     |
+| dinov2_b      | 0.963 / 1.000 | 0.943          | 93.1%                    | 0                        | 4     |
+| clip_b32      | 0.959 / 1.000 | 0.929          | 89.5%                    | 7                        | 17    |
+| pdq           | 0.924 / 0.957 | 0.234 (d ≤ 98) | 97.9%                    | 1                        | 345   |
 
 - **SSCD flags no different-picture pair at any operating point up to 95% recall**; DINOv2 4,
   CLIP 17. The cross-group set is easy at threshold level (most of it is far apart); the hard
@@ -46,14 +46,14 @@ replaces `similiar_but_not_dups` (mostly matches now, see VERIFIER.md, "Supersed
 All six models at the same recall on labeled pairs (higher "loose with partner" is better;
 lower "flagged" and "hard neg" are better):
 
-| Model | Thr @95% | Loose dups2 with partner | Flagged unlabeled | Hard neg flagged (of 68,265) |
-|---|---|---|---|---|
-| sscd (fp32) | 0.879 | 92.4% | 2,653 | 41 |
-| sscd_fp16 | 0.879 | 92.4% | 2,653 | 42 |
-| sscd_288_fp16 | 0.874 | 92.5% | 2,657 | 41 |
-| dinov2_s | 0.945 | 92.8% | 2,742 | 78 |
-| dinov2_b | 0.943 | 93.1% | 2,806 | 74 |
-| clip_b32 | 0.929 | 89.5% | 2,861 | 78 |
+| Model         | Thr @95% | Loose dups2 with partner | Flagged unlabeled | Hard neg flagged (of 68,265) |
+|---------------|----------|--------------------------|-------------------|------------------------------|
+| sscd (fp32)   | 0.879    | 92.4%                    | 2,653             | 41                           |
+| sscd_fp16     | 0.879    | 92.4%                    | 2,653             | 42                           |
+| sscd_288_fp16 | 0.874    | 92.5%                    | 2,657             | 41                           |
+| dinov2_s      | 0.945    | 92.8%                    | 2,742             | 78                           |
+| dinov2_b      | 0.943    | 93.1%                    | 2,806             | 74                           |
+| clip_b32      | 0.929    | 89.5%                    | 2,861             | 78                           |
 
 The same pattern holds at 80% and 90% recall (e.g. hard negatives at 90%: SSCD 26,
 DINOv2 51–52, CLIP 54).
@@ -76,9 +76,9 @@ DINOv2 51–52, CLIP 54).
 - **Operating points:**
 
 | Target recall | Threshold | Loose dups2 with partner | Flagged unlabeled pairs | Hard negatives flagged |
-|---|---|---|---|---|
-| 0.90 | 0.909 | 88.3% | 2,496 | 26 / 68,265 (0.04%) |
-| 0.95 | 0.879 | 92.4% | 2,653 | 42 / 68,265 (0.06%) |
+|---------------|-----------|--------------------------|-------------------------|------------------------|
+| 0.90          | 0.909     | 88.3%                    | 2,496                   | 26 / 68,265 (0.04%)    |
+| 0.95          | 0.879     | 92.4%                    | 2,653                   | 42 / 68,265 (0.06%)    |
 
 Flagged unlabeled pairs include real but unlabeled duplicates. Precision is unknown until
 `review_*.csv` is labeled.
@@ -115,21 +115,21 @@ Each cell is **R@10 · share above the model's 95%-recall threshold**. R@1 is lo
 and edit (0.75–0.93, even for JPEG q30) because exact duplicates of a sampled image already exist
 in the index and tie or win rank 1, so R@10 is the retrieval measure here.
 
-| Edit | sscd_fp16 | sscd_large | dinov2_s | dinov2_b | clip_b32 | pdq |
-|---|---|---|---|---|---|---|
-| JPEG q30 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00 |
-| Downscale 25% | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 0.76 | 1.00 · 1.00 |
-| Grayscale | 1.00 · 0.97 | 1.00 · 0.96 | 1.00 · 0.60 | 1.00 · 0.81 | 0.99 · 0.02 | 1.00 · 1.00 |
-| Color shift | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00 |
-| Text overlay | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.80 | 1.00 · 0.73 | 0.97 · 0.00 | 1.00 · 1.00 |
-| Letterbox 10% | 1.00 · 0.00 | 1.00 · 0.09 | 1.00 · 0.55 | 1.00 · 0.66 | 1.00 · 0.60 | 0.11 · 0.06 |
-| Mirror | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.65 | 1.00 · 0.98 | 1.00 · 0.99 | 0.00 · 0.00 ¹ |
-| Rotate 90° | 1.00 · 0.00 | 1.00 · 0.01 | 0.95 · 0.00 | 0.95 · 0.00 | 0.99 · 0.01 | 0.00 · 0.00 ¹ |
-| Crop 80% | 1.00 · 0.77 | 1.00 · 0.98 | 1.00 · 0.70 | 1.00 · 0.83 | 1.00 · 0.90 | 0.33 · 0.26 |
-| Crop 60% | 1.00 · 0.00 | 1.00 · 0.09 | 1.00 · 0.30 | 0.99 · 0.38 | 0.99 · 0.49 | 0.02 · 0.01 |
-| Crop 40% | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.00 | 0.95 · 0.04 | 0.97 · 0.08 | 0.00 · 0.00 |
-| Crop 25% | **1.00** · 0.00 | **1.00** · 0.00 | 0.95 · 0.00 | 0.80 · 0.00 | 0.85 · 0.00 | 0.00 · 0.00 |
-| Crop 50% + mirror | 1.00 · 0.00 | 1.00 · 0.00 | 1.00 · 0.00 | 0.99 · 0.10 | 0.99 · 0.20 | 0.00 · 0.00 |
+| Edit              | sscd_fp16       | sscd_large      | dinov2_s    | dinov2_b    | clip_b32    | pdq           |
+|-------------------|-----------------|-----------------|-------------|-------------|-------------|---------------|
+| JPEG q30          | 1.00 · 1.00     | 1.00 · 1.00     | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00   |
+| Downscale 25%     | 1.00 · 1.00     | 1.00 · 1.00     | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 0.76 | 1.00 · 1.00   |
+| Grayscale         | 1.00 · 0.97     | 1.00 · 0.96     | 1.00 · 0.60 | 1.00 · 0.81 | 0.99 · 0.02 | 1.00 · 1.00   |
+| Color shift       | 1.00 · 1.00     | 1.00 · 1.00     | 1.00 · 1.00 | 1.00 · 1.00 | 1.00 · 0.99 | 1.00 · 1.00   |
+| Text overlay      | 1.00 · 0.00     | 1.00 · 0.00     | 1.00 · 0.80 | 1.00 · 0.73 | 0.97 · 0.00 | 1.00 · 1.00   |
+| Letterbox 10%     | 1.00 · 0.00     | 1.00 · 0.09     | 1.00 · 0.55 | 1.00 · 0.66 | 1.00 · 0.60 | 0.11 · 0.06   |
+| Mirror            | 1.00 · 1.00     | 1.00 · 1.00     | 1.00 · 0.65 | 1.00 · 0.98 | 1.00 · 0.99 | 0.00 · 0.00 ¹ |
+| Rotate 90°        | 1.00 · 0.00     | 1.00 · 0.01     | 0.95 · 0.00 | 0.95 · 0.00 | 0.99 · 0.01 | 0.00 · 0.00 ¹ |
+| Crop 80%          | 1.00 · 0.77     | 1.00 · 0.98     | 1.00 · 0.70 | 1.00 · 0.83 | 1.00 · 0.90 | 0.33 · 0.26   |
+| Crop 60%          | 1.00 · 0.00     | 1.00 · 0.09     | 1.00 · 0.30 | 0.99 · 0.38 | 0.99 · 0.49 | 0.02 · 0.01   |
+| Crop 40%          | 1.00 · 0.00     | 1.00 · 0.00     | 1.00 · 0.00 | 0.95 · 0.04 | 0.97 · 0.08 | 0.00 · 0.00   |
+| Crop 25%          | **1.00** · 0.00 | **1.00** · 0.00 | 0.95 · 0.00 | 0.80 · 0.00 | 0.85 · 0.00 | 0.00 · 0.00   |
+| Crop 50% + mirror | 1.00 · 0.00     | 1.00 · 0.00     | 1.00 · 0.00 | 0.99 · 0.10 | 0.99 · 0.20 | 0.00 · 0.00   |
 
 ¹ PDQ queried with all 8 rotations/mirrors (`compute_dihedral`): mirror and rotate 90° → R@10 1.00,
 d p50 0, within d ≤ 31 99.7%. The other rows don't change.
@@ -152,15 +152,15 @@ RTX 2060, batch 64, 320 px, GPU only. Measured first on the CUDA 12 stack (drive
 the driver update on CUDA 13 (driver 621.01: torch 2.15 cu132, onnxruntime-gpu 1.31.1, TensorRT 11.4 / 10.16
 cu13):
 
-| Runtime | img/s, CUDA 12 → 13 | GPU hours for 70M (CUDA 13) | Cosine vs torch fp32 (9.3k subset): min / p1 |
-|---|---|---|---|
-| torch fp32 | 241 → 231 | 84 | – |
-| torch fp16 autocast | 410 → 459 | 42 | 0.9998 / 0.9999 |
-| ONNX Runtime CUDA provider, fp32 | 201 → 232 | 84 | 1.0000 |
-| ONNX Runtime CUDA provider, fp16 | 310 → 446 | 44 | 0.9998 (128 images) |
-| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 → 1,420 | 14 | 0.9997 (128 images) |
-| **TensorRT 11, fp16** | **1,390 → 1,438** | **14** | 0.9996 / 0.9999 |
-| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 → 2,893 | 7 | 0.7334 / 0.9293 |
+| Runtime                                               | img/s, CUDA 12 → 13 | GPU hours for 70M (CUDA 13) | Cosine vs torch fp32 (9.3k subset): min / p1 |
+|-------------------------------------------------------|---------------------|-----------------------------|----------------------------------------------|
+| torch fp32                                            | 241 → 231           | 84                          | –                                            |
+| torch fp16 autocast                                   | 410 → 459           | 42                          | 0.9998 / 0.9999                              |
+| ONNX Runtime CUDA provider, fp32                      | 201 → 232           | 84                          | 1.0000                                       |
+| ONNX Runtime CUDA provider, fp16                      | 310 → 446           | 44                          | 0.9998 (128 images)                          |
+| ONNX Runtime TensorRT provider (TensorRT 10), fp16    | 1,382 → 1,420       | 14                          | 0.9997 (128 images)                          |
+| **TensorRT 11, fp16**                                 | **1,390 → 1,438**   | **14**                      | 0.9996 / 0.9999                              |
+| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 → 2,893       | 7                           | 0.7334 / 0.9293                              |
 
 - **TensorRT fp16 is 3.4× torch fp16, with the same embeddings.** On the subset its retrieval is
   identical to `sscd_fp16`: R@1 0.964, R@10 1.0, the same thresholds (±0.0004) and flagged pairs (±5),
@@ -170,12 +170,12 @@ cu13):
   ONNX Runtime's own CUDA kernels are slower than torch.
 - **int8 is not worth it.** Calibration variants (128–256 images; cosine vs fp32 min / p1, img/s):
 
-  | int8 variant | Cosine min / p1 | img/s |
-  |---|---|---|
-  | entropy calibration, everything quantized | 0.90 / 0.93 | 2,959 |
-  | max calibration | 0.80 / 0.95 | 2,874 |
-  | entropy, first conv + layer4 kept fp16 | 0.91 / 0.97 | 2,193 |
-  | max, first conv + layer4 kept fp16 | 0.94 / 0.96 | 2,217 |
+  | int8 variant                              | Cosine min / p1 | img/s |
+  |-------------------------------------------|-----------------|-------|
+  | entropy calibration, everything quantized | 0.90 / 0.93     | 2,959 |
+  | max calibration                           | 0.80 / 0.95     | 2,874 |
+  | entropy, first conv + layer4 kept fp16    | 0.91 / 0.97     | 2,193 |
+  | max, first conv + layer4 kept fp16        | 0.94 / 0.96     | 2,217 |
 
   Subset retrieval with the first variant is nearly unchanged (R@1 0.962 vs 0.964, same cross-group
   counts), but single images move as far as cosine 0.73, and at fp16 speed the GPU is no longer the
@@ -202,13 +202,13 @@ ONNX in fp16 and built as TensorRT 11 engines like SSCD's. Speed is GPU-only (ba
 TensorRT with torch fp32 on 128 real images. Quality is the published zero-shot ImageNet-1k top-1: there are no
 keyword labels here, so it ranks the models, not their fit to this library.
 
-| Model (open_clip) | Input | Image tower | ImageNet zero-shot | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | Cosine min |
-|---|---|---|---|---|---|---|---|
-| CLIP ViT-B/32 (LAION-2B) | 224 px | 88 M | 66.6% | 1,506 | 2,171 | 9 | 0.9996 |
-| SigLIP 2 B/32 | 256 px | 95 M | 74.0% | 1,214 | 2,198 | 9 | 0.9994 |
-| **SigLIP 2 B/16** | 224 px | 93 M | **78.2%** | 448 | **741** | **26** | 0.9999 |
-| SigLIP 2 L/16 | 256 px | 316 M | 82.5% | 109 | 178 | 109 | 0.9997 |
-| SigLIP 2 So400m/14 | 224 px | 428 M | 83.2% | 78 | 122 | 159 | 0.9994 |
+| Model (open_clip)        | Input  | Image tower | ImageNet zero-shot | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | Cosine min |
+|--------------------------|--------|-------------|--------------------|------------------|---------------------|-------------------|------------|
+| CLIP ViT-B/32 (LAION-2B) | 224 px | 88 M        | 66.6%              | 1,506            | 2,171               | 9                 | 0.9996     |
+| SigLIP 2 B/32            | 256 px | 95 M        | 74.0%              | 1,214            | 2,198               | 9                 | 0.9994     |
+| **SigLIP 2 B/16**        | 224 px | 93 M        | **78.2%**          | 448              | **741**             | **26**            | 0.9999     |
+| SigLIP 2 L/16            | 256 px | 316 M       | 82.5%              | 109              | 178                 | 109               | 0.9997     |
+| SigLIP 2 So400m/14       | 224 px | 428 M       | 83.2%              | 78               | 122                 | 159               | 0.9994     |
 
 ImageNet numbers: SigLIP 2 paper (arXiv 2502.14786, Table 1); CLIP B/32 from open_clip's results table.
 
@@ -241,13 +241,13 @@ position grid is resized to each image's grid. One model serves every N, and the
   fixed length. It matches the HF model to 3e-6 in fp32. Measured on the
   RTX 2060 (batch 64):
 
-| Model | Tokens | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | TensorRT vs fp32 cosine min |
-|---|---|---|---|---|---|
-| B/16 fixed 224 | 196 | 448 | 741 | 26 | 0.9999 |
-| B/16 fixed 256 | 256 | 280 | 411 | 47 | – |
-| **B/16 NaFlex** | ≤ 256 | 278 | 383 | 51 | 0.9995 |
-| So400m/14 fixed 224 | 256 | 65–78 | 122 | 159 | 0.9994 |
-| **So400m/16 NaFlex** | ≤ 256 | 66 | 126 | 154 | 0.997 |
+| Model                | Tokens | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | TensorRT vs fp32 cosine min |
+|----------------------|--------|------------------|---------------------|-------------------|-----------------------------|
+| B/16 fixed 224       | 196    | 448              | 741                 | 26                | 0.9999                      |
+| B/16 fixed 256       | 256    | 280              | 411                 | 47                | –                           |
+| **B/16 NaFlex**      | ≤ 256  | 278              | 383                 | 51                | 0.9995                      |
+| So400m/14 fixed 224  | 256    | 65–78            | 122                 | 159               | 0.9994                      |
+| **So400m/16 NaFlex** | ≤ 256  | 66               | 126                 | 154               | 0.997                       |
 
 - **Conclusion:** at equal tokens NaFlex costs the same (So400m) or 7% more (B/16, the mask). Its gain is no
   distortion of portrait images and better text-in-image retrieval. On the published natural-image numbers it is
@@ -268,11 +268,11 @@ position grid is resized to each image's grid. One model serves every N, and the
   picks kernels by time.
 - **One Linear alone, at So400m's shapes** (16,384 tokens; error vs float64):
 
-| Shape | cuBLAS fp16 | TensorRT fp16 | TensorRT, output cast to fp32 | TensorRT, inputs cast to fp32 |
-|---|---|---|---|---|
-| QKV 1152→1152 | 2.1e-4 | 2.3e-3 (1.0 ms) | 2.3e-3 (same kernel) | 2.1e-4 (7.9 ms, `sgemm`) |
-| fc1 1152→4304 | 2.1e-4 | 2.3e-3 (5.0 ms) | 2.3e-3 | 2.1e-4 (28.9 ms) |
-| fc2 4304→1152 | 2.1e-4 | 4.1e-3 (4.3 ms) | 4.1e-3 | 2.1e-4 (27.7 ms) |
+| Shape         | cuBLAS fp16 | TensorRT fp16   | TensorRT, output cast to fp32 | TensorRT, inputs cast to fp32 |
+|---------------|-------------|-----------------|-------------------------------|-------------------------------|
+| QKV 1152→1152 | 2.1e-4      | 2.3e-3 (1.0 ms) | 2.3e-3 (same kernel)          | 2.1e-4 (7.9 ms, `sgemm`)      |
+| fc1 1152→4304 | 2.1e-4      | 2.3e-3 (5.0 ms) | 2.3e-3                        | 2.1e-4 (28.9 ms)              |
+| fc2 4304→1152 | 2.1e-4      | 4.1e-3 (4.3 ms) | 4.1e-3                        | 2.1e-4 (27.7 ms)              |
 
 - **No switch.** TensorRT 11 has no accumulation setting: it is strongly typed, and its builder flags only cover
   TF32 and strict NaNs. Writing the matmul in fp32 gets the precision back, but only through plain fp32 `sgemm`

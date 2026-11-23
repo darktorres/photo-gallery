@@ -2,21 +2,21 @@
 
 How a browser client for the gallery should be built. Claims about other projects were checked against their source at the commits pinned below, and claims that could not be checked were removed. The rest was checked against this repo on 2026-11-12. It covers the frontend, how thumbnails get past the browser's connection limit, how video plays, what the server must send, and how state is split between client and server.
 
-| Project | Stars | Server / client | Commit read |
-|---|---|---|---|
-| Immich (+ `justified-layout`) | 118k | NestJS / SvelteKit, layout in Rust→WASM | `b7510e7` (`justified-layout` at `6d5d2df`) |
-| PhotoPrism | 40k | Go / Vue | `fe94b42` |
-| Ente (web) | 30k | Go / Next.js, logic in Rust→WASM | `54e4e209` |
-| LibrePhotos | 8k | Django / React | `eefb8d5` |
-| Photoview | 6.6k | Go + GraphQL / React | `4abdab7` |
-| Nextcloud Memories (+ go-vod) | 3.9k | PHP / Vue, Go transcoder | `dbf9f4e1` (Memories; go-vod has no pin yet) |
-| PiGallery2 | 2.3k | Node / Angular | `e92fe15` |
-| HomeGallery | 1.2k | Node / React | `5b6232c` |
-| Spacedrive | 39k | Rust / React | `26b57e1` |
-| lap | 4.2k | Rust (Tauri) / Vue | `f40520f` |
-| Photofield | — | Go / Vue + OpenLayers | `d7374a9` |
-| Urocissa | 300 | Rust (Rocket) / Vue | `102025d` |
-| SPIS | 212 | Rust (axum) / htmx | `ceedbb9` |
+| Project                       | Stars | Server / client                         | Commit read                                  |
+|-------------------------------|-------|-----------------------------------------|----------------------------------------------|
+| Immich (+ `justified-layout`) | 118k  | NestJS / SvelteKit, layout in Rust→WASM | `b7510e7` (`justified-layout` at `6d5d2df`)  |
+| PhotoPrism                    | 40k   | Go / Vue                                | `fe94b42`                                    |
+| Ente (web)                    | 30k   | Go / Next.js, logic in Rust→WASM        | `54e4e209`                                   |
+| LibrePhotos                   | 8k    | Django / React                          | `eefb8d5`                                    |
+| Photoview                     | 6.6k  | Go + GraphQL / React                    | `4abdab7`                                    |
+| Nextcloud Memories (+ go-vod) | 3.9k  | PHP / Vue, Go transcoder                | `dbf9f4e1` (Memories; go-vod has no pin yet) |
+| PiGallery2                    | 2.3k  | Node / Angular                          | `e92fe15`                                    |
+| HomeGallery                   | 1.2k  | Node / React                            | `5b6232c`                                    |
+| Spacedrive                    | 39k   | Rust / React                            | `26b57e1`                                    |
+| lap                           | 4.2k  | Rust (Tauri) / Vue                      | `f40520f`                                    |
+| Photofield                    | —     | Go / Vue + OpenLayers                   | `d7374a9`                                    |
+| Urocissa                      | 300   | Rust (Rocket) / Vue                     | `102025d`                                    |
+| SPIS                          | 212   | Rust (axum) / htmx                      | `ceedbb9`                                    |
 
 Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `photo-management`,
 `google-photos`, `photography`), awesome-selfhosted's Photo Galleries list and Google.
@@ -63,12 +63,12 @@ phone (see "Reusing the QML").
 
 ### Lists and layout
 
-| Project | Up front | What breaks |
-|---|---|---|
-| Immich | per-month counts | heights guessed (`layout-support.svelte.ts:10-18`), corrected on load; a 70k-asset month froze the page for 10–20 s (#28861) |
-| HomeGallery | the whole catalog | 200k items on Android, 400k on a 16 GB desktop (#134) |
-| PiGallery2 | the whole folder | 3k-subfolder folders slow; pagination for folder listing is still requested (#125) |
-| PhotoPrism, Photoview | pages of 156 / 200 | paged; #2892, a request for a full-length scrollbar, is closed as completed |
+| Project               | Up front           | What breaks                                                                                                                  |
+|-----------------------|--------------------|------------------------------------------------------------------------------------------------------------------------------|
+| Immich                | per-month counts   | heights guessed (`layout-support.svelte.ts:10-18`), corrected on load; a 70k-asset month froze the page for 10–20 s (#28861) |
+| HomeGallery           | the whole catalog  | 200k items on Android, 400k on a 16 GB desktop (#134)                                                                        |
+| PiGallery2            | the whole folder   | 3k-subfolder folders slow; pagination for folder listing is still requested (#125)                                           |
+| PhotoPrism, Photoview | pages of 156 / 200 | paged; #2892, a request for a full-length scrollbar, is closed as completed                                                  |
 
 - **Wire formats:**
   - Immich sends each month as columnar JSON, built in Postgres with `array_agg` and `to_json`
@@ -98,15 +98,15 @@ position has to be our own coordinate, scaled onto a spacer below the cap, from 
 
 `—` means not checked.
 
-| Project | Sizes | URL / caching | Placeholder |
-|---|---|---|---|
-| Immich | 250 px WebP, 1440 px JPEG preview | `?c=<thumbhash>`, `private, max-age=86400` | thumbhash |
-| PhotoPrism | 224/500 squares, fits to 7680 | SHA1 + size, 30 days immutable | — |
-| Photoview | one 1024 px JPEG | 1 year immutable | blurhash |
-| HomeGallery | 128–1920 JPEG, at import | immutable, 2 days (`packages/server/src/app.js:69`) | dominant colour |
-| Memories | 256/512 | etag + index time | — |
-| PiGallery2 | — | `max-age=86400` (1 day) | — |
-| LibrePhotos | 250/500 high WebP | **no Cache-Control** | dominant colour |
+| Project     | Sizes                             | URL / caching                                       | Placeholder     |
+|-------------|-----------------------------------|-----------------------------------------------------|-----------------|
+| Immich      | 250 px WebP, 1440 px JPEG preview | `?c=<thumbhash>`, `private, max-age=86400`          | thumbhash       |
+| PhotoPrism  | 224/500 squares, fits to 7680     | SHA1 + size, 30 days immutable                      | —               |
+| Photoview   | one 1024 px JPEG                  | 1 year immutable                                    | blurhash        |
+| HomeGallery | 128–1920 JPEG, at import          | immutable, 2 days (`packages/server/src/app.js:69`) | dominant colour |
+| Memories    | 256/512                           | etag + index time                                   | —               |
+| PiGallery2  | —                                 | `max-age=86400` (1 day)                             | —               |
+| LibrePhotos | 250/500 high WebP                 | **no Cache-Control**                                | dominant colour |
 
 - **The eight servers checked (all but Memories) serve no TLS or HTTP/2 themselves.** They live with 6 connections per
   host.
@@ -562,22 +562,22 @@ Each point was investigated, then validated by two batched reviewers (an evidenc
 critique. Status: *Decided* means approved in review; *Proposed* means a recommendation survived validation; *Open* means it
 did not settle.
 
-| Point | Status | Decision or proposal | Still open |
-|---|---|---|---|
-| P1 Preference scope | Proposed; mostly decided | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default. | No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`). |
-| P2 Deletes and moves | Decided | Delete and move are in version 1, with deletes to the Recycle Bin (quarantine is dropped, `WEB_CLIENT_TECH_DECISIONS.md`, owner decisions, third round). Library folder removal and rating-driven sort are membership changes in v1. | Nothing to build for quarantine. |
-| P3 View-state split | Proposed (H on blockers) | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect; add scroll to client state. | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked. |
-| P4 Snapshot lifetime | Proposed (L–M) | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client. | The grace length for a sleeping phone; the client key; every number is unmeasured. |
-| P5 Desktop cutover | Proposed (M) | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected. | Whether writes move in the same step as reads (otherwise two writers). |
-| P6 Video element removal | Open | Never change or clear the source while the player is Preparing or Prepared. The pause-first fix is rejected: pause is ignored in Preparing. | Video is work in progress. The candidate fix is unverified (test E1c). The served-URL source. If the fix fails, a Qt fork or a browser-native element. |
-| P7 HTTPS trust | Decided (certificate); gate open | Private CA certificate with the LAN name and the IP, to be configured; `wss://` only. | Phone trust (Chrome on Android); `crossOriginIsolated` with a bypassed certificate; Emscripten version match (the spike used 5.0.5). |
-| P8 Control and data split | Proposed (M) | Member table and grep test first; the seam at the protocol boundary; a poisoned-stub run before any bridge is rewritten. | Per-member labels are provisional. The desktop controller reads app state at start (`crates/desktop/src/controller.rs:39, 51, 55`). The table misses three `video_source` members and one `failed_files` member. |
-| P9 Layout threading | Decided: Web Worker | Layout runs in a worker. | Measure to set the budget. |
-| P10 Thumbnail transport | Proposed (M) | The async server, which gives HTTP/2 natively. | The TLS library (see Server); whether the WebSocket batch is still needed on the LAN; time-to-fill on a phone, measured. |
-| P11 Phone spike, touch, decode | Decided: Android only | A desktop Chromium pre-screen first, then the phone gate after the trust test. The viewer preloads eight neighbours, so the decode budget counts eight. | Pass budgets, measured first (see Testing). |
-| P12 Server stack | Decided: async | `axum` on `tokio`. | The TLS library: `rustls` or `native-tls`. `native-tls` has no server-side ALPN on Windows. |
-| P13 CLI writers | Decided | While the server runs, the CLI writes through it; otherwise it writes directly. No refusal. | None. |
-| P14 Login | Decided: login, not pairing | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed. | Password storage and hashing; lockout and rate limits; the reset path; no QR code (decided). |
+| Point                          | Status                           | Decision or proposal                                                                                                                                                                                                                 | Still open                                                                                                                                                                                                       |
+|--------------------------------|----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| P1 Preference scope            | Proposed; mostly decided         | Per user: `show_borders`, last file, session listing, saved views. Per device: `row_height`, `dev_mode`, `yandex_folder`. `write_back` server-wide, owner-changeable, on by default.                                                 | No `desktop.json` exists in code, although `REFACTOR_PLAN.md:785` records the split as done (`crates/desktop/src/settings.rs:1-3`).                                                                              |
+| P2 Deletes and moves           | Decided                          | Delete and move are in version 1, with deletes to the Recycle Bin (quarantine is dropped, `WEB_CLIENT_TECH_DECISIONS.md`, owner decisions, third round). Library folder removal and rating-driven sort are membership changes in v1. | Nothing to build for quarantine.                                                                                                                                                                                 |
+| P3 View-state split            | Proposed (H on blockers)         | A plain `ViewState` struct for user-visible state, validated on read. Exclude `initial`, `StartGate` and `Deadlines`; rebuild timers on reconnect; add scroll to client state.                                                       | Where the `Listing` spec sits; mid-start snapshots; serde compile not checked.                                                                                                                                   |
+| P4 Snapshot lifetime           | Proposed (L–M)                   | Released after disconnect, with a grace period; 10-minute idle backstop; cap of four per client.                                                                                                                                     | The grace length for a sleeping phone; the client key; every number is unmeasured.                                                                                                                               |
+| P5 Desktop cutover             | Proposed (M)                     | In-process timings, then server and conformance suite, benchmark, cutover. The in-process server beside the desktop is rejected.                                                                                                     | Whether writes move in the same step as reads (otherwise two writers).                                                                                                                                           |
+| P6 Video element removal       | Open                             | Never change or clear the source while the player is Preparing or Prepared. The pause-first fix is rejected: pause is ignored in Preparing.                                                                                          | Video is work in progress. The candidate fix is unverified (test E1c). The served-URL source. If the fix fails, a Qt fork or a browser-native element.                                                           |
+| P7 HTTPS trust                 | Decided (certificate); gate open | Private CA certificate with the LAN name and the IP, to be configured; `wss://` only.                                                                                                                                                | Phone trust (Chrome on Android); `crossOriginIsolated` with a bypassed certificate; Emscripten version match (the spike used 5.0.5).                                                                             |
+| P8 Control and data split      | Proposed (M)                     | Member table and grep test first; the seam at the protocol boundary; a poisoned-stub run before any bridge is rewritten.                                                                                                             | Per-member labels are provisional. The desktop controller reads app state at start (`crates/desktop/src/controller.rs:39, 51, 55`). The table misses three `video_source` members and one `failed_files` member. |
+| P9 Layout threading            | Decided: Web Worker              | Layout runs in a worker.                                                                                                                                                                                                             | Measure to set the budget.                                                                                                                                                                                       |
+| P10 Thumbnail transport        | Proposed (M)                     | The async server, which gives HTTP/2 natively.                                                                                                                                                                                       | The TLS library (see Server); whether the WebSocket batch is still needed on the LAN; time-to-fill on a phone, measured.                                                                                         |
+| P11 Phone spike, touch, decode | Decided: Android only            | A desktop Chromium pre-screen first, then the phone gate after the trust test. The viewer preloads eight neighbours, so the decode budget counts eight.                                                                              | Pass budgets, measured first (see Testing).                                                                                                                                                                      |
+| P12 Server stack               | Decided: async                   | `axum` on `tokio`.                                                                                                                                                                                                                   | The TLS library: `rustls` or `native-tls`. `native-tls` has no server-side ALPN on Windows.                                                                                                                      |
+| P13 CLI writers                | Decided                          | While the server runs, the CLI writes through it; otherwise it writes directly. No refusal.                                                                                                                                          | None.                                                                                                                                                                                                            |
+| P14 Login                      | Decided: login, not pairing      | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed.                                                                         | Password storage and hashing; lockout and rate limits; the reset path; no QR code (decided).                                                                                                                     |
 
 **Decided in the latest review, outside the table:**
 

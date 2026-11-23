@@ -44,32 +44,32 @@ change every stored `pixel_hash`, which would mean a re-import.
 Speeds are against libjpeg-turbo on the seven inputs: wall time on one thread, the full-size table below, unless
 noted. "Claimed" figures come from the project's own benchmarks on other hardware.
 
-| Decoder | Runs on | Measured here | DCT scaling | Pixels against the app's decode | Speed | Verdict |
-|---|---|---|---|---|---|---|
-| **libjpeg-turbo 3.1** (vendored) | CPU | yes | 1/2–1/8 | the reference | fastest scaled decode; fewest instructions | **keep** |
-| libjpeg-turbo, fast options | CPU | yes | yes, no fast variant | 29 dB on 4:2:0 | 3–11% fewer instructions full size, none scaled | no |
-| Pillow 13 (libjpeg-turbo) | CPU | yes (Windows) | `draft()`, decoded sizes round up (`ceil(w/d)`) | same library | within 10% of the WSL times | reference only |
-| zune-jpeg 0.5.15 | CPU (Rust) | yes | **no** | within 4 levels (50–73 dB) | 3–35% slower full size | no |
-| jpeg-decoder 0.3.2 | CPU (Rust), worker threads | yes | 1/2–1/8 | within 4 levels (50–73 dB) | 1.3–3.0× slower, despite extra threads | no |
-| FFmpeg 8 `mjpeg` | CPU | yes | `lowres` 1/2–1/8 | 29 dB on 4:2:0 | 1.3× faster on progressive; 1.2–3.2× slower otherwise (instruction counts from before the C-50 fix, see "Instructions per decode") | no |
-| libvips 8.18 | CPU (libjpeg-turbo) | yes | shrink-on-load, rounds down | identical at full size | 1.2–2.0× slower; its threads don't speed up a decode | no |
-| nvJPEG `HYBRID` (torchvision's) | GPU + CPU Huffman | yes | no | 69 dB on 4:4:4, 29.5–59 dB subsampled; 60–64 dB with `--interpolate` | batch 64: 1.8–33 ms; CPU time ≈ wall time, measured with CUDA's spinning wait (at batch 1 the CPU time fell from 30.9 to 19.9 ms with blocking sync, "nvJPEG through torchvision" below) | no |
-| nvJPEG `GPU_HYBRID`, batches over 50 | GPU | yes | no | same as `HYBRID` | 1.1–2.9 ms Pinterest, 13–15 ms camera, CPU 0.02–0.6 ms; not progressive or restart-marker files; 24 MP batches don't fit 6 GB | candidate for the thumbnail job |
-| nvJPEG `GPU_HYBRID`, one image at a time | GPU, partly CPU | yes | no | same as `HYBRID` | camera files: CPU 12–32 ms, against 28–63 ms with CPU Huffman; no gain on small files | camera files only |
-| nvJPEG `HARDWARE` | GPU JPEG engine | no: A100/A30, Hopper, Blackwell | 1/2–1/8 | — | — | not on the RTX 2060 |
-| NVDEC (`mjpeg_cuvid`) | GPU video engine | yes (2 files) | no | — | 4:2:0 only; no faster than FFmpeg's CPU decoder, same CPU time | no |
-| Intel Quick Sync (`mjpeg_qsv`) | iGPU | no: UHD 630 disabled in the BIOS | — | — | — | only if the iGPU is enabled |
-| parajpeg 0.1.0, CPU | CPU, threads within one image (AVX2) | yes | **no** | **identical** | 1 thread: 1.0–1.9× slower; 12 threads: 2.8–2.9× faster on camera files (3.5–4.7× with markers) at 2.8–4.3× the CPU | for full-size viewer decodes |
-| parajpeg 0.1.0, CUDA | GPU | yes | no | **identical** | 5–8 ms on Pinterest files (slower than the CPU); 1.9–2.8× faster on camera files, CPU 4.8–15 ms | no: its CPU backend is better |
-| jpeggpu | GPU, GPU Huffman without markers | yes | no | planes within 1 level (63–74 dB) | **1.1–2.1 ms Pinterest, 4.3 ms phone and Sony, 10.6 ms 24 MP; CPU 0.3–1.6 ms**; planes only, no progressive; RGB with our colour stage (`jpeggpu-rgb`) 1.6–5.4 ms | the GPU candidate for the thumbnail job, with the colour stage written ("jpeggpu and its colour stage") |
-| GPUJPEG (CESNET) | GPU | yes | no | 57–64 dB on 4:4:4; 29.5–50 dB subsampled; no progressive | without markers: up to 1.9× slower than libjpeg-turbo (CPU Huffman); with markers: 1.8–24.5 ms, CPU 0.2–1.4 ms | only with restart markers, and its chroma is off |
-| Wuffs (2026-10-31 snapshot) | CPU, memory-safe | yes | no | **identical** | instructions: equal on 4:4:4, 7–24% more on subsampled, 41% more progressive | the memory-safe option; no scaling |
-| jpegli (decoder) | CPU | yes | — | 49–52 dB: its own dequantization, by design | 1.8–2.2× the instructions | no |
-| nvImageCodec 0.10.0.9 | wrapper: nvJPEG + a CPU decoder | yes | as its backends | as nvJPEG (60–69 dB) | as nvJPEG's default backend; batches use CPU threads, and their CPU time (still about 2× wall at batch 64 with blocking sync) does not show GPU Huffman in use; CPU backend 2.0–3.5× slower | no: call nvJPEG directly |
-| debesheedas/GPU-JPEG-Decoder | GPU, one warp | yes | no | 51 dB on 4:4:4; garbage on 4:2:0 or markers | ~1.3 s per megapixel | no |
-| Fastvideo SDK | GPU (CUDA), commercial | no | — | — | claimed 19–75× faster with restart markers; CPU Huffman without | only with restart markers |
-| epeg | wrapper: libjpeg DCT scaling | no | yes | — | the technique we already use | the YUV-output idea, for PDQ |
-| jpegn (Go), Fulim13/jpeg | — | no | — | — | jpegn is Go-only; Fulim13/jpeg uses a custom format | no |
+| Decoder                                  | Runs on                              | Measured here                    | DCT scaling                                     | Pixels against the app's decode                                      | Speed                                                                                                                                                                                       | Verdict                                                                                                 |
+|------------------------------------------|--------------------------------------|----------------------------------|-------------------------------------------------|----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| **libjpeg-turbo 3.1** (vendored)         | CPU                                  | yes                              | 1/2–1/8                                         | the reference                                                        | fastest scaled decode; fewest instructions                                                                                                                                                  | **keep**                                                                                                |
+| libjpeg-turbo, fast options              | CPU                                  | yes                              | yes, no fast variant                            | 29 dB on 4:2:0                                                       | 3–11% fewer instructions full size, none scaled                                                                                                                                             | no                                                                                                      |
+| Pillow 13 (libjpeg-turbo)                | CPU                                  | yes (Windows)                    | `draft()`, decoded sizes round up (`ceil(w/d)`) | same library                                                         | within 10% of the WSL times                                                                                                                                                                 | reference only                                                                                          |
+| zune-jpeg 0.5.15                         | CPU (Rust)                           | yes                              | **no**                                          | within 4 levels (50–73 dB)                                           | 3–35% slower full size                                                                                                                                                                      | no                                                                                                      |
+| jpeg-decoder 0.3.2                       | CPU (Rust), worker threads           | yes                              | 1/2–1/8                                         | within 4 levels (50–73 dB)                                           | 1.3–3.0× slower, despite extra threads                                                                                                                                                      | no                                                                                                      |
+| FFmpeg 8 `mjpeg`                         | CPU                                  | yes                              | `lowres` 1/2–1/8                                | 29 dB on 4:2:0                                                       | 1.3× faster on progressive; 1.2–3.2× slower otherwise (instruction counts from before the C-50 fix, see "Instructions per decode")                                                          | no                                                                                                      |
+| libvips 8.18                             | CPU (libjpeg-turbo)                  | yes                              | shrink-on-load, rounds down                     | identical at full size                                               | 1.2–2.0× slower; its threads don't speed up a decode                                                                                                                                        | no                                                                                                      |
+| nvJPEG `HYBRID` (torchvision's)          | GPU + CPU Huffman                    | yes                              | no                                              | 69 dB on 4:4:4, 29.5–59 dB subsampled; 60–64 dB with `--interpolate` | batch 64: 1.8–33 ms; CPU time ≈ wall time, measured with CUDA's spinning wait (at batch 1 the CPU time fell from 30.9 to 19.9 ms with blocking sync, "nvJPEG through torchvision" below)    | no                                                                                                      |
+| nvJPEG `GPU_HYBRID`, batches over 50     | GPU                                  | yes                              | no                                              | same as `HYBRID`                                                     | 1.1–2.9 ms Pinterest, 13–15 ms camera, CPU 0.02–0.6 ms; not progressive or restart-marker files; 24 MP batches don't fit 6 GB                                                               | candidate for the thumbnail job                                                                         |
+| nvJPEG `GPU_HYBRID`, one image at a time | GPU, partly CPU                      | yes                              | no                                              | same as `HYBRID`                                                     | camera files: CPU 12–32 ms, against 28–63 ms with CPU Huffman; no gain on small files                                                                                                       | camera files only                                                                                       |
+| nvJPEG `HARDWARE`                        | GPU JPEG engine                      | no: A100/A30, Hopper, Blackwell  | 1/2–1/8                                         | —                                                                    | —                                                                                                                                                                                           | not on the RTX 2060                                                                                     |
+| NVDEC (`mjpeg_cuvid`)                    | GPU video engine                     | yes (2 files)                    | no                                              | —                                                                    | 4:2:0 only; no faster than FFmpeg's CPU decoder, same CPU time                                                                                                                              | no                                                                                                      |
+| Intel Quick Sync (`mjpeg_qsv`)           | iGPU                                 | no: UHD 630 disabled in the BIOS | —                                               | —                                                                    | —                                                                                                                                                                                           | only if the iGPU is enabled                                                                             |
+| parajpeg 0.1.0, CPU                      | CPU, threads within one image (AVX2) | yes                              | **no**                                          | **identical**                                                        | 1 thread: 1.0–1.9× slower; 12 threads: 2.8–2.9× faster on camera files (3.5–4.7× with markers) at 2.8–4.3× the CPU                                                                          | for full-size viewer decodes                                                                            |
+| parajpeg 0.1.0, CUDA                     | GPU                                  | yes                              | no                                              | **identical**                                                        | 5–8 ms on Pinterest files (slower than the CPU); 1.9–2.8× faster on camera files, CPU 4.8–15 ms                                                                                             | no: its CPU backend is better                                                                           |
+| jpeggpu                                  | GPU, GPU Huffman without markers     | yes                              | no                                              | planes within 1 level (63–74 dB)                                     | **1.1–2.1 ms Pinterest, 4.3 ms phone and Sony, 10.6 ms 24 MP; CPU 0.3–1.6 ms**; planes only, no progressive; RGB with our colour stage (`jpeggpu-rgb`) 1.6–5.4 ms                           | the GPU candidate for the thumbnail job, with the colour stage written ("jpeggpu and its colour stage") |
+| GPUJPEG (CESNET)                         | GPU                                  | yes                              | no                                              | 57–64 dB on 4:4:4; 29.5–50 dB subsampled; no progressive             | without markers: up to 1.9× slower than libjpeg-turbo (CPU Huffman); with markers: 1.8–24.5 ms, CPU 0.2–1.4 ms                                                                              | only with restart markers, and its chroma is off                                                        |
+| Wuffs (2026-10-31 snapshot)              | CPU, memory-safe                     | yes                              | no                                              | **identical**                                                        | instructions: equal on 4:4:4, 7–24% more on subsampled, 41% more progressive                                                                                                                | the memory-safe option; no scaling                                                                      |
+| jpegli (decoder)                         | CPU                                  | yes                              | —                                               | 49–52 dB: its own dequantization, by design                          | 1.8–2.2× the instructions                                                                                                                                                                   | no                                                                                                      |
+| nvImageCodec 0.10.0.9                    | wrapper: nvJPEG + a CPU decoder      | yes                              | as its backends                                 | as nvJPEG (60–69 dB)                                                 | as nvJPEG's default backend; batches use CPU threads, and their CPU time (still about 2× wall at batch 64 with blocking sync) does not show GPU Huffman in use; CPU backend 2.0–3.5× slower | no: call nvJPEG directly                                                                                |
+| debesheedas/GPU-JPEG-Decoder             | GPU, one warp                        | yes                              | no                                              | 51 dB on 4:4:4; garbage on 4:2:0 or markers                          | ~1.3 s per megapixel                                                                                                                                                                        | no                                                                                                      |
+| Fastvideo SDK                            | GPU (CUDA), commercial               | no                               | —                                               | —                                                                    | claimed 19–75× faster with restart markers; CPU Huffman without                                                                                                                             | only with restart markers                                                                               |
+| epeg                                     | wrapper: libjpeg DCT scaling         | no                               | yes                                             | —                                                                    | the technique we already use                                                                                                                                                                | the YUV-output idea, for PDQ                                                                            |
+| jpegn (Go), Fulim13/jpeg                 | —                                    | no                               | —                                               | —                                                                    | jpegn is Go-only; Fulim13/jpeg uses a custom format                                                                                                                                         | no                                                                                                      |
 
 Details for the measured rows are in the tables below, and for the rest in "Other decoders, researched but not
 measured".
@@ -82,15 +82,15 @@ The main kinds in the library.
   4:2:0 (p50 0.96 MP, p90 2.8 MP).
 - **Camera originals:** from E:\Cameras.
 
-| Input | Kind | Size |
-|---|---|---|
-| `pin-base444-1mp` | baseline 4:4:4 | 844×1267, 92 KB |
-| `pin-base444-3mp` | baseline 4:4:4 | 1500×1910, 182 KB |
-| `pin-prog420-1mp` | progressive 4:2:0 | 736×1104, 64 KB |
-| `pin-base420-1mp` (the bench sample) | baseline 4:2:0 | 1280×1017, 126 KB |
-| `phone-base420-4mp` (Motorola, 2016) | baseline 4:2:0 | 2592×1456, 3.1 MB |
-| `sony-base422-7mp` (Sony compact) | baseline 4:2:2 | 3648×2056, 3.6 MB |
-| `a6000-base422-24mp` (Sony A6000) | baseline 4:2:2 | 6000×4000, 5.6 MB |
+| Input                                | Kind              | Size              |
+|--------------------------------------|-------------------|-------------------|
+| `pin-base444-1mp`                    | baseline 4:4:4    | 844×1267, 92 KB   |
+| `pin-base444-3mp`                    | baseline 4:4:4    | 1500×1910, 182 KB |
+| `pin-prog420-1mp`                    | progressive 4:2:0 | 736×1104, 64 KB   |
+| `pin-base420-1mp` (the bench sample) | baseline 4:2:0    | 1280×1017, 126 KB |
+| `phone-base420-4mp` (Motorola, 2016) | baseline 4:2:0    | 2592×1456, 3.1 MB |
+| `sony-base422-7mp` (Sony compact)    | baseline 4:2:2    | 3648×2056, 3.6 MB |
+| `a6000-base422-24mp` (Sony A6000)    | baseline 4:2:2    | 6000×4000, 5.6 MB |
 
 The originals are not on the machine the 2026-11-14 runs were made on. Where a run used stand-ins, the table or
 section says so; the stand-in files are listed in the section "Instructions per decode".
@@ -122,25 +122,25 @@ Wall times are medians on WSL (`wsl.sh`, since removed with WSL, `62b4540`) unle
 
 Millions of instructions, Linux build.
 
-| Full size | turbo | turbo fast | zune | jpeg-decoder | FFmpeg | libvips |
-|---|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | **31.0** | 31.2 | 32.9 | 54.4 | 86.4 | 45.0 |
-| pin-base444-3mp | **77.5** | 77.6 | 80.3 | 140.4 | 224.0 | 105.6 |
-| pin-prog420-1mp | 42.3 | 40.2 | 56.2 | 80.9 | **28.6** | 54.7 |
-| pin-base420-1mp | 28.5 | **25.4** | 35.6 | 58.1 | 124.4 | 43.7 |
-| phone-base420-4mp | 246.8 | **238.4** | 333.9 | 361.8 | 253.9 | 294.9 |
-| sony-base422-7mp | 355.1 | **341.4** | 437.6 | 637.2 | 401.2 | 431.2 |
-| a6000-base422-24mp | 835.0 | **789.5** | 1,017.6 | 1,804.5 | 997.0 | 1,038.3 |
+| Full size          |    turbo | turbo fast |    zune | jpeg-decoder |   FFmpeg | libvips |
+|--------------------|---------:|-----------:|--------:|-------------:|---------:|--------:|
+| pin-base444-1mp    | **31.0** |       31.2 |    32.9 |         54.4 |     86.4 |    45.0 |
+| pin-base444-3mp    | **77.5** |       77.6 |    80.3 |        140.4 |    224.0 |   105.6 |
+| pin-prog420-1mp    |     42.3 |       40.2 |    56.2 |         80.9 | **28.6** |    54.7 |
+| pin-base420-1mp    |     28.5 |   **25.4** |    35.6 |         58.1 |    124.4 |    43.7 |
+| phone-base420-4mp  |    246.8 |  **238.4** |   333.9 |        361.8 |    253.9 |   294.9 |
+| sony-base422-7mp   |    355.1 |  **341.4** |   437.6 |        637.2 |    401.2 |   431.2 |
+| a6000-base422-24mp |    835.0 |  **789.5** | 1,017.6 |      1,804.5 |    997.0 | 1,038.3 |
 
-| Scaled | turbo | turbo fast | jpeg-decoder | FFmpeg | libvips |
-|---|---:|---:|---:|---:|---:|
-| pin-base444-1mp (1/2) | **24.6** | **24.6** | 51.5 | 65.0 | 32.1 |
-| pin-base444-3mp (1/2) | **60.6** | **60.6** | 129.1 | 166.8 | 70.7 |
-| pin-prog420-1mp (1/2) | 37.6 | 37.6 | 70.3 | **31.6** | 45.2 |
-| pin-base420-1mp (1/2) | **21.2** | 21.3 | 41.9 | 63.1 | 29.1 |
-| phone-base420-4mp (1/4) | 216.1 | 216.1 | 277.6 | **212.9** | 235.5 |
-| sony-base422-7mp (1/4) | 285.3 | **284.1** | 357.6 | 289.1 | 307.1 |
-| a6000-base422-24mp (1/8) | 378.4 | **377.9** | 761.5 | 582.8 | 396.1 |
+| Scaled                   |    turbo | turbo fast | jpeg-decoder |    FFmpeg | libvips |
+|--------------------------|---------:|-----------:|-------------:|----------:|--------:|
+| pin-base444-1mp (1/2)    | **24.6** |   **24.6** |         51.5 |      65.0 |    32.1 |
+| pin-base444-3mp (1/2)    | **60.6** |   **60.6** |        129.1 |     166.8 |    70.7 |
+| pin-prog420-1mp (1/2)    |     37.6 |       37.6 |         70.3 |  **31.6** |    45.2 |
+| pin-base420-1mp (1/2)    | **21.2** |       21.3 |         41.9 |      63.1 |    29.1 |
+| phone-base420-4mp (1/4)  |    216.1 |      216.1 |        277.6 | **212.9** |   235.5 |
+| sony-base422-7mp (1/4)   |    285.3 |  **284.1** |        357.6 |     289.1 |   307.1 |
+| a6000-base422-24mp (1/8) |    378.4 |  **377.9** |        761.5 |     582.8 |   396.1 |
 
 **FFmpeg's counts predate the C-50 fix.** Before it, `Decoders::new` left FFmpeg's MJPEG decoders unopened, so the
 measured decode also opened one, and every column's input was dropped inside the measured call. The fix opens the four
@@ -155,12 +155,12 @@ the fix, 88.5 at HEAD).
 The stand-in run used the bench at the pre-C-50 commit (`262004b^`, built with the same `build.rs`) and at HEAD, in the
 same container, with the same inputs (`PG_JPEG_NAMES` limits the run to these four):
 
-| Stand-in (size) | FFmpeg full, pre → HEAD | FFmpeg scaled, pre → HEAD |
-|---|---:|---:|
-| `pin-base444-1mp` (844×1267, baseline 4:4:4) | 87.3 → 87.1 | 65.9 → 65.7 |
-| `pin-base444-3mp` (1500×1910, baseline 4:4:4) | 224.0 → 223.8 | 166.8 → 166.6 |
-| `pin-prog420-1mp` (736×1104, progressive 4:4:4) | 86.2 → 86.0 | 67.6 → 67.4 |
-| `pin-base420-1mp` (1280×1017, baseline 4:2:0) | 124.4 → 124.2 | 63.1 → 62.9 |
+| Stand-in (size)                                 | FFmpeg full, pre → HEAD | FFmpeg scaled, pre → HEAD |
+|-------------------------------------------------|------------------------:|--------------------------:|
+| `pin-base444-1mp` (844×1267, baseline 4:4:4)    |             87.3 → 87.1 |               65.9 → 65.7 |
+| `pin-base444-3mp` (1500×1910, baseline 4:4:4)   |           224.0 → 223.8 |             166.8 → 166.6 |
+| `pin-prog420-1mp` (736×1104, progressive 4:4:4) |             86.2 → 86.0 |               67.6 → 67.4 |
+| `pin-base420-1mp` (1280×1017, baseline 4:2:0)   |           124.4 → 124.2 |               63.1 → 62.9 |
 
 The other three inputs (`phone-base420-4mp`, `sony-base422-7mp`, `a6000-base422-24mp`) had no stand-in files, so their
 rows are not reported: the bench panics on missing files, and placeholder copies of `pin-base420-1mp` were used to fill
@@ -172,25 +172,25 @@ Median ms; WSL, i7-8700, machine at 6–18% load. A run during a busy spell (100
 slower everywhere and was discarded; a repeat when quiet matched the first quiet run. The FFmpeg rows are from before
 the C-50 fix and were not re-measured.
 
-| Full size | turbo | turbo fast | zune | jpeg-decoder | FFmpeg | libvips |
-|---|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 3.36 | **3.07** | 3.52 | 10.05 | 10.26 | 6.58 |
-| pin-base444-3mp | 8.37 | **7.58** | 8.61 | 18.89 | 26.91 | 13.25 |
-| pin-prog420-1mp | 4.17 | 3.97 | 5.64 | 8.80 | **3.11** | 6.76 |
-| pin-base420-1mp | 3.24 | **2.88** | 4.13 | 7.77 | 9.68 | 6.12 |
-| phone-base420-4mp | 28.11 | **27.04** | 37.70 | 40.29 | 42.21 | 32.50 |
-| sony-base422-7mp | 39.72 | **37.58** | 49.46 | 58.54 | 48.18 | 46.91 |
-| a6000-base422-24mp | 124.25 | **117.89** | 140.43 | 165.31 | 173.21 | 176.41 |
+| Full size          |  turbo | turbo fast |   zune | jpeg-decoder |   FFmpeg | libvips |
+|--------------------|-------:|-----------:|-------:|-------------:|---------:|--------:|
+| pin-base444-1mp    |   3.36 |   **3.07** |   3.52 |        10.05 |    10.26 |    6.58 |
+| pin-base444-3mp    |   8.37 |   **7.58** |   8.61 |        18.89 |    26.91 |   13.25 |
+| pin-prog420-1mp    |   4.17 |       3.97 |   5.64 |         8.80 | **3.11** |    6.76 |
+| pin-base420-1mp    |   3.24 |   **2.88** |   4.13 |         7.77 |     9.68 |    6.12 |
+| phone-base420-4mp  |  28.11 |  **27.04** |  37.70 |        40.29 |    42.21 |   32.50 |
+| sony-base422-7mp   |  39.72 |  **37.58** |  49.46 |        58.54 |    48.18 |   46.91 |
+| a6000-base422-24mp | 124.25 | **117.89** | 140.43 |       165.31 |   173.21 |  176.41 |
 
-| Scaled | turbo | turbo fast | jpeg-decoder | FFmpeg | libvips |
-|---|---:|---:|---:|---:|---:|
-| pin-base444-1mp (1/2) | **2.36** | 2.37 | 9.48 | 5.41 | 4.15 |
-| pin-base444-3mp (1/2) | **5.64** | 5.68 | 16.49 | 13.56 | 8.18 |
-| pin-prog420-1mp (1/2) | 3.53 | 3.52 | 7.41 | **3.13** | 5.07 |
-| pin-base420-1mp (1/2) | 2.30 | **2.25** | 5.73 | 5.49 | 3.86 |
-| phone-base420-4mp (1/4) | **23.95** | 24.08 | 35.01 | 28.56 | 24.94 |
-| sony-base422-7mp (1/4) | 30.27 | **30.25** | 44.93 | 37.11 | 31.52 |
-| a6000-base422-24mp (1/8) | **49.43** | 49.45 | 94.54 | 77.20 | 52.20 |
+| Scaled                   |     turbo | turbo fast | jpeg-decoder |   FFmpeg | libvips |
+|--------------------------|----------:|-----------:|-------------:|---------:|--------:|
+| pin-base444-1mp (1/2)    |  **2.36** |       2.37 |         9.48 |     5.41 |    4.15 |
+| pin-base444-3mp (1/2)    |  **5.64** |       5.68 |        16.49 |    13.56 |    8.18 |
+| pin-prog420-1mp (1/2)    |      3.53 |       3.52 |         7.41 | **3.13** |    5.07 |
+| pin-base420-1mp (1/2)    |      2.30 |   **2.25** |         5.73 |     5.49 |    3.86 |
+| phone-base420-4mp (1/4)  | **23.95** |      24.08 |        35.01 |    28.56 |   24.94 |
+| sony-base422-7mp (1/4)   |     30.27 |  **30.25** |        44.93 |    37.11 |   31.52 |
+| a6000-base422-24mp (1/8) | **49.43** |      49.45 |        94.54 |    77.20 |   52.20 |
 
 ## Output against the app's decode
 
@@ -228,12 +228,12 @@ analysis, and the Yandex transcode. A JPEG parajpeg declines goes to libjpeg-tur
 - **Threads:** one full decode of the 7.5 MP 4:2:2 camera file (3648×2056), median wall time, harness, i7-8700, the
   machine with other load (libjpeg-turbo 57 ms here, 37 ms when quiet earlier):
 
-| Threads | Wall ms | CPU ms |
-|---|---:|---:|
-| libjpeg-turbo (1) | 57.3 | 58.2 |
-| parajpeg 1 | 67.9 | 68.4 |
-| parajpeg 6 (chosen) | 29.7 | 133.9 |
-| parajpeg 12 | 18.9 | 128.5 |
+| Threads             | Wall ms | CPU ms |
+|---------------------|--------:|-------:|
+| libjpeg-turbo (1)   |    57.3 |   58.2 |
+| parajpeg 1          |    67.9 |   68.4 |
+| parajpeg 6 (chosen) |    29.7 |  133.9 |
+| parajpeg 12         |    18.9 |  128.5 |
 
   1.8 MP 4:2:0 (`s420`): libjpeg-turbo 6.6 ms, parajpeg 6 threads 4.3 ms, 12 threads 3.9 ms. Six threads keep about
   half of the CPU for the import's workers, and cost about 2.3× the CPU of libjpeg-turbo per decode (133 against 58 ms).
@@ -260,18 +260,18 @@ nvJPEG's is.
   (3648×2056), and on the same photo resized to 1801×1015 and encoded at 4:2:0 and at 4:4:4 (ImageMagick). The
   harness's Windows build, RTX 2060, machine otherwise quiet.
 
-| Input | turbo, wall (CPU) | jpeggpu planes | `jpeggpu-rgb` | nvJPEG GPU Huffman | `jpeggpu-rgb` against turbo: mean / max / PSNR |
-|---|---:|---:|---:|---:|---:|
-| 7.5 MP 4:2:2 camera | 37.5 ms (38.9) | 4.41 ms (1.02) | 5.39 ms (1.12) | 16.9 ms (12.6) | 0.028 / 3 / 62.9 dB |
-| 1.8 MP 4:2:0 | 4.58 ms (4.84) | 1.30 ms (0.46) | 1.63 ms (0.34) | 3.09 ms (2.56) | 0.038 / 3 / 61.0 dB |
-| 1.8 MP 4:4:4 | 6.75 ms (7.35) | 1.49 ms (0.41) | 1.56 ms (0.29) | 3.91 ms (2.46) | 0.042 / 3 / 60.4 dB |
+| Input               | turbo, wall (CPU) | jpeggpu planes |  `jpeggpu-rgb` | nvJPEG GPU Huffman | `jpeggpu-rgb` against turbo: mean / max / PSNR |
+|---------------------|------------------:|---------------:|---------------:|-------------------:|-----------------------------------------------:|
+| 7.5 MP 4:2:2 camera |    37.5 ms (38.9) | 4.41 ms (1.02) | 5.39 ms (1.12) |     16.9 ms (12.6) |                            0.028 / 3 / 62.9 dB |
+| 1.8 MP 4:2:0        |    4.58 ms (4.84) | 1.30 ms (0.46) | 1.63 ms (0.34) |     3.09 ms (2.56) |                            0.038 / 3 / 61.0 dB |
+| 1.8 MP 4:4:4        |    6.75 ms (7.35) | 1.49 ms (0.41) | 1.56 ms (0.29) |     3.91 ms (2.46) |                            0.042 / 3 / 60.4 dB |
 
 Throughput, images per second, CPU ms per image in brackets: libjpeg-turbo on 12 workers against `jpeggpu-rgb` on 4:
 
-| Input | turbo ×12 | `jpeggpu-rgb` ×4 |
-|---|---:|---:|
-| 7.5 MP 4:2:2 camera | 156 (62) | **397 (1.1)** |
-| 1.8 MP 4:2:0 | 1,320 (7.2) | **1,688 (0.5)** |
+| Input               |   turbo ×12 | `jpeggpu-rgb` ×4 |
+|---------------------|------------:|-----------------:|
+| 7.5 MP 4:2:2 camera |    156 (62) |    **397 (1.1)** |
+| 1.8 MP 4:2:0        | 1,320 (7.2) |  **1,688 (0.5)** |
 
 - **Camera files:** 2.5× the throughput of libjpeg-turbo on 12 workers, at 1/57 of its CPU per image. This is the case
   the 1.1–2.9× range in the verdict is about, and it holds on this input.
@@ -285,15 +285,15 @@ in brackets, copied back to host memory. Batches are N copies of the file in one
 stops at batch 32: 72 MB per decoded image, against the GPU's 6 GB. These rows were measured with CUDA's default
 spinning wait; the blocking-sync figures are in the next subsection.
 
-| Input | Pillow full / draft² | nvJPEG batch 1 | batch 8 | batch 32 | batch 64 |
-|---|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 4.44 / 4.46¹ | 2.65 (3.02) | 1.87 (2.33) | 1.79 (2.30) | 1.78 (2.25) |
-| pin-base444-3mp | 10.33 / 6.46 | 6.14 (6.98) | 4.27 (5.45) | 4.12 (5.26) | 4.04 (5.28) |
-| pin-prog420-1mp | 6.04 / 4.67 | 3.53 (3.46) | 2.31 (2.86) | 2.25 (2.72) | 2.25 (2.72) |
-| pin-base420-1mp | 4.39 / 4.43¹ | 3.49 (3.64) | 1.97 (2.53) | 1.92 (2.47) | 1.90 (2.44) |
-| phone-base420-4mp | 28.58 / 21.83 | 33.62 (38.98) | 27.11 (31.29) | 26.60 (28.45) | 26.23 (27.99) |
-| sony-base422-7mp | 44.07 / 28.00 | 48.43 (41.65) | 30.24 (34.30) | 29.46 (32.16) | 29.18 (32.60) |
-| a6000-base422-24mp | 111.14 / 47.24 | 85.53 (100.62) | 62.34 (74.46) | 61.93 (72.98) | — |
+| Input              | Pillow full / draft² | nvJPEG batch 1 |       batch 8 |      batch 32 |      batch 64 |
+|--------------------|---------------------:|---------------:|--------------:|--------------:|--------------:|
+| pin-base444-1mp    |         4.44 / 4.46¹ |    2.65 (3.02) |   1.87 (2.33) |   1.79 (2.30) |   1.78 (2.25) |
+| pin-base444-3mp    |         10.33 / 6.46 |    6.14 (6.98) |   4.27 (5.45) |   4.12 (5.26) |   4.04 (5.28) |
+| pin-prog420-1mp    |          6.04 / 4.67 |    3.53 (3.46) |   2.31 (2.86) |   2.25 (2.72) |   2.25 (2.72) |
+| pin-base420-1mp    |         4.39 / 4.43¹ |    3.49 (3.64) |   1.97 (2.53) |   1.92 (2.47) |   1.90 (2.44) |
+| phone-base420-4mp  |        28.58 / 21.83 |  33.62 (38.98) | 27.11 (31.29) | 26.60 (28.45) | 26.23 (27.99) |
+| sony-base422-7mp   |        44.07 / 28.00 |  48.43 (41.65) | 30.24 (34.30) | 29.46 (32.16) | 29.18 (32.60) |
+| a6000-base422-24mp |       111.14 / 47.24 | 85.53 (100.62) | 62.34 (74.46) | 61.93 (72.98) |             — |
 
 ¹ These two rows are full decodes: `gpu.py` asked Pillow's `draft()` for the ceiling size, `ceil(w/d)`, and for these
 files Pillow then picked no reduction. ² The draft column was measured before C-47 was fixed; see "Pillow `draft()`
@@ -338,10 +338,10 @@ decoded size. The files are same-size stand-ins (the originals aren't on this ma
 than the table's (Pillow full 9.4 ms against the table's 4.4 ms on the 1280×1017 file; the load wasn't measured, so the
 cause is unknown), so compare within this run only:
 
-| Stand-in (size) | Pillow full | Pillow 1/2 (decoded size) | 1/2 ÷ full |
-|---|---:|---:|---:|
-| 844×1267 (`pin-base444-1mp`'s size) | 9.79 ms | 5.89 ms (422×634) | 0.60 |
-| 1280×1017 (`pin-base420-1mp`'s size) | 9.42 ms | 5.24 ms (640×509) | 0.56 |
+| Stand-in (size)                      | Pillow full | Pillow 1/2 (decoded size) | 1/2 ÷ full |
+|--------------------------------------|------------:|--------------------------:|-----------:|
+| 844×1267 (`pin-base444-1mp`'s size)  |     9.79 ms |         5.89 ms (422×634) |       0.60 |
+| 1280×1017 (`pin-base420-1mp`'s size) |     9.42 ms |         5.24 ms (640×509) |       0.56 |
 
 The camera file 3648×2056 (`sony-base422-7mp`'s size, from E:\Cameras) has both sides divisible by 4, so the rounding
 never affected its 1/4 row, and it measures 48.2 ms at 1/4 against 73.3 ms full.
@@ -364,15 +364,15 @@ its CPU figures are overstated by the spin (30.9 against 19.9 ms at batch 1). `n
 
 Per image, decoded pixels copied to pinned host memory. Batches are N copies of one file.
 
-| Input | Pillow 1/d (scaled) | `HYBRID` batch 64 | `GPU_HYBRID` batch 64 | `GPU_HYBRID` batch 128 | `GPU_HYBRID` decoupled |
-|---|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 4.96 ms | 3.79 ms, CPU 3.21 | **1.22 ms, CPU 0.02** | 0.85 ms, CPU 0.04 | 3.89 ms, CPU 2.96 |
-| pin-base444-3mp | 6.51 ms | 7.73 ms, CPU 6.64 | **2.85 ms, CPU 0.08** | 2.15 ms, CPU 0.06 | 4.85 ms, CPU 3.09 |
-| pin-prog420-1mp | 5.52 ms | 3.25 ms, CPU 2.58 | 3.32 ms, CPU 2.62 | 3.80 ms, CPU 3.56 | 4.19 ms, CPU 3.61 |
-| pin-base420-1mp | 4.13 ms | 2.67 ms, CPU 2.09 | **1.13 ms, CPU 0.06** | 0.85 ms, CPU 0.08 | 3.84 ms, CPU 3.12 |
-| phone-base420-4mp | 22.54 ms | 25.62 ms, CPU 24.07 | **12.65 ms, CPU 0.54** | 8.12 ms, CPU 0.56 | 17.72 ms, CPU 11.81 |
-| sony-base422-7mp | 62.24 ms¹ | 63.05 ms, CPU 45.70 | **15.18 ms, CPU 0.44** | — | 19.44 ms, CPU 15.02 |
-| a6000-base422-24mp | 49.09 ms | — | — | — | 42.34 ms, CPU 31.71 |
+| Input              | Pillow 1/d (scaled) |   `HYBRID` batch 64 |  `GPU_HYBRID` batch 64 | `GPU_HYBRID` batch 128 | `GPU_HYBRID` decoupled |
+|--------------------|--------------------:|--------------------:|-----------------------:|-----------------------:|-----------------------:|
+| pin-base444-1mp    |             4.96 ms |   3.79 ms, CPU 3.21 |  **1.22 ms, CPU 0.02** |      0.85 ms, CPU 0.04 |      3.89 ms, CPU 2.96 |
+| pin-base444-3mp    |             6.51 ms |   7.73 ms, CPU 6.64 |  **2.85 ms, CPU 0.08** |      2.15 ms, CPU 0.06 |      4.85 ms, CPU 3.09 |
+| pin-prog420-1mp    |             5.52 ms |   3.25 ms, CPU 2.58 |      3.32 ms, CPU 2.62 |      3.80 ms, CPU 3.56 |      4.19 ms, CPU 3.61 |
+| pin-base420-1mp    |             4.13 ms |   2.67 ms, CPU 2.09 |  **1.13 ms, CPU 0.06** |      0.85 ms, CPU 0.08 |      3.84 ms, CPU 3.12 |
+| phone-base420-4mp  |            22.54 ms | 25.62 ms, CPU 24.07 | **12.65 ms, CPU 0.54** |      8.12 ms, CPU 0.56 |    17.72 ms, CPU 11.81 |
+| sony-base422-7mp   |           62.24 ms¹ | 63.05 ms, CPU 45.70 | **15.18 ms, CPU 0.44** |                      — |    19.44 ms, CPU 15.02 |
+| a6000-base422-24mp |            49.09 ms |                   — |                      — |                      — |    42.34 ms, CPU 31.71 |
 
 ¹ Noisy: 29–31 ms in the two later runs.
 
@@ -439,15 +439,15 @@ them, or turn progressive into baseline, without re-encoding. Variants made with
 Decoded pixels are identical to the original's in every variant, at full size and 1/2 (`djpeg` output compared byte for
 byte). Instructions are the vendored libjpeg-turbo's, per decode.
 
-| Input | baseline: size | M instr. full / scaled | row markers: size | M instr. full / scaled |
-|---|---:|---:|---:|---:|
-| pin-base444-1mp | 0.0% | 31.1 / 25.1 | +0.4% | 32.7 / 26.7 (+5%, +6%) |
-| pin-base444-3mp | 0.0% | 77.9 / 60.8 | +0.4% | 81.4 / 64.2 (+4%, +6%) |
-| pin-prog420-1mp | −0.1% | **16.3 / 11.8** (from 42.4 / 37.9) | +0.2% | 17.4 / 12.9 (+7%, +9%) |
-| pin-base420-1mp | 0.0% | 28.7 / 21.7 | +0.2% | 30.9 / 23.9 (+8%, +10%) |
-| phone-base420-4mp | −14.0% | 243.0 / 212.1 (from 247.5 / 216.6) | −14.0% | 288.1 / 257.2 (+19%, +21%) |
-| sony-base422-7mp | −23.3%¹ | 356.3 / 285.4 | −23.3%¹ | 405.5 / 334.6 (+14%, +17%) |
-| a6000-base422-24mp | −9.1%¹ | 832.7 / 376.2 | −9.1%¹ | 923.1 / 455.0 (+11%, +21%) |
+| Input              | baseline: size |             M instr. full / scaled | row markers: size |     M instr. full / scaled |
+|--------------------|---------------:|-----------------------------------:|------------------:|---------------------------:|
+| pin-base444-1mp    |           0.0% |                        31.1 / 25.1 |             +0.4% |     32.7 / 26.7 (+5%, +6%) |
+| pin-base444-3mp    |           0.0% |                        77.9 / 60.8 |             +0.4% |     81.4 / 64.2 (+4%, +6%) |
+| pin-prog420-1mp    |          −0.1% | **16.3 / 11.8** (from 42.4 / 37.9) |             +0.2% |     17.4 / 12.9 (+7%, +9%) |
+| pin-base420-1mp    |           0.0% |                        28.7 / 21.7 |             +0.2% |    30.9 / 23.9 (+8%, +10%) |
+| phone-base420-4mp  |         −14.0% | 243.0 / 212.1 (from 247.5 / 216.6) |            −14.0% | 288.1 / 257.2 (+19%, +21%) |
+| sony-base422-7mp   |        −23.3%¹ |                      356.3 / 285.4 |           −23.3%¹ | 405.5 / 334.6 (+14%, +17%) |
+| a6000-base422-24mp |         −9.1%¹ |                      832.7 / 376.2 |            −9.1%¹ | 923.1 / 455.0 (+11%, +21%) |
 
 The marker percentages compare with the baseline column. ¹ Mostly not compression: jpegtran drops what follows the first
 image's end marker, which is where the cameras put their MPF preview (1616×1080 on the A6000, 1920×1080 on the Sony; the
@@ -483,15 +483,15 @@ returns planes, with libjpeg-turbo's planes).
 The inputs are the seven files as they are, the progressive one converted losslessly to baseline, and each with a restart
 marker every MCU row (`restart.py`; jpegtran's output is baseline, so the row-marker progressive file is baseline too).
 
-| Decoder | Version | Built |
-|---|---|---|
-| libjpeg-turbo | 3.1.0, the vendored copy | Windows and WSL |
-| parajpeg | f45081d (2026-10-21), with its CUDA backend | Windows (clang-cl, nvcc) and WSL (CPU) |
-| jpeggpu | 3ae7ac0 | Windows |
-| GPUJPEG | 37ab481 | Windows |
-| nvJPEG | 13.2 (CUDA 13.4 toolkit) | Windows |
-| jpegli | 031a007 (2026-06-01) | WSL |
-| Wuffs | d28ecd4 (2026-10-31), `wuffs_aux::DecodeImage` to RGBA (its AVX2 path) | WSL |
+| Decoder       | Version                                                                | Built                                  |
+|---------------|------------------------------------------------------------------------|----------------------------------------|
+| libjpeg-turbo | 3.1.0, the vendored copy                                               | Windows and WSL                        |
+| parajpeg      | f45081d (2026-10-21), with its CUDA backend                            | Windows (clang-cl, nvcc) and WSL (CPU) |
+| jpeggpu       | 3ae7ac0                                                                | Windows                                |
+| GPUJPEG       | 37ab481                                                                | Windows                                |
+| nvJPEG        | 13.2 (CUDA 13.4 toolkit)                                               | Windows                                |
+| jpegli        | 031a007 (2026-06-01)                                                   | WSL                                    |
+| Wuffs         | d28ecd4 (2026-10-31), `wuffs_aux::DecodeImage` to RGBA (its AVX2 path) | WSL                                    |
 
 The first Windows run was discarded: a VMware VM was taking 3.3 cores, which made single-thread decodes 30–50% slower
 whenever they shared a core with it. The run below had 0.3–0.6 cores of other load.
@@ -501,20 +501,20 @@ whenever they shared a core with it. The run below had 0.3–0.6 cores of other 
 Millions; callgrind in WSL, all threads, (3 decodes − 1) / 2. libjpeg-turbo's counts are 1–4% below the gungraun ones
 above (this harness's C++ build against the Rust one).
 
-| Input | turbo | turbo planes | parajpeg 1 thread | parajpeg 12 threads | jpegli | Wuffs |
-|---|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 29.8 | 26.0 | 43.0 | 59.6 | 64.1 | **29.6** |
-| pin-base444-3mp | 74.3 | 64.5 | 110.1 | 143.3 | 163.3 | **73.7** |
-| pin-prog420-1mp | 42.9 | 38.1 | **39.3** | 40.8 | 76.0 | 60.6 |
-| pin-prog420-1mp, baseline | **15.8** | 11.0 | 25.9 | 34.6 | 34.5 | 18.5 |
-| pin-base420-1mp | **28.0** | 20.9 | 41.8 | 57.2 | 57.5 | 30.0 |
-| phone-base420-4mp | 244.6 | 223.5 | **230.9** | 415.5 | 427.7 | 294.0 |
-| sony-base422-7mp | **349.8** | 310.7 | 359.4 | 584.3 | 631.4 | 432.8 |
-| a6000-base422-24mp | **819.9** | 695.2 | 957.0 | 1,409.9 | 1,763.4 | 1,013.6 |
-| *row markers:* | | | | | | |
-| pin-base444-1mp | 31.0 | 27.1 | 43.1 | 43.2 | 64.2 | **29.8** |
-| phone-base420-4mp | 270.0 | 248.9 | **223.8** | 224.6 | 424.5 | 288.7 |
-| a6000-base422-24mp | **876.7** | 752.0 | 956.2 | 958.3 | 1,762.0 | 1,010.2 |
+| Input                     |     turbo | turbo planes | parajpeg 1 thread | parajpeg 12 threads |  jpegli |    Wuffs |
+|---------------------------|----------:|-------------:|------------------:|--------------------:|--------:|---------:|
+| pin-base444-1mp           |      29.8 |         26.0 |              43.0 |                59.6 |    64.1 | **29.6** |
+| pin-base444-3mp           |      74.3 |         64.5 |             110.1 |               143.3 |   163.3 | **73.7** |
+| pin-prog420-1mp           |      42.9 |         38.1 |          **39.3** |                40.8 |    76.0 |     60.6 |
+| pin-prog420-1mp, baseline |  **15.8** |         11.0 |              25.9 |                34.6 |    34.5 |     18.5 |
+| pin-base420-1mp           |  **28.0** |         20.9 |              41.8 |                57.2 |    57.5 |     30.0 |
+| phone-base420-4mp         |     244.6 |        223.5 |         **230.9** |               415.5 |   427.7 |    294.0 |
+| sony-base422-7mp          | **349.8** |        310.7 |             359.4 |               584.3 |   631.4 |    432.8 |
+| a6000-base422-24mp        | **819.9** |        695.2 |             957.0 |             1,409.9 | 1,763.4 |  1,013.6 |
+| *row markers:*            |           |              |                   |                     |         |          |
+| pin-base444-1mp           |      31.0 |         27.1 |              43.1 |                43.2 |    64.2 | **29.8** |
+| phone-base420-4mp         |     270.0 |        248.9 |         **223.8** |               224.6 |   424.5 |    288.7 |
+| a6000-base422-24mp        | **876.7** |        752.0 |             956.2 |               958.3 | 1,762.0 |  1,010.2 |
 
 - **Wuffs is libjpeg-turbo's equal on baseline 4:4:4,** 81% of the Pinterest census, and 7–24% behind on subsampled files
   and 41% on progressive. Its pixels are identical. It has no DCT scaling, which `analyze` needs.
@@ -532,24 +532,24 @@ above (this harness's C++ build against the Rust one).
 Median ms, with process CPU ms in brackets. Windows process times tick every 15.6 ms, so CPU figures below about 0.1 ms
 aren't resolved. nvJPEG uses smooth chroma upsampling (`NVJPEG_FLAGS_UPSAMPLING_WITH_INTERPOLATION`).
 
-| Input | turbo | parajpeg 1 thread | parajpeg 12 threads | parajpeg CUDA | nvJPEG | nvJPEG GPU Huffman | jpeggpu (planes) | GPUJPEG |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 3.33 (3.4) | 5.98 (6.5) | 2.86 (11.6) | 5.44 (1.2) | 2.88 (1.9) | 2.44 (1.7) | **1.33 (0.3)** | 3.61 (2.6) |
-| pin-base444-3mp | 7.98 (8.3) | 15.19 (15.6) | 5.30 (35.3) | 8.15 (2.3) | 6.69 (4.0) | 4.50 (2.8) | **2.11 (0.4)** | 7.84 (6.2) |
-| pin-prog420-1mp | 5.26 (5.5) | 5.49 (5.7) | **3.22 (9.3)** | 5.13 (5.0) | 3.41 (2.2) | 4.30 (2.8) | not supported | not supported |
-| pin-prog420-1mp, baseline | 1.73 (1.7) | 3.04 (3.1) | 1.37 (5.7) | 6.12 (1.3) | 1.66 (1.0) | 1.99 (1.5) | **1.12 (0.4)** | 2.24 (1.4) |
-| pin-base420-1mp | 3.03 (3.1) | 5.39 (5.6) | 2.05 (10.3) | 5.01 (1.5) | 2.77 (2.1) | 2.37 (1.7) | **1.18 (0.4)** | 3.88 (3.5) |
-| phone-base420-4mp | 26.35 (28.2) | 31.79 (32.8) | 9.57 (83.2) | 13.85 (4.8) | 28.76 (26.7) | 16.88 (10.2) | **4.31 (1.0)** | 49.19 (47.3) |
-| sony-base422-7mp | 37.06 (37.7) | 49.21 (50.0) | 13.15 (106.9) | 13.16 (5.6) | 34.33 (30.7) | 16.89 (11.4) | **4.32 (0.8)** | 59.34 (56.1) |
-| a6000-base422-24mp | 93.20 (93.8) | 136.10 (135.4) | 31.60 (275.5) | 36.80 (14.8) | 77.58 (62.5) | 37.56 (25.8) | **10.56 (1.6)** | 120.55 (106.6) |
-| *row markers:* | | | | | | | | |
-| pin-base444-1mp | 3.29 (3.4) | 6.18 (6.6) | **1.31 (10.1)** | 4.30 (1.3) | 2.94 (2.2) | 2.42 (1.8) | 1.45 (0.5) | 1.85 (0.3) |
-| pin-base444-3mp | 8.03 (8.3) | 15.22 (15.4) | 3.46 (26.9) | 8.08 (2.2) | 6.99 (5.3) | 4.61 (3.0) | **2.24 (0.4)** | 3.30 (0.6) |
-| pin-prog420-1mp (baseline) | 1.74 (1.8) | 3.04 (3.1) | **0.62 (5.4)** | 4.59 (1.0) | 1.72 (1.0) | 1.95 (1.4) | 1.18 (0.4) | 2.20 (0.2) |
-| pin-base420-1mp | 3.05 (3.1) | 5.31 (5.3) | **1.12 (8.8)** | 7.88 (2.0) | 2.81 (1.9) | 2.46 (1.9) | 1.24 (0.4) | 3.42 (0.3) |
-| phone-base420-4mp | 26.01 (27.2) | 30.13 (30.8) | 5.58 (44.6) | 58.95 (3.2) | 27.89 (26.0) | 11.56 (10.9) | **4.41 (0.8)** | 23.57 (0.7) |
-| sony-base422-7mp | 40.80 (41.5) | 49.76 (50.0) | 9.38 (83.0) | 38.66 (6.4) | 35.51 (30.4) | 15.41 (11.4) | **4.67 (1.3)** | 16.96 (1.1) |
-| a6000-base422-24mp | 89.51 (90.4) | 134.84 (133.3) | 25.25 (228.2) | 55.02 (11.7) | 78.40 (66.3) | 36.53 (24.0) | **10.41 (1.4)** | 24.50 (1.4) |
+| Input                      |        turbo | parajpeg 1 thread | parajpeg 12 threads | parajpeg CUDA |       nvJPEG | nvJPEG GPU Huffman | jpeggpu (planes) |        GPUJPEG |
+|----------------------------|-------------:|------------------:|--------------------:|--------------:|-------------:|-------------------:|-----------------:|---------------:|
+| pin-base444-1mp            |   3.33 (3.4) |        5.98 (6.5) |         2.86 (11.6) |    5.44 (1.2) |   2.88 (1.9) |         2.44 (1.7) |   **1.33 (0.3)** |     3.61 (2.6) |
+| pin-base444-3mp            |   7.98 (8.3) |      15.19 (15.6) |         5.30 (35.3) |    8.15 (2.3) |   6.69 (4.0) |         4.50 (2.8) |   **2.11 (0.4)** |     7.84 (6.2) |
+| pin-prog420-1mp            |   5.26 (5.5) |        5.49 (5.7) |      **3.22 (9.3)** |    5.13 (5.0) |   3.41 (2.2) |         4.30 (2.8) |    not supported |  not supported |
+| pin-prog420-1mp, baseline  |   1.73 (1.7) |        3.04 (3.1) |          1.37 (5.7) |    6.12 (1.3) |   1.66 (1.0) |         1.99 (1.5) |   **1.12 (0.4)** |     2.24 (1.4) |
+| pin-base420-1mp            |   3.03 (3.1) |        5.39 (5.6) |         2.05 (10.3) |    5.01 (1.5) |   2.77 (2.1) |         2.37 (1.7) |   **1.18 (0.4)** |     3.88 (3.5) |
+| phone-base420-4mp          | 26.35 (28.2) |      31.79 (32.8) |         9.57 (83.2) |   13.85 (4.8) | 28.76 (26.7) |       16.88 (10.2) |   **4.31 (1.0)** |   49.19 (47.3) |
+| sony-base422-7mp           | 37.06 (37.7) |      49.21 (50.0) |       13.15 (106.9) |   13.16 (5.6) | 34.33 (30.7) |       16.89 (11.4) |   **4.32 (0.8)** |   59.34 (56.1) |
+| a6000-base422-24mp         | 93.20 (93.8) |    136.10 (135.4) |       31.60 (275.5) |  36.80 (14.8) | 77.58 (62.5) |       37.56 (25.8) |  **10.56 (1.6)** | 120.55 (106.6) |
+| *row markers:*             |              |                   |                     |               |              |                    |                  |                |
+| pin-base444-1mp            |   3.29 (3.4) |        6.18 (6.6) |     **1.31 (10.1)** |    4.30 (1.3) |   2.94 (2.2) |         2.42 (1.8) |       1.45 (0.5) |     1.85 (0.3) |
+| pin-base444-3mp            |   8.03 (8.3) |      15.22 (15.4) |         3.46 (26.9) |    8.08 (2.2) |   6.99 (5.3) |         4.61 (3.0) |   **2.24 (0.4)** |     3.30 (0.6) |
+| pin-prog420-1mp (baseline) |   1.74 (1.8) |        3.04 (3.1) |      **0.62 (5.4)** |    4.59 (1.0) |   1.72 (1.0) |         1.95 (1.4) |       1.18 (0.4) |     2.20 (0.2) |
+| pin-base420-1mp            |   3.05 (3.1) |        5.31 (5.3) |      **1.12 (8.8)** |    7.88 (2.0) |   2.81 (1.9) |         2.46 (1.9) |       1.24 (0.4) |     3.42 (0.3) |
+| phone-base420-4mp          | 26.01 (27.2) |      30.13 (30.8) |         5.58 (44.6) |   58.95 (3.2) | 27.89 (26.0) |       11.56 (10.9) |   **4.41 (0.8)** |    23.57 (0.7) |
+| sony-base422-7mp           | 40.80 (41.5) |      49.76 (50.0) |         9.38 (83.0) |   38.66 (6.4) | 35.51 (30.4) |       15.41 (11.4) |   **4.67 (1.3)** |    16.96 (1.1) |
+| a6000-base422-24mp         | 89.51 (90.4) |    134.84 (133.3) |       25.25 (228.2) |  55.02 (11.7) | 78.40 (66.3) |       36.53 (24.0) |  **10.41 (1.4)** |    24.50 (1.4) |
 
 - **jpeggpu is the fastest single-image decode on every file without markers:** 1.5–8.8× faster than libjpeg-turbo (6.1–8.8×
   on camera files), with 2–23% of its CPU time. With markers, parajpeg's 12 threads beat it on the 1 MP files. Its output
@@ -571,25 +571,25 @@ aren't resolved. nvJPEG uses smooth chroma upsampling (`NVJPEG_FLAGS_UPSAMPLING_
 
 The same harness, clang build, about 1 core of other load. Median ms (CPU ms); the files as they are.
 
-| Input | turbo | parajpeg 1 thread | parajpeg 12 threads | jpegli | Wuffs |
-|---|---:|---:|---:|---:|---:|
-| pin-base444-1mp | **3.36 (3.6)** | 6.48 (6.7) | 3.23 (13.6) | 7.60 (8.4) | 4.00 (4.3) |
-| pin-base444-3mp | 10.48 (10.9) | 18.64 (19.3) | **5.75 (36.6)** | 23.04 (24.9) | 10.37 (11.1) |
-| pin-prog420-1mp | 5.04 (5.7) | 5.26 (5.5) | **3.41 (8.0)** | 8.22 (8.5) | 6.72 (7.0) |
-| pin-prog420-1mp, baseline | **1.78 (2.0)** | 3.64 (3.8) | 1.83 (7.2) | 4.98 (5.5) | 2.13 (2.3) |
-| pin-base420-1mp | 3.38 (3.5) | 5.45 (5.8) | **2.21 (12.1)** | 6.20 (6.3) | 3.46 (3.6) |
-| phone-base420-4mp | 26.97 (27.7) | 29.79 (30.2) | **9.38 (91.7)** | 39.77 (40.2) | 35.09 (35.7) |
-| sony-base422-7mp | 38.85 (39.0) | 45.32 (45.9) | **16.84 (142.5)** | 55.65 (56.1) | 50.59 (52.4) |
-| a6000-base422-24mp | 99.76 (113.1) | 158.03 (162.1) | **37.73 (368.9)** | 161.84 (161.0) | 114.71 (116.6) |
+| Input                     |          turbo | parajpeg 1 thread | parajpeg 12 threads |         jpegli |          Wuffs |
+|---------------------------|---------------:|------------------:|--------------------:|---------------:|---------------:|
+| pin-base444-1mp           | **3.36 (3.6)** |        6.48 (6.7) |         3.23 (13.6) |     7.60 (8.4) |     4.00 (4.3) |
+| pin-base444-3mp           |   10.48 (10.9) |      18.64 (19.3) |     **5.75 (36.6)** |   23.04 (24.9) |   10.37 (11.1) |
+| pin-prog420-1mp           |     5.04 (5.7) |        5.26 (5.5) |      **3.41 (8.0)** |     8.22 (8.5) |     6.72 (7.0) |
+| pin-prog420-1mp, baseline | **1.78 (2.0)** |        3.64 (3.8) |          1.83 (7.2) |     4.98 (5.5) |     2.13 (2.3) |
+| pin-base420-1mp           |     3.38 (3.5) |        5.45 (5.8) |     **2.21 (12.1)** |     6.20 (6.3) |     3.46 (3.6) |
+| phone-base420-4mp         |   26.97 (27.7) |      29.79 (30.2) |     **9.38 (91.7)** |   39.77 (40.2) |   35.09 (35.7) |
+| sony-base422-7mp          |   38.85 (39.0) |      45.32 (45.9) |   **16.84 (142.5)** |   55.65 (56.1) |   50.59 (52.4) |
+| a6000-base422-24mp        |  99.76 (113.1) |    158.03 (162.1) |   **37.73 (368.9)** | 161.84 (161.0) | 114.71 (116.6) |
 
 On 12 workers (images/s, CPU ms per image):
 
-| Input | turbo | parajpeg 1 thread each | jpegli | Wuffs |
-|---|---:|---:|---:|---:|
-| pin-base444-1mp | **1,731 (6.7)** | 970 (12.2) | 823 (14.3) | 1,088 (10.8) |
-| pin-base420-1mp | **1,966 (5.6)** | 894 (13.2) | 804 (14.4) | 1,348 (8.7) |
-| phone-base420-4mp | **223 (51.0)** | 194 (56.7) | 114 (92.5) | 177 (66.1) |
-| a6000-base422-24mp | **64 (182)** | 48 (240) | 41 (284) | 46 (247) |
+| Input              |           turbo | parajpeg 1 thread each |     jpegli |        Wuffs |
+|--------------------|----------------:|-----------------------:|-----------:|-------------:|
+| pin-base444-1mp    | **1,731 (6.7)** |             970 (12.2) | 823 (14.3) | 1,088 (10.8) |
+| pin-base420-1mp    | **1,966 (5.6)** |             894 (13.2) | 804 (14.4) |  1,348 (8.7) |
+| phone-base420-4mp  |  **223 (51.0)** |             194 (56.7) | 114 (92.5) |   177 (66.1) |
+| a6000-base422-24mp |    **64 (182)** |               48 (240) |   41 (284) |     46 (247) |
 
 - **Wuffs runs at 1.0–1.3× libjpeg-turbo's time on one thread,** in line with its instruction counts, but at 0.57–0.79× its
   throughput on 12 workers, probably because it writes 4 bytes per pixel against 3 and the workers share the memory bus.
@@ -603,15 +603,15 @@ Images per second, with CPU ms per image in brackets. Every worker has its own d
 and over; the GPU rows use 4 workers (4 streams). The last column is `nvjpeg.py`'s best batched figure (`GPU_HYBRID`, to
 host). That run had about 2.8 cores of other load, from Everything indexing the encoder outputs.
 
-| Input | turbo ×12 | parajpeg ×12 (1 thread each) | nvJPEG ×4 | nvJPEG GPU Huffman ×4 | parajpeg CUDA ×4 | jpeggpu ×4 | GPUJPEG ×4 (row markers) | nvJPEG batched |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| pin-base444-1mp | 1,826 (5.7) | 897 (10.5) | 878 (2.4) | 547 (3.1) | 191 (2.5) | **665–2,117 (0.6–1.1)** | 474 (0.8) | 1,084 (0.06), batch 128 |
-| pin-base444-3mp | 677 (14.1) | 405 (26.2) | 349 (5.6) | 283 (5.3) | 125 (4.1) | **430–796 (0.9–1.0)** | 277 (0.9) | 481 (0.00), batch 128 |
-| pin-prog420-1mp | **1,066 (9.5)** | 818 (11.0) | 987 (3.1) | 281 (5.9) | 209 (9.3) | — | 407 (0.7)¹ | 346 (2.8), CPU Huffman |
-| pin-base420-1mp | 2,120 (5.1) | 1,077 (9.4) | 1,120 (2.3) | 573 (3.3) | 184 (3.5) | **452–2,351 (0.8–1.1)** | 266 (0.6) | 814 (0.04), batch 64 |
-| phone-base420-4mp | 252 (43.1) | 187 (51.4) | 112 (32.4) | 151 (16.5) | 61 (9.0) | **273 (2.7)** | 40 (1.1) | 110 (0.29), batch 128 |
-| sony-base422-7mp | 171 (62.7) | 120 (79.4) | 49 (47.8) | 124 (18.9) | 52 (9.2) | **282–499 (1.5–2.8)** | 58 (1.2) | 65 (0.34), batch 64 |
-| a6000-base422-24mp | 71 (148) | 46 (220) | 20 (94.2) | 47 (39.8) | 21 (25.3) | **140 (3.9)** | 40 (1.0) | 23 (30.8), decoupled³ |
+| Input              |       turbo ×12 | parajpeg ×12 (1 thread each) |   nvJPEG ×4 | nvJPEG GPU Huffman ×4 | parajpeg CUDA ×4 |              jpeggpu ×4 | GPUJPEG ×4 (row markers) |          nvJPEG batched |
+|--------------------|----------------:|-----------------------------:|------------:|----------------------:|-----------------:|------------------------:|-------------------------:|------------------------:|
+| pin-base444-1mp    |     1,826 (5.7) |                   897 (10.5) |   878 (2.4) |             547 (3.1) |        191 (2.5) | **665–2,117 (0.6–1.1)** |                474 (0.8) | 1,084 (0.06), batch 128 |
+| pin-base444-3mp    |      677 (14.1) |                   405 (26.2) |   349 (5.6) |             283 (5.3) |        125 (4.1) |   **430–796 (0.9–1.0)** |                277 (0.9) |   481 (0.00), batch 128 |
+| pin-prog420-1mp    | **1,066 (9.5)** |                   818 (11.0) |   987 (3.1) |             281 (5.9) |        209 (9.3) |                       — |               407 (0.7)¹ |  346 (2.8), CPU Huffman |
+| pin-base420-1mp    |     2,120 (5.1) |                  1,077 (9.4) | 1,120 (2.3) |             573 (3.3) |        184 (3.5) | **452–2,351 (0.8–1.1)** |                266 (0.6) |    814 (0.04), batch 64 |
+| phone-base420-4mp  |      252 (43.1) |                   187 (51.4) |  112 (32.4) |            151 (16.5) |         61 (9.0) |           **273 (2.7)** |                 40 (1.1) |   110 (0.29), batch 128 |
+| sony-base422-7mp   |      171 (62.7) |                   120 (79.4) |   49 (47.8) |            124 (18.9) |         52 (9.2) |   **282–499 (1.5–2.8)** |                 58 (1.2) |     65 (0.34), batch 64 |
+| a6000-base422-24mp |        71 (148) |                     46 (220) |   20 (94.2) |             47 (39.8) |        21 (25.3) |           **140 (3.9)** |                 40 (1.0) |   23 (30.8), decoupled³ |
 
 ¹ The row-marker file is baseline. ³ Batches over 50 of 24 MP don't fit the 6 GB card. jpeggpu was rerun after a harness
 fix (its first run stopped at the progressive file); its ranges are the spread of 2–4 repeats, which varied up to 3× on
@@ -680,12 +680,12 @@ Not measured:
 1,000 random JPEGs (median 0.96 MP, 120 KB), each turned into SSCD's 320×320 input, files already in RAM, machine
 otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full`.
 
-| Pipeline | img/s, 1 process | img/s, 12 processes | Cosine vs reference: min / p1 / p50 |
-|---|---|---|---|
-| PIL full decode + bilinear (current harness, reference) | 65 | 263 | 1 / 1 / 1 |
-| **PIL `draft()`: libjpeg-turbo DCT-scaled decode + bilinear** | **123** | **550** | 0.973 / 0.992 / 0.999 |
-| libvips `thumbnail` (shrink-on-load + Lanczos3) | 78 | 293 | 0.920 / 0.972 / 0.993 |
-| nvJPEG batched on the GPU + antialiased GPU resize | 267 | – (one process) | 0.991 / 0.995 / 0.999 |
+| Pipeline                                                      | img/s, 1 process | img/s, 12 processes | Cosine vs reference: min / p1 / p50 |
+|---------------------------------------------------------------|------------------|---------------------|-------------------------------------|
+| PIL full decode + bilinear (current harness, reference)       | 65               | 263                 | 1 / 1 / 1                           |
+| **PIL `draft()`: libjpeg-turbo DCT-scaled decode + bilinear** | **123**          | **550**             | 0.973 / 0.992 / 0.999               |
+| libvips `thumbnail` (shrink-on-load + Lanczos3)               | 78               | 293                 | 0.920 / 0.972 / 0.993               |
+| nvJPEG batched on the GPU + antialiased GPU resize            | 267              | – (one process)     | 0.991 / 0.995 / 0.999               |
 
 - **DCT-scaled decode is the winner: 2.1× full decode on the CPU, nearly the same embedding.** In Rust: libjpeg-turbo's
   scaling factors (`turbojpeg` crate), the same mechanism.

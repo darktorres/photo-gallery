@@ -10,19 +10,19 @@ files don't record the commit they were measured at, so read them as a reference
 
 ### Instruction counts (gungraun, callgrind `Ir`, WSL, 16:10)
 
-| Bench | Ir |
-|---|---|
-| `catalog::tree.all` | 3,275,602 |
-| `catalog::list.folder_flat` | 735,865 |
-| `catalog::list.folder_recursive` | 33,928,736 |
-| `catalog::list.all_name` | 32,015,927 |
-| `catalog::list.all_taken` | 46,406,218 |
-| `catalog::list.all_unrated` | 32,241,343 |
-| `catalog::facets.all` | 93,581,775 |
-| `catalog::pending_import.empty` | 115,827 |
+| Bench                               | Ir         |
+|-------------------------------------|------------|
+| `catalog::tree.all`                 | 3,275,602  |
+| `catalog::list.folder_flat`         | 735,865    |
+| `catalog::list.folder_recursive`    | 33,928,736 |
+| `catalog::list.all_name`            | 32,015,927 |
+| `catalog::list.all_taken`           | 46,406,218 |
+| `catalog::list.all_unrated`         | 32,241,343 |
+| `catalog::facets.all`               | 93,581,775 |
+| `catalog::pending_import.empty`     | 115,827    |
 | `catalog::pending_thumbs.at_height` | 29,447,015 |
-| `per_file::analyze_jpeg.sample` | 60,603,752 |
-| `per_file::thumb_jpeg.h256` | 52,045,318 |
+| `per_file::analyze_jpeg.sample`     | 60,603,752 |
+| `per_file::thumb_jpeg.h256`         | 52,045,318 |
 
 The `pg-core` folder holds the 2026-10-31 runs of the two per-file benches, under the crate's old name:
 `analyze_jpeg.sample` 63,523,272 and `thumb_jpeg.h256` 50,677,681.
@@ -31,17 +31,17 @@ The `pg-core` folder holds the 2026-10-31 runs of the two per-file benches, unde
 
 Milliseconds from process start, median of 5 runs (each stage's min and max are in the JSON).
 
-| Stage | Real library (189,518 files) | Synthetic library (4,000 files) |
-|---|---|---|
-| `main` | 27.2 | 21.5 |
-| `init_done` | 60.2 | 27.0 |
-| `qml_load` | 82.9 | 45.7 |
-| `qml_loaded` | 363.1 | 230.6 |
-| `tree_shown` | 454.6 | 322.8 |
-| `list_shown` | 1001.4 | 346.9 |
-| `first_frame` | 478.6 | 349.7 |
-| `ready` | 1144.6 | 473.7 |
-| `round_done` | 3730.6 | 3303.9 |
+| Stage         | Real library (189,518 files) | Synthetic library (4,000 files) |
+|---------------|------------------------------|---------------------------------|
+| `main`        | 27.2                         | 21.5                            |
+| `init_done`   | 60.2                         | 27.0                            |
+| `qml_load`    | 82.9                         | 45.7                            |
+| `qml_loaded`  | 363.1                        | 230.6                           |
+| `tree_shown`  | 454.6                        | 322.8                           |
+| `list_shown`  | 1001.4                       | 346.9                           |
+| `first_frame` | 478.6                        | 349.7                           |
+| `ready`       | 1144.6                       | 473.7                           |
+| `round_done`  | 3730.6                       | 3303.9                          |
 
 ### Import and thumbnails (`import.log` and `synthetic_build.log`)
 
@@ -81,19 +81,19 @@ The S-00 commit `49d8f3b` was built in a clone in WSL (`~/pg-s00`) and run with 
 layout `v1-orderkey-synthetic`, copied from the same `synthetic_catalog`: schema and row counts match) and the same
 toolchain (rustc 1.99.1, valgrind 3.26.0). HEAD's counts are `docs/perf/baseline.json` (a22fbad).
 
-| Bench | S-00, Nov 2 | S-00, today | HEAD (baseline.json) | HEAD vs S-00 today |
-|---|---|---|---|---|
-| `per_file::analyze_jpeg.sample` | 60,603,752 | 60,603,835 | 60,604,034 | +0.0% |
-| `per_file::thumb_jpeg.h256` | 52,045,318 | 52,045,531 | 52,045,748 | +0.0% |
-| `catalog::list.all_name` | 32,015,927 | 32,988,949 | 32,349,515 | −1.9% |
-| `catalog::list.all_taken` | 46,406,218 | 47,414,681 | 46,738,460 | −1.4% |
-| `catalog::list.all_unrated` | 32,241,343 | 33,214,459 | 32,574,673 | −1.9% |
-| `catalog::list.folder_recursive` | 33,928,736 | 34,902,511 | 34,261,837 | −1.8% |
-| `catalog::list.folder_flat` | 735,865 | 746,553 | 730,480 | −2.2% |
-| `catalog::tree.all` | 3,275,602 | 3,221,409 | 3,137,101 | −2.6% |
-| `catalog::facets.all` | 93,581,775 | 105,208,622 | 104,873,332 | −0.3% |
-| `catalog::pending_import.empty` | 115,827 | 115,859 | 115,391 | −0.4% |
-| `catalog::pending_thumbs.at_height` | 29,447,015 | 46,288,886 | 46,328,133 | +0.1% |
+| Bench                               | S-00, Nov 2 | S-00, today | HEAD (baseline.json) | HEAD vs S-00 today |
+|-------------------------------------|-------------|-------------|----------------------|--------------------|
+| `per_file::analyze_jpeg.sample`     | 60,603,752  | 60,603,835  | 60,604,034           | +0.0%              |
+| `per_file::thumb_jpeg.h256`         | 52,045,318  | 52,045,531  | 52,045,748           | +0.0%              |
+| `catalog::list.all_name`            | 32,015,927  | 32,988,949  | 32,349,515           | −1.9%              |
+| `catalog::list.all_taken`           | 46,406,218  | 47,414,681  | 46,738,460           | −1.4%              |
+| `catalog::list.all_unrated`         | 32,241,343  | 33,214,459  | 32,574,673           | −1.9%              |
+| `catalog::list.folder_recursive`    | 33,928,736  | 34,902,511  | 34,261,837           | −1.8%              |
+| `catalog::list.folder_flat`         | 735,865     | 746,553     | 730,480              | −2.2%              |
+| `catalog::tree.all`                 | 3,275,602   | 3,221,409   | 3,137,101            | −2.6%              |
+| `catalog::facets.all`               | 93,581,775  | 105,208,622 | 104,873,332          | −0.3%              |
+| `catalog::pending_import.empty`     | 115,827     | 115,859     | 115,391              | −0.4%              |
+| `catalog::pending_thumbs.at_height` | 29,447,015  | 46,288,886  | 46,328,133           | +0.1%              |
 
 - **The Nov 2 numbers are not the S-00 code's numbers on this setup.** Today's S-00 build is 12% above its Nov 2
   `facets.all` and 57% above its Nov 2 `pending_thumbs.at_height`; the cause of that gap is not established (the
@@ -120,25 +120,25 @@ runs when a tool is missing. The harness was a local script, not in the repo; th
 **Import throughput** (Pinterest folder, 189,519 files; `scan`, then `import` from an empty catalog, stopped after about
 6,800 files; two rounds each, the rate at the last progress line):
 
-| Build | Round 1 | Round 2 |
-|---|---|---|
-| S-00 | 460 files/s (6,899 files) | 447 files/s (6,767 files) |
-| HEAD | 450 files/s (6,764 files) | 447 files/s (6,710 files) |
+| Build | Round 1                   | Round 2                   |
+|-------|---------------------------|---------------------------|
+| S-00  | 460 files/s (6,899 files) | 447 files/s (6,767 files) |
+| HEAD  | 450 files/s (6,764 files) | 447 files/s (6,710 files) |
 
 Within run-to-run noise (about 2%). No failures in any run.
 
 **Startup stages** (`PG_TRACE=1`, offscreen, ms since process start, median of five runs; the Pinterest catalog copied
 and read into the OS cache before each start):
 
-| Stage | S-00 (copy of the S-00 catalog) | HEAD (catalog already migrated, see below) |
-|---|---|---|
-| `main` | 29 | 24 |
-| `init_done` | 183 | 40 |
-| `qml_loaded` | 296 | 262 |
-| `tree_shown` | 339 | 329 |
-| `list_shown` | 773 | 704 |
-| `first_frame` | 360 | 347 |
-| `ready` | 869 | 807 |
+| Stage         | S-00 (copy of the S-00 catalog) | HEAD (catalog already migrated, see below) |
+|---------------|---------------------------------|--------------------------------------------|
+| `main`        | 29                              | 24                                         |
+| `init_done`   | 183                             | 40                                         |
+| `qml_loaded`  | 296                             | 262                                        |
+| `tree_shown`  | 339                             | 329                                        |
+| `list_shown`  | 773                             | 704                                        |
+| `first_frame` | 360                             | 347                                        |
+| `ready`       | 869                             | 807                                        |
 
 `round_done` did not print within 15 s of `ready` on either build, so it is not compared. Two S-00 runs had a
 `list_shown` 5–7 s after `tree_shown` that no HEAD run had; the cause is not known.
@@ -160,19 +160,19 @@ The callgrind benches at HEAD (`341e82f`, WSL, `tools/profiling/wsl-bench.sh`'s 
 variants set by Cargo's environment (`CARGO_PROFILE_RELEASE_LTO`, `CARGO_PROFILE_RELEASE_CODEGEN_UNITS`), so the tree's
 `Cargo.toml` is unchanged. The default run reproduces `docs/perf/baseline.json` exactly.
 
-| Bench | default (= baseline) | `lto = "thin"` | `codegen-units = 1` |
-|---|---|---|---|
-| `per_file::analyze_jpeg.sample` | 60,604,034 | −0.01% | −0.48% |
-| `per_file::thumb_jpeg.h256` | 52,045,748 | −0.00% | −0.73% |
-| `list.all_name` | 32,349,515 | −0.00% | −0.44% |
-| `list.all_taken` | 46,738,460 | −0.00% | −0.24% |
-| `list.all_unrated` | 32,574,673 | −0.00% | −0.43% |
-| `list.folder_recursive` | 34,261,837 | −0.00% | −0.41% |
-| `list.folder_flat` | 730,480 | −0.28% | −0.20% |
-| `tree.all` | 3,137,101 | −4.05% | +1.29% |
-| `facets.all` | 104,873,332 | −0.00% | −0.00% |
-| `pending_import.empty` | 115,391 | −0.16% | −0.02% |
-| `pending_thumbs.at_height` | 46,328,133 | −0.00% | −0.00% |
+| Bench                           | default (= baseline) | `lto = "thin"` | `codegen-units = 1` |
+|---------------------------------|----------------------|----------------|---------------------|
+| `per_file::analyze_jpeg.sample` | 60,604,034           | −0.01%         | −0.48%              |
+| `per_file::thumb_jpeg.h256`     | 52,045,748           | −0.00%         | −0.73%              |
+| `list.all_name`                 | 32,349,515           | −0.00%         | −0.44%              |
+| `list.all_taken`                | 46,738,460           | −0.00%         | −0.24%              |
+| `list.all_unrated`              | 32,574,673           | −0.00%         | −0.43%              |
+| `list.folder_recursive`         | 34,261,837           | −0.00%         | −0.41%              |
+| `list.folder_flat`              | 730,480              | −0.28%         | −0.20%              |
+| `tree.all`                      | 3,137,101            | −4.05%         | +1.29%              |
+| `facets.all`                    | 104,873,332          | −0.00%         | −0.00%              |
+| `pending_import.empty`          | 115,391              | −0.16%         | −0.02%              |
+| `pending_thumbs.at_height`      | 46,328,133           | −0.00%         | −0.00%              |
 
 - **Not adopted.** Neither variant moves the hot paths by more than about 0.7%, and the 4% on `tree.all` is about
   127,000 instructions, once per start. The benches are dominated by SQLite, libjpeg-turbo and FFmpeg, which are C code

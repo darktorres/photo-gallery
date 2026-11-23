@@ -56,10 +56,10 @@ coefficients back exactly over the whole padded block grid.
 
 **Test 2, coefficient agreement: PASS.** Against libjpeg's forward DCT (`JDCT_ISLOW`) on the same RGB:
 
-| Chroma | q | coefficients within ±1 | exactly equal | max abs diff |
-|---|---|---|---|---|
-| 4:4:4 | 50 / 75 / 90 | 100% | 99.93 / 99.94 / 99.90% | 1 |
-| 4:2:0 | 50 / 75 / 90 | 100% | 99.88 / 99.91 / 99.88% | 1 |
+| Chroma | q            | coefficients within ±1 | exactly equal          | max abs diff |
+|--------|--------------|------------------------|------------------------|--------------|
+| 4:4:4  | 50 / 75 / 90 | 100%                   | 99.93 / 99.94 / 99.90% | 1            |
+| 4:2:0  | 50 / 75 / 90 | 100%                   | 99.88 / 99.91 / 99.88% | 1            |
 
 **Test 3, valid JPEG: PASS.** Edge sizes: 10 of 10 per chroma mode decode with 0 warnings and the right
 size. Sample images: 160 of 160 (40 images at q50 and q90, both chroma modes) decode with 0 warnings.
@@ -76,14 +76,14 @@ chroma modes: all valid. Errors returned for 0xN, Nx0, 65501x1 and 1x65501 (`EGP
 RGB is the libjpeg decode of each sample. Turbo is `tjCompress2` with default flags (ISLOW DCT, no
 optimized tables). PSNR and SSIMULACRA2 are measured against the source. Median and 5th percentile over 300 images:
 
-| Setting | PSNR GPU | PSNR turbo | SSIMULACRA2 GPU | SSIMULACRA2 turbo | Size ratio (GPU/turbo, median) | PSNR diff | Result |
-|---|---|---|---|---|---|---|---|
-| 4:2:0 q50 | 37.51 / 32.44 | 37.50 / 32.44 | 68.60 / 60.52 | 68.26 / 60.37 | 1.0012 | 0.02 dB | PASS |
-| 4:2:0 q75 | 44.20 / 39.10 | 44.14 / 39.07 | 85.14 / 81.36 | 84.92 / 81.16 | 0.9991 | 0.06 dB | PASS |
-| 4:2:0 q90 | 49.77 / 42.81 | 49.12 / 42.69 | 91.73 / 88.56 | 91.04 / 88.18 | 0.9935 | 0.65 dB | PASS |
-| 4:4:4 q50 | 38.24 / 33.11 | 38.20 / 33.07 | 70.45 / 62.22 | 70.27 / 62.23 | 0.9996 | 0.04 dB | PASS |
-| 4:4:4 q75 | 45.28 / 40.39 | 45.16 / 40.36 | 86.18 / 82.18 | 85.95 / 82.12 | 0.9988 | 0.12 dB | PASS |
-| 4:4:4 q90 | 50.80 / 47.55 | 49.92 / 47.02 | 92.91 / 90.67 | 92.13 / 90.06 | 0.9952 | 0.88 dB | PASS |
+| Setting   | PSNR GPU      | PSNR turbo    | SSIMULACRA2 GPU | SSIMULACRA2 turbo | Size ratio (GPU/turbo, median) | PSNR diff | Result |
+|-----------|---------------|---------------|-----------------|-------------------|--------------------------------|-----------|--------|
+| 4:2:0 q50 | 37.51 / 32.44 | 37.50 / 32.44 | 68.60 / 60.52   | 68.26 / 60.37     | 1.0012                         | 0.02 dB   | PASS   |
+| 4:2:0 q75 | 44.20 / 39.10 | 44.14 / 39.07 | 85.14 / 81.36   | 84.92 / 81.16     | 0.9991                         | 0.06 dB   | PASS   |
+| 4:2:0 q90 | 49.77 / 42.81 | 49.12 / 42.69 | 91.73 / 88.56   | 91.04 / 88.18     | 0.9935                         | 0.65 dB   | PASS   |
+| 4:4:4 q50 | 38.24 / 33.11 | 38.20 / 33.07 | 70.45 / 62.22   | 70.27 / 62.23     | 0.9996                         | 0.04 dB   | PASS   |
+| 4:4:4 q75 | 45.28 / 40.39 | 45.16 / 40.36 | 86.18 / 82.18   | 85.95 / 82.12     | 0.9988                         | 0.12 dB   | PASS   |
+| 4:4:4 q90 | 50.80 / 47.55 | 49.92 / 47.02 | 92.91 / 90.67   | 92.13 / 90.06     | 0.9952                         | 0.88 dB   | PASS   |
 
 Criteria: size ratio median within 0.97 to 1.03, and the GPU's median PSNR no more than 0.5 dB below
 turbo's. A higher PSNR is reported, not failed.
@@ -97,10 +97,10 @@ verdict changed. The q90 gap is explained by test 8 (below).
 **Test 8, DCT method at q90 (diagnostic, run with `--tests 8`, not a pass/fail test).** Median PSNR over
 the same 300 images:
 
-| Setting | GPU | turbo (ISLOW) | libjpeg FLOAT | libjpeg IFAST |
-|---|---|---|---|---|
-| 4:2:0 q90 | 49.77 | 49.12 | 49.77 | 49.12 |
-| 4:4:4 q90 | 50.80 | 49.92 | 50.80 | 49.92 |
+| Setting   | GPU   | turbo (ISLOW) | libjpeg FLOAT | libjpeg IFAST |
+|-----------|-------|---------------|---------------|---------------|
+| 4:2:0 q90 | 49.77 | 49.12         | 49.77         | 49.12         |
+| 4:4:4 q90 | 50.80 | 49.92         | 50.80         | 49.92         |
 
 The GPU matches libjpeg's float DCT to two decimals at both settings, and the integer DCTs are 0.65 to
 0.88 dB lower. The gap is the DCT method, not an encoder error. ISLOW and IFAST agree to two decimals;
@@ -110,9 +110,9 @@ they come from different APIs, and I have not compared their bytes.
 repetitions after warm-up, default 64 Mi pixel budget (2^26 pixels):
 
 | Batch | Median time per batch | Images per second | Stage means (colour / dct / sizes / scan / pack / pad / stuff / copy, ms) |
-|---|---|---|---|
-| 64 | 29.60 ms | 2162 | 6.37 / 10.79 / 4.96 / 0.31 / 5.39 / 0.26 / 0.98 / 1.22 |
-| 128 | 60.36 ms | 2120 | 12.51 / 21.29 / 9.83 / 0.54 / 10.65 / 0.49 / 1.82 / 2.51 |
+|-------|-----------------------|-------------------|---------------------------------------------------------------------------|
+| 64    | 29.60 ms              | 2162              | 6.37 / 10.79 / 4.96 / 0.31 / 5.39 / 0.26 / 0.98 / 1.22                    |
+| 128   | 60.36 ms              | 2120              | 12.51 / 21.29 / 9.83 / 0.54 / 10.65 / 0.49 / 1.82 / 2.51                  |
 
 The timed call includes the output copy to host memory. The timing does not include uploading the RGB
 input, which is assumed to be device-resident. Whether the 128-image batch was split by the pixel

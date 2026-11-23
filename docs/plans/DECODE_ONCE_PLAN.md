@@ -199,21 +199,21 @@ Connections {
 
 When the feature is off, each control below pops up and performs no action. When it is on, it behaves as today. A control is never hidden or greyed out (the user's rule). A control that does nothing for another reason also pops up with the reason, so no click goes unexplained (decided 2026-11-13): nothing to crop (`ui-nothing-to-crop`), a viewer N on a file with no border (`ui-no-border-here`), and a grid N on a file that is not checked yet (`ui-borders-not-checked`, the Pending state below the table).
 
-| Control | Input | Need | Intercept point | Note |
-|---|---|---|---|---|
-| Borders facet chips | click | Borders | `FilterBar.qml:239-242` | no filter change |
-| Crop button | click | Borders | `FilterBar.qml:252-260` | `enabled: bar.croppable > 0` is removed. Feature on and `croppable == 0` shows `ui-nothing-to-crop` |
-| Review combo, borders entries | choose | Borders | `FilterBar.qml:245-251` | index 0 is "any" (`reviewChoices`, `:49`) |
-| Sort combo, "By border depth" | choose | Borders | `TopBar.qml` sort box (`:107-113`); `Main.qml` `onSortActivated` (`:463-466`) | the last sort choice (`client/src/sort.rs:21`) |
-| Duplicates combo (Phase 3) | choose | Duplicates | `FilterBar.qml:217-223` | gated in Phase 3, with the Duplicates toggle |
-| Grid **B** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | no `Change::ShowBorders` is produced |
-| Grid **N** | key | Borders | `shell.rs` `key_pressed` (`grid_refusal`) | feature off: the disabled popup. Feature on: `Borders::Pending` (due, not checked yet) shows `ui-borders-not-checked`; `None` or `Unknown` (never checked: video, animated, tiny) shows `ui-no-border-here`; `Found` or `Marked` marks it (the grid's border state, below the table). |
-| Viewer **B** | key | Borders | `Main.qml` `onBordersToggled` (`:596`) and `onBordersRequested` (`:418`) | the QML checks before `shell.toggleBorders()` |
-| Viewer **N** | key | Borders | `client/src/keys.rs:138` (guard removed); `Main.qml` `onBorderMarkToggled` (`:597`) | the QML decides: disabled popup, no-border popup, or the mark |
-| Viewer N button | visible | Borders | `RatingBar.qml:18` and `:50` | `visible: bar.hasBorders` is removed, so the button is always visible |
-| Inbox **Retry** (thumbnails row) | click | Thumbnails | `InboxPanel.qml:125-128` (`retrySelected`), button `:469-474`, R key `:236-237` | no retry and no row removal. Only the Thumbs ledger has a Retry action (`notice.rs:1163`) |
-| Saved views | apply | the whole view, if it needs a disabled feature | 2.7 | not applied; one popup |
-| `--borders` start option | apply at start | Borders | `controller.rs:113` | gated, like Grid B: no action, one popup |
+| Control                          | Input          | Need                                           | Intercept point                                                                     | Note                                                                                                                                                                                                                                                                                  |
+|----------------------------------|----------------|------------------------------------------------|-------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Borders facet chips              | click          | Borders                                        | `FilterBar.qml:239-242`                                                             | no filter change                                                                                                                                                                                                                                                                      |
+| Crop button                      | click          | Borders                                        | `FilterBar.qml:252-260`                                                             | `enabled: bar.croppable > 0` is removed. Feature on and `croppable == 0` shows `ui-nothing-to-crop`                                                                                                                                                                                   |
+| Review combo, borders entries    | choose         | Borders                                        | `FilterBar.qml:245-251`                                                             | index 0 is "any" (`reviewChoices`, `:49`)                                                                                                                                                                                                                                             |
+| Sort combo, "By border depth"    | choose         | Borders                                        | `TopBar.qml` sort box (`:107-113`); `Main.qml` `onSortActivated` (`:463-466`)       | the last sort choice (`client/src/sort.rs:21`)                                                                                                                                                                                                                                        |
+| Duplicates combo (Phase 3)       | choose         | Duplicates                                     | `FilterBar.qml:217-223`                                                             | gated in Phase 3, with the Duplicates toggle                                                                                                                                                                                                                                          |
+| Grid **B**                       | key            | Borders                                        | `shell.rs` `key_pressed` (`grid_refusal`)                                           | no `Change::ShowBorders` is produced                                                                                                                                                                                                                                                  |
+| Grid **N**                       | key            | Borders                                        | `shell.rs` `key_pressed` (`grid_refusal`)                                           | feature off: the disabled popup. Feature on: `Borders::Pending` (due, not checked yet) shows `ui-borders-not-checked`; `None` or `Unknown` (never checked: video, animated, tiny) shows `ui-no-border-here`; `Found` or `Marked` marks it (the grid's border state, below the table). |
+| Viewer **B**                     | key            | Borders                                        | `Main.qml` `onBordersToggled` (`:596`) and `onBordersRequested` (`:418`)            | the QML checks before `shell.toggleBorders()`                                                                                                                                                                                                                                         |
+| Viewer **N**                     | key            | Borders                                        | `client/src/keys.rs:138` (guard removed); `Main.qml` `onBorderMarkToggled` (`:597`) | the QML decides: disabled popup, no-border popup, or the mark                                                                                                                                                                                                                         |
+| Viewer N button                  | visible        | Borders                                        | `RatingBar.qml:18` and `:50`                                                        | `visible: bar.hasBorders` is removed, so the button is always visible                                                                                                                                                                                                                 |
+| Inbox **Retry** (thumbnails row) | click          | Thumbnails                                     | `InboxPanel.qml:125-128` (`retrySelected`), button `:469-474`, R key `:236-237`     | no retry and no row removal. Only the Thumbs ledger has a Retry action (`notice.rs:1163`)                                                                                                                                                                                             |
+| Saved views                      | apply          | the whole view, if it needs a disabled feature | 2.7                                                                                 | not applied; one popup                                                                                                                                                                                                                                                                |
+| `--borders` start option         | apply at start | Borders                                        | `controller.rs:113`                                                                 | gated, like Grid B: no action, one popup                                                                                                                                                                                                                                              |
 
 **The grid's border state.** `Entry.borders` (`crates/model/src/grid.rs`) is read in `entry_from_row` (`crates/catalog/src/browse/read/grid.rs:53-81`). It gains `Borders::Pending`: a row with no cut columns and `a.borders_due = 1`. The query reads `a.borders_due` as column 16, after the marked flag at 15, so `SORT_COLUMN` moves from 16 to 17. The detail query (`grid.rs:103`) uses the same column list. The one exhaustive-looking match, `desktop/src/gallery/items.rs:185`, has a `_` arm, and the other uses compare with `==` or `matches!`, so nothing else changes. `Pending` needs no migration, and the feature-off case is answered first by the disabled popup. The state reads `a.borders_due`, not a second copy of the `has_borders!` predicate in the client, so there is one definition of which files are checked.
 
@@ -544,13 +544,13 @@ The literal `a.dups_state = 'due'` lets SQLite use the partial index `analysis_d
 
 **Hashes (both toggles).** `pending_hashes` runs through `pipeline::batched` (`pipeline.rs:240-270`, as the other per-file passes): the bytes are read whole; the worker reads the header dimensions, checks the cap (3.2), reserves the budget (below), decodes F (stored orientation, `MinSize::Full`), and computes `analysis::hashes` and `analysis::thumbhash` on the upright image. The budget is released at the end of `process`. The sink (5.5) writes each batch in one transaction, with `Batch { size: 100, every: Some(250 ms) }`:
 
-| Outcome | Writes |
-|---|---|
-| Hashed | `store_hashes(item, &hashes, &thumbhash, owed)`, `owed = !detection_on`. If detection is on: `pair_and_insert`, `store_pdq_pair` for each neighbour, then `store_pairs_done`. |
-| Over the cap | `store_skipped`. |
-| Decode error or panic | `store_skipped`, and a ledger row (`FilePass::Duplicates`, `retry = false`, the error text). **Not** `store_failure`: that would erase the analysis of a file that imported fine. |
-| io read error | The common rule (5.6): the attempt is counted, and the file stays `'due'` for the next round until the third attempt, which writes an error row (`--retry-errors` or a change of the file clears it). Today the Borders catch-up retries without end (`borders/src/lib.rs:79-83`); this changes that. The count is in `io_attempts` (3.3). |
-| Not run (stopped in the budget wait) | nothing |
+| Outcome                              | Writes                                                                                                                                                                                                                                                                                                                                     |
+|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Hashed                               | `store_hashes(item, &hashes, &thumbhash, owed)`, `owed = !detection_on`. If detection is on: `pair_and_insert`, `store_pdq_pair` for each neighbour, then `store_pairs_done`.                                                                                                                                                              |
+| Over the cap                         | `store_skipped`.                                                                                                                                                                                                                                                                                                                           |
+| Decode error or panic                | `store_skipped`, and a ledger row (`FilePass::Duplicates`, `retry = false`, the error text). **Not** `store_failure`: that would erase the analysis of a file that imported fine.                                                                                                                                                          |
+| io read error                        | The common rule (5.6): the attempt is counted, and the file stays `'due'` for the next round until the third attempt, which writes an error row (`--retry-errors` or a change of the file clears it). Today the Borders catch-up retries without end (`borders/src/lib.rs:79-83`); this changes that. The count is in `io_attempts` (3.3). |
+| Not run (stopped in the budget wait) | nothing                                                                                                                                                                                                                                                                                                                                    |
 
 `stats.complete = stats.files == items.len()`, as the other passes.
 
@@ -1108,15 +1108,15 @@ The poster frame is decoded once for analysis into `image` (`analyze.rs:197-198`
 
 ### 5.10 Priority table (after this phase)
 
-| Work | Priority | Thread |
-|---|---|---|
-| Crops | BelowNormal (`runner.rs:430`) | readers and workers, and the sink |
-| Scans | Normal (`runner.rs:464`, no pipeline) | job thread |
-| Import (merged pass) | BelowNormal (`runner.rs:522`, today), and its ingest thumbnails at BelowNormal (the user's decision) | readers and workers, and the sink (the sink is new in this phase) |
-| Borders | BelowNormal (`runner.rs:536`) | readers and workers, and the sink |
-| Thumbs (catch-up) | Idle (`runner.rs:561`) | readers and workers, and the sink |
-| Dups | BelowNormal (Phase 3) | readers and workers, and the sink |
-| UI and render threads | AboveNormal on Windows (Phase 2) | GUI, render |
+| Work                  | Priority                                                                                             | Thread                                                            |
+|-----------------------|------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------|
+| Crops                 | BelowNormal (`runner.rs:430`)                                                                        | readers and workers, and the sink                                 |
+| Scans                 | Normal (`runner.rs:464`, no pipeline)                                                                | job thread                                                        |
+| Import (merged pass)  | BelowNormal (`runner.rs:522`, today), and its ingest thumbnails at BelowNormal (the user's decision) | readers and workers, and the sink (the sink is new in this phase) |
+| Borders               | BelowNormal (`runner.rs:536`)                                                                        | readers and workers, and the sink                                 |
+| Thumbs (catch-up)     | Idle (`runner.rs:561`)                                                                               | readers and workers, and the sink                                 |
+| Dups                  | BelowNormal (Phase 3)                                                                                | readers and workers, and the sink                                 |
+| UI and render threads | AboveNormal on Windows (Phase 2)                                                                     | GUI, render                                                       |
 
 Import is already BelowNormal, and Scans is Normal. Moving Scans is not part of this plan.
 
@@ -1249,12 +1249,12 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 
    Event schema (one JSON object per line; field values are numbers or one of the fixed strings listed):
 
-   | ev | fields | where emitted |
-   |---|---|---|
-   | `sink_flush` | `files` (uint, files in the batch), `dur_ms` (float, the whole flush), `lock_ms` (float, BEGIN IMMEDIATE to COMMIT), `result` ("ok" or "err") | the merged pass's sink (5.5, 5.6) |
-   | `put_batch` | `n` (uint, entries), `dur_ms` (float), `result` ("ok", "not_stored" or "err") | thumbcache's `put_batch` |
-   | `grid_merge` | `rows` (uint, rows after the merge), `changed` (uint, items changed), `dur_ms` (float) | the grid merge's caller (desktop, Phase 4) |
-   | `grid_1000` | `rows` (uint, the client's count, always >= 1000) | desktop, once per process, at the first count >= 1000 |
+   | ev           | fields                                                                                                                                        | where emitted                                         |
+   |--------------|-----------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
+   | `sink_flush` | `files` (uint, files in the batch), `dur_ms` (float, the whole flush), `lock_ms` (float, BEGIN IMMEDIATE to COMMIT), `result` ("ok" or "err") | the merged pass's sink (5.5, 5.6)                     |
+   | `put_batch`  | `n` (uint, entries), `dur_ms` (float), `result` ("ok", "not_stored" or "err")                                                                 | thumbcache's `put_batch`                              |
+   | `grid_merge` | `rows` (uint, rows after the merge), `changed` (uint, items changed), `dur_ms` (float)                                                        | the grid merge's caller (desktop, Phase 4)            |
+   | `grid_1000`  | `rows` (uint, the client's count, always >= 1000)                                                                                             | desktop, once per process, at the first count >= 1000 |
 
    Example lines: `{"t_ms":1234.567,"ev":"sink_flush","files":64,"dur_ms":12.345,"lock_ms":3.210,"result":"ok"}` and `{"t_ms":1240.001,"ev":"grid_1000","rows":1000}`. `result` is on `sink_flush` and `put_batch` so an error shows in the measurements. `grid_1000` is once per process, since the plan's metric is the time to the first 1,000 rows.
 
@@ -1285,10 +1285,10 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 
 ## Migrations
 
-| Version | Phase | Adds |
-|---|---|---|
-| `TO_10` | 3 | `analysis.dups_state` (three values, 3.3), `analysis_dups_due`, `meta.dups_version = 1`, `io_attempts` and its reset trigger (3.3, 5.6) |
-| `TO_11` | 4 | `files_log` (TRANSIENT, 4.3), `files_removed`, `files_renamed`, `analysis_import_changed` (replacing `analysis_import_rewritten`, which is dropped), `analysis_rewritten`, the hash-mate and pair triggers (4.4), `meta.log_horizon`, `meta.view_epoch` |
+| Version | Phase | Adds                                                                                                                                                                                                                                                    |
+|---------|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `TO_10` | 3     | `analysis.dups_state` (three values, 3.3), `analysis_dups_due`, `meta.dups_version = 1`, `io_attempts` and its reset trigger (3.3, 5.6)                                                                                                                 |
+| `TO_11` | 4     | `files_log` (TRANSIENT, 4.3), `files_removed`, `files_renamed`, `analysis_import_changed` (replacing `analysis_import_rewritten`, which is dropped), `analysis_rewritten`, the hash-mate and pair triggers (4.4), `meta.log_horizon`, `meta.view_epoch` |
 
 Each migration's test compares `expected()` with a fresh schema (`schema.rs:851-865`). The two migrations land in the two phases, so an old build reads a catalog one version ahead as a rebuild (the README note, 3.3).
 

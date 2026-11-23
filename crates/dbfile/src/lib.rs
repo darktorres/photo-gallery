@@ -7,11 +7,13 @@
 
 #![forbid(unsafe_code)]
 
+mod copy;
 mod judge;
 mod lock;
 mod remove;
 mod schema;
 
+pub use copy::open_copy_wal;
 pub use judge::{Damage, Expected, Found, judge};
 pub use lock::{Live, Lock};
 pub use remove::{move_aside, remove_database};

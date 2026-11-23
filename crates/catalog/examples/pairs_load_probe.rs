@@ -3,7 +3,7 @@
 //! and of its CPU cycles (the process's; the probe runs one thread), and the rows it read.
 //!
 //! The catalog is a copy of a real one, copied again into a scratch folder (nothing is written). Every variant but
-//! `cached` opens a fresh read-only connection with the pass's cache (`pg_import::pairs::CACHE_KIB`), as
+//! `cached` opens a fresh read-only connection with the pass's cache (`PG_PROBE_CACHE_KIB`, see `cache_kib`), as
 //! `Catalog::reader` does, so SQLite's cache starts empty and the pages come from the OS's file cache, as they do for a
 //! pass after an import:
 //!
@@ -30,7 +30,6 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use pg_import::pairs::CACHE_KIB;
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, OpenFlags};
 
@@ -102,6 +101,16 @@ const VARIANTS: [&str; 12] = [
 /// One run of a variant: its wall time, its cycles, the rows it read.
 type Run = (Duration, u64, usize);
 
+/// The pass's page cache in KiB, from `PG_PROBE_CACHE_KIB`: the pairing pass's `CACHE_KIB` (pg-import). The probe does not
+/// import it, since the catalog's dev graph cannot name pg-import. There is no default: a probe that guesses the value
+/// measures a different pass, so the variable must name the one the measurement used.
+fn cache_kib() -> Result<u32> {
+    std::env::var("PG_PROBE_CACHE_KIB")
+        .context("PG_PROBE_CACHE_KIB is unset: set it to the pairing pass's cache in KiB (pg-import's CACHE_KIB)")?
+        .parse()
+        .context("PG_PROBE_CACHE_KIB is not a number of KiB")
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(source) = args.first() else { bail!("usage: pairs_load_probe <catalog.sqlite> [runs] [variant...]") };
@@ -114,7 +123,7 @@ fn main() -> Result<()> {
     let dir = pg_testkit::run_folder("scratch_catalog", "pairs-load-probe")?;
     let db = dir.join("catalog.sqlite");
     std::fs::copy(source, &db).context("copy the catalog")?;
-    show_plans(&open(&db, CACHE_KIB)?)?;
+    show_plans(&open(&db, cache_kib()?)?)?;
     // The pass opens it as the app's catalog: held open (untimed) while the variants run, as during a pass.
     let catalog = pg_catalog::Catalog::open(&db, PathRules::Windows)?;
 
@@ -179,7 +188,7 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
     let start = Instant::now();
     let rows = match variant {
         "today" => {
-            let work = catalog.reader(CACHE_KIB)?.pairing_work()?;
+            let work = catalog.reader(cache_kib()?)?.pairing_work()?;
             work.ids.len() + usize::try_from(work.legacy).unwrap_or(usize::MAX)
         }
         "split" => {
@@ -188,29 +197,29 @@ fn timed(catalog: &pg_catalog::Catalog, db: &Path, variant: &str) -> Result<Run>
                 .and_then(|w| w.parse().ok())
                 .or_else(|| std::thread::available_parallelism().ok().map(std::num::NonZero::get))
                 .unwrap_or(1);
-            let work = catalog.reader(CACHE_KIB)?.pairing_work_split(threads, &|| {})?;
+            let work = catalog.reader(cache_kib()?)?.pairing_work_split(threads, &|| {})?;
             work.ids.len() + usize::try_from(work.legacy).unwrap_or(usize::MAX)
         }
         "open" => {
-            drop(open(db, CACHE_KIB)?);
+            drop(open(db, cache_kib()?)?);
             0
         }
-        "count" => open(db, CACHE_KIB)?.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?,
-        "step" => read_rows(&open(db, CACHE_KIB)?, PAIRING_WORK, true, false)?,
-        "columns" => read_rows(&open(db, CACHE_KIB)?, PAIRING_WORK, true, true)?,
+        "count" => open(db, cache_kib()?)?.query_row("SELECT count(*) FROM analysis", [], |r| r.get(0))?,
+        "step" => read_rows(&open(db, cache_kib()?)?, PAIRING_WORK, true, false)?,
+        "columns" => read_rows(&open(db, cache_kib()?)?, PAIRING_WORK, true, true)?,
         "cached" => read_rows(warm.as_ref().context("the warm connection")?, PAIRING_WORK, true, true)?,
-        "analysis" => read_rows(&open(db, CACHE_KIB)?, ANALYSIS, true, true)?,
+        "analysis" => read_rows(&open(db, cache_kib()?)?, ANALYSIS, true, true)?,
         "analysis-cached" => read_rows(warm.as_ref().context("the warm connection")?, ANALYSIS, true, true)?,
-        "identity" => read_rows(&open(db, CACHE_KIB)?, IDENTITY, false, true)?,
+        "identity" => read_rows(&open(db, cache_kib()?)?, IDENTITY, false, true)?,
         "files-sets" => {
-            let conn = open(db, CACHE_KIB)?;
+            let conn = open(db, cache_kib()?)?;
             let mut rows = 0;
             for sql in [DISPLACED, PRESENT, PENDING] {
                 rows += read_rows(&conn, sql, false, true)?;
             }
             rows
         }
-        "owed" => read_rows(&open(db, CACHE_KIB)?, OWED, false, true)?,
+        "owed" => read_rows(&open(db, cache_kib()?)?, OWED, false, true)?,
         other => bail!("no variant {other}"),
     };
     let wall = start.elapsed();

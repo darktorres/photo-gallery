@@ -76,11 +76,10 @@ deny = [
     { crate = "tiff", wrappers = ["pg-codec", "image"] },
     { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
-    # SQLite is pg-catalog's and the thumbnail cache's, pg-dbfile's (the shared schema check), and pg-bench's (the catalog
-    # benches), and pg-thumbs's fault module (the `fault` feature), which refuses the thumbnail cache's stores in its own
-    # database (a trigger), and pg-import's pairing probes (its dev-dependency, `examples/pairs_*_probe.rs`), which read and
-    # write the catalog's pairing tables directly as the benches do.
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-dbfile", "pg-thumbcache", "pg-bench", "pg-thumbs", "pg-import"] },
+    # SQLite is the owners' alone: pg-catalog's, pg-dbfile's (the shared file lifecycle, and the copies a bench opens in
+    # WAL), pg-thumbcache's (its own file and its test-only fault trigger), and pg-query's (it registers the SQL
+    # functions on a connection). Other crates reach a database through these.
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-dbfile", "pg-thumbcache"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
 ]

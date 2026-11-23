@@ -41,7 +41,9 @@ pub const WRITE: usize = 4_000;
 /// What a pass may be tuned by: the defaults are [`SLICE`], [`CACHE_KIB`], [`WRITE`], the join's own ([`Tuning`]), a
 /// load in as many parts as the join has threads, and no forced guard. The tests and the probe (`PG_PROBE_SLICE`,
 /// `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS`, `PG_PROBE_FEW`, `PG_PROBE_WIDTHS`, `PG_PROBE_GUARD`)
-/// set others: a small slice runs the multi-slice path, with its write overlap, on a small library.
+/// set others: a small slice runs the multi-slice path, with its write overlap, on a small library. The probes, which
+/// live in pg-catalog's examples, take the cache and the write batch from `PG_PROBE_CACHE_KIB` and `PG_PROBE_WRITE`
+/// (they have no default, so a measurement names the values it used).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     /// The owed pictures per slice (at least 1).

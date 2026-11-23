@@ -37,7 +37,7 @@ render: codec metadata model perf platform video
 # The passes, each its own crate.
 scan: catalog jobs model perf platform
 thumbcache: dbfile jobs model platform query
-bench: analysis catalog codec dedup jobs model render scan thumbcache
+bench: analysis catalog codec dedup dbfile jobs model render scan thumbcache
 borders: analysis catalog jobs model perf platform
 import: analysis catalog container dedup jobs model perf platform
 thumbs: catalog jobs model perf platform render thumbcache

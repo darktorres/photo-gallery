@@ -65,8 +65,8 @@ fn copy_layout(layout: &str) -> PathBuf {
             let _ = std::fs::remove_file(run.join(format!("{name}{suffix}")));
         }
         or_stop(std::fs::copy(from.join(name), run.join(name)), from.join(name).display());
-        let conn = or_stop(rusqlite::Connection::open(run.join(name)), "the copied catalog");
-        or_stop(conn.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(())), "WAL mode");
+        // The copy is opened in WAL, as the measured code runs; the connection's job ends here.
+        drop(or_stop(pg_dbfile::open_copy_wal(&run.join(name)), "the copied database"));
     }
     run
 }

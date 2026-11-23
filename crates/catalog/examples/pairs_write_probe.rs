@@ -5,9 +5,9 @@
 //! The catalog is a copy of a real one (it is written to); `pairs.txt` is the pairs the pass makes on it, one
 //! `a b distance` per line (`a < b`, by file id). Before each run of a variant, every picture owes its pairs and no pair
 //! is stored (`pairs_owed` holds every analysis the pass pairs, `pdq_pairs` is empty), the WAL is checkpointed and
-//! truncated, and a fresh connection is opened with the catalog's settings and the pass's cache (`CACHE_KIB`). The
-//! pictures and their stored hashes are read as the pass's load reads them, untimed. Then the variant writes every
-//! picture's pairs and marks it done, in transactions of `WRITE` owed pictures in file-id order, as `write_slice` does
+//! truncated, and a fresh connection is opened with the catalog's settings and the pass's cache (`PG_PROBE_CACHE_KIB`).
+//! The pictures and their stored hashes are read as the pass's load reads them, untimed. Then the variant writes every
+//! picture's pairs and marks it done, in transactions of `PG_PROBE_WRITE` owed pictures in file-id order, as `write_slice` does
 //! (every picture owed, so a pair's owner is its `b`):
 //!
 //! - `today`: `PairsWriter`'s statements (each pair and each done guarded by its analyses' stored hashes);
@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use pg_import::pairs::{CACHE_KIB, WRITE};
 use rusqlite::types::Value;
 use rusqlite::{Connection, params};
 
@@ -66,8 +65,29 @@ macro_rules! ensure {
     };
 }
 
+/// The pass's page cache in KiB, from `PG_PROBE_CACHE_KIB`: the pairing pass's `CACHE_KIB` (pg-import). The probe does not
+/// import it, since the catalog's dev graph cannot name pg-import. There is no default: a probe that guesses the value
+/// measures a different pass, so the variable must name the one the measurement used.
+fn cache_kib() -> Result<u32> {
+    std::env::var("PG_PROBE_CACHE_KIB")
+        .context("PG_PROBE_CACHE_KIB is unset: set it to the pairing pass's cache in KiB (pg-import's CACHE_KIB)")?
+        .parse()
+        .context("PG_PROBE_CACHE_KIB is not a number of KiB")
+}
+
+/// The owed pictures per write transaction, from `PG_PROBE_WRITE` (the pass's `WRITE`, pg-import); no default, as with
+/// `cache_kib`.
+fn write_batch() -> Result<usize> {
+    std::env::var("PG_PROBE_WRITE")
+        .context(
+            "PG_PROBE_WRITE is unset: set it to the pairing pass's pictures per write transaction (pg-import's WRITE)",
+        )?
+        .parse()
+        .context("PG_PROBE_WRITE is not a number of pictures")
+}
+
 /// The catalog's connection settings: a copy of `schema::SETTINGS`, which is crate-private, without its cache. The
-/// pass's cache (`CACHE_KIB`, from `pg_import::pairs`) is set in `open`, after these.
+/// pass's cache (`cache_kib`) is set in `open`, after these.
 const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
      PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
 /// `PairsWriter`'s statements.
@@ -157,7 +177,7 @@ fn wal_of(db: &Path) -> PathBuf {
 fn open(db: &Path) -> Result<Connection> {
     let conn = Connection::open(db)?;
     conn.execute_batch(SETTINGS)?;
-    conn.pragma_update(None, "cache_size", -i64::from(CACHE_KIB))?;
+    conn.pragma_update(None, "cache_size", -i64::from(cache_kib()?))?;
     rusqlite::vtab::array::load_module(&conn)?;
     Ok(conn)
 }
@@ -221,7 +241,7 @@ fn timed(conn: &Connection, pictures: &[Picture], variant: &str) -> Result<(Dura
         conn.query_row("SELECT sum(length(pdq_dihedral)) FROM analysis", [], |_| Ok(()))?;
     }
     let (mut stmts, mut commits) = (Duration::ZERO, Duration::ZERO);
-    for batch in pictures.chunks(WRITE) {
+    for batch in pictures.chunks(write_batch()?) {
         let writing = Instant::now();
         conn.execute_batch("BEGIN IMMEDIATE")?;
         match variant {

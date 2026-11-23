@@ -1,5 +1,5 @@
-"""The one-public-path check (`boundaries.check_public_paths`): a crate root's `pub use` names a private module, never a
-`pub mod`, except one that is exempt for its own sake."""
+"""The checks of `boundaries.py` that take a file's text: the one-public-path rule (`check_public_paths`) and the
+environment reads (`check_env`)."""
 
 import unittest
 
@@ -29,12 +29,48 @@ class PublicPaths(unittest.TestCase):
     def test_a_reexport_from_a_pub_crate_mod_is_fine(self):
         self.assertEqual(failures("pub(crate) mod a;\npub use a::X;\n"), [])
 
-    def test_an_exempt_pub_mod_is_public_on_its_own(self):
-        self.assertEqual(failures("pub mod fault;\n"), [])
+    def test_a_root_reexport_from_pub_mod_fault_is_a_second_path(self):
+        self.assertEqual(len(failures("pub mod fault;\npub use fault::X;\n")), 1)
 
     def test_only_crate_roots_are_checked(self):
         text = "pub mod a;\npub use a::X;\n"
         self.assertEqual(boundaries.check_public_paths({REPO / "crates" / "demo" / "src" / "other.rs": text}), [])
+
+
+ENV_OK = (
+    "pub fn process(name: &str) -> Option<OsString> {\n    std::env::var_os(name)\n}\n"
+    "pub(crate) unsafe fn set_process(name: &str, value: &str) {\n    std::env::set_var(name, value)\n}\n"
+)
+
+
+class EnvironmentReads(unittest.TestCase):
+    def failures(self, path, text):
+        return boundaries.check_env({path: text})
+
+    def test_a_build_script_may_read_the_environment(self):
+        build = REPO / "crates" / "demo" / "build.rs"
+        self.assertEqual(self.failures(build, 'fn main() { let _ = std::env::var("CARGO_CFG_TARGET_OS"); }\n'), [])
+
+    def test_a_build_module_in_src_may_not(self):
+        module = REPO / "crates" / "demo" / "src" / "build.rs"
+        self.assertEqual(len(self.failures(module, 'fn f() { let _ = std::env::var("PG_HOME"); }\n')), 1)
+
+    def test_any_other_file_may_not(self):
+        lib = REPO / "crates" / "demo" / "src" / "lib.rs"
+        self.assertEqual(len(self.failures(lib, 'fn f() { let _ = std::env::var("PG_HOME"); }\n')), 1)
+
+    def test_the_registry_reads_inside_its_two_functions_only(self):
+        env = REPO / "crates" / "platform" / "src" / "env.rs"
+        self.assertEqual(self.failures(env, ENV_OK), [])
+
+    def test_a_stray_read_in_the_registry_file_fails(self):
+        env = REPO / "crates" / "platform" / "src" / "env.rs"
+        stray = ENV_OK + 'fn other() {\n    let _ = std::env::var_os("PG_HOME");\n}\n'
+        self.assertEqual(len(self.failures(env, stray)), 1)
+
+    def test_a_drifted_reader_header_fails(self):
+        env = REPO / "crates" / "platform" / "src" / "env.rs"
+        self.assertEqual(len(self.failures(env, "fn unrelated() {}\n")), 1)
 
 
 if __name__ == "__main__":

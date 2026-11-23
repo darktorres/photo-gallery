@@ -141,20 +141,18 @@ use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 #[must_use]
 #[expect(unsafe_code, reason = "FFI: the Qt application and QML engine calls that open the window, through cxx-qt")]
 pub fn run(args: &[OsString]) -> i32 {
-    // Qt uses PipeWire for audio when its library is installed, and crashes when PipeWire cannot start (pg_platform::audio).
-    // Then the app asks Qt for PulseAudio instead. Qt reads the variable when it makes the audio devices, so it is set here,
-    // first, before any thread of the app's own starts. A choice the user made in the environment is kept.
-    if pg_platform::env::process("QT_AUDIO_BACKEND").is_none() && pg_platform::audio::pipewire_context_fails() {
-        // SAFETY: no other thread is running yet: this is the first thing `run` does.
-        unsafe { std::env::set_var("QT_AUDIO_BACKEND", "pulseaudio") };
-    }
+    // Qt uses PipeWire for audio when its library is installed, and crashes when PipeWire cannot start: then the app asks
+    // Qt for PulseAudio instead (pg_platform::audio). Qt reads the variable when it makes the audio devices, so it is set
+    // here, first, before any thread of the app's own starts.
+    // SAFETY: no other thread is running yet: this is the first thing `run` does.
+    unsafe { pg_platform::audio::prefer_pulseaudio_if_pipewire_fails() };
     // The crate's and the QML module's C++ initializers. A static library keeps them only where they are called.
     cxx_qt::init_crate!(pg_desktop);
     cxx_qt::init_qml_module!("pg.gallery");
     let perf_log_failure = trace::install();
     pg_trace::pg_stage_main();
     if let Err(e) = command_line::init(args) {
-        fatal(&format!("{e:#}"));
+        return fatal(&format!("{e:#}"));
     }
     // A screenshot run is a test run: an option it can't use fails it here, on the console, before any window is made.
     if command_line::path("screenshot").is_some() && !command_line::bad_options().is_empty() {
@@ -170,7 +168,7 @@ pub fn run(args: &[OsString]) -> i32 {
     // is shown before the log exists.
     let mut config = match pg_app::Config::from_env() {
         Ok(config) => config,
-        Err(e) => fatal(&e),
+        Err(e) => return fatal(&e),
     };
     // The log is appended to, so each run's part of it starts with its session's record: the build and where the data is.
     pg_log::init(
@@ -206,7 +204,7 @@ pub fn run(args: &[OsString]) -> i32 {
             .downcast_ref::<pg_app::Error>()
             .and_then(catalog_refusal_message)
             .unwrap_or_else(|| pg_client::text::Message::CatalogUnopened { error: format!("{e:#}") });
-        fatal(&pg_client::text::render(&message));
+        return fatal(&pg_client::text::render(&message));
     }
     // The writes the window makes off its thread (`worker`); without the thread they are made where they are asked for.
     if let Err(e) = worker::start() {
@@ -332,14 +330,15 @@ fn catalog_refusal_message(e: &pg_app::Error) -> Option<pg_client::text::Message
 /// A GUI program has nowhere to print: log the error, show it, then quit. The log comes first, so the record is there
 /// even when the box is missed. Before the log has its file (a bad command line, no data folder) the record is held
 /// in memory and lost with the process; the box is then the only record.
-#[expect(clippy::exit, reason = "the process ends here by design, after the message box")]
-fn fatal(message: &str) -> ! {
+/// The status the caller returns: `run` returns it, so the destructors run (the log, the GPU thread), and the heap
+/// profile is written, where `process::exit` would have skipped them.
+fn fatal(message: &str) -> i32 {
     // Logged and printed: `error_box` is a no-op off Windows, so the message would otherwise be lost there.
     pg_log::error("startup", message);
     // A console that can't take the line is no reason to skip the error box below.
     let _ = writeln!(std::io::stderr(), "{message}");
     alert::error_box(message);
-    std::process::exit(1);
+    1
 }
 
 #[cfg(test)]

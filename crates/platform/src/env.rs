@@ -5,6 +5,8 @@
 //! own. [`VARS`] lists every registered variable with what reads it: `tools/test_ci_files.py` checks the sources against
 //! it, and `.env.example` documents the ones an operator sets.
 
+#![expect(unsafe_code, reason = "the one environment write, `set_process`, which only the startup of the app may call")]
+
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -201,10 +203,28 @@ pub const VARS: &[Spec] = &[
         doc: "The FFmpeg binaries folder the video crate's build emits for its loader; set by the build, not by an operator.",
     },
     Spec {
+        name: "PG_QT_DIR",
+        kind: Kind::Path,
+        reader: Reader::Build,
+        doc: "The Qt kit folder the desktop build links against (the operator sets it in `.env`).",
+    },
+    Spec {
+        name: "PG_QT_STATIC",
+        kind: Kind::Flag,
+        reader: Reader::Build,
+        doc: "Set in the build's environment to link Qt statically from `PG_QT_DIR` (`crates/desktop/build.rs`); presence, not a value.",
+    },
+    Spec {
+        name: "PG_FFMPEG_STATIC",
+        kind: Kind::Path,
+        reader: Reader::Build,
+        doc: "The static FFmpeg's lib folder, read by the static Qt app's build and by a static video build (`crates/video/build.rs`).",
+    },
+    Spec {
         name: "PG_BENCH_DATA",
         kind: Kind::Path,
         reader: Reader::Build,
-        doc: "The data folder the benchmarks compile in (`crates/bench`), set by `just bench` from `PG_BENCH_DATA_SOURCE`.",
+        doc: "The data folder the benchmarks compile in (`crates/bench`), set by `tools/profiling/bench.py` in the Linux container, to the copy of `PG_BENCH_DATA_SOURCE`.",
     },
     Spec {
         name: "PG_BENCH_JPEG",
@@ -217,6 +237,16 @@ pub const VARS: &[Spec] = &[
 /// The process's value of `name`, with an empty value read as unset: the lookup the app passes where a crate takes one.
 pub fn process(name: &str) -> Option<OsString> {
     std::env::var_os(name).filter(|value| !value.is_empty())
+}
+
+/// Sets `name` in the process's environment to `value`, for the native libraries that read it when they start.
+///
+/// # Safety
+/// No other thread may be running, nor reading or writing the environment, while this runs: the caller is the first code
+/// of the app, before its threads start.
+pub(crate) unsafe fn set_process(name: &str, value: &str) {
+    // SAFETY: the caller's contract above: no other thread is running.
+    unsafe { std::env::set_var(name, value) };
 }
 
 /// The value of `var` in the environment `lookup` gives, with an empty value read as unset.

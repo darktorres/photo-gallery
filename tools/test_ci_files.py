@@ -16,7 +16,7 @@ from unittest import mock
 from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
 from ci.github_files import env_line, path_line, pin_values
 from install_exiftool import install
-from pgtools import REPO, just_value
+from pgtools import REPO, function_body, just_value
 
 WORKFLOW = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 PINNED = {
@@ -295,19 +295,66 @@ ENV_SOURCES = {".rs", ".cpp", ".h", ".hpp"}
 PG_NAME = re.compile(r"\bPG_[A-Z][A-Z0-9_]*\b")
 REGISTERED_SPEC = re.compile(r'Spec \{\s*name: "(PG_[A-Z0-9_]+)",\s*kind: Kind::\w+,\s*reader: Reader::(\w+),')
 DOCUMENTED = re.compile(r"^#?\s*(PG_[A-Z][A-Z0-9_]*)=", re.MULTILINE)
-# The names the sources use that are not the app's variables, each with its reason. A name is registered in
-# crates/platform/src/env.rs (VARS), documented in .env.example, or one of these.
-TEST_INPUTS = [
-    (r"PG_HOLDER_\w+", "a child process's handshake keys (the catalog and dbfile holders)"),
-    (r"PG_THUMB_(HOLDER|CATALOG|READY|RELEASE)", "the thumbnail cache's child-process keys"),
-    (r"PG_PLATFORM_TESTING_CHILD_PREFIX|PG_PLATFORM_SPAWN_HELPER|PG_TESTING_HELD", "pg-platform's child-process keys"),
-    (r"PG_PROBE_\w+", "the examples' probe inputs, not the app's"),
-    (r"PG_JOIN_\w+", "the join test's dump inputs"),
-    (r"PG_LABEL", "a benchmark's output label"),
-    (r"PG_QML_RESOURCES", "the QML test harness's resource folder"),
-    (r"PG_TEST_CATALOG|PG_REHEARSAL_CATALOG|PG_JPEG_COMPARE_DIR", "the input a test or a rehearsal reads"),
-    (r"PG_FFMPEG", "a library test's FFmpeg program (the build's is PG_FFMPEG_BIN)"),
-]
+
+
+def _family(reason, *names):
+    """Each of `names` with the one `reason` that explains the family."""
+    return dict.fromkeys(names, reason)
+
+
+# The names the sources use that are not the app's variables, each exact and with its reason. A name is registered in
+# crates/platform/src/env.rs (VARS), documented in .env.example, or one of these: a new `PG_PROBE_X` fails until it is
+# listed here, and a listed name that no source uses any more fails the rot test below.
+TEST_INPUTS = {
+    **_family(
+        "a child process's handshake keys (the catalog and dbfile holders)",
+        "PG_HOLDER_PATH",
+        "PG_HOLDER_MODE",
+        "PG_HOLDER_READY",
+        "PG_HOLDER_RELEASE",
+    ),
+    **_family(
+        "the thumbnail cache's child-process keys",
+        "PG_THUMB_HOLDER",
+        "PG_THUMB_CATALOG",
+        "PG_THUMB_READY",
+        "PG_THUMB_RELEASE",
+    ),
+    **_family(
+        "pg-platform's child-process keys, and a stdout marker of its test helper (PG_TESTING_HELD is not a variable)",
+        "PG_PLATFORM_TESTING_CHILD_PREFIX",
+        "PG_PLATFORM_SPAWN_HELPER",
+        "PG_TESTING_HELD",
+    ),
+    **_family(
+        "the examples' probe inputs, not the app's",
+        "PG_PROBE_BETWEEN",
+        "PG_PROBE_AGAIN",
+        "PG_PROBE_WRITE",
+        "PG_PROBE_WORKERS",
+        "PG_PROBE_WIDTHS",
+        "PG_PROBE_SLICE",
+        "PG_PROBE_LOAD_PARTS",
+        "PG_PROBE_KEEP_OWED",
+        "PG_PROBE_GUARD",
+        "PG_PROBE_FEW",
+        "PG_PROBE_CACHE_KIB",
+        "PG_PROBE_BLOCK",
+        "PG_PROBE_MEMSTAT",
+    ),
+    **_family("the join test's dump inputs", "PG_JOIN_THREADS", "PG_JOIN_OUT", "PG_JOIN_DUMP"),
+    **_family("a benchmark's output label", "PG_LABEL"),
+    **_family(
+        "a harness input, not a setting: the QML test's resource folder, read also by tools/qmltest.py and main.cpp",
+        "PG_QML_RESOURCES",
+    ),
+    **_family(
+        "the input a test or a rehearsal reads",
+        "PG_TEST_CATALOG",
+        "PG_REHEARSAL_CATALOG",
+        "PG_JPEG_COMPARE_DIR",
+    ),
+}
 
 
 def env_sources():
@@ -320,13 +367,6 @@ def env_sources():
         for name in set(PG_NAME.findall(text)):
             found.setdefault(name, []).append(path.relative_to(REPO).as_posix())
     return found
-
-
-def function_body(text, header):
-    """The text of the function that starts with `header`, up to its closing brace at the start of a line."""
-    start = text.index(header)
-    end = text.index("\n}", start)
-    return text[start:end]
 
 
 class EnvironmentRegistry(unittest.TestCase):
@@ -343,10 +383,27 @@ class EnvironmentRegistry(unittest.TestCase):
         for name, files in env_sources().items():
             if name in self.registry or name in self.documented:
                 continue
-            if any(re.fullmatch(pattern, name) for pattern, _ in TEST_INPUTS):
+            if name in TEST_INPUTS:
                 continue
             unknown[name] = sorted(set(files))
         self.assertEqual(unknown, {}, "add to VARS in crates/platform/src/env.rs, or to .env.example, or to TEST_INPUTS")
+
+    def test_every_test_input_is_still_used_by_a_source(self):
+        # An exact list rots the way a pattern cannot: a name whose last use is gone must leave the list.
+        sources = env_sources()
+        unused = sorted(name for name in TEST_INPUTS if name not in sources)
+        self.assertEqual(unused, [], "these TEST_INPUTS names no source uses any more: remove them")
+
+    def test_every_name_a_build_script_uses_is_registered_for_the_build(self):
+        # boundaries.py exempts a build script from the environment rule by its path, so the names it uses are checked
+        # here instead. Its `//` comments name variables too (desktop/build.rs, video/build.rs), so they are dropped first.
+        unregistered = {}
+        for path in sorted((REPO / "crates").glob("*/build.rs")):
+            code = re.sub(r"//[^\n]*", "", path.read_text(encoding="utf-8"))
+            for name in sorted(set(PG_NAME.findall(code))):
+                if self.registry.get(name) != "Build":
+                    unregistered.setdefault(name, []).append(path.relative_to(REPO).as_posix())
+        self.assertEqual(unregistered, {}, "register these with Reader::Build in crates/platform/src/env.rs (VARS)")
 
     def test_every_variable_the_app_or_native_code_reads_is_documented(self):
         missing = [name for name, reader in self.registry.items() if reader in ("App", "Native") and name not in self.documented]
@@ -366,9 +423,11 @@ class EnvironmentRegistry(unittest.TestCase):
         self.assertEqual(cpp, rust, "the C++ desktop reads its flags with the same spellings as pg_platform::env::parse")
 
 
-# The binaries keep anyhow for good: their errors are reported, not matched. Every library crate is listed in
-# anyhow-allow.txt until its migration removes it (Phase 7).
-ANYHOW_PERMANENT = {"cli", "desktop", "gallery"}
+# The binaries that keep anyhow for good. Each is the top of its stack: a failure is reported to the user as a message and
+# an exit code, with context added on the way up, so a typed error there would only be matched to choose a message.
+# (`desktop` also matches one typed error by downcast, `pg_app::Error`, and says so where it does.) Every library crate is
+# listed in anyhow-allow.txt until its migration removes it (Phase 7). `gallery` has no anyhow dependency and is not here.
+ANYHOW_PERMANENT = {"cli", "desktop"}
 ANYHOW_ALLOW = REPO / "tools" / "anyhow-allow.txt"
 
 
@@ -377,6 +436,11 @@ def depends_on_anyhow(manifest):
     tables = [manifest, *manifest.get("target", {}).values()]
     kinds = ("dependencies", "dev-dependencies", "build-dependencies")
     return any("anyhow" in table.get(kind, {}) for table in tables for kind in kinds)
+
+
+def permanent_without_anyhow(permanent, depending):
+    """The permanent crates that no longer depend on anyhow: a stale entry in ANYHOW_PERMANENT."""
+    return set(permanent) - set(depending)
 
 
 class AnyhowAllowlist(unittest.TestCase):
@@ -405,6 +469,17 @@ class AnyhowAllowlist(unittest.TestCase):
     def test_the_permanent_crates_are_crates(self):
         present = {path.parent.name for path in (REPO / "crates").glob("*/Cargo.toml")}
         self.assertLessEqual(ANYHOW_PERMANENT, present)
+
+    def test_every_permanent_crate_still_depends_on_anyhow(self):
+        self.assertEqual(
+            permanent_without_anyhow(ANYHOW_PERMANENT, self.crates_depending()),
+            set(),
+            "these permanent crates no longer depend on anyhow: take them out of ANYHOW_PERMANENT",
+        )
+
+    def test_a_permanent_crate_that_drops_anyhow_is_reported(self):
+        self.assertEqual(permanent_without_anyhow({"cli", "desktop"}, {"cli"}), {"desktop"})
+        self.assertEqual(permanent_without_anyhow({"cli"}, {"cli", "desktop"}), set())
 
     def test_a_manifest_check_sees_each_table_kind(self):
         self.assertTrue(depends_on_anyhow({"dependencies": {"anyhow": {"workspace": True}}}))

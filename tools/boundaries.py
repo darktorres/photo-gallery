@@ -9,16 +9,17 @@
    over its private layout). One that names another crate is allowed only in a boundary file (`REEXPORT_BOUNDARIES`),
    and one through `crate::` or `super::` (an item kept at an old path) is not allowed. One public path per item: a
    crate root's `pub use` names a private module, never a `pub mod` (that module is public under its own path, so the
-   root would give the same items a second one). `PUBLIC_API_EXEMPT` lists the `pub mod`s that are public for their own
-   sake (fault injection), which the root may re-export from.
+   root would give the same items a second one).
 4. Platform code: no `cfg` on `windows`, `unix`, `target_os` or `target_family`, no `std::os::windows` or
    `std::os::unix`, and no OS crate or module (`windows_sys`, `libloading::os`), in production code outside `pg-platform`,
    except the glue in `PLATFORM_GLUE`, which must name the platform's own signatures or types.
 
 5. Environment: production code reads no variable through `std::env` (`var`, `var_os`, `vars`, `set_var` and their
    kin). A variable is read through pg-platform's `env` module (`read`, `value`, `flag`, `process`), which makes an
-   empty value unset everywhere and keeps the registry of `PG_*` names (`VARS`) true. The build scripts and the one
-   documented `set_var` are in `ENV_READERS`, with their reasons.
+   empty value unset everywhere and keeps the registry of `PG_*` names (`VARS`) true. A build script
+   (`crates/<crate>/build.rs`) reads cargo's variables by the build protocol and is exempt by its path. Pg-platform's
+   own two environment functions (the reader and the one write) are in `ENV_READERS`: only the bodies of the functions
+   it names may call `std::env`.
 
 Production code is a crate's `src/` and its build script, without `#[cfg(test)]` items (an inline module, or a
 `mod name;` whose file is then left out too). The test helpers are checked like the rest: pg-testkit's folders are pg-platform's
@@ -33,6 +34,8 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+from pgtools import function_body
 
 REPO = Path(__file__).resolve().parents[1]
 LAYERS = REPO / "tools" / "crate-layers.txt"
@@ -49,12 +52,13 @@ PLATFORM_GLUE: dict[str, str] = {}
 
 ENV_READ = re.compile(r"\benv::(var|var_os|vars|vars_os|set_var|remove_var)\b")
 # The files that read the environment with `std::env` themselves, each with its reason (ground rule 5).
-ENV_READERS: dict[str, str] = {
-    "crates/platform/src/env.rs": "the process reader, `process`: the one place a variable is read",
-    "crates/desktop/src/lib.rs": "sets QT_AUDIO_BACKEND once, before any thread of the app starts",
-    "crates/desktop/build.rs": "a build script reads the variables of the build",
-    "crates/gallery/build.rs": "a build script reads the variables of the build",
-    "crates/video/build.rs": "a build script reads the variables of the build",
+# Each entry names the functions whose bodies may call `std::env`, by their headers: only those bodies are exempt, so a
+# stray read elsewhere in the file still fails. A build script is not listed: `is_build_script` exempts it by its path.
+ENV_READERS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "crates/platform/src/env.rs": (
+        "the registry's two environment functions: the lookup of a variable, and the one write (`set_process`)",
+        ("pub fn process(", "pub(crate) unsafe fn set_process("),
+    ),
 }
 
 PLATFORM_WORD = re.compile(r"\b(windows|unix|target_os|target_family)\b")
@@ -65,8 +69,6 @@ OS_CRATE = re.compile(r"\bwindows_sys\b|\blibloading::os\b")
 PUB_USE = re.compile(r"^\s*pub\s+use\s+([^;]+);", re.MULTILINE)
 # A child module declaration, with its visibility (`pub`, `pub(crate)`, or none) and its name.
 CHILD_MOD = re.compile(r"^\s*(pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*[;{]", re.MULTILINE)
-# The `pub mod`s that are public API for their own sake, so a crate root may re-export from them (none is today).
-PUBLIC_API_EXEMPT = {"fault"}
 # An item compiled only in tests: `#[cfg(test)]`, or `#[cfg(all(test, ...))]`.
 CFG_TEST = re.compile(r"^[ \t]*#\[cfg\((?:test|all\(test\b[^\]]*\))\)\][ \t]*\n", re.MULTILINE)
 
@@ -232,14 +234,14 @@ def crate_of(path):
 
 
 def check_public_paths(files):
-    """A crate root's `pub use` names a private module (or a `PUBLIC_API_EXEMPT` one): a `pub mod` is public under its own
-    path, and a root re-export would give its items a second one."""
+    """A crate root's `pub use` names a private module, never a `pub mod`: a `pub mod` is public under its own path, and a
+    root re-export would give its items a second one."""
     failures = []
     for path, text in files.items():
         parts = path.relative_to(REPO).parts
         if len(parts) != 4 or parts[0] != "crates" or parts[2:] != ("src", "lib.rs"):
             continue
-        public = {name for vis, name in CHILD_MOD.findall(text) if vis.strip() == "pub" and name not in PUBLIC_API_EXEMPT}
+        public = {name for vis, name in CHILD_MOD.findall(text) if vis.strip() == "pub"}
         for m in PUB_USE.finditer(text):
             body = re.sub(r"\s+", "", m.group(1))
             first = body.split("::", 1)[0]
@@ -285,14 +287,31 @@ def cfg_args(text, start):
     return text[start:]
 
 
+def is_build_script(path):
+    """A crate's build script, `crates/<crate>/build.rs`: it reads the environment by cargo's build protocol, not through
+    the registry. test_ci_files.py checks that each `PG_*` name it uses is registered for the build."""
+    return path.name == "build.rs" and path.parent.parent == REPO / "crates"
+
+
 def check_env(files):
     failures = []
     for path, text in files.items():
         key = rel(path)
-        if key in ENV_READERS:
+        if is_build_script(path):
             continue
-        for m in ENV_READ.finditer(text):
-            line = text.count("\n", 0, m.start()) + 1
+        scanned = text
+        if key in ENV_READERS:
+            headers = ENV_READERS[key][1]
+            try:
+                for header in headers:
+                    body = function_body(scanned, header)
+                    # Blanked, newlines kept, so the line numbers of the other reads hold (as `production` does).
+                    scanned = scanned.replace(body, re.sub(r"[^\n]", " ", body), 1)
+            except ValueError as e:
+                failures.append(f"{key}: a reader named in ENV_READERS is not found as written ({e}); update it")
+                continue
+        for m in ENV_READ.finditer(scanned):
+            line = scanned.count("\n", 0, m.start()) + 1
             failures.append(f"{key}:{line}: std::env::{m.group(1)} (read it through pg_platform::env)")
     return failures
 

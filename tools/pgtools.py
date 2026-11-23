@@ -172,6 +172,15 @@ def checked(what: str, command: list[str], log: Path | None = None, cwd: Path | 
         sys.exit(f"pgtools: {what} failed (exit {result.returncode})")
 
 
+def function_body(text: str, header: str) -> str:
+    """The text of the function that starts with `header`, up to its closing brace at the start of a line (the static
+    checks read a function's body by its signature). Raises ValueError when the header is not in `text`, or it has no
+    closing brace: a drifted signature, which the caller reports."""
+    start = text.index(header)
+    end = text.index("\n}", start)
+    return text[start:end]
+
+
 def sha256(path: Path) -> str:
     """The file's SHA-256 in upper case, as the pins and the manifests write it."""
     digest = hashlib.sha256()

@@ -1,11 +1,12 @@
 //! Qt's PipeWire audio output, and whether PipeWire can start here. Qt 6.12 uses PipeWire for audio when its library is
 //! installed, and then dereferences a NULL PipeWire context if PipeWire cannot make one. A PipeWire install without its
 //! client configuration (`client.conf`, which the `pipewire` package ships, not the libraries) is one such case: its
-//! `pw_context_new` returns NULL. The app asks Qt for PulseAudio in that case (crates/desktop/src/lib.rs).
+//! `pw_context_new` returns NULL. The app asks Qt for PulseAudio in that case: [`prefer_pulseaudio_if_pipewire_fails`],
+//! called first by the desktop's `run`.
 
-#![cfg_attr(
-    target_os = "linux",
-    expect(unsafe_code, reason = "FFI: the PipeWire calls that ask whether a context can be made, on Linux")
+#![expect(
+    unsafe_code,
+    reason = "FFI: the PipeWire calls that ask whether a context can be made, on Linux; the environment write on every target"
 )]
 
 #[cfg(target_os = "linux")]
@@ -17,6 +18,19 @@ use std::ptr;
 
 #[cfg(target_os = "linux")]
 use libloading::Library;
+
+/// Asks Qt for PulseAudio when PipeWire cannot make a context here, unless the environment already chooses a Qt audio
+/// backend (`QT_AUDIO_BACKEND`, which a user's own choice keeps). It does nothing off Linux and where PipeWire works.
+///
+/// # Safety
+/// No other thread may be running, nor reading or writing the environment: call it first thing, before the app starts
+/// its threads. Qt reads the variable when it makes the audio devices, so it must be set before then.
+pub unsafe fn prefer_pulseaudio_if_pipewire_fails() {
+    if crate::env::process("QT_AUDIO_BACKEND").is_none() && pipewire_context_fails() {
+        // SAFETY: the caller's contract above: no other thread is running.
+        unsafe { crate::env::set_process("QT_AUDIO_BACKEND", "pulseaudio") };
+    }
+}
 
 /// Whether PipeWire's library is installed and cannot make a context, the way Qt's startup makes one: a thread loop
 /// started, then a context on its loop (no daemon is needed). False where the library is absent (Qt does not use PipeWire

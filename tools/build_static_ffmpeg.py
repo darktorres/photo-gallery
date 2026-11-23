@@ -61,7 +61,25 @@ CONFIGURE_FLAGS = [
     "--enable-d3d11va", "--enable-dxva2",
 ]  # fmt: skip
 
-SYSTEM_DLL = re.compile(r"^(api-ms-win-|KERNEL32|USER32|bcrypt|VCRUNTIME140|MSVCP140)", re.IGNORECASE)
+# The link check's policy for the DLLs a static-check.exe imports. A DLL is accepted by name, not by prefix, and a name
+# that is not listed fails the build (Decisions: a new DLL is added here on purpose, with its reason).
+# The DLLs every supported Windows provides, by exact file name (matched case-blind: dumpbin prints mixed case).
+SYSTEM_DLLS = frozenset({"kernel32.dll", "user32.dll", "bcrypt.dll"})
+# The API-set DLLs: the loader resolves each name to the real DLL on every supported Windows, so the name is the contract.
+API_SET_PREFIXES = ("api-ms-win-", "ext-ms-win-")
+# The VC runtime. It ships with the Visual C++ redistributable, a deployment requirement, not a part of Windows.
+REDISTRIBUTED = frozenset({"vcruntime140.dll"})
+
+
+def is_system_dll(name: str) -> bool:
+    """True for a DLL every supported Windows provides: an exact name in SYSTEM_DLLS, or an API-set name."""
+    lower = name.lower()
+    return lower in SYSTEM_DLLS or lower.startswith(API_SET_PREFIXES)
+
+
+def is_redistributed(name: str) -> bool:
+    """True for a DLL that ships with the VC redistributable (REDISTRIBUTED), matched by exact name."""
+    return name.lower() in REDISTRIBUTED
 
 
 def git(src: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -261,7 +279,16 @@ def main() -> None:
         ["dumpbin.exe", "/nologo", "/dependents", "static-check.exe"], capture_output=True, text=True, check=False, cwd=test
     )
     dependents = [line.strip() for line in dumped.stdout.splitlines() if re.match(r"^\s+\S+\.dll$", line, re.IGNORECASE)]
-    non_system = [name for name in dependents if not SYSTEM_DLL.match(name)]
+    non_system = [name for name in dependents if not is_system_dll(name)]
+    unlisted = [name for name in non_system if not is_redistributed(name)]
+    # The check must not pass vacuously: a failed dumpbin or an unmatched output leaves no dependents to judge.
+    problems = []
+    if dumped.returncode != 0:
+        problems.append(f"dumpbin exited {dumped.returncode}")
+    if not dependents:
+        problems.append("dumpbin listed no DLLs of static-check.exe (KERNEL32.dll is always among them)")
+    if unlisted:
+        problems.append(f"the link check imports DLLs that are not system DLLs: {', '.join(unlisted)}")
 
     # 6. Manifest: what went in and what came out, with hashes.
     manifest = {
@@ -283,12 +310,13 @@ def main() -> None:
             {"path": lib.relative_to(prefix).as_posix(), "bytes": lib.stat().st_size, "sha256": sha256(lib)} for lib in libs
         ],
         "crt": crt,
-        "link_check": {"output": output, "dependents": dependents, "non_system": non_system},
+        "link_check": {"output": output, "dependents": dependents, "non_system": non_system, "unlisted": unlisted},
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    # Written first, so a failed run is still recorded; the failure is raised before the done line.
+    if problems:
+        sys.exit(f"link check failed: {'; '.join(problems)} (the run is recorded in {work / 'manifest.json'})")
     print(f"done: {work / 'manifest.json'}")
-    if non_system:
-        print(f"warning: the link check imports non-system DLLs: {', '.join(non_system)}", file=sys.stderr)
 
 
 if __name__ == "__main__":

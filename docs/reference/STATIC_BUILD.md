@@ -80,7 +80,7 @@ Steps:
 4. **CRT check.** No library may reference `LIBCMT` (the static runtime). `MSVCRT` references are counted and recorded.
 5. **Link check.** `tools/static-ffmpeg/static-check.c` is compiled with `cl /MD` against the five libraries plus
    `user32.lib` and `bcrypt.lib`, and run. It must print `h264 decoder: yes`, `d3d11va hwdevice: yes`,
-   `dxva2 hwdevice: yes` and `open missing file: -2`. `dumpbin /dependents` must show no non-system DLLs.
+   `dxva2 hwdevice: yes` and `open missing file: -2`. `dumpbin /dependents` must show no DLL outside the system list (`SYSTEM_DLLS` and the API-set names) and `VCRUNTIME140.dll`, which is accepted only through `REDISTRIBUTED`; any other DLL fails the build (`tools/build_static_ffmpeg.py`).
 
 The configure line (the pilot's flags, with the reasons the recipe records):
 
@@ -103,7 +103,7 @@ Choices that follow from the configure line:
 
 Results, Python recipe (2026-11-13, from an empty folder): all checks passed in 369 s. The link check printed the four
 expected lines, the library majors are 61 (avutil), 63 (avcodec, avformat), 10 (swscale) and 7 (swresample), the same
-as the shipped DLLs, and no library references `LIBCMT`. The link check imports only system DLLs. `avcodec.lib` is
+as the shipped DLLs, and no library references `LIBCMT`. The link check imports only system DLLs and `VCRUNTIME140.dll`, which is not a system DLL and is accepted only through `REDISTRIBUTED`. `avcodec.lib` is
 10 MB, down from 29 MB in the pilot, since `--disable-debug` leaves out the debug data.
 
 Results, PowerShell recipe (run 1, 2026-11-08): all checks passed in 243 s. The link needs `user32.lib`

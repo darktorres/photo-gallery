@@ -148,7 +148,7 @@ Design:
 
 ### 9. Docs
 
-`docs/plans/CONSISTENCY_AUDIT.md` (D-061: the decision, what changed, the shell step), `crates/README.md` (links, mount points, the stored root volume, the volume anchor, waiting roots), `docs/plans/PROGRESS.md` (a row; the file is under `docs/plans/`).
+`docs/plans/CONSISTENCY_PROGRAM_PLAN.md` (D-061: the open decision and the shell step), `crates/README.md` (links, mount points, the stored root volume, the volume anchor, waiting roots).
 
 ## Verification
 

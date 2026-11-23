@@ -81,6 +81,6 @@ fn find(catalog: &Catalog, group_distance: u32) -> Result<Found> {
         edges.extend(catalog.identical_edges(by)?);
     }
     edges.extend(catalog.pdq_edges(group_distance)?);
-    let groups = UnionFind::from_edges(&edges).groups();
+    let groups = UnionFind::from_edges(&edges)?.groups();
     Ok(Found { identical, pdq_bands, groups })
 }

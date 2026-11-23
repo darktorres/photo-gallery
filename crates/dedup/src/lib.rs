@@ -5,4 +5,4 @@
 pub mod join;
 mod union_find;
 
-pub use union_find::UnionFind;
+pub use union_find::{TooManyFiles, UnionFind};

@@ -12,6 +12,7 @@ workspace = true
 # model's hashes only; the catalog and the import hand them in.
 [dependencies]
 pg-model = { path = "../model" }
+thiserror.workspace = true
 
 # The tests' generator (`pg-testrng`, a leaf).
 [dev-dependencies]

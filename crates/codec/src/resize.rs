@@ -87,14 +87,16 @@ impl Resizer {
         out: &mut Rgb,
     ) -> Result<()> {
         let (x, y, w, h) = region;
+        let kernel = mks2021().map_err(|e| Error::resize("the MKS 2021 filter", e))?;
         let options =
-            ResizeOptions::new().resize_alg(ResizeAlg::Convolution(mks2021())).crop(x, y, w.max(1.0), h.max(1.0));
+            ResizeOptions::new().resize_alg(ResizeAlg::Convolution(kernel)).crop(x, y, w.max(1.0), h.max(1.0));
         self.run(img, width.max(1), height.max(1), &options, out)
     }
 
     /// Resizes `img` to `width` by `height` into `out`, with the MKS 2021 convolution kernel.
     pub fn resize(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) -> Result<()> {
-        let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(mks2021()));
+        let kernel = mks2021().map_err(|e| Error::resize("the MKS 2021 filter", e))?;
+        let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(kernel));
         self.run(img, width, height, &options, out)
     }
 

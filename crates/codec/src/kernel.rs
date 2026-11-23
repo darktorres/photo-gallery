@@ -2,7 +2,7 @@
 //! The single-pass kernel is k(x) = Σₙ sₙ·m(x − n) over n = −3..=3, with m the magic kernel and s the Sharp 2021 taps;
 //! the paper's two-pass form is checked against it.
 
-use fast_image_resize::{Filter, FilterType};
+use fast_image_resize::{CreateFilterError, Filter, FilterType};
 
 /// The kernel's support, in the units the resizer stretches: 3/2 (the magic kernel) plus 3 (the sharpen taps reach
 /// three samples out).
@@ -37,10 +37,10 @@ fn k(x: f64) -> f64 {
     (-3i64..=3).map(|n| s(n) * m(x - pg_model::num::signed(n))).sum()
 }
 
-/// The filter for `fast_image_resize::ResizeAlg::Convolution`.
-#[expect(clippy::expect_used, reason = "the support is a positive constant, so the filter is always valid")]
-pub(crate) fn mks2021() -> FilterType {
-    FilterType::Custom(Filter::new("MKS2021", k, SUPPORT).expect("the support is positive and finite"))
+/// The filter for `fast_image_resize::ResizeAlg::Convolution`. Its support is a positive constant, so it cannot fail, but
+/// the constructor's error is returned rather than asserted away: the callers already return a `Result`.
+pub(crate) fn mks2021() -> Result<FilterType, CreateFilterError> {
+    Ok(FilterType::Custom(Filter::new("MKS2021", k, SUPPORT)?))
 }
 
 #[cfg(test)]

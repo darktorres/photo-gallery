@@ -1648,6 +1648,7 @@ version = "0.1.0-dev"
 dependencies = [
  "pg-model",
  "pg-testrng",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

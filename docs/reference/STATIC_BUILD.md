@@ -106,6 +106,11 @@ expected lines, the library majors are 61 (avutil), 63 (avcodec, avformat), 10 (
 as the shipped DLLs, and no library references `LIBCMT`. The link check imports only system DLLs and `VCRUNTIME140.dll`, which is not a system DLL and is accepted only through `REDISTRIBUTED`. `avcodec.lib` is
 10 MB, down from 29 MB in the pilot, since `--disable-debug` leaves out the debug data.
 
+Results, Python recipe (2026-11-23, with the exact-name `SYSTEM_DLLS` policy in place): all checks passed in 385 s. The
+link check's dependents are 15 DLLs: `KERNEL32`, `USER32`, `bcrypt`, twelve `api-ms-win-crt-*` API-set DLLs (system, by
+prefix) and `VCRUNTIME140.dll`, which is accepted only through `REDISTRIBUTED`. The unlisted set is empty, so the policy
+needed no name added. The manifest is `D:\PhotoGallery\static\ffmpeg\manifest.json`.
+
 Results, PowerShell recipe (run 1, 2026-11-08): all checks passed in 243 s. The link needs `user32.lib`
 (`GetDesktopWindow`, from the DXVA2 device code) and `bcrypt.lib` (`av_get_random_seed`). FFmpeg's `.pc` files list
 neither, because their `Libs.private` is empty, so the recipe carries the list itself. The H.264 decoder and the

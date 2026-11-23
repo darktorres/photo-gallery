@@ -1,6 +1,6 @@
 # Consistency audit: open items
 
-The validated consistency audit had 702 findings. On 2026-11-22 the findings still open were re-checked against the tree at HEAD (branch `merge-plan`), reading each cited location again. Cites below are to that tree.
+The validated consistency audit had 702 findings. On 2026-11-22 the findings still open were re-checked against the tree at HEAD (branch `main`), reading each cited location again. Cites below are to that tree.
 
 Removed as resolved in code: U-029, U-030, U-043, PF-024, P-025. The full audit with its original text is in git at `ba070a12`.
 

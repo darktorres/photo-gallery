@@ -17,6 +17,7 @@ Usage (Pillow installed):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import io
 import math
 import sys
@@ -241,9 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     qualities: list[int | None] = list(args.jpeg or [90, 75])
     if not args.no_png:
         qualities.append(None)  # None means PNG (lossless): the pieces are not re-encoded
-    try:
-        import PIL  # noqa: F401
-    except ImportError:
+    if importlib.util.find_spec("PIL") is None:
         print("Pillow is needed to read images: pip install pillow", file=sys.stderr)
         return 2
     totals = {"correct": 0, "wrong": 0, "refused": 0}

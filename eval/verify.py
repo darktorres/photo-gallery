@@ -176,7 +176,10 @@ class Features:
         (ka, da, *frames_a), (kb, db, *frames_b) = fa, fb
         if len(ka) < 8 or len(kb) < 8:
             return np.zeros((0, 2), np.float32), np.zeros((0, 2), np.float32)
-        ones = lambda k: torch.ones(1, len(k), 1, 1, device=DEVICE)  # noqa: E731 (a one-expression helper for the ones tensor)
+
+        def ones(k):
+            return torch.ones(1, len(k), 1, 1, device=DEVICE)
+
         lafs_a = frames_a[0] if frames_a else KF.laf_from_center_scale_ori(ka[None], ones(ka))
         lafs_b = frames_b[0] if frames_b else KF.laf_from_center_scale_ori(kb[None], ones(kb))
         _, idx = self.matcher(da, db, lafs_a, lafs_b, hw1=hw_a, hw2=hw_b)

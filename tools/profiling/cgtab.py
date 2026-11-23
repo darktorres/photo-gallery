@@ -67,8 +67,8 @@ class Profile:
             return table[m.group(1)]
 
         with Path(path).open(encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.rstrip("\n")
+            for raw in f:
+                line = raw.rstrip("\n")
                 if not line or line[0] == "#":
                     continue
                 c = line[0]

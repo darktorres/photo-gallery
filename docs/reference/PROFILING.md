@@ -507,7 +507,7 @@ The tier-1 pairs after the import (`pg_import::pairs`, the join in `pg_dedup::jo
 with orientation hashes). The release build ran on an i7-8700 (6 cores, 12 threads). Every run was on a scratch copy,
 never the live catalog.
 
-**The scratch catalog.** *History (2026-11-21): this passage describes a past schema (before migration v9). The current schema is version 1 (`BASELINE_VERSION = 1` in `crates/catalog/src/schema.rs`, no migrations), so the steps below do not apply to it.* Start from the copy kept before migration v9
+**The scratch catalog.** *History (2026-11-21): this passage describes a past schema (before migration v9). The current schema is version 1 (`BASELINE_SCHEMA = 1` in `crates/catalog/src/schema.rs`, no migrations), so the steps below do not apply to it.* Start from the copy kept before migration v9
 (`<catalog dir>\catalog.sqlite.pre-v9.bak`) placed in a scratch folder as `catalog.sqlite`. Let the CLI migrate it
 (`gallery --catalog-dir <scratch> status`): it comes out at v12, with 5,277 pairs and 189,520 files. Copy that file
 aside as the source of every run: the scripts copy it fresh for each run, since a pass changes it. The pairs a full pass
@@ -619,7 +619,7 @@ again at the next start of a build with fewer.
 **Migration 13 under the app's pragmas** (gate G2b; the copy aside, the data step and `VACUUM`, from the 209.4 MB v12
 copy, 3 runs):
 
-*History (2026-11-21): this passage describes migration 13 of a past schema. The current schema is version 1 (`BASELINE_VERSION = 1` in `crates/catalog/src/schema.rs`, no migrations).*
+*History (2026-11-21): this passage describes migration 13 of a past schema. The current schema is version 1 (`BASELINE_SCHEMA = 1` in `crates/catalog/src/schema.rs`, no migrations).*
 
 | | Wall | Peak commit | Peak WAL | File after |
 |---|---|---|---|---|
@@ -987,7 +987,7 @@ a picture passes when its analysis is there with the load's hashes and quality; 
 and `meta.pairing_epoch` (migration 14): triggers move it on what the pairs depend on, and a write whose epoch is
 the load's skips the read. `meta.pairing_version` is checked by every write transaction.
 
-*History (2026-11-21): this passage describes migration 14 of a past schema. The current schema is version 1 (`BASELINE_VERSION = 1` in `crates/catalog/src/schema.rs`, no migrations); `meta.pairing_epoch` is part of its baseline (`crates/catalog/src/baseline.sql`), not a separate step.*
+*History (2026-11-21): this passage describes migration 14 of a past schema. The current schema is version 1 (`BASELINE_SCHEMA = 1` in `crates/catalog/src/schema.rs`, no migrations); `meta.pairing_epoch` is part of its baseline (`crates/catalog/src/baseline.sql`), not a separate step.*
 
 Kept (6 pairs against step 6, `0c8401e`; build B on the catalog already at version 14). The time gate (join; the pass
 on four slices) is level everywhere: all workloads kept, median −0.09%. Where the change is:

@@ -32,14 +32,30 @@ select = [
     "TRY",   # exception-handling hygiene
 ]
 ignore = [
-    "E741",     # l, t, r, b for the four crop sides reads better than any longer name
-    "PLW2901",  # rebinding a loop/with variable (im = exif_transpose(im)) is the PIL idiom
-    "RUF001",   # × and – in printed text are intentional
-    "N812",     # the usual short aliases: F (torch.nn.functional), T (transforms), K/KF (kornia), C (ctypes)
     "TRY003",  # long messages in exceptions are fine in scripts; the message is what gets read
-    "PLC0415",  # lazy imports keep optional GPU/codec dependencies out of the import path
-    "S101",     # assert is the check mechanism in these benchmark and verify scripts
-    "S311",     # random is for synthetic benchmark data, not for secrets
-    "S603",     # the tools shell out to git, ffmpeg and the build; their arguments are our own
-    "S607",     # same: tools are resolved from PATH on purpose
+    "S603",    # the tools shell out to git, ffmpeg and the build; their arguments are our own
+    "S607",    # same: tools are resolved from PATH on purpose
 ]
+
+# Each per-file ignore names its files and its reason; a rule that a file stops needing fails nothing, so review these
+# when a file changes.
+[lint.per-file-ignores]
+# eval/ is the benchmark and verify harness: its optional GPU and codec packages are imported inside the functions that
+# need them (PLC0415), its asserts are its checks (S101), its synthetic data uses `random` (S311), it keeps the upstream
+# short names (N812), and it prints the typographic characters of its tables (RUF001).
+"eval/**" = ["N812", "PLC0415", "RUF001", "S101", "S311"]
+# Test modules and the Docker check: an assert is the check.
+"docker/check.py" = ["S101"]
+"tools/test_ci_files.py" = ["S101"]
+"tools/test_merge_measure.py" = ["S101"]
+# Synthetic benchmark data: `random` is not a secret.
+"tools/profiling/synthetic_library.py" = ["S311"]
+"tools/profiling/pairing/grow_catalog.py" = ["S311"]
+# Imports inside the function that uses them: an optional dependency or a path only one command takes.
+"tools/check_feature_coverage.py" = ["PLC0415"]
+"tools/test_check_feature_coverage.py" = ["PLC0415"]
+"tools/ci/github_files.py" = ["PLC0415"]
+"tools/compare_shots.py" = ["PLC0415"]
+"tools/merge_measure.py" = ["PLC0415"]
+"tools/profiling/callgraph/build.py" = ["PLC0415"]
+"tools/profiling/callgraph/symbolize.py" = ["PLC0415"]

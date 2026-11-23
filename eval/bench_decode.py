@@ -37,8 +37,8 @@ def _pil(data: bytes, draft: bool) -> np.ndarray:
     with Image.open(io.BytesIO(data)) as im:
         if draft:
             im.draft("RGB", (SIDE, SIDE))
-        im = ImageOps.exif_transpose(im).convert("RGB")
-        return np.asarray(im.resize((SIDE, SIDE), Image.Resampling.BILINEAR))
+        rgb = ImageOps.exif_transpose(im).convert("RGB")
+        return np.asarray(rgb.resize((SIDE, SIDE), Image.Resampling.BILINEAR))
 
 
 def decode(job: tuple[str, bytes]) -> np.ndarray | None:
@@ -94,9 +94,11 @@ def nvjpeg_run(blobs: list[bytes], batch: int) -> tuple[list, float, int]:
                 fallbacks += 1
                 out[s + k] = _pil(data, draft=False)
                 continue
-            img = orient(img, exif_orientation(data))
-            img = F.interpolate(img[None].float(), size=(SIDE, SIDE), mode="bilinear", antialias=True, align_corners=False)[0]
-            out[s + k] = img.round().clamp(0, 255).byte().permute(1, 2, 0)
+            oriented = orient(img, exif_orientation(data))
+            resized = F.interpolate(
+                oriented[None].float(), size=(SIDE, SIDE), mode="bilinear", antialias=True, align_corners=False
+            )[0]
+            out[s + k] = resized.round().clamp(0, 255).byte().permute(1, 2, 0)
         torch.cuda.synchronize()
     seconds = time.perf_counter() - start
     return [None if o is None else (o if isinstance(o, np.ndarray) else o.cpu().numpy()) for o in out], seconds, fallbacks

@@ -18,16 +18,6 @@ CONST = re.compile(r"^\s*(?:pub(?:\(\w+\))?\s+)?const\s+(\w*VERSION\w*)\s*:")
 # A registry constant, as its owner reads it.
 READ = r"versions::{name}\b"
 
-# The constants that are versions of something other than an artifact, kept out of the registry with the reason.
-NOT_REGISTERED = {
-    # The catalog's baseline stamp: the base of the migration index, private to the schema (crates/catalog/src/schema.rs).
-    "BASELINE_VERSION",
-    # A test fixture: another build's SQLite user_version, set in the thumbcache's tests (crates/thumbcache/src/lib.rs).
-    "FOREIGN_USER_VERSION",
-    # A test fixture: an earlier thumbnail output version, stored to see the cache refuse it (crates/thumbcache/src/lib.rs).
-    "EARLIER_OUTPUT_VERSION",
-}
-
 
 def registry_names(text):
     """The constants `versions.rs` declares: every `pub const NAME_VERSION`-style item."""
@@ -51,7 +41,7 @@ class VersionRegistry(unittest.TestCase):
 
     def test_the_scan_finds_a_version_constant_and_skips_the_rest(self):
         self.assertEqual(version_constants("pub const IMPORT_VERSION: i64 = 3;"), ["IMPORT_VERSION"])
-        self.assertEqual(version_constants("    pub(crate) const BASELINE_VERSION: i64 = 1;"), ["BASELINE_VERSION"])
+        self.assertEqual(version_constants("    pub(crate) const LAYOUT_VERSION: i64 = 1;"), ["LAYOUT_VERSION"])
         self.assertEqual(version_constants("const X_VERSION: i64 = 1;"), ["X_VERSION"])
         self.assertEqual(version_constants("pub const MAX: usize = 25;"), [])
         self.assertEqual(version_constants("let version = 2;"), [])
@@ -68,9 +58,9 @@ class VersionRegistry(unittest.TestCase):
             for path, text in self.files.items()
             if path != REGISTRY_FILE
             for name in version_constants(text)
-            if name not in self.registry and name not in NOT_REGISTERED
+            if name not in self.registry
         ]
-        self.assertEqual(unregistered, [], "add these to crates/model/src/versions.rs (or NOT_REGISTERED here)")
+        self.assertEqual(unregistered, [], "add these to crates/model/src/versions.rs")
 
     def test_each_registry_version_is_read_by_its_owner(self):
         unread = []

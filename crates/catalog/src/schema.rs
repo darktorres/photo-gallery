@@ -6,7 +6,7 @@
 //!
 //! The layout is [`BASELINE`], a literal SQL file (`baseline.sql`): every table, index, view and trigger the catalog
 //! has, and the rows creation seeds in `meta`. Before the first release it is edited in place and the version stays
-//! [`BASELINE_VERSION`]; from the release on every change is a migration ([`MIGRATIONS`]) and the baseline is frozen.
+//! [`BASELINE_SCHEMA`]; from the release on every change is a migration ([`MIGRATIONS`]) and the baseline is frozen.
 //! The ids of `files`, `folders` and `roots` are AUTOINCREMENT, so a removed id is never reissued; `notices` is bounded
 //! by its trigger; `file_failures` keeps an import row hidden while its file is pending or missing.
 //!
@@ -39,7 +39,7 @@ pub(crate) enum Step {
 }
 
 /// The version of a catalog made from the baseline, before any migration.
-pub(crate) const BASELINE_VERSION: i64 = 1;
+pub(crate) const BASELINE_SCHEMA: i64 = 1;
 
 // The registry's schema version is the baseline and its migrations; a migration added without the registry's bump fails
 // here. The baseline's `pairing_version` seed is the literal `1` in `baseline.sql`, so the registry's value must be 1.
@@ -53,7 +53,7 @@ const MIGRATION_COUNT: i64 = {
     }
     count
 };
-const _: () = assert!(pg_model::versions::CATALOG_SCHEMA_VERSION == BASELINE_VERSION + MIGRATION_COUNT);
+const _: () = assert!(pg_model::versions::CATALOG_SCHEMA_VERSION == BASELINE_SCHEMA + MIGRATION_COUNT);
 const _: () = assert!(pg_model::versions::PAIRING_VERSION == 1);
 
 /// One migration: the steps that take a catalog one version on, in order, in one transaction with the version.
@@ -73,13 +73,13 @@ pub(crate) struct SchemaSet<'a> {
     pub(crate) migrations: &'a [Migration],
 }
 
-/// The layout a new catalog is made with, at [`BASELINE_VERSION`]: every object, and the seeds of `meta`.
+/// The layout a new catalog is made with, at [`BASELINE_SCHEMA`]: every object, and the seeds of `meta`.
 pub(crate) const BASELINE: &str = include_str!("baseline.sql");
 
 /// This build's schema: [`BASELINE`] and [`MIGRATIONS`].
 pub(crate) const SCHEMA: SchemaSet<'static> = SchemaSet { baseline: BASELINE, migrations: MIGRATIONS };
 
-/// The migrations after the baseline, in order: `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next. None
+/// The migrations after the baseline, in order: `MIGRATIONS[i]` takes version `BASELINE_SCHEMA + i` to the next. None
 /// before the first release, while the baseline is edited in place (see the module docs).
 pub(crate) const MIGRATIONS: &[Migration] = &[];
 
@@ -130,7 +130,7 @@ pub(crate) fn current_version() -> Result<i64> {
 /// The version the schema `set` brings a catalog to: the baseline, then each of its migrations.
 pub(crate) fn version_in(set: &SchemaSet<'_>) -> Result<i64> {
     let migrations = i64::try_from(set.migrations.len()).map_err(|e| Error::step("too many migrations", e))?;
-    Ok(BASELINE_VERSION + migrations)
+    Ok(BASELINE_SCHEMA + migrations)
 }
 
 /// The version of the database at `conn`, or `None` when the file is not a database (SQLite can't read its header).
@@ -143,8 +143,8 @@ pub(crate) fn version_of(conn: &Connection) -> Result<Option<i64>> {
 }
 
 /// Bring the database at `conn` up to `target`, each step in its own write transaction. A new database (version 0)
-/// gets `baseline`, with its `path_rules` row for `rules`, the `application_id` and [`BASELINE_VERSION`]; a database at
-/// version `v` gets `migrations[v - BASELINE_VERSION]`, which takes it to `v + 1`: its steps in order (a `Rust` step with
+/// gets `baseline`, with its `path_rules` row for `rules`, the `application_id` and [`BASELINE_SCHEMA`]; a database at
+/// version `v` gets `migrations[v - BASELINE_SCHEMA]`, which takes it to `v + 1`: its steps in order (a `Rust` step with
 /// [`Source::Main`]), with the version, in one transaction. Each migration reads the version inside its transaction, so
 /// one another connection already made is not made again. A database at or past `target` is left alone; a failed step
 /// rolls back its migration and leaves the database at the last good version.
@@ -177,7 +177,7 @@ pub(crate) fn bring_to(
             // The keys this build makes are the ones the mark names (the baseline holds no keys, so none is stored yet).
             tx.execute("INSERT INTO meta(key, value) VALUES ('key_version', ?1)", [crate::types::key_version_text()])?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-            tx.pragma_update(None, "user_version", BASELINE_VERSION)?;
+            tx.pragma_update(None, "user_version", BASELINE_SCHEMA)?;
             // A file made without incremental auto-vacuum is compacted by a VACUUM that the next start runs (`vacuum_owed`):
             // its creator sets the pragma before the schema, and SQLite ignores it once a page exists.
             let mode: i64 = tx.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
@@ -185,8 +185,8 @@ pub(crate) fn bring_to(
                 tx.execute("UPDATE meta SET value = 1 WHERE key = 'vacuum_owed'", [])?;
             }
         } else {
-            let index = usize::try_from(version - BASELINE_VERSION).map_err(|e| {
-                Error::step(format!("schema version {version}, older than the baseline {BASELINE_VERSION}"), e)
+            let index = usize::try_from(version - BASELINE_SCHEMA).map_err(|e| {
+                Error::step(format!("schema version {version}, older than the baseline {BASELINE_SCHEMA}"), e)
             })?;
             let migration = set
                 .migrations
@@ -251,7 +251,7 @@ impl Drop for ForeignKeysOff<'_> {
 /// Whether the migration that takes `version` on drops tables that have dependants ([`Migration::rebuilds_tables`]). A
 /// version before the baseline has none.
 fn rebuilds_tables(set: &SchemaSet<'_>, version: i64) -> bool {
-    usize::try_from(version - BASELINE_VERSION)
+    usize::try_from(version - BASELINE_SCHEMA)
         .ok()
         .and_then(|index| set.migrations.get(index))
         .is_some_and(|migration| migration.rebuilds_tables)
@@ -462,22 +462,22 @@ mod tests {
     fn migrations_apply_once_in_order_and_a_failed_one_rolls_back(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
         let none = SchemaSet { baseline: BASELINE, migrations: &[] };
-        bring_to(&conn, &none, rules, BASELINE_VERSION, &Hooks::none()).unwrap();
-        assert_eq!(version(&conn), BASELINE_VERSION);
+        bring_to(&conn, &none, rules, BASELINE_SCHEMA, &Hooks::none()).unwrap();
+        assert_eq!(version(&conn), BASELINE_SCHEMA);
         // A later build adds two migrations, the second a rebuild with a conversion: both run, in order, once.
         let later = [plain(EXTRA), rebuilds(CONVERT)];
         let set = SchemaSet { baseline: BASELINE, migrations: &later };
-        bring_to(&conn, &set, rules, BASELINE_VERSION + 2, &Hooks::none()).unwrap();
-        bring_to(&conn, &set, rules, BASELINE_VERSION + 2, &Hooks::none()).unwrap();
-        assert_eq!(version(&conn), BASELINE_VERSION + 2);
+        bring_to(&conn, &set, rules, BASELINE_SCHEMA + 2, &Hooks::none()).unwrap();
+        bring_to(&conn, &set, rules, BASELINE_SCHEMA + 2, &Hooks::none()).unwrap();
+        assert_eq!(version(&conn), BASELINE_SCHEMA + 2);
         assert_eq!(count(&conn, "extra"), 1, "the conversion ran once");
         assert_eq!(count(&conn, "converted"), 0);
         // A failed migration leaves the catalog at the last good version, none of its steps made.
         let broken = [plain(EXTRA), rebuilds(CONVERT), plain(NOT_SQL)];
         let broken_set = SchemaSet { baseline: BASELINE, migrations: &broken };
         let fresh = Connection::open_in_memory().unwrap();
-        assert!(bring_to(&fresh, &broken_set, rules, BASELINE_VERSION + 3, &Hooks::none()).is_err());
-        assert_eq!(version(&fresh), BASELINE_VERSION + 2);
+        assert!(bring_to(&fresh, &broken_set, rules, BASELINE_SCHEMA + 3, &Hooks::none()).is_err());
+        assert_eq!(version(&fresh), BASELINE_SCHEMA + 2);
         assert_eq!(count(&fresh, "extra"), 1);
         assert_eq!(count(&fresh, "converted"), 0);
     }
@@ -491,14 +491,14 @@ mod tests {
     fn expected_schemas_follow_the_version(rules: PathRules) {
         let later = [plain(EXTRA)];
         let set = SchemaSet { baseline: BASELINE, migrations: &later };
-        let at_one = expected_for(&set, BASELINE_VERSION).unwrap();
-        let at_two = expected_for(&set, BASELINE_VERSION + 1).unwrap();
+        let at_one = expected_for(&set, BASELINE_SCHEMA).unwrap();
+        let at_two = expected_for(&set, BASELINE_SCHEMA + 1).unwrap();
         assert!(matches!(at_one.difference(&at_two), Some(Difference::Missing { .. })));
         assert!(matches!(at_two.difference(&at_one), Some(Difference::Unexpected { .. })));
         assert!(expected_for(&set, 0).unwrap().is_empty());
         // A database at a version matches the expected schema of that version.
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, &set, rules, BASELINE_VERSION, &Hooks::none()).unwrap();
+        bring_to(&conn, &set, rules, BASELINE_SCHEMA, &Hooks::none()).unwrap();
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&at_one), None);
     }
 
@@ -621,7 +621,7 @@ mod tests {
         let dir = pg_testkit::run_folder("scratch_catalog", "fresh-catalog").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = crate::Catalog::prepare(&path, crate::test_support::versions(), PathRules::Windows).unwrap();
-        assert_eq!(version(&c.conn), BASELINE_VERSION);
+        assert_eq!(version(&c.conn), BASELINE_SCHEMA);
         let mode: i64 = c.conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0)).unwrap();
         assert_eq!(mode, AUTO_VACUUM_INCREMENTAL, "incremental");
         let owed: i64 = c.conn.query_row("SELECT value FROM meta WHERE key = 'vacuum_owed'", [], |r| r.get(0)).unwrap();
@@ -825,7 +825,7 @@ mod tests {
         // `kept_events!()` is a number in the notices trigger's LIMIT, not a fragment: asserted in that context.
         assert!(stored.contains(&format!("WHERE key IS NULL) - {}))", kept_events!())), "kept_events!() context");
         // The pairing version's seed is the baseline's literal, which the registry's value must equal (checked at compile
-        // time, beside `BASELINE_VERSION`): the stored text carries it.
+        // time, beside `BASELINE_SCHEMA`): the stored text carries it.
         assert!(stored.contains(&format!("'pairing_version', {})", pg_model::pdq::PAIRING_VERSION)));
     }
 }

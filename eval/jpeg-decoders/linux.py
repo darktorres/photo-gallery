@@ -126,12 +126,11 @@ def marginal(env: dict[str, str]) -> None:
     binary = DST / "target" / "release" / "jpeg-decoders"
     run(["cargo", "build", "-q", "--release"], env=env)
 
-    def ir(count: int, decoder: str, mode: str, file: Path) -> float | str:
+    def ir(count: int, decoder: str, mode: str, file: Path) -> int | None:
         with tempfile.TemporaryDirectory() as folder:
-            total = callgrind_instructions(
+            return callgrind_instructions(
                 [str(binary), "repeat", str(count), decoder, mode, str(file)], Path(folder) / "cg", env=env
             )
-        return "ERR" if total is None else total
 
     print(f"M instructions per decode, all threads; columns: {' '.join(NAMES)}")
     for decoder in ["libjpeg-turbo", "libvips", "jpeg-decoder"]:
@@ -139,10 +138,10 @@ def marginal(env: dict[str, str]) -> None:
             row = f"{decoder:<20} {mode:<14}"
             for file in FILES:
                 a, b = ir(1, decoder, mode, file), ir(3, decoder, mode, file)
-                if a == "ERR" or b == "ERR":
+                if a is None or b is None:
                     row += f" {'—':>9}"
                 else:
-                    row += f" {(b - a) / 2e6:9.1f}"  # type: ignore[operator]
+                    row += f" {(b - a) / 2e6:9.1f}"
             print(row)
 
 

@@ -114,13 +114,13 @@ def _classy_to_torchvision(state: dict[str, torch.Tensor]) -> dict[str, torch.Te
         if key.startswith("embeddings.1."):
             out["project." + key.rsplit(".", 1)[1]] = value
             continue
-        key = key.removeprefix("backbone.")
-        if m := re.fullmatch(r"initial_block\._module\.([01])\.(\w+)", key):
+        name = key.removeprefix("backbone.")
+        if m := re.fullmatch(r"initial_block\._module\.([01])\.(\w+)", name):
             out[f"resnet.{'conv1' if m[1] == '0' else 'bn1'}.{m[2]}"] = value
             continue
-        m = re.fullmatch(r"blocks\.(\d)\.block\d-(\d+)\.(.+)", key)
+        m = re.fullmatch(r"blocks\.(\d)\.block\d-(\d+)\.(.+)", name)
         if not m:
-            raise ValueError(f"unmapped SSCD weight: {key}")
+            raise ValueError(f"unmapped SSCD weight: {name}")
         rest = re.sub(r"^convolutional_block\.(\d)\.", lambda c: _CLASSY_CONV[c[1]] + ".", m[3])
         rest = re.sub(r"^bn\.", "bn3.", rest)
         out[f"resnet.layer{int(m[1]) + 1}.{m[2]}.{rest}"] = value

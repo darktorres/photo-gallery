@@ -1,6 +1,5 @@
 # Photo Gallery
 
-<!-- markdownlint-disable-next-line MD033 -->
 <p align="center"><img src="crates/desktop/resources/app-icon.png" alt="The app icon: mascot 03, a crab in a red Rust bucket" width="160"></p>
 
 A desktop photo gallery for very large libraries, built around near-duplicate detection: many crops and edits of the

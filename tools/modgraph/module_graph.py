@@ -121,10 +121,10 @@ def use_paths(body):
         return [body.split("::")] if body and not body.endswith("*") else []
     prefix = m.group(1).split("::")
     out = []
-    for item in m.group(2).split(","):
-        item = item.split(" as ")[0]
-        if item and item != "self" and not item.endswith("*") and "{" not in item:
-            out.append(prefix + item.split("::"))
+    for entry in m.group(2).split(","):
+        name = entry.split(" as ")[0]
+        if name and name != "self" and not name.endswith("*") and "{" not in name:
+            out.append(prefix + name.split("::"))
     return out
 
 
@@ -196,8 +196,8 @@ def analyse_crate(crate_files):
         refs = []  # (kind, segments, module the path sits in)
         for mm in BRACE.finditer(text):
             src = source_at(mm.start())
-            for item in mm.group(2).split(","):
-                item = item.strip()
+            for entry in mm.group(2).split(","):
+                item = entry.strip()
                 if not item:
                     continue
                 head = item.split("::")[0].strip()

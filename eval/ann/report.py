@@ -56,7 +56,9 @@ def true_duplicate_recall(base: Base) -> dict:
         decision = {int(r["id"]): r["decision"] for r in csv.DictReader(f)}
     sub = base.subset(MAIN)
     t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
-    band_of = lambda s: int(np.digitize(s, metrics.BANDS) - 1)  # noqa: E731 (a one-expression helper for the band)
+
+    def band_of(s):
+        return int(np.digitize(s, metrics.BANDS) - 1)
 
     # Match rate per stratum among the exact candidates' sample.
     strata: dict[tuple, list[int]] = {}

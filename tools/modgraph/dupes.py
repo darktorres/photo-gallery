@@ -27,11 +27,11 @@ for path in sorted(ROOT.glob("crates/*/src/**/*.rs")) + sorted(ROOT.glob("crates
     text = path.read_text(encoding="utf-8", errors="replace")
     raw = text.splitlines()
     test_start = len(production_part(text).splitlines())  # the first line of the inline test module, 0-based
-    code = [(i + 1, norm(l)) for i, l in enumerate(raw)]
-    code = [(n, l) for n, l in code if l and not TRIVIAL.match(l)]
+    code = [(i + 1, norm(text_line)) for i, text_line in enumerate(raw)]
+    code = [(n, text_line) for n, text_line in code if text_line and not TRIVIAL.match(text_line)]
     rel = path.relative_to(ROOT).as_posix()
     for k in range(len(code) - W + 1):
-        block = "\n".join(l for _, l in code[k : k + W])
+        block = "\n".join(text_line for _, text_line in code[k : k + W])
         if len(block) < 40 * W * 0.6:
             continue
         h = hashlib.blake2b(block.encode(), digest_size=16).hexdigest()
@@ -53,5 +53,5 @@ for key, groups in pairs.items():
 for n, key, starts, sample in sorted(out, key=lambda x: -x[0]):
     kinds = ",".join(f"{f}{' (test)' if t else ''}" for f, t in key)
     print(f"--- {n} windows: {kinds}")
-    print("    at " + ", ".join(f"{f}:{l}" for f, l in starts))
+    print("    at " + ", ".join(f"{f}:{start_line}" for f, start_line in starts))
     print("    " + sample.replace("\n", "\n    ")[:500])

@@ -22,8 +22,8 @@ def _load_dotenv() -> None:
     env_file = REPO_ROOT / ".env"
     if not env_file.is_file():
         return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
@@ -112,13 +112,13 @@ def load_rgb(
         elif draft and im.format == "JPEG":
             swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)  # rotated a quarter turn
             im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if swap else draft)
-        im = ImageOps.exif_transpose(im)
-        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
-            rgba = im.convert("RGBA")
+        oriented = ImageOps.exif_transpose(im)
+        if oriented.mode in ("RGBA", "LA") or (oriented.mode == "P" and "transparency" in oriented.info):
+            rgba = oriented.convert("RGBA")
             flat = Image.new("RGB", rgba.size, (255, 255, 255))
             flat.paste(rgba, mask=rgba.getchannel("A"))
             return flat
-        return im.convert("RGB")
+        return oriented.convert("RGB")
 
 
 # dups2/<NNN>/<files>: matched duplicate groups.

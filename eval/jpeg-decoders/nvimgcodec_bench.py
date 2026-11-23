@@ -13,6 +13,7 @@ import argparse
 import ctypes
 import statistics
 import time
+from functools import partial
 from pathlib import Path
 
 import env
@@ -43,6 +44,16 @@ def blocking_sync() -> None:
         raise RuntimeError(f"cuInit: CUDA error (code {rc})")
     if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
         raise RuntimeError(f"cuDevicePrimaryCtxSetFlags: CUDA error (code {rc}); the context may already be active")
+
+
+def decode_one(dec, data):
+    """One image, decoded and copied to the host (the timed call of a batch of one)."""
+    return dec.decode(data).cpu()
+
+
+def decode_batch(dec, batch):
+    """A batch, decoded and each image copied to the host."""
+    return [i.cpu() for i in dec.decode(batch)]
 
 
 def timed_ms(fn, per_call, budget):
@@ -108,11 +119,8 @@ def main():
                 continue
             quality = diff(out, ref)
             for b in [b for b in batches if b <= cap]:
-                if b == 1:
-                    fn = lambda dec=dec, data=data: dec.decode(data).cpu()  # noqa: E731 (a closure over this loop's decoder and data)
-                else:
-                    batch = [data] * b
-                    fn = lambda dec=dec, batch=batch: [i.cpu() for i in dec.decode(batch)]  # noqa: E731 (a closure over this loop's decoder and batch)
+                fn = partial(decode_one, dec, data) if b == 1 else partial(decode_batch, dec, [data] * b)
+
                 try:
                     wall, cpu = timed_ms(fn, b, args.secs)
                 except Exception as e:  # noqa: BLE001 (reported, and the run goes on)

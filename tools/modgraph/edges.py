@@ -23,7 +23,7 @@ def split(text):
 
 def strip(text):
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-    return "\n".join(l.split("//")[0] for l in text.splitlines())
+    return "\n".join(line.split("//")[0] for line in text.splitlines())
 
 
 def names(text, ident):

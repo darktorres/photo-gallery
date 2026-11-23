@@ -13,7 +13,7 @@
 #   - ExifTool at the Justfile's pins: Chocolatey's package (exiftool_version) on Windows, the release's source archive
 #     (exiftool_source_*, tools/install_exiftool.py) on Linux. The rest of the Linux packages are in docker/apt-packages.txt.
 #
-# The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable.
+# The screenshot comparison is a waiver (continue-on-error) until it is stable, as defined at its step.
 name: CI
 
 on:
@@ -207,7 +207,10 @@ jobs:
 
       - name: Screenshot comparison against the newest committed reference
         if: github.event_name == 'pull_request'
-        continue-on-error: true # informational until it is stable
+        # A waiver, not a permanent state. "Stable" means 10 consecutive pull-request runs in which this step's own outcome
+        # (not the job's conclusion) is success. Count them by hand (step outcomes in each run's log); when the count is met,
+        # delete this line so a failed comparison fails the job. Until then a failure here shows green on the job.
+        continue-on-error: true
         run: |
           # The comparison uses the newest reference in this commit's history (tools/compare_shots.py). The checkout is
           # shallow, which holds only the merge commit, so the history is fetched first. A pull request's merge commit

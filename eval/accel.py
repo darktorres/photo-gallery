@@ -307,7 +307,10 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
         cache.mkdir(parents=True, exist_ok=True)
         # ONNX Runtime loads the TensorRT 10 DLLs from PATH when the session is created; PATH is put back after that.
         os.environ["PATH"] = str(TRT10_DIR) + os.pathsep + previous_path
-        shape = lambda b: f"x:{b}x3x{size}x{size}"  # noqa: E731 (a one-expression helper for the shape string)
+
+        def shape(b):
+            return f"x:{b}x3x{size}x{size}"
+
         options = {
             "trt_engine_cache_enable": True,
             "trt_engine_cache_path": str(cache),

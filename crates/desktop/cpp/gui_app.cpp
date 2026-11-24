@@ -8,6 +8,7 @@
 #include <QtCore/QString>
 #include <QtGui/QFont>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QImageReader>
 
 #include <cstddef>
 #include <vector>
@@ -73,6 +74,9 @@ void use_segoe_for_offscreen() {
 }  // namespace
 
 std::unique_ptr<QGuiApplication> new_gui_application(rust::Slice<const std::uint8_t> args) {
+    // Qt's default image allocation limit (256 MB) rejects a full-size original over about 67 MP, such as a 10000 x 7514
+    // JPEG that Yandex serves: its decode needs 4 bytes a pixel (287 MB). 1024 MB admits up to about 268 MP.
+    QImageReader::setAllocationLimit(1024);
     use_windows_fonts_for_offscreen();
     auto* arguments = new Arguments(args);
     auto app = std::make_unique<QGuiApplication>(arguments->argc(), arguments->argv());

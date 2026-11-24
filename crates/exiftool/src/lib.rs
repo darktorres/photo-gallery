@@ -191,36 +191,50 @@ impl ExifTool {
         self.run(&bytes)
     }
 
-    /// Write `XMP:Rating` into a copy of `path` at `out`. When ExifTool won't update the file as it is (damaged
-    /// metadata), the metadata is rebuilt and the write retried once, as a rating app did.
+    /// Which rating fields `path` holds, by ExifTool's output: EXIF `Rating` (stars), EXIF `RatingPercent`, and XMP
+    /// `MicrosoftPhoto:Rating` (a percent). XMP `xmp:Rating` is not among them: every write sets it.
+    pub fn rating_fields(&mut self, path: &Path) -> Result<RatingFields> {
+        let (stdout, _stderr) = self.exec(&[
+            OsStr::new("-j"),
+            OsStr::new("-G1"),
+            OsStr::new("-EXIF:Rating"),
+            OsStr::new("-EXIF:RatingPercent"),
+            OsStr::new("-XMP-microsoft:RatingPercent"),
+            path.as_os_str(),
+        ])?;
+        Ok(RatingFields {
+            exif_stars: stdout.contains("\"IFD0:Rating\""),
+            exif_percent: stdout.contains("\"IFD0:RatingPercent\""),
+            xmp_percent: stdout.contains("\"XMP-microsoft:RatingPercent\""),
+        })
+    }
+
+    /// Writes a rating (0 to 5 stars; 0 is unrated) into a copy of `path` at `out`. `XMP:Rating` is always set. Each
+    /// other rating field the file holds is set to the same rating on its own scale, so no field is left to outrank the
+    /// new rating (Windows and the reader take the first field the file holds). A field the file doesn't hold is not
+    /// added. The original is not changed.
     pub fn write_rating(&mut self, path: &Path, out: &Path, rating: u8) -> Result<()> {
-        let tag = format!("-XMP:Rating={rating}");
-        let (stdout, stderr) = self.exec(&[OsStr::new(&tag), OsStr::new("-o"), out.as_os_str(), path.as_os_str()])?;
+        let rating = rating.min(5);
+        let fields = self.rating_fields(path)?;
+        let mut tags = vec![format!("-XMP:Rating={rating}")];
+        if fields.exif_stars {
+            tags.push(format!("-EXIF:Rating={rating}"));
+        }
+        let percent = PERCENT_OF_STARS[usize::from(rating)];
+        if fields.exif_percent {
+            tags.push(format!("-EXIF:RatingPercent={percent}"));
+        }
+        if fields.xmp_percent {
+            tags.push(format!("-XMP-microsoft:RatingPercent={percent}"));
+        }
+        let mut args: Vec<&OsStr> = tags.iter().map(|tag| OsStr::new(tag.as_str())).collect();
+        args.extend([OsStr::new("-o"), out.as_os_str(), path.as_os_str()]);
+        let (stdout, stderr) = self.exec(&args)?;
         if created(&stdout) {
             return Ok(());
         }
         let _ = std::fs::remove_file(out);
-        let (stdout2, stderr2) = self.exec(&[
-            OsStr::new("-all="),
-            OsStr::new("-tagsfromfile"),
-            OsStr::new("@"),
-            OsStr::new("-all:all"),
-            OsStr::new("-unsafe"),
-            OsStr::new("-icc_profile"),
-            OsStr::new(&tag),
-            OsStr::new("-o"),
-            out.as_os_str(),
-            path.as_os_str(),
-        ])?;
-        if created(&stdout2) {
-            return Ok(());
-        }
-        Err(Error::failed(format!(
-            "ExifTool couldn't write the rating into {}: {} {}",
-            path.display(),
-            stderr.trim(),
-            stderr2.trim()
-        )))
+        Err(Error::failed(format!("ExifTool couldn't write the rating into {}: {}", path.display(), stderr.trim())))
     }
 
     /// Copy every tag `from` holds that `to` can carry (EXIF, XMP, IPTC, ICC profile) into `to`, in place.
@@ -333,6 +347,21 @@ fn read_until(lines: &Receiver<String>, marker: &str, deadline: Instant) -> Resu
 }
 
 /// "1 image files created" (with `-o`).
+/// The percent each star count is written as (0 to 5 stars): ExifTool's mapping for XMP `MicrosoftPhoto:Rating`
+/// (`lib/Image/ExifTool/Microsoft.pm`), which Windows shows as that many stars.
+const PERCENT_OF_STARS: [u8; 6] = [0, 1, 25, 50, 75, 99];
+
+/// Which rating fields a file holds (see [`ExifTool::rating_fields`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RatingFields {
+    /// EXIF `Rating`, in stars.
+    pub exif_stars: bool,
+    /// EXIF `RatingPercent`.
+    pub exif_percent: bool,
+    /// XMP `MicrosoftPhoto:Rating`, a percent.
+    pub xmp_percent: bool,
+}
+
 fn created(stdout: &str) -> bool {
     stdout.lines().any(|l| l.trim().starts_with("1 image files created"))
 }
@@ -487,6 +516,58 @@ mod tests {
             assert!(rated_4(&written), "{}: the written copy has no rating 4", path.display());
             assert_eq!(std::fs::read(&path).unwrap(), source, "{}: the original changed", path.display());
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A file that holds a stale EXIF RatingPercent (a Windows rating) takes the new rating in that field too. The
+    // percent outranks the stars, so a stale one would make the new rating read back as the old one. The original is
+    // left as it was. Needs ExifTool; skipped without it.
+    #[test]
+    fn a_rating_is_written_over_a_stale_percent() {
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::run_folder("scratch_exiftool", "stale").unwrap();
+        let source = pg_codec::fixtures::jpeg_rgb(2, 2, &[0; 12], 90, pg_codec::encode::Chroma::Half).unwrap();
+        let path = dir.join("stale.jpg");
+        std::fs::write(&path, &source).unwrap();
+        // 4 stars in XMP and a Windows percent of 75 (also 4 stars) in EXIF.
+        let (_, stderr) = tool
+            .exec(&[
+                OsStr::new("-XMP:Rating=4"),
+                OsStr::new("-EXIF:RatingPercent=75"),
+                OsStr::new("-overwrite_original"),
+                path.as_os_str(),
+            ])
+            .unwrap();
+        assert!(stderr.is_empty(), "{stderr}");
+        let stale = std::fs::read(&path).unwrap();
+        assert_eq!(
+            tool.rating_fields(&path).unwrap(),
+            RatingFields { exif_stars: false, exif_percent: true, xmp_percent: false }
+        );
+
+        let out = dir.join("out.jpg");
+        tool.write_rating(&path, &out, 2).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), stale, "the original changed");
+        let (json, _) = tool
+            .exec(&[
+                OsStr::new("-j"),
+                OsStr::new("-G1"),
+                OsStr::new("-EXIF:RatingPercent"),
+                OsStr::new("-XMP:Rating"),
+                out.as_os_str(),
+            ])
+            .unwrap();
+        assert!(json.contains("\"IFD0:RatingPercent\": 25"), "{json}");
+        assert!(json.contains("\"XMP-xmp:Rating\": 2"), "{json}");
+        // The write-back check reads the copy back with the reader: the new rating must be the one it reads.
+        let written = std::fs::read(&out).unwrap();
+        let read = pg_metadata::Meta::read(
+            &written,
+            pg_model::format::Format::Jpeg,
+            &mut pg_metadata::MetaScratch::default(),
+        );
+        assert_eq!(read.rating.map(|r| r.get()), Some(2));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

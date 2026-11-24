@@ -100,7 +100,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 **Decided.**
 1. **Recording a disagreement: keep only the effective value (option a), as today.** A disagreement between fields is neither stored nor logged.
-2. **The write side:** update the rating fields the file already has, as above. This is the design, and it is not yet built.
+2. **The write side:** update the rating fields the file already has, as above. Implemented in `write_rating` (`crates/exiftool/src/lib.rs`): it sets `XMP:Rating` and each rating field the file already holds. The rebuild-the-metadata fallback is gone. A test writes over a stale percent and reads the new rating back.
 
 **Behaviour changes, each a decision (reversible):**
 - A never-synced file that reads unrated no longer clears the user's rating (the sync test above).

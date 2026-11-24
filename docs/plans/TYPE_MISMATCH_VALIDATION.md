@@ -4,7 +4,7 @@ Five findings from the type-mismatch review are still open at HEAD `9d167729`. T
 
 ## 1. Rating admits 0, but the APIs spell "unrated" as `None` (`crates/model/src/rating.rs:47`)
 
-*Status at `9d167729`: partly done.* `Command::Rate` (used at `crates/client/src/controller.rs:474`), `Write::Rating` and `WriteEffect::FileRating` (`crates/catalog/src/queue/job.rs:47`) already take a `Rating`, not an `Option`. Still open: `Edit::rate`, `set_rating` and `set_file_rating` take `Option<Rating>`. `set_file_rating` still stores a 0 (`queue.rs:364-370`). The desktop filter (`crates/desktop/src/gallery/edits.rs:105`) and the `Rating::new(n).filter(...)` in the catalog tests (`writers.rs:2283`, `browse/fixtures.rs:73`) still exist. The module doc (`rating.rs:3`) still says an unrated file is `Option<Rating>`.
+*History, at `9d167729`: partly done. The status below is current.* `Command::Rate` (used at `crates/client/src/controller.rs:474`), `Write::Rating` and `WriteEffect::FileRating` (`crates/catalog/src/queue/job.rs:47`) already take a `Rating`, not an `Option`. Still open: `Edit::rate`, `set_rating` and `set_file_rating` take `Option<Rating>`. `set_file_rating` still stores a 0 (`queue.rs:364-370`). The desktop filter (`crates/desktop/src/gallery/edits.rs:105`) and the `Rating::new(n).filter(...)` in the catalog tests (`writers.rs:2283`, `browse/fixtures.rs:73`) still exist. The module doc (`rating.rs:3`) still says an unrated file is `Option<Rating>`.
 
 `Rating` is one 0 to 5 star value, and 0 means unrated. `Rating::new` accepts 0, but the APIs that take a rating still take `Option<Rating>`, where `None` also means unrated. So unrated has two spellings, `Some(Rating(0))` and `None`. `Edit::rate` (`crates/app/src/edit.rs:27`) takes `Option<Rating>`, so a caller can pass `Some(0)`.
 
@@ -14,7 +14,7 @@ Five findings from the type-mismatch review are still open at HEAD `9d167729`. T
 
 **Current state of the file side, which differs.** `sync_file_rating` writes a file's 0 as a row in `file_ratings` (`writers.rs:571`), while the user side deletes its row for 0 (`writers.rs:566-568`). So 0 and "no row" are two spellings there too.
 
-**Status:** implemented. The type keeps the name `Rating` (1 to 5), not `Stars` as first written: the name already fit, and renaming about 230 uses added no meaning. Everywhere below, `Rating` is this type. The catalog's and the file's ratings are `Option<Rating>`. Zero is refused by `Rating::new` and `TryFrom<u8>`, and the schema refuses a 0 row in `file_ratings`. Tests: `crates/model/src/rating.rs`, `crates/catalog/src/writers.rs` (`the_store_refuses_a_zero_rating_row`, `a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync`).
+**Status:** implemented at `a93a8661`, but not complete: three planned tests are not written, and they are marked under Tests. The type keeps the name `Rating` (1 to 5), not `Stars` as first written: the name already fit, and renaming about 230 uses added no meaning. Everywhere below, `Rating` is this type. The catalog's and the file's ratings are `Option<Rating>`. Zero is refused by `Rating::new` and `TryFrom<u8>`, and the schema refuses a 0 row in `file_ratings`. Tests: `crates/model/src/rating.rs`, `crates/catalog/src/writers.rs` (`the_store_refuses_a_zero_rating_row`, `a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync`).
 
 **Fix:** one type, and one spelling of unrated. `Stars` (here `Rating`) is a star rating from 1 to 5. A rating is `Option<Stars>`, and `None` is unrated, everywhere in the code. Zero is not a value of any type. It appears only as EXIF's and the job wire's spelling of unrated, at the file edges.
 
@@ -33,14 +33,15 @@ Five findings from the type-mismatch review are still open at HEAD `9d167729`. T
 6. **Storage.** `file_ratings` holds 1 to 5 only, and `None` is no row. The catalog is not released yet, so this is an edit to `baseline.sql`, not a migration: `crates/catalog/src/schema.rs:34` says that before the first release the baseline is edited in place, and `MIGRATIONS` is empty (`schema.rs:84`). The `CHECK` tightens to `BETWEEN 1 AND 5`. Any catalog created with the current baseline then has to be rebuilt or recreated, which is your decision to make before a release. `rebuild.rs:160` already lists `file_ratings`, so rebuilds carry it.
 7. **The sync and write rules have no special cases.** `sync_file_rating` (`crates/catalog/src/writers.rs:558`) compares `in_file` with `known`, both `Option<Stars>`. The write decision in `crates/catalog/src/queue.rs:61-70` compares `wanted` with `in_file`, both `Option<Stars>`. The special cases `None if in_file > 0 => Some(0)` and `None => in_file` go.
 8. **Filters go.** The desktop's `filter(|r| r.get() > 0)` (`crates/desktop/src/gallery/edits.rs:105`) and the test-helper filters (`writers.rs:2283`, `crates/catalog/src/browse/fixtures.rs:73`) are deleted.
-9. **Tests (planned):**
+9. **Tests** (the ones marked **not written** are still to do):
    - `Stars::new(0)` is `None`, and `TryFrom<u8>` rejects 0.
    - EXIF 0 reads as unrated, and `None` writes an explicit 0. The wire round trip (`write.rs:113`, `:123`) gives `None` back.
-   - Clearing a file that Windows rated (XMP `xmp:Rating` 4, a stale EXIF `RatingPercent` 75, and the other stale fields) reads as unrated, and Windows shows unrated, after the write below.
+   - Clearing a file that Windows rated (XMP `xmp:Rating` 4, a stale EXIF `RatingPercent` 75, and the other stale fields) reads as unrated, and Windows shows unrated, after the write below. **Not written:** no test writes a clear over stale fields and reads it back. Windows' result for a clear is measured (`clr_all0` in the write matrix), not tested in the repo.
    - Sync, adoption: a file cleared by another program (known 4, none in the file) clears the user's rating, as now.
    - Sync, no change: a file with no rating, never synced, and the user's rating 3 keeps the rating. This holds today (verified: the catalog keeps 3).
    - Sync, file holds an explicit 0, never synced, and the user's rating 3: **changed.** Today this clears the rating (verified: the catalog reads `None`), because the file's 0 is `Some(0)` against a `None` baseline. The new rule keeps the rating.
-   - Clearing writes `None` only into a file that holds a rating.
+   - Clearing writes `None` only into a file that holds a rating. (Written: `ratings_and_turns_queue_for_the_file`, `crates/catalog/src/queue.rs`.)
+   - **Not written:** the 0 key clears: `GridKey::Rate(0)` gives `Command::Rate { rating: None }` (`crates/client/src/controller.rs`), and a viewer's 0 gives `RateInViewer` with `None`.
    - The baseline's `file_ratings` `CHECK` rejects 0 (a catalog built from the edited baseline), and a rebuilt catalog holds no 0 rows.
    - Pairing: a file whose only rating row was 0 is no longer kept by `has_children` (`crates/catalog/src/sql.rs:88`). **Changed.** Verified today: a file with no rating has `has_children` 0, and after an explicit 0 is synced (one `file_ratings` row) it is 1. The predicate is the one pairing uses (`crates/catalog/src/pair.rs:321`, `:449`). The full pass agrees: a displaced row (its identity taken by another file) counts as having data (`unpaired_with_data` 1) when its only rating row is 0, and 0 without one.
 

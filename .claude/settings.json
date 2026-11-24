@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/block_timeout.py"
+            "command": "python D:/GitHub/photo-gallery/.claude/hooks/block_timeout.py"
           }
         ]
       }

@@ -25,7 +25,7 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::ids::{FileId, RootId};
-use pg_model::removal::Begun;
+use pg_model::removal::{Begun, Volumes};
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::convert::progress_count;
@@ -92,11 +92,18 @@ impl Catalog {
         if marker_present(&tx, &bytes)? {
             return Ok(Begun::Pending(path));
         }
+        let volumes = volumes_under(&tx, rules, &path)?;
         tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
         release_leases(&tx, rules, &path)?;
         tx.execute("INSERT INTO root_removals(path, started) VALUES (?1, unixepoch())", [&bytes])?;
         tx.commit()?;
-        Ok(Begun::Started(path))
+        Ok(Begun::Started { path, volumes })
+    }
+
+    /// The lanes a removal of `path` parks, read now: the volumes of its present files (`Volumes`). The files are still
+    /// present until [`Catalog::hide_pages`] runs.
+    pub fn removal_volumes(&self, path: &RulePath) -> Result<Volumes> {
+        volumes_under(&self.conn, self.rules, path)
     }
 
     /// Step B: hides the files under `path`, in batches. Idempotent: a batch that is hidden already changes nothing, so
@@ -438,6 +445,26 @@ fn values(ids: &[i64]) -> Vec<Value> {
     ids.iter().copied().map(Value::Integer).collect()
 }
 
+/// The lanes a removal of `path` parks: the volumes of its present files. `all` is set when a present file has no volume,
+/// and when no file is present to tell the volumes by (the lanes that read the folder can't be told apart then).
+fn volumes_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Volumes> {
+    let folders = folder_ids_under(conn, rules, path)?;
+    let mut stmt = conn.prepare("SELECT volume FROM files WHERE missing = 0 AND folder_id IN rarray(?1)")?;
+    let rows: Vec<Option<i64>> =
+        stmt.query_map([Rc::new(values(&folders))], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let mut out = Volumes { volumes: Default::default(), all: rows.is_empty() };
+    for row in rows {
+        match row {
+            // A volume id is stored as the SQL integer of its bits (`work.rs`, `volumes_of`).
+            Some(volume) => {
+                out.volumes.insert(volume.cast_unsigned());
+            }
+            None => out.all = true,
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -470,7 +497,7 @@ mod tests {
 
     fn begin(c: &Catalog, rules: PathRules) {
         let root = c.root_id(&p(rules, r"D:\r")).unwrap().unwrap();
-        assert!(matches!(c.begin_removal(root, &p(rules, r"D:\r")).unwrap(), Begun::Started(_)));
+        assert!(matches!(c.begin_removal(root, &p(rules, r"D:\r")).unwrap(), Begun::Started { .. }));
     }
 
     /// The whole of a removal: its files, their children (the rating goes with its file), its folders and its marker.
@@ -490,6 +517,29 @@ mod tests {
         a_removed_folder_is_deleted_with_its_children,
         a_removed_folder_is_deleted_with_its_children_windows,
         a_removed_folder_is_deleted_with_its_children_posix
+    );
+
+    /// The lanes a removal parks: the volumes of its folder's present files, as `begin_removal` returns them, and every lane
+    /// once no file of the folder is present (section 1, D2).
+    fn a_removal_names_the_volumes_of_its_present_files(rules: PathRules) {
+        let c = library(rules);
+        let folder = p(rules, r"D:\r");
+        let root = c.root_id(&folder).unwrap().unwrap();
+        match c.begin_removal(root, &folder).unwrap() {
+            Begun::Started { volumes, .. } => {
+                assert_eq!(volumes, Volumes { volumes: [1].into_iter().collect(), all: false });
+            }
+            other => panic!("the removal did not start: {other:?}"),
+        }
+        assert_eq!(c.removal_volumes(&folder).unwrap(), Volumes { volumes: [1].into_iter().collect(), all: false });
+        c.hide_pages(&folder).unwrap();
+        assert!(c.removal_volumes(&folder).unwrap().all, "no present file: every lane is parked");
+    }
+
+    under_both_rules!(
+        a_removal_names_the_volumes_of_its_present_files,
+        a_removal_names_the_volumes_of_its_present_files_windows,
+        a_removal_names_the_volumes_of_its_present_files_posix
     );
 
     /// A removal an older build left: the library folder went, its files stayed hidden and no marker was kept. Adopting

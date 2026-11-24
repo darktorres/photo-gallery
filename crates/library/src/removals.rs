@@ -24,6 +24,18 @@ pub fn finish(
     for marker in catalog.removal_markers()? {
         catalog.hide_pages(&marker.path)?;
     }
+    drive(catalog, thumbs, catalog_path, progress)
+}
+
+/// The deletes of [`finish`], once the markers' folders are hidden: their files go batch by batch, each batch's thumbnails
+/// forgotten before it, then the free pages are given back and the orphans dropped. The library's removal job calls this
+/// after it has hidden the folders under its parks (section 1); a caller with no lanes to park uses [`finish`].
+pub fn drive(
+    catalog: &Catalog,
+    thumbs: &ThumbCache,
+    catalog_path: &Path,
+    progress: &mut dyn FnMut(usize) -> bool,
+) -> Result<Driven> {
     let mut forget_failed = None;
     let driven = catalog.drive_removals(&mut |ids| {
         let ids: Vec<FileId> = ids.iter().map(|&id| FileId::new(id)).collect();

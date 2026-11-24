@@ -18,6 +18,7 @@ use pg_library::runner::Runner;
 use pg_library::shared::{FeatureCell, HeightCell};
 use pg_model::features::Features;
 use pg_model::progress::Phase;
+use pg_model::removal::Begun;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
 use pg_platform::drive::{Drive, DriveKey, Drives, Kind};
@@ -247,6 +248,33 @@ fn a_per_lane_pause_pauses_only_its_lane() -> Result<()> {
     assert!(!runner.is_paused(), "a lane's pause is not the run's pause");
     assert!(!runner.set_lane_paused(first.wrapping_add(1_000), true), "no such lane");
     assert!(runner.set_lane_paused(first, false));
+    assert!(runner.stop(WAIT));
+    Ok(())
+}
+
+/// A removal parks its folder's lanes as the app begins it (`park_removal`), and the removal job releases them once the
+/// folder is hidden: a scan after the removal runs a round, so no park was left behind (section 1, D1 and D2). The folder
+/// is empty, so no file of it has a volume and every lane is parked (D2's case).
+#[test]
+fn a_removal_releases_its_parks_once_its_folder_is_hidden() -> Result<()> {
+    let (dir, catalog_path, a, b) = two_folders("removal_release")?;
+    let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, Features::ALL)?;
+    runner.scan(vec![a.clone(), b.clone()]);
+    pg_testkit::wait_until(WAIT, || "two lanes", || runner.lanes() == 2);
+    pg_testkit::wait_until(WAIT, || "a first round", || runner.rounds() > 0);
+    let catalog = Catalog::open(&catalog_path, PATH_RULES)?;
+    let root = catalog.root_id(&a)?.ok_or("the folder is a root")?;
+    let Begun::Started { path, volumes } = catalog.begin_removal(root, &a)? else {
+        return Err("the removal did not start".into());
+    };
+    assert!(volumes.all, "an empty folder has no volume: every lane is parked");
+    runner.park_removal(&path, &volumes);
+    runner.wake_removals();
+    pg_testkit::wait_until(WAIT, || "the removal finished", || catalog.removal_markers().is_ok_and(|m| m.is_empty()));
+    let before = runner.rounds();
+    runner.scan(vec![b]);
+    pg_testkit::wait_until(WAIT, || "a round after the removal", || runner.rounds() > before);
     assert!(runner.stop(WAIT));
     Ok(())
 }

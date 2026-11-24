@@ -23,6 +23,9 @@ pub mod scans;
 pub mod shared;
 mod tally;
 
+#[cfg(test)]
+mod park_tests;
+
 /// What the library couldn't do: a catalog or thumbnail-cache failure, the failure of a pass or of a lane (a lane that
 /// panicked is a failure of class `Panic`), or a step of the library that failed, with the words of the step.
 #[derive(Debug, thiserror::Error)]

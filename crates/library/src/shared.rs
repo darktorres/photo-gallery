@@ -3,14 +3,18 @@
 //! and the lanes' progress are public types of the runner (`runner` re-exports them); they live here, so that the lanes and
 //! the coordinator name them without naming the runner, which names the coordinator.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
+use pg_catalog::VolumeSet;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::Bus;
 use pg_model::features::Features;
 use pg_model::job::Change;
+use pg_model::removal::Volumes;
 use pg_model::size::ThumbHeight;
 use pg_thumbcache::ThumbCache;
 
@@ -121,6 +125,99 @@ pub struct Generation {
     pub imports: u64,
 }
 
+/// The volumes a removal has parked (section 1, D5 and D6). A lane whose volumes include one of them waits at the start of
+/// its round, until the removal releases them. Each removal parks under its folder's display path, and releases that key.
+#[derive(Default)]
+pub(crate) struct Parks {
+    parked: Mutex<BTreeMap<String, Volumes>>,
+    changed: Condvar,
+}
+
+/// Whether a lane on `set` is parked by `parked`: every lane is, when `parked.all` is set, else a lane on one of its volumes.
+fn blocks(parked: &Volumes, set: &VolumeSet) -> bool {
+    parked.all || parked.volumes.iter().any(|&volume| set.contains(volume))
+}
+
+impl Parks {
+    /// Parks the lanes of `volumes` under `key`. Parking again under the same key replaces the volumes.
+    pub(crate) fn park(&self, key: &str, volumes: Volumes) {
+        self.parked.lock().unwrap_or_else(PoisonError::into_inner).insert(key.to_owned(), volumes);
+        self.changed.notify_all();
+    }
+
+    /// Releases `key`'s parks: the lanes waiting for them may start their rounds.
+    pub(crate) fn release(&self, key: &str) {
+        self.parked.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+        self.changed.notify_all();
+    }
+
+    /// The volumes parked under `key`, if any (the coordinator's own parks, for the lanes it parks itself).
+    #[cfg(test)]
+    pub(crate) fn parked(&self, key: &str) -> Option<Volumes> {
+        self.parked.lock().unwrap_or_else(PoisonError::into_inner).get(key).cloned()
+    }
+
+    /// Waits while a lane on `set` is parked, for as long as `quit` is not asked. `false` when `quit` came first.
+    pub(crate) fn wait_clear(&self, set: &VolumeSet, quit: &dyn Fn() -> bool) -> bool {
+        let mut parked = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
+        while parked.values().any(|volumes| blocks(volumes, set)) {
+            if quit() {
+                return false;
+            }
+            parked =
+                self.changed.wait_timeout(parked, Duration::from_millis(50)).unwrap_or_else(PoisonError::into_inner).0;
+        }
+        true
+    }
+}
+
+/// A test's hooks into the job, at the two points a test holds it at: the start of a lane's round (inside the round, so a
+/// park waits for the round, as it waits for a pass), and a removal's hide, before its park is taken. A hook runs without
+/// any lock held, so it may block. A build that is not a test has none of this.
+/// A hook at a lane's round start, with the lane's volumes.
+#[cfg(test)]
+type RoundHook = Arc<dyn Fn(&VolumeSet) + Send + Sync>;
+
+/// A hook at a removal's hide, with the marker's folder.
+#[cfg(test)]
+type HideHook = Arc<dyn Fn(&pg_model::rules::Path) + Send + Sync>;
+
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct TestHooks {
+    round: Mutex<Option<RoundHook>>,
+    hide: Mutex<Option<HideHook>>,
+}
+
+#[cfg(test)]
+impl TestHooks {
+    /// Runs `hook` at the start of each lane round, with the lane's volumes.
+    pub(crate) fn on_round(&self, hook: impl Fn(&VolumeSet) + Send + Sync + 'static) {
+        *self.round.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// Runs `hook` in the removal job before each marker's park, with the marker's folder.
+    pub(crate) fn on_hide(&self, hook: impl Fn(&pg_model::rules::Path) + Send + Sync + 'static) {
+        *self.hide.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// The round hook, if one is set (called by the lane at a round's start).
+    pub(crate) fn at_round(&self, volumes: &VolumeSet) {
+        let hook = self.round.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(hook) = hook {
+            hook(volumes);
+        }
+    }
+
+    /// The hide hook, if one is set (called by the removal job before a marker's park).
+    pub(crate) fn at_hide(&self, path: &pg_model::rules::Path) {
+        let hook = self.hide.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(hook) = hook {
+            hook(path);
+        }
+    }
+}
+
 /// What the lanes share: the catalog's path, the thumbnail cache, the cells, the notices and the change bus, the tally of
 /// the lanes' notices, the pairing gate, and the job's counts (what the app reads to refresh its views).
 pub(crate) struct Shared {
@@ -132,6 +229,11 @@ pub(crate) struct Shared {
     pub(crate) changes: Arc<Bus<Change>>,
     pub(crate) tally: Tally,
     pub(crate) pairing: PairGate,
+    /// The volumes the removals have parked: the lanes on them wait at the start of their rounds.
+    pub(crate) parks: Parks,
+    /// The test hooks (none in a build that is not a test).
+    #[cfg(test)]
+    pub(crate) hooks: Arc<TestHooks>,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
     pub(crate) rounds: AtomicU64,
@@ -155,6 +257,9 @@ impl Shared {
             notices,
             changes,
             tally,
+            parks: Parks::default(),
+            #[cfg(test)]
+            hooks: Arc::default(),
             pairing: PairGate::default(),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
@@ -185,5 +290,52 @@ impl Shared {
             scans: self.scans_done.load(Ordering::Relaxed),
             imports: self.imports_done.load(Ordering::Relaxed),
         }
+    }
+}
+
+#[cfg(test)]
+mod parks_tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    fn volumes(of: &[u64]) -> Volumes {
+        Volumes { volumes: of.iter().copied().collect(), all: false }
+    }
+
+    /// A parked volume blocks only the lanes that read it (D2): a lane on another volume runs, one on it does not, and a
+    /// lane that reads every volume does not run either. Quit asked (`|| true`) ends a blocked wait with `false`.
+    #[test]
+    fn a_parked_volume_blocks_only_the_lanes_that_read_it() {
+        let parks = Parks::default();
+        parks.park("folder", volumes(&[7]));
+        assert_eq!(parks.parked("folder"), Some(volumes(&[7])));
+        assert!(parks.wait_clear(&VolumeSet::Only(vec![3]), &|| true), "a lane on another volume runs");
+        assert!(!parks.wait_clear(&VolumeSet::Only(vec![7]), &|| true), "a lane on the parked volume waits");
+        assert!(!parks.wait_clear(&VolumeSet::All, &|| true), "a lane that reads every volume waits");
+    }
+
+    /// Releasing the key lets a lane that waits for it run.
+    #[test]
+    fn releasing_the_key_lets_the_waiting_lane_run() {
+        let parks = Arc::new(Parks::default());
+        parks.park("folder", volumes(&[7]));
+        let waiting = {
+            let parks = parks.clone();
+            std::thread::spawn(move || parks.wait_clear(&VolumeSet::Only(vec![7]), &|| false))
+        };
+        parks.release("folder");
+        assert!(waiting.join().expect("the lane's wait ends"));
+        assert_eq!(parks.parked("folder"), None);
+    }
+
+    /// An all-park blocks every lane, and parking again under the same key replaces the volumes.
+    #[test]
+    fn an_all_park_blocks_every_lane_until_the_key_is_parked_again_without_it() {
+        let parks = Parks::default();
+        parks.park("startup removals", Volumes { volumes: BTreeSet::new(), all: true });
+        assert!(!parks.wait_clear(&VolumeSet::Only(vec![1]), &|| true), "every lane waits");
+        parks.park("startup removals", volumes(&[]));
+        assert!(parks.wait_clear(&VolumeSet::Only(vec![1]), &|| true), "replaced: no volume is parked");
     }
 }

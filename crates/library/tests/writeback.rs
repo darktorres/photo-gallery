@@ -1166,7 +1166,7 @@ fn an_add_over_a_pending_removal_finishes_it_and_adds_the_folder() {
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let mut finishes = 0;
     let added = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
         finishes += 1;
@@ -1197,7 +1197,7 @@ fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let refused = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
         pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
     });
@@ -1228,7 +1228,7 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
 
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(driven.deferred, 1, "the file with a change is kept");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
@@ -1256,7 +1256,7 @@ fn a_removal_checkpoints_the_wal_after_its_deletes() {
     let (dir, _files, catalog_path, c) = imported("removal-checkpoint").unwrap();
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let before = c.passive_checkpoints();
     let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert!(driven.files > 0, "its files were deleted");
@@ -1277,7 +1277,7 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
 
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let kept = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
     assert_eq!(kept.deferred, 1, "the file with a change waits for the writer");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");

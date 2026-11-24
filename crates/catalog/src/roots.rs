@@ -98,7 +98,7 @@ impl Catalog {
     pub fn remove_root(&self, root: RootId) -> Result<Option<u64>> {
         let Some(path) = self.roots()?.into_iter().find(|r| r.id == root).map(|r| r.path) else { return Ok(None) };
         match self.begin_removal(root, &path)? {
-            Begun::Started(path) => {
+            Begun::Started { path, .. } => {
                 self.hide_pages(&path)?;
                 Ok(Some(self.drive_removals(&mut |_| true)?.files))
             }

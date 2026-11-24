@@ -29,6 +29,7 @@ use pg_model::job::Change;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
 use pg_model::progress::LaneProgress;
 use pg_model::progress::{Phase, Progress};
+use pg_model::removal::Volumes;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::drive::Drives;
 use pg_platform::native::PATH_RULES;
@@ -188,6 +189,8 @@ impl Lanes {
             cropper: OnceLock::new(),
             removals: OnceLock::new(),
         });
+        // The removals an earlier run left are parked before any lane starts (D5), and released by the removal job.
+        park_earlier_removals(&lanes.shared);
         let weak = Arc::downgrade(&lanes);
         let coordinator = Service::start("lane coordinator", move |waker| coordinate(&weak, waker))
             .map_err(|e| Error::step("can't start the lane coordinator", e))?;
@@ -587,10 +590,23 @@ impl Lanes {
     /// Holds the lanes that own `volumes`, and waits until each has ended its round: a crop or a cut is about to change
     /// files on those volumes, which the lanes read. `None` when the crop is stopped first (the holds are given back).
     fn park(&self, volumes: &BTreeSet<u64>) -> Option<Vec<Hold>> {
+        self.park_owners(&Volumes { volumes: volumes.clone(), all: false }, &self.crop_ctl)
+    }
+
+    /// The lanes that own `parked`'s volumes (every lane when `parked.all`).
+    fn lanes_on(&self, parked: &Volumes) -> Vec<Lane> {
         let all = self.all();
+        if parked.all {
+            return all;
+        }
         let sets: Vec<VolumeSet> = all.iter().map(|lane| lane.inner.volume_set()).collect();
-        let owners: Vec<Lane> =
-            lanes_with(&sets, volumes).into_iter().filter_map(|index| all.get(index).cloned()).collect();
+        lanes_with(&sets, &parked.volumes).into_iter().filter_map(|index| all.get(index).cloned()).collect()
+    }
+
+    /// Holds the lanes that own `parked`'s volumes, asks them to stop, and waits until each has ended its round. `stop` is
+    /// the caller's control: when it is asked first, `None` (the holds are given back, and nothing was changed).
+    fn park_owners(&self, parked: &Volumes, stop: &Control) -> Option<Vec<Hold>> {
+        let owners = self.lanes_on(parked);
         let holds: Vec<Hold> = owners
             .iter()
             .map(|lane| {
@@ -601,11 +617,22 @@ impl Lanes {
             })
             .collect();
         for lane in &owners {
-            if !lane.inner.wait_idle(&self.crop_ctl) {
+            if !lane.inner.wait_idle(stop) {
                 return None;
             }
         }
         Some(holds)
+    }
+
+    /// A removal began (`Begun::Started`): its lanes are parked now, without waiting, so no lane starts a round on the
+    /// folder's volumes from here (section 1, D1). The rounds running are asked to stop; the removal job waits for them and
+    /// takes its own holds before it hides the files.
+    pub(crate) fn park_removal(&self, path: &RulePath, volumes: &Volumes) {
+        self.shared.parks.park(&park_key(path), volumes.clone());
+        for lane in self.lanes_on(volumes) {
+            lane.inner.ctl.request_stop();
+            lane.service.wake();
+        }
     }
 
     /// One crop or cut: its files' volumes are parked, and it runs on a connection of the crop thread's.
@@ -793,10 +820,12 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
             }
         }
         match lanes.run_removals(&mut catalog, !adopted) {
-            Ok(()) => {
+            Ok(true) => {
                 told = None;
                 adopted = true;
             }
+            // A stop: the markers wait, parked, for the next try.
+            Ok(false) => {}
             Err(error) => {
                 if told.as_deref() != Some(error.as_str()) {
                     lanes.shared.notices.post(Notice::FolderNotRemoved { error: error.clone() });
@@ -812,7 +841,7 @@ impl Lanes {
     /// Finishes the removals not finished, as one phase of the removal job: its row in the status bar, its progress
     /// (the files of the removals, as they go), and its pause, which waits between batches. The error text when a
     /// removal could not be finished.
-    fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<(), String> {
+    fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<bool, String> {
         let catalog = match conn.take() {
             Some(c) => c,
             None => Catalog::open(&self.shared.catalog_path, PATH_RULES)
@@ -821,31 +850,88 @@ impl Lanes {
         let found = if adopt { catalog.adopt_hidden_folders().map(drop) } else { Ok(()) }
             .and_then(|()| catalog.removal_markers());
         let result = match found {
-            Ok(markers) if markers.is_empty() => Ok(()),
+            Ok(markers) if markers.is_empty() => Ok(true),
             Ok(markers) => self.finish_removals(&catalog, &markers),
             Err(e) => Err(error_text(&pg_model::error::chain(&e))),
         };
+        // The removals an earlier run left are no longer unknown once the job has been through all of them.
+        if matches!(result, Ok(true)) {
+            self.shared.parks.release(STARTUP_KEY);
+        }
         *conn = Some(catalog);
         result
     }
 
-    /// The markers' removals, finished: the lanes stop reading the folders, then the files go in batches under the job's
-    /// phase, and the folders' listing is told the tree changed.
-    fn finish_removals(&self, catalog: &Catalog, markers: &[pg_catalog::Marker]) -> std::result::Result<(), String> {
+    /// The markers' removals, finished (section 1). Each marker is hidden under a park of its lanes (`hide_marker`). `false`
+    /// when a stop came first: the markers wait for the next try, parked. Then the files go in batches under the job's
+    /// phase, and the folders' listing is told the tree changed. No lane is parked for the deletes: the hidden files are
+    /// invisible to every pass.
+    fn finish_removals(&self, catalog: &Catalog, markers: &[pg_catalog::Marker]) -> std::result::Result<bool, String> {
         for marker in markers {
             self.stop_scans_under(&marker.path);
         }
-        self.wake_all(true);
+        for marker in markers {
+            if !self.hide_marker(catalog, &marker.path)? {
+                return Ok(false);
+            }
+        }
         let total = catalog.removal_files().unwrap_or(0);
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
-        let finished = removals::finish(catalog, &self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
+        let finished = removals::drive(catalog, &self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
             done = done.saturating_add(u64::try_from(files).unwrap_or(u64::MAX));
             self.removal_ctl.set_done(done);
             self.removal_ctl.checkpoint()
         });
         self.shared.changes.publish(Change::Scanned);
-        finished.map(drop).map_err(|e| error_text(&e))
+        finished.map(|_| true).map_err(|e| error_text(&e))
+    }
+
+    /// One marker's hide (section 1, D1): its lanes are parked on the folder's volumes, its files are hidden in batches,
+    /// the grid is told (D4), and then the park is released. A stop, or a failed hide, keeps the park: the folder may be
+    /// partly hidden, and no lane may work on it until the hide completes at a later try. `false` when a stop came while
+    /// the lanes were being parked.
+    fn hide_marker(&self, catalog: &Catalog, path: &RulePath) -> std::result::Result<bool, String> {
+        #[cfg(test)]
+        self.shared.hooks.at_hide(path);
+        let key = park_key(path);
+        let volumes = catalog.removal_volumes(path).map_err(|e| error_text(&pg_model::error::chain(&e)))?;
+        self.shared.parks.park(&key, volumes.clone());
+        let Some(holds) = self.park_owners(&volumes, &self.removal_ctl) else {
+            return Ok(false);
+        };
+        let hidden = catalog.hide_pages(path);
+        self.shared.changes.publish(Change::Scanned);
+        drop(holds);
+        hidden.map_err(|e| error_text(&pg_model::error::chain(&e)))?;
+        self.shared.parks.release(&key);
+        Ok(true)
+    }
+}
+
+/// The key a removal parks under: its folder as the rules display it.
+fn park_key(path: &RulePath) -> String {
+    PATH_RULES.display(path).to_string()
+}
+
+/// The key of the parks the removals an earlier run left have, when their markers can't be read: released when those
+/// removals run to their end.
+const STARTUP_KEY: &str = "startup removals";
+
+/// Parks the volumes of the removals an earlier run left, before any lane starts (section 1, D5): no lane works on a folder
+/// whose files are not hidden yet. A marker whose volumes can't be read parks every lane, under [`STARTUP_KEY`], until the
+/// removals run. No catalog yet means no removal.
+fn park_earlier_removals(shared: &Shared) {
+    let Ok(catalog) = Catalog::open(&shared.catalog_path, PATH_RULES) else { return };
+    match catalog.removal_markers() {
+        Ok(markers) => {
+            for marker in markers {
+                let volumes =
+                    catalog.removal_volumes(&marker.path).unwrap_or(Volumes { volumes: BTreeSet::new(), all: true });
+                shared.parks.park(&park_key(&marker.path), volumes);
+            }
+        }
+        Err(_) => shared.parks.park(STARTUP_KEY, Volumes { volumes: BTreeSet::new(), all: true }),
     }
 }
 

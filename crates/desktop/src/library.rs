@@ -282,7 +282,7 @@ impl qobject::Library {
         };
         match app::get().library().remove_folder(id, &path) {
             // Gone from the list at once; its files are finished by the library's job, which tells the grid when it has.
-            Ok(Begun::Started(_) | Begun::Pending(_)) => {
+            Ok(Begun::Started { .. } | Begun::Pending(_)) => {
                 self.as_mut().load_roots();
                 self.scanned();
             }

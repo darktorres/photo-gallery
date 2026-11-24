@@ -49,6 +49,11 @@ impl Inner {
             // A held lane waits for its hold to end: a crop or a cut works on its volumes meanwhile. A request that stopped
             // the lane while it waited is cleared below, with the requests' stops: each request queued its work.
             self.ctl.wait_while_held(&|| waker.quitting());
+            // A removal parks the lanes on its folder's volumes until it has hidden the folder's files: a lane on one waits
+            // here, before any work (section 1, D5 and D6). A quit ends the lane.
+            if !self.shared.parks.wait_clear(&self.volume_set(), &|| waker.quitting()) {
+                return;
+            }
             // The stop the last request set is cleared here, then the quit is looked for: a quit asked after this check
             // comes with a stop after the clear, so the round stops.
             self.ctl.clear_stop();
@@ -97,6 +102,8 @@ impl Inner {
             None => Catalog::open(&self.shared.catalog_path, PATH_RULES)?,
         };
         drop(open);
+        #[cfg(test)]
+        self.shared.hooks.at_round(&self.volume_set());
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
             schedule::round(

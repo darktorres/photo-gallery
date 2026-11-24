@@ -231,6 +231,11 @@ impl Library {
         self.runner.stop_scans_under(root);
     }
 
+    /// A folder's removal began: its lanes are parked on its volumes (`Runner::park_removal`).
+    pub fn park_removal(&self, path: &RulePath, volumes: &pg_model::removal::Volumes) {
+        self.runner.park_removal(path, volumes);
+    }
+
     /// A folder was taken out of the library: its removal is finished by the job now (`Runner::wake_removals`).
     pub fn wake_removals(&self) {
         self.runner.wake_removals();
@@ -398,9 +403,12 @@ impl LibraryService {
     /// found: [`Begun::Changed`] when the id names another folder now (nothing was changed).
     pub fn remove_folder(&self, id: RootId, expected: &RulePath) -> Result<Begun> {
         let begun = self.catalogs.with_catalog(|c| c.begin_removal(id, expected))?;
-        if let Begun::Started(path) = &begun {
+        if let Begun::Started { path, volumes } = &begun {
             match self.running() {
                 Some(library) => {
+                    // The lanes that read the folder are parked before the removal's files are hidden: from now on no lane
+                    // works on them (section 1, D1). The removal job takes its own holds when it hides them.
+                    library.park_removal(path, volumes);
                     library.stop_scans_under(path);
                     library.wake_removals();
                 }

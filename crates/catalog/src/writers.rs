@@ -1712,6 +1712,24 @@ mod tests {
         c
     }
 
+    /// Section 1, D3's regression guard: a pair written with a partner that a removal deleted stores nothing and is not an
+    /// error. The delete cascades through the analysis (the foreign key), and the guard skips a picture whose analysis is
+    /// gone.
+    fn a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed(rules: PathRules) {
+        let mut c = pictures(rules, 2);
+        let work = c.pairing_work().unwrap();
+        c.conn.execute("DELETE FROM files WHERE id = 2", []).unwrap();
+        let written = write_batch(&mut c, &work, &[0], &[(0, 1, 5)]);
+        assert_eq!(written.map_or(0, |w| w.pairs), 0, "no pair with the deleted partner");
+        assert_eq!(pair_distance(&c, 1, 2), None);
+    }
+
+    under_both_rules!(
+        a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed,
+        a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed_windows,
+        a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed_posix
+    );
+
     fn a_pair_is_stored_only_while_both_pictures_hold_the_analyses_it_was_made_from(rules: PathRules) {
         let mut c = pictures(rules, 6);
         let work = c.pairing_work().unwrap();

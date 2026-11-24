@@ -938,7 +938,13 @@ mod tests {
         let dir = pg_testkit::run_folder("scratch_catalog", "wal-bound").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
-        assert_eq!(Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES).unwrap().wal_bytes().unwrap(), 0);
+        assert_eq!(
+            Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES)
+                .unwrap()
+                .wal_bytes()
+                .unwrap(),
+            0
+        );
         for i in 0..200 {
             c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
         }

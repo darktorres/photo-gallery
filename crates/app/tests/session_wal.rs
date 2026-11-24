@@ -32,9 +32,6 @@ fn session_saves_keep_the_wal_near_its_bound() {
     drop(app);
     // The bound is `views::WAL_CHECKPOINT_OVER` (4 MiB), which the crate keeps private; a checkpoint runs on the save that
     // passes it, so the file stays near that size. A MiB of slack covers the save that crossed it.
-    assert!(
-        wal_bytes <= (4 << 20) + (1 << 20),
-        "the WAL stayed at {wal_bytes} bytes after 3,000 session saves"
-    );
+    assert!(wal_bytes <= (4 << 20) + (1 << 20), "the WAL stayed at {wal_bytes} bytes after 3,000 session saves");
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -160,6 +160,44 @@ files on E:, by linear extrapolation from the measurement above. The begin itsel
 lane's current item to reach a stop checkpoint. Stop checks are per item in the passes (`IMPORT_FAILURES_PLAN` row B), so
 the wait is short except for a long video hash, which section 7 fixes.
 
+**Built (2026-11-24), and where it departs from D5 and D6.** D5 and D6 are one mechanism, not a hold per lane at spawn: the
+`Parks` registry (`library/src/shared.rs`) holds the volumes each removal has parked, under the folder's display path, and
+every lane checks it at the start of each round (`lane.rs`, `wait_clear`). A lane spawned during a removal finds its
+volumes parked the same way, so no spawn-time hold is needed (D6). The registry is seeded from the markers an earlier run
+left, before any lane starts (`park_earlier_removals`, `Lanes::start`): D5's barrier. A marker whose volumes can't be read
+parks every lane, under `STARTUP_KEY`, until a pass finishes all markers. The removals job (`coordinator.rs`, `hide_marker`)
+parks the owners of the folder's volumes with holds (`park_owners`, stop control: the removal's), hides in batches, publishes
+`Change::Scanned` (D4), and releases the park only when the hide has completed. A stop, or a failed hide, keeps the park,
+since the folder may be partly hidden, and the marker is tried again at the recheck (`REMOVAL_RECHECK`). `hide` and `delete`
+are split (`removals::drive`); `finish` keeps the synchronous path for a caller with no lanes. `wake_all(true)` is gone
+from `finish_removals` (D2). `begin_removal` returns the volumes (`Begun::Started { path, volumes }`); a folder with no
+present file, or one with a NULL volume, names every lane.
+
+**Status of the checks (2026-11-24).**
+- Done and passing: the P3 guard (`writers.rs`, `a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed`: no error,
+  no pair, so D3's fallback is not needed); the volumes of a removal (`removal.rs`,
+  `a_removal_names_the_volumes_of_its_present_files`); the registry's decisions (`shared.rs`, `parks_tests`: a parked volume
+  blocks only its lanes, release wakes a waiting lane, an all-park blocks every lane); end to end
+  (`lanes.rs`, `a_removal_releases_its_parks_once_its_folder_is_hidden`: a removal parks, the removal job hides and releases,
+  and a later scan runs a round, so no park is left behind). The existing removal, catalog, library, app and writeback
+  suites pass. `pg-desktop`, `pg-cli` and `pg-bench` compile, with their tests.
+- Done, in `library/src/park_tests.rs`, through the job's hooks (`shared::TestHooks`, `#[cfg(test)]` only): D1, a removal
+  waits for the round its lane is in, and the marker stays until the round ends (`a_removal_waits_for_the_round_its_lanes_are_in`);
+  D5, a removal an earlier run left holds the lanes until its folder is hidden (`a_removal_an_earlier_run_left_holds_the_lanes_until_its_folder_is_hidden`);
+  D6, a lane spawned during a removal starts no round until it releases (`a_lane_spawned_during_a_removal_waits_for_it`).
+  Each was checked against a mutant that removes the mechanism it tests: no wait for the owners' rounds fails the D1 test;
+  no startup seed fails the D5 test; no lane round-start check fails the D5 and D6 tests (and not D1, which doesn't use it).
+  The negative checks are bounded (`SETTLE`, 300 ms), not proofs.
+- Not done, and why. D2 locality (a lane on another volume keeps running while the folder's is parked): every test folder
+  sits on this machine's one real volume, and lane volumes come from the real file system, so two fake drives share a volume
+  and nothing here can show the other lane running. It needs a second real volume. Overlapping parks (a crop or cut and a
+  removal on one volume): needs a crop job held at a stop; not built. D1 wait timing with a long import in progress: the
+  wait was shown to hold for a round, not timed against a real import's stop latency; not measured.
+- Lint: `cargo fmt --check` fails on files this change does not touch (`app/src/prefs.rs`, `desktop/src/controller.rs`,
+  `exiftool/src/lib.rs`, `metadata/src/lib.rs`, `metadata/src/xmp.rs`, `model/src/write.rs`). `pg-exiftool` fails clippy
+  (`indexing_slicing`) at baseline, which stops `just lint` at its clippy step; clippy on the changed crates passes with
+  that one lint allowed, and the added lines have no indexing.
+
 **Checks (predicted; each names the test that settles it).**
 
 - D1 park: a pass blocked on a channel on the folder's volume. Start a removal: the pass is stopped and no pass runs on the

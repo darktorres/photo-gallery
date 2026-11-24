@@ -472,7 +472,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 None => bail!(line(&Line::NotInLibrary { root: name })),
             };
             match begun {
-                pg_model::removal::Begun::Started(_) | pg_model::removal::Begun::Pending(_) => {
+                pg_model::removal::Begun::Started { .. } | pg_model::removal::Begun::Pending(_) => {
                     let (events, printer) = thumb_events();
                     let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                     let driven = pg_library::removals::finish(&catalog, &cache, &catalog_path, &mut |_| true);
@@ -1004,7 +1004,7 @@ mod tests {
         let layout = gallery(&["scan"]).layout().unwrap();
         let catalog = Catalog::open(&layout.catalog_path(), rules).unwrap();
         let id = catalog.root_id(&root_a).unwrap().unwrap();
-        assert!(matches!(catalog.begin_removal(id, &root_a).unwrap(), pg_model::removal::Begun::Started(_)));
+        assert!(matches!(catalog.begin_removal(id, &root_a).unwrap(), pg_model::removal::Begun::Started { .. }));
         assert_eq!(catalog.removal_markers().unwrap().len(), 1);
         drop(catalog);
 

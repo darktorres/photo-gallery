@@ -61,7 +61,41 @@ impl Runner {
         notices: Arc<dyn NoticeSink>,
         drives: Arc<dyn Drives + Send + Sync>,
     ) -> Result<Runner> {
-        let shared = Arc::new(Shared::new(catalog_path, thumbs, heights.clone(), features.clone(), notices, changes));
+        let shared = Shared::new(catalog_path, thumbs, heights.clone(), features.clone(), notices, changes);
+        Runner::start_built(shared, heights, features, drives)
+    }
+
+    /// A runner over the test's hooks (`hooks`), in place before the job starts, so a hook holds even the removal the
+    /// library starts with. The change bus and the notices are a test's own.
+    #[cfg(test)]
+    pub(crate) fn start_hooked(
+        catalog_path: PathBuf,
+        thumbs: Arc<ThumbCache>,
+        heights: HeightCell,
+        features: FeatureCell,
+        drives: Arc<dyn Drives + Send + Sync>,
+        hooks: Arc<crate::shared::TestHooks>,
+    ) -> Result<Runner> {
+        let mut shared = Shared::new(
+            catalog_path,
+            thumbs,
+            heights.clone(),
+            features.clone(),
+            pg_jobs_testkit::RecordingSink::new(),
+            Arc::new(Bus::new(64)),
+        );
+        shared.hooks = hooks;
+        Runner::start_built(shared, heights, features, drives)
+    }
+
+    /// The job over `shared`, started: its lanes, its coordinator and its removals thread.
+    fn start_built(
+        shared: Shared,
+        heights: HeightCell,
+        features: FeatureCell,
+        drives: Arc<dyn Drives + Send + Sync>,
+    ) -> Result<Runner> {
+        let shared = Arc::new(shared);
         let root = Arc::new(Control::new());
         let announce = shared.changes.clone();
         root.on_change(move || announce.publish(Change::Progress));
@@ -103,6 +137,12 @@ impl Runner {
     /// ends it as `ScanError::Removed`, and it isn't asked for again, as the folder is no longer in the library.
     pub fn stop_scans_under(&self, root: &RulePath) {
         self.lanes.stop_scans_under(root);
+    }
+
+    /// A removal began (`Catalog::begin_removal`): its lanes are parked on the folder's volumes now, so no lane starts a
+    /// round on them before the removal hides the folder's files (section 1, D1). Does not wait.
+    pub fn park_removal(&self, path: &RulePath, volumes: &pg_model::removal::Volumes) {
+        self.lanes.park_removal(path, volumes);
     }
 
     /// Save cropped copies of these files' borders into `folder` (`pg_crop::save`), before anything else.

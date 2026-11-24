@@ -275,7 +275,7 @@ fn for_removal() -> (Catalog, RulePath) {
     let added = or_stop(catalog.root_id(&root), "the library folder's id");
     let id = or_stop(added.ok_or("the walk did not add it"), "the library folder");
     let begun = or_stop(catalog.begin_removal(id, &root), "the removal's start");
-    assert!(matches!(begun, Begun::Started(_)), "the removal did not start");
+    assert!(matches!(begun, Begun::Started { .. }), "the removal did not start");
     (catalog, root)
 }
 

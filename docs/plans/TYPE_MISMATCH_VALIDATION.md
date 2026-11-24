@@ -1,77 +1,8 @@
 # Type mismatch findings: open items
 
-Five findings from the type-mismatch review are still open at HEAD `9d167729`. The findings were first written at `489f3d31`, and every line reference and status below was re-checked against `9d167729`. Items 1 to 4 are rated low. Item 5 is rated medium, because it fails silently at scale. Items 2 and 5 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is partly done, and its entry says what remains. The exif IFD pointer finding (formerly item 1) is complete and has been removed from this file.
+Four findings from the type-mismatch review are still open at HEAD `9d167729`. The findings were first written at `489f3d31`, and every line reference and status below was re-checked against `9d167729`. Items 1 to 3 are rated low. Item 4 is rated medium, because it fails silently at scale. Items 1 and 4 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is partly done, and its entry says what remains. The Exif IFD pointer and Rating findings are complete and have been removed from this file.
 
-## 1. Rating admits 0, but the APIs spell "unrated" as `None` (`crates/model/src/rating.rs:47`)
-
-*History, at `9d167729`: partly done. The status below is current.* `Command::Rate` (used at `crates/client/src/controller.rs:474`), `Write::Rating` and `WriteEffect::FileRating` (`crates/catalog/src/queue/job.rs:47`) already take a `Rating`, not an `Option`. Still open: `Edit::rate`, `set_rating` and `set_file_rating` take `Option<Rating>`. `set_file_rating` still stores a 0 (`queue.rs:364-370`). The desktop filter (`crates/desktop/src/gallery/edits.rs:105`) and the `Rating::new(n).filter(...)` in the catalog tests (`writers.rs:2283`, `browse/fixtures.rs:73`) still exist. The module doc (`rating.rs:3`) still says an unrated file is `Option<Rating>`.
-
-`Rating` is one 0 to 5 star value, and 0 means unrated. `Rating::new` accepts 0, but the APIs that take a rating still take `Option<Rating>`, where `None` also means unrated. So unrated has two spellings, `Some(Rating(0))` and `None`. `Edit::rate` (`crates/app/src/edit.rs:27`) takes `Option<Rating>`, so a caller can pass `Some(0)`.
-
-**Impact:** no data defect today. The desktop maps 0 stars to `None` before calling `rate` (`crates/desktop/src/gallery/edits.rs:105`), and the catalog stores unrated as no row. But a `Some(0)` that reaches the `ratings` table fails its `CHECK (rating BETWEEN 1 AND 5)` (`crates/catalog/src/baseline.sql:81`; the schema is in `baseline.sql`, not `schema.rs`), so the type admits a value the store rejects. The 0 handling is also in two places, the desktop and the catalog.
-
-**Meaning, as the code already uses it.** One range, 1 to 5 stars, for the user's rating and the file's. Unrated is `None` in both. The file's 0 is EXIF's spelling of unrated, and the catalog never holds it. The file side has the same scale: a file that holds 0 stars is unrated, as `three_way_rating_sync` (`crates/catalog/src/writers.rs`) already treats it. The workflow meanings of 1 to 5 belong to the user's convention (1 rejected, 2 maybe, 3 fix rotation or something else, 4 accepted, 5 favorite). The type holds the number, and the app gives it those meanings.
-
-**Current state of the file side, which differs.** `sync_file_rating` writes a file's 0 as a row in `file_ratings` (`writers.rs:571`), while the user side deletes its row for 0 (`writers.rs:566-568`). So 0 and "no row" are two spellings there too.
-
-**Status:** complete. Implemented at `a93a8661`, with its planned tests written and passing (listed under Tests). The type keeps the name `Rating` (1 to 5), not `Stars` as first written: the name already fit, and renaming about 230 uses added no meaning. Everywhere below, `Rating` is this type. The catalog's and the file's ratings are `Option<Rating>`. Zero is refused by `Rating::new` and `TryFrom<u8>`, and the schema refuses a 0 row in `file_ratings`. Tests: `crates/model/src/rating.rs`, `crates/catalog/src/writers.rs` (`the_store_refuses_a_zero_rating_row`, `a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync`).
-
-**Fix:** one type, and one spelling of unrated. `Stars` (here `Rating`) is a star rating from 1 to 5. A rating is `Option<Stars>`, and `None` is unrated, everywhere in the code. Zero is not a value of any type. It appears only as EXIF's and the job wire's spelling of unrated, at the file edges.
-
-1. **One type: `Stars` (1 to 5).** It serves the user's rating and a file's rating alike. `Stars::new(u8) -> Option` accepts 1 to 5, and `TryFrom<u8>` rejects 0. Nothing converts between the two sides, because both hold the same number. The field and parameter names carry the domain at each use: `user_rating` for the catalog's `ratings`, and `file_rating` for `file_ratings`, `sync_file_rating` and the write decision. Two types were considered and rejected. The two sides share the same valid range and the same edge handling, so a second type would add conversions that do nothing.
-2. **The state is `Option<Stars>` on both sides.** `ratings` already has `CHECK (rating BETWEEN 1 AND 5)`, and rule 6 tightens `file_ratings` to the same range.
-3. **A zero means different things by field.** Measured on Windows 10, reading the shell's `System.Rating` for ExifTool-written copies of `sample.jpg`:
-   - In a percent field, a 0 is no value. XMP `xmp:Rating` 0 with EXIF `RatingPercent` 75 shows 75, and EXIF `Rating` 0 with EXIF `RatingPercent` 75 shows 75.
-   - In XMP stars, a 0 hides EXIF stars. XMP 0 with EXIF `Rating` 5 shows unrated, and XMP 2 with EXIF `Rating` 0 shows 25.
-
-   So the reader keeps XMP `xmp:Rating` in three states (absent, 0, stars), because 0 suppresses EXIF stars. The other three fields are `Option<Stars>`. The writer encodes a clear as an explicit XMP 0 (`tool.write_rating(&path, &temp, …)`), and the job wire does the same (`crates/model/src/write.rs:113` writes it, `write.rs:123` reads it back). So the wire format stays unchanged, and `Write::Rating` carries `Option<Stars>`. The write must also remove the stale fields, as described below.
-4. **Conversions happen at two edges, each in one place:**
-   - *input:* the key value 0 becomes `None`. The controller reads it at `crates/client/src/controller.rs:474` as `Stars::new(stars)`, which is `None` for 0. `keys.rs:147` produces `Rate(0)` for the 0 key.
-   - *file read:* `Stars::new` on the raw value. A value above 5 and an explicit 0 both read as absent (rule 3).
-   - The write path has no conversion: `Option<Stars>` passes through unchanged.
-5. **Signatures keep `Option`.** `set_rating(file, Option<Stars>, write_back)` (`crates/catalog/src/queue.rs:40`), `Edit::rate(file, Option<Stars>)` (`crates/app/src/edit.rs:27`), `Command::Rate { rating: Option<Stars> }`, `Write::Rating(Option<Stars>)` and `WriteEffect::FileRating { rating: Option<Stars> }`. Once no type holds 0, `Some(0)` can't be built, and `None` is the one spelling. The earlier plan's "no `Option`" would have made 0 a sentinel that every reader must filter.
-6. **Storage.** `file_ratings` holds 1 to 5 only, and `None` is no row. The catalog is not released yet, so this is an edit to `baseline.sql`, not a migration: `crates/catalog/src/schema.rs:34` says that before the first release the baseline is edited in place, and `MIGRATIONS` is empty (`schema.rs:84`). The `CHECK` tightens to `BETWEEN 1 AND 5`. Any catalog created with the current baseline then has to be rebuilt or recreated, which is your decision to make before a release. `rebuild.rs:160` already lists `file_ratings`, so rebuilds carry it.
-7. **The sync and write rules have no special cases.** `sync_file_rating` (`crates/catalog/src/writers.rs:558`) compares `in_file` with `known`, both `Option<Stars>`. The write decision in `crates/catalog/src/queue.rs:61-70` compares `wanted` with `in_file`, both `Option<Stars>`. The special cases `None if in_file > 0 => Some(0)` and `None => in_file` go.
-8. **Filters go.** The desktop's `filter(|r| r.get() > 0)` (`crates/desktop/src/gallery/edits.rs:105`) and the test-helper filters (`writers.rs:2283`, `crates/catalog/src/browse/fixtures.rs:73`) are deleted.
-9. **Tests:**
-   - `Stars::new(0)` is `None`, and `TryFrom<u8>` rejects 0.
-   - EXIF 0 reads as unrated, and `None` writes an explicit 0. The wire round trip (`write.rs:113`, `:123`) gives `None` back.
-   - Clearing a file that Windows rated (XMP `xmp:Rating` 4, a stale EXIF `RatingPercent` 75, and the other stale fields) reads as unrated, and Windows shows unrated, after the write below. Written: `a_clear_is_written_over_stale_fields_and_reads_back_unrated` (`crates/exiftool/src/lib.rs`). Windows' result for a clear is measured (`clr_all0` in the write matrix).
-   - Sync, adoption: a file cleared by another program (known 4, none in the file) clears the user's rating, as now.
-   - Sync, no change: a file with no rating, never synced, and the user's rating 3 keeps the rating. This holds today (verified: the catalog keeps 3).
-   - Sync, file holds an explicit 0, never synced, and the user's rating 3: **changed.** Today this clears the rating (verified: the catalog reads `None`), because the file's 0 is `Some(0)` against a `None` baseline. The new rule keeps the rating.
-   - Clearing writes `None` only into a file that holds a rating. (Written: `ratings_and_turns_queue_for_the_file`, `crates/catalog/src/queue.rs`.)
-   - The 0 key clears: `GridKey::Rate(0)` gives `Command::Rate { rating: None }`, and a viewer's 0 clears and moves on. Written: `the_zero_key_takes_the_rating_away` and `a_zero_in_the_viewer_takes_the_rating_away_and_shows_the_next_picture` (`crates/client/tests/controller_laws.rs`).
-   - The baseline's `file_ratings` `CHECK` rejects 0 (a catalog built from the edited baseline), and a rebuilt catalog holds no 0 rows.
-   - Pairing: a file whose only rating row was 0 is no longer kept by `has_children` (`crates/catalog/src/sql.rs:88`). **Changed.** Verified today: a file with no rating has `has_children` 0, and after an explicit 0 is synced (one `file_ratings` row) it is 1. The predicate is the one pairing uses (`crates/catalog/src/pair.rs:321`, `:449`). The full pass agrees: a displaced row (its identity taken by another file) counts as having data (`unpaired_with_data` 1) when its only rating row is 0, and 0 without one.
-
-**The reader keeps all four rating fields.** `Meta::read` reads four fields: XMP `xmp:Rating`, XMP `MicrosoftPhoto:Rating` (a percent), EXIF `Rating` (stars), and EXIF `RatingPercent` (a percent) (`crates/metadata/src/lib.rs:84-92`, and `XMP_WANTED` in `xmp.rs`). It then collapses them into one value by a fixed chain: XMP stars, then XMP percent, then EXIF stars, then EXIF percent. The first present one wins, and the other three are dropped. So a file whose fields disagree reads as one value, and the disagreement is lost. Our own writer makes this happen: it sets only `XMP:Rating` (`crates/exiftool/src/lib.rs:196-197`), and ExifTool does not sync the other fields. Measured with the installed ExifTool 13.60 on a copy of `crates/bench/benches/ir/sample.jpg`: a file with EXIF `RatingPercent` 75 still reads 75 after `-XMP:Rating=2`.
-
-Under this plan the reader returns all four readings, each as `Option<Stars>` (rule 3). One function derives the effective rating from them, and that function is the only place the precedence lives. The percent readings convert to stars with `percent()`, using the Windows scale of 1, 25, 50, 75 and 99 (`Microsoft.pm:249-252`). Tests cover each pair of fields that disagree, and the measured pairs above, each checked against Windows' result.
-
-**Precedence, measured on Windows 10 in a full matrix.** The matrix covers JPEG singles, triples and quads, and TIFF singles: 952 cases, with stars 0 to 7 and percents 0 to 101 (`scratchpad\rating_matrix_ext.ps1`). The first field the file holds decides: XMP percent, then EXIF percent, then XMP stars, then EXIF stars. A 0 there is unrated, and hides the fields below it but not the fields above. The reader matches all 952 cases. PNG and WebP showed no rating at all, so the matrix does not cover them.
-
-The pairs below are the first measurements, kept for reference. The order is XMP percent, then EXIF percent, then XMP stars, then EXIF stars. A 0 in a percent field is no value, and a 0 in XMP stars hides EXIF stars (rule 3). Each pair tested agrees with this order, and `System.Rating` shows the winner: XMP percent 75 over XMP stars 2 gives 75; EXIF percent 75 over XMP stars 2 gives 75; EXIF percent 75 over EXIF stars 2 gives 75; XMP stars 2 over EXIF stars 5 gives 25; XMP percent 75 over EXIF percent 25 gives 75; XMP percent 25 over EXIF stars 5 gives 25. Today's chain differs in three places: it checks XMP stars before XMP percent, XMP stars before EXIF percent, and EXIF stars before EXIF percent. So the app shows a different rating from Windows for the same file. The plan adopts Windows' order, and the one effective-rating function uses it. These results come from one Windows 10 machine and ExifTool 13.60, so the tests should pin them.
-
-**The write updates the rating fields the file already has (measured).** Our writer sets only `XMP:Rating`, and Windows then shows a stale percent. Measured on Windows 10 with ExifTool 13.60, on copies of `sample.jpg`:
-- A file with stale EXIF `Rating` 5, EXIF `RatingPercent` 75, XMP `xmp:Rating` 4 and `XMP-microsoft:RatingPercent` 75. Setting XMP to 2 and updating only the fields present (each to its value on its own scale) makes Windows show 25, and every present field reads 2 stars.
-- A file with only XMP stars 4 and EXIF `RatingPercent` 75. The same update makes Windows show 25. No field is added, and fields absent from the file stay absent.
-- Clearing the present fields (each set to 0) makes Windows show unrated.
-- A plain file with no rating fields, given XMP 2 alone, shows 25.
-- ExifTool's conditional `-if '$EXIF:RatingPercent' …` fails on an absent field and writes nothing.
-
-So the write sets each present rating field to its value on its own scale: stars for `Rating` and `xmp:Rating`, and the Windows percent (1, 25, 50, 75, 99 for 1 to 5 stars, 0 for unrated) for the two percent fields. Presence is read first, then one write sets only the present fields. The write adds no field and removes none, so other tools' data stays as the file had it. This does not write all four fields. It is preferred over deleting the stale fields, which also gives Windows the right value but removes data the file had.
-
-**Decided.**
-1. **Recording a disagreement: keep only the effective value (option a), as today.** A disagreement between fields is neither stored nor logged.
-2. **The write side:** update the rating fields the file already has, as above. Implemented in `write_rating` (`crates/exiftool/src/lib.rs`): it sets `XMP:Rating` and each rating field the file already holds. The rebuild-the-metadata fallback is gone. A test writes over a stale percent and reads the new rating back.
-
-**Behaviour changes, each a decision (reversible):**
-- A never-synced file that reads unrated no longer clears the user's rating (the sync test above).
-- A file whose only rating row was 0 no longer counts as a child for pairing (`sql.rs:88`).
-- An explicit 0 in a percent field no longer blocks the next field. Windows does the same (measured, rule 3). An XMP 0 still hides EXIF stars, as Windows does.
-
-## 2. Last-file preference uses a row id and a `-1` sentinel (`crates/app/src/prefs.rs:43`)
+## 1. Last-file preference uses a row id and a `-1` sentinel (`crates/app/src/prefs.rs:43`)
 
 **Status:** the saved-file part is implemented (uncommitted at this point). `Prefs.last_file` is an `Option<FileStamp>` (`crates/model/src/ids.rs`: identity, size and mtime), written as `null` or an object, and a number of either sign reads as none. The save takes the shown file's stamp from the catalog (`Catalog::stamp_of`). The start resolves the stamp with `Catalog::find_by_stamp` (identity, size, mtime, not missing), with the catalog open, in `crates/desktop/src/controller.rs`. `start_state` stays a function of the prefs and leaves `last_file` to that caller. Tests: `crates/catalog/src/lookup.rs` (`stamp_tests`) and `crates/app/src/prefs.rs`. The desktop code is compiled and not run here (it needs Qt). The Qt bridge work is still open, as the split note below says.
 
@@ -100,7 +31,7 @@ So the write sets each present rating field to its value on its own scale: stars
 - A displaced row (`files.volume` NULL) has no identity to remember, so it selects nothing.
 - Tests (revised by validation): identity, size and mtime round-trip; `null` reads as none; a legacy number of either sign reads as none, and is not resolved; a restore whose row's size or mtime differs selects nothing (a reused identity); a renamed file keeps its selection; a row marked `missing` selects nothing; a fresh catalog whose ids start again selects nothing for the saved file.
 
-## 3. CLI accepts buffer size megabytes that saturate (`crates/cli/src/args.rs:58`)
+## 2. CLI accepts buffer size megabytes that saturate (`crates/cli/src/args.rs:58`)
 
 *Changed at `9d167729`: the wrap is gone.* `buffer_mb` is now `Option<u64>` (`args.rs:45`), and the line is `opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1).saturating_mul(1 << 20))`. A value too large for a byte count no longer wraps to a small budget. It saturates to `u64::MAX`, which `Budget::new` (`crates/jobs/src/governor.rs:76`) keeps as an effectively unlimited budget. So the old claim that such a value serialises reads through `Pool::new` is no longer true. The value is still accepted silently, and the byte count is not checked.
 
@@ -110,7 +41,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 *Closed since the first list:* the thumbnail height entry is fixed. `ThumbHeight` (`crates/model/src/size.rs:82`) holds the 16 to 2048 range (`THUMB_HEIGHT`, `size.rs:12`), and the CLI parses it with a clap `value_parser` (`crates/cli/src/args.rs:131`, parser at `args.rs:190`). `pg_thumbs::run` and `ImageRequest::thumb` take it. The plan's `ThumbHeight::clamp(u32)` was not built. The UI clamp in `client/src/image.rs` is gone, and `ThumbHeight::for_row(RowHeight, Scale)` (`size.rs`) does that job instead.
 
-## 4. XMP packets with a UTF-16 or UTF-32 encoding are decoded as UTF-8 (`crates/metadata/src/xmp.rs:62`)
+## 3. XMP packets with a UTF-16 or UTF-32 encoding are decoded as UTF-8 (`crates/metadata/src/xmp.rs:62`)
 
 `String::from_utf8_lossy(packet)` decodes the XMP packet from `crates/metadata/src/lib.rs:76` as lossy UTF-8. There is no BOM or UTF-16/32 detection anywhere in `crates/metadata/src`, as checked at `9d167729`.
 
@@ -120,7 +51,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 *Closed since the first list:* the version counter entry (old item 7) is gone. No version role, `cast_signed()` or `>= 0` version gate remains in the desktop, the QML or `client/src/grid.rs`. The last commit that touched `ROLE_VERSION` is `d28e2f72`.
 
-## 5. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
+## 4. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
 
 *Related, consistent:* `docs/plans/BOUNDED_MEMORY_PLAN.md` decision D29 (exact `f64` ranks and counts, decimal file ids, line 131) and step 7.9 (`qt_int` and `to_i32` deleted, line 1510) match this item's fix. The plan's windowed model also covers its window-slide and stale-reference concerns, which are not listed here.
 
@@ -132,7 +63,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 - Counts and positions cross as `i64` in Rust and as `real` in QML. A JS number is exact to 2^53, about 9 × 10^15. The `int` declarations in the QML files become `real`. `qt_int`'s saturation is replaced by a checked conversion that fails loudly.
 - The Qt model exposes a window of rows around the viewport, kept under 2^31. Rust keeps absolute positions as `i64`. A flat model cannot reach billions of items, so the gallery needs the window.
-- Item 2's selection must address a window row with an absolute `i64` position, or the file's identity. Any Qt-side row handle inherits the 32-bit row limit. (The `QPersistentModelIndex` plan in item 2 is withdrawn.)
+- Item 1's selection must address a window row with an absolute `i64` position, or the file's identity. Any Qt-side row handle inherits the 32-bit row limit. (The `QPersistentModelIndex` plan in item 1 is withdrawn.)
 - *Probe P5 (property level):* QML doubles round-trip exactly up to 2^53 for integers.
 - *Probe P10 (rendered):* a marker inside a `Flickable`'s content item, moved by `-contentY` in the scene graph, lands on the wrong row from `contentY` 2^24 and collapses by 2^28, because of float32 spacing. A sibling marker whose y is computed in double is exact up to 2e11. So any `real` or `i64` position that reaches the scene graph must stay viewport-relative and sit outside the moving content item. The earlier P5 claim that a `Flickable` at 2e11 "positions its children correctly" was a property check, and is withdrawn.
 - *Window size (probe `window`, and `real` on the user's aspects):* the window (viewport ±1500 px) holds at most 4,140 items at 3840×2160 and 11,462 at 7680×4320 on the user's aspects (the synthetic aspects reach 4,333 and 11,977). Qt's 2^31 row limit is far above these. The 32-bit problem is in the total count, not in the window.

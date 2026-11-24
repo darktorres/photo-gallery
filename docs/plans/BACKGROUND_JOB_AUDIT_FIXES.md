@@ -633,8 +633,7 @@ need the golden tables.
 ## 11. Batch sizes and checkpoints
 
 **Status (2026-11-24).** Implemented, and every check below is run. The gap, the close behaviour and the long round are
-measured (see Cost and Gap in D8). Not measured: how many writes outside the three threads happen between rounds, which
-depends on use, and read latency while a large WAL is held. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
+measured, and the gaps are closed (see Cost, Gap and Bound in D8). D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
 (`catalog/src/schema.rs`); `Catalog::checkpoint_passive` (`catalog/src/core.rs`), which counts its calls
 (`passive_checkpoints`), run at the end of each lane's round (`library/src/lane.rs`), after the removal's deletes
 (`library/src/removals.rs`), and when the writeback drain ends (`writeback/src/lib.rs`). D7 is unchanged. Tests that pass:
@@ -721,8 +720,17 @@ library and writeback suites pass in full. The delete-commit latency was re-meas
     write that is not a round or a drain) adds one page per small commit: 4,120 bytes each, over 2,000 commits. The WAL
     grows by that much per write until the next round or drain checkpoints it, and the automatic threshold of 4 MB is about
     1,000 such writes. Closing the last connection removes the WAL with no checkpoint point reached (test
-    `the_last_connection_to_close_leaves_no_wal`). How many such
-    writes happen between rounds is not measured; it depends on the user.
+    `the_last_connection_to_close_leaves_no_wal`).
+  - Bound (implemented 2026-11-24). The session's saves are the frequent outside writer: one save follows each pause of a
+    second after a change. A save over the bound checkpoints the WAL (`Views::save_listing` calls
+    `Catalog::checkpoint_if_wal_over` with 4 MiB, `app/src/views.rs`), so the file stays near 4 MiB. Test
+    `session_saves_keep_the_wal_near_its_bound`: 3,000 saves leave the WAL at about 4 MiB, and at 12.7 MB with the bound
+    disabled (checked by a mutation). Catalog test: `a_wal_over_the_bound_is_checkpointed_and_one_under_it_is_not`. The
+    other app-side writes (saved views, inbox dismissals) are explicit user actions, one page each, with no bound of
+    their own.
+  - Read latency with a large WAL (measured 2026-11-24, 20,000 files, a 991 MB WAL from the fixture's per-row commits, an
+    extreme case): a count took 0.22 ms with the WAL held, 0.23 ms after a PASSIVE checkpoint, and 0.21 ms after a
+    TRUNCATE; a row lookup took 7.5, 7.9 and 5.7 µs. The WAL's size does not slow reads measurably.
 
 **Checks.**
 

@@ -11,6 +11,10 @@ use pg_query::from_json;
 use crate::catalogs::Catalogs;
 use crate::error::Result;
 
+/// The WAL size above which a session save checkpoints it (4 MiB, about 1,000 small commits). Below it a save costs one
+/// page of WAL and nothing else.
+pub(crate) const WAL_CHECKPOINT_OVER: u64 = 4 << 20;
+
 /// A filter query from its JSON (the command line's `--query=`). Text that doesn't read is an error, for the caller to report.
 pub fn query_from_json(json: &str) -> serde_json::Result<Query> {
     from_json(json)
@@ -37,9 +41,15 @@ impl Views {
         Ok(self.catalogs.with_catalog(pg_catalog::Catalog::session_listing)?.unwrap_or_default())
     }
 
-    /// Remember the listing for the next start.
+    /// Remember the listing for the next start. A session save is a write that no round or drain checkpoints for, so the
+    /// WAL is checkpointed here once it is over [`WAL_CHECKPOINT_OVER`] (section 11). The save stands either way: a
+    /// checkpoint that fails is logged, not reported as a failed save.
     pub fn save_listing(&self, listing: &Listing) -> Result<()> {
-        self.catalogs.with_catalog(|c| c.save_session_listing(listing))
+        self.catalogs.with_catalog(|c| c.save_session_listing(listing))?;
+        if let Err(e) = self.catalogs.with_catalog(|c| c.checkpoint_if_wal_over(WAL_CHECKPOINT_OVER)) {
+            pg_log::warn("session", &format!("the WAL wasn't checkpointed: {e:#}"));
+        }
+        Ok(())
     }
 
     /// The saved views, sorted by name.

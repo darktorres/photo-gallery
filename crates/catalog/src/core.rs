@@ -79,6 +79,23 @@ impl Catalog {
         self.passive.load(Ordering::SeqCst)
     }
 
+    /// The WAL file's size in bytes: `0` for an in-memory catalog, which has none.
+    pub fn wal_bytes(&self) -> Result<u64> {
+        let Some(path) = self.conn.path().filter(|p| !p.is_empty()) else { return Ok(0) };
+        Ok(std::fs::metadata(format!("{path}-wal")).map(|m| m.len()).unwrap_or(0))
+    }
+
+    /// A PASSIVE checkpoint when the WAL is over `bytes`; `true` when it ran. For a writer that is not one of the three
+    /// threads above and so has no round or drain to checkpoint at its end (the session's saves): its writes are bounded
+    /// by this, and the checkpoint is not a commit's.
+    pub fn checkpoint_if_wal_over(&self, bytes: u64) -> Result<bool> {
+        if self.wal_bytes()? <= bytes {
+            return Ok(false);
+        }
+        self.checkpoint_passive()?;
+        Ok(true)
+    }
+
     /// Prepare the catalog at `path` for this build, creating it when new. A file that is not this build's catalog is
     /// judged before anything is written to it: its schema (every object, and the keys its creation seeds) must be the
     /// one this build makes for its version. One that isn't (an earlier layout, another build's, or not a database at
@@ -910,6 +927,26 @@ mod tests {
         let (log, done): (i64, i64) =
             c.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| Ok((r.get(1)?, r.get(2)?))).unwrap();
         assert_eq!(done, log, "with the reader gone, every frame moves");
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A writer with no round or drain checkpoints its WAL only when it is over a bound (`checkpoint_if_wal_over`): under
+    /// it nothing runs, over it a PASSIVE checkpoint runs and moves the frames.
+    #[test]
+    fn a_wal_over_the_bound_is_checkpointed_and_one_under_it_is_not() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "wal-bound").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        assert_eq!(Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES).unwrap().wal_bytes().unwrap(), 0);
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        assert!(c.wal_bytes().unwrap() > 0, "the writes are in the WAL");
+        assert!(!c.checkpoint_if_wal_over(u64::MAX).unwrap(), "under the bound: nothing runs");
+        assert_eq!(c.passive_checkpoints(), 0);
+        assert!(c.checkpoint_if_wal_over(0).unwrap(), "over the bound: a checkpoint runs");
+        assert_eq!(c.passive_checkpoints(), 1);
         drop(c);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -297,15 +297,15 @@ fn folder_hide((catalog, root): (Catalog, RulePath)) -> (Catalog, u64) {
 }
 
 // The delete alone (`drive_removals`), after the hide: the setup hides the folder, so the measured function is the delete.
-fn for_hidden_removal() -> (Catalog, RulePath) {
+fn for_hidden_removal() -> Catalog {
     let (catalog, root) = for_removal();
     or_stop(catalog.hide_pages(&root), "the hide");
-    (catalog, root)
+    catalog
 }
 
 #[library_benchmark]
 #[bench::ten_thousand(setup = for_hidden_removal)]
-fn folder_delete((catalog, root): (Catalog, RulePath)) -> (Catalog, Driven) {
+fn folder_delete(catalog: Catalog) -> (Catalog, Driven) {
     let driven = or_stop(catalog.drive_removals(&mut |_| true), "the delete");
     (catalog, black_box(driven))
 }

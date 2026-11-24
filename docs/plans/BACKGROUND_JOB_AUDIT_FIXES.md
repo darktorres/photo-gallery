@@ -632,7 +632,9 @@ need the golden tables.
 
 ## 11. Batch sizes and checkpoints
 
-**Status (2026-11-24).** Implemented, and every check below is run. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
+**Status (2026-11-24).** Implemented, and every check below is run. The gap, the close behaviour and the long round are
+measured (see Cost and Gap in D8). Not measured: how many writes outside the three threads happen between rounds, which
+depends on use, and read latency while a large WAL is held. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
 (`catalog/src/schema.rs`); `Catalog::checkpoint_passive` (`catalog/src/core.rs`), which counts its calls
 (`passive_checkpoints`), run at the end of each lane's round (`library/src/lane.rs`), after the removal's deletes
 (`library/src/removals.rs`), and when the writeback drain ends (`writeback/src/lib.rs`). D7 is unchanged. Tests that pass:
@@ -711,10 +713,16 @@ library and writeback suites pass in full. The delete-commit latency was re-meas
     is not higher: 620–650 ms against 667–996 ms.
   - Not a bound. A write can still wait for a checkpoint: typically microseconds, rarely tens of milliseconds, and under
     heavy write load occasionally a few hundred. "Never blocks a writer" is not the claim.
-  - Cost: the WAL grows over the round that writes it. That is bounded by the round, not the library. Reads of a large
-    WAL are slower until it is checkpointed.
-  - Gap (predicted): writes that none of the three threads follows leave the WAL to grow until a later checkpoint point,
-    including the close of the last connection, where SQLite checkpoints on its own. The check below sizes it.
+  - Cost (measured 2026-11-24): a round's WAL is held until the round ends. A scan and import of 20,000 small JPEGs wrote
+    12.8 MB and 14.8 MB of WAL, about 1.4 KB a file, and the PASSIVE checkpoint at the round's end moved all of it in
+    0.125 s (on D:). Under the automatic setting that round would have crossed the 4 MB threshold about seven times, each
+    crossing stalling a commit. Reads of a large WAL are slower until it is checkpointed; that is not measured.
+  - Gap (measured 2026-11-24): a writer outside the three threads (for example the window's session saves, or any catalog
+    write that is not a round or a drain) adds one page per small commit: 4,120 bytes each, over 2,000 commits. The WAL
+    grows by that much per write until the next round or drain checkpoints it, and the automatic threshold of 4 MB is about
+    1,000 such writes. Closing the last connection removes the WAL with no checkpoint point reached (test
+    `the_last_connection_to_close_leaves_no_wal`). How many such
+    writes happen between rounds is not measured; it depends on the user.
 
 **Checks.**
 

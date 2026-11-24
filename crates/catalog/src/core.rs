@@ -914,6 +914,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The last connection to a catalog file to close leaves no WAL behind, even with no checkpoint point reached: SQLite
+    /// checkpoints the file and deletes the WAL when it closes. So a writer that never reaches a checkpoint point (its
+    /// round, its drain) leaves nothing after the process closes the catalog (section 11).
+    #[test]
+    fn the_last_connection_to_close_leaves_no_wal() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "close-leaves-no-wal").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let wal = dir.join("catalog.sqlite-wal");
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        let before = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+        assert!(before > 0, "the writes are in the WAL");
+        drop(c);
+        let after = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+        assert_eq!(after, 0, "closing the last connection removed the WAL ({before} bytes before)");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A catalog connection does not checkpoint on a commit (`SETTINGS`): the WAL grows until the thread that wrote it
     /// checkpoints at the end of its work.
     #[test]

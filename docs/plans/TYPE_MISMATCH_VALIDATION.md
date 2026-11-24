@@ -1,6 +1,6 @@
 # Type mismatch findings: open items
 
-Six findings from the type-mismatch review are still open. The findings were first written at `489f3d31`. Item 1 was adversarially validated at `0e6e1fd9`, and its corrections are applied. Item 2 was checked at HEAD (`fd5e727a`), and its design is below. Item 4 was re-validated at `b621641e`, and item 5 at `b621641e`. The Qt sentinel sweep is no longer in item 1; it is its own plan, `docs/plans/QT_SENTINEL_SWEEP.md`. Items 1, 2, 4 and 5 are rated low, except 4b, which is medium. Item 5 is not reached at the 1B-file target, and it must be fixed before Phase 7 of the bounded-memory plan ships. Items 1 and 5 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is open: its row-id defect is fixed, and its entry lists the defects that remain and their planned fixes. The Exif IFD pointer and Rating findings are complete and have been removed from this file.
+Six findings from the type-mismatch review are still open. The findings were first written at `489f3d31`. Item 1 was adversarially validated at `0e6e1fd9`, and its corrections are applied. Item 2 was checked at HEAD (`fd5e727a`), and its design is below. Item 4 was re-validated at `b621641e`, and item 6 at `b621641e`. The Qt sentinel sweep is no longer in item 1; it is its own plan, `docs/plans/QT_SENTINEL_SWEEP.md`. Items 1, 2, 4 and 6 are rated low, except 4b, which is medium. Item 6 is not reached at the 1B-file target, and it must be fixed before Phase 7 of the bounded-memory plan ships. Items 1 and 6 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is open: its row-id defect is fixed, and its entry lists the defects that remain and their planned fixes. The Exif IFD pointer and Rating findings are complete and have been removed from this file.
 
 ## 1. The saved last file is lost after a rating, and a catalog error reads as no file (`crates/desktop/src/shell.rs:95`)
 
@@ -57,7 +57,7 @@ Six findings from the type-mismatch review are still open. The findings were fir
 - a lookup that finds no row is a success for the notice's resolver, and only a failed lookup posts `LastFileNotKept`;
 - a failed start reports `LastFileNotKept`, and the notice's own checks pass: the sample, its golden line, the `ordinal`, the resolver table and the words (`crates/model/src/notice.rs`, `crates/wording`).
 
-**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 5); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508), which names a `save_last_file(Option)` that this item does not add.
+**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 6); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508), which names a `save_last_file(Option)` that this item does not add.
 
 **Not verified.** The NTFS behaviour is measured on synthetic files on the local NTFS volumes, not on the library. FAT32 and exFAT are measured, but the scanner refuses them as library folders, so the result matters only if that refusal is lifted (the volume-types trade-off above). Network identity is not measured: the share `Y:` is NTFS and was not written to. A notice raised at the flush is logged: `inbox.post` writes it to the log before anything else (`crates/app/src/inbox.rs:433-434`), and the log is an appended line (`crates/log/src/file.rs:60`). The viewer's and the grid's paths to the save were traced from the code and not run.
 
@@ -215,7 +215,32 @@ The 4-byte forms are checked first, so `FF FE 00 00` is not read as a UTF-16LE B
 
 *Closed since the first list:* the version counter entry (old item 7) is gone. No version role, `cast_signed()` or `>= 0` version gate remains in the desktop, the QML or `client/src/grid.rs`. The last commit that touched `ROLE_VERSION` is `d28e2f72`.
 
-## 5. Counts, positions and overflow at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
+## 5. Windows strings are converted to `String` with lossy replacement (`crates/platform/src/dir.rs:348`, `crates/platform/src/drive.rs:267`, `crates/platform/src/drive.rs:284`)
+
+**Current state, checked at `bde0476a`.** Three Windows calls return UTF-16 that is converted to a Rust `String` with `String::from_utf16_lossy`, which replaces each unpaired surrogate with U+FFFD:
+
+- `dir.rs:348`: the file system name (`NTFS`, `FAT32`, ...), returned by `file_system`. Its caller, `crates/scan/src/refusal.rs:61`, refuses folders on file systems it does not want. The file system name is ASCII in every case the code sees.
+- `drive.rs:284`: the volume GUID path (`\\?\Volume{...}\`), built in `volume_guid` and used to reopen the volume (`drive.rs:260`, `drive.rs:288`).
+- `drive.rs:267`: the drive's root text. It is compared with `X:\` to pick the drive's label, and falls back to the GUID path (`drive.rs:268-270`). The label is stored in `Drive.label` (`drive.rs:145-160`). Earlier this was described as a volume label; it is the root text.
+
+**Defect.** A lossy conversion changes a value without any signal. On the volumes the code sees, the values are ASCII, so the replacement is not expected to fire. That is not measured on unusual volumes. The defect is that the code would be wrong silently if it did fire.
+
+**Design.**
+
+1. `dir.rs:348`: convert strictly with `String::from_utf16`. An unpaired surrogate becomes an error, which `refusal.rs:61` already reports as an unreadable file-system fact.
+2. `drive.rs:284`: convert strictly. The GUID is ASCII by format, so an error means the volume is unreadable, not that its path was changed.
+3. `drive.rs:267`: compare the exact units instead of converting. A root is a drive-letter root when it is three units: an ASCII letter, `:` and `\`. The label is then the letter and `:`, as now. Any other root uses the GUID path. Nothing is converted, so nothing is lossy.
+4. No change to names and paths. `crates/model/src/name.rs` and `crates/platform/src/names.rs` already keep exact UTF-16 units and WTF-8.
+
+**Tests.**
+
+- `dir.rs`: the file system name with an unpaired surrogate is an error. The existing ASCII test (`dir.rs:889`) must still pass.
+- `drive.rs`: move the label choice into a pure function that takes the root units and the GUID path. It is tested with `D`, `:`, `\` giving `D:`; with a high surrogate in place of `D` giving the GUID path; and with a GUID-only root giving the GUID path.
+- `volume_guid`: an ASCII GUID round trip.
+
+**Status.** Open. Design only; not implemented.
+
+## 6. Counts, positions and overflow at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
 
 **Status.** Open, rated low. Classified exhaustively at `b621641e`: 182 QML `int` declarations, 200 bridge crossings and 179 non-test conversion sites. The rules and the list gate can land now. The window that removes the gate for list positions is Phase 7 of `docs/plans/BOUNDED_MEMORY_PLAN.md`.
 
@@ -317,27 +342,3 @@ The Qt model API (rowCount, index, begin/insert/remove/move) stays `int` and is 
 - Keep the rating at low, or raise it to medium.
 - File ids: `QT_SENTINEL_SWEEP.md` already decides decimal strings. Confirm that, and bring D29 into line with it.
 
-## 6. Windows strings are converted to `String` with lossy replacement (`crates/platform/src/dir.rs:348`, `crates/platform/src/drive.rs:267`, `crates/platform/src/drive.rs:284`)
-
-**Current state, checked at `bde0476a`.** Three Windows calls return UTF-16 that is converted to a Rust `String` with `String::from_utf16_lossy`, which replaces each unpaired surrogate with U+FFFD:
-
-- `dir.rs:348`: the file system name (`NTFS`, `FAT32`, ...), returned by `file_system`. Its caller, `crates/scan/src/refusal.rs:61`, refuses folders on file systems it does not want. The file system name is ASCII in every case the code sees.
-- `drive.rs:284`: the volume GUID path (`\\?\Volume{...}\`), built in `volume_guid` and used to reopen the volume (`drive.rs:260`, `drive.rs:288`).
-- `drive.rs:267`: the drive's root text. It is compared with `X:\` to pick the drive's label, and falls back to the GUID path (`drive.rs:268-270`). The label is stored in `Drive.label` (`drive.rs:145-160`). Earlier this was described as a volume label; it is the root text.
-
-**Defect.** A lossy conversion changes a value without any signal. On the volumes the code sees, the values are ASCII, so the replacement is not expected to fire. That is not measured on unusual volumes. The defect is that the code would be wrong silently if it did fire.
-
-**Design.**
-
-1. `dir.rs:348`: convert strictly with `String::from_utf16`. An unpaired surrogate becomes an error, which `refusal.rs:61` already reports as an unreadable file-system fact.
-2. `drive.rs:284`: convert strictly. The GUID is ASCII by format, so an error means the volume is unreadable, not that its path was changed.
-3. `drive.rs:267`: compare the exact units instead of converting. A root is a drive-letter root when it is three units: an ASCII letter, `:` and `\`. The label is then the letter and `:`, as now. Any other root uses the GUID path. Nothing is converted, so nothing is lossy.
-4. No change to names and paths. `crates/model/src/name.rs` and `crates/platform/src/names.rs` already keep exact UTF-16 units and WTF-8.
-
-**Tests.**
-
-- `dir.rs`: the file system name with an unpaired surrogate is an error. The existing ASCII test (`dir.rs:889`) must still pass.
-- `drive.rs`: move the label choice into a pure function that takes the root units and the GUID path. It is tested with `D`, `:`, `\` giving `D:`; with a high surrogate in place of `D` giving the GUID path; and with a GUID-only root giving the GUID path.
-- `volume_guid`: an ASCII GUID round trip.
-
-**Status.** Open. Design only; not implemented.

@@ -97,12 +97,10 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
-    /// Rate the item (0 takes its rating away), in the catalog and, through the writer, in its file: the controller's
+    /// Rate the item (`None` takes its rating away), in the catalog and, through the writer, in its file: the controller's
     /// `Rate` command. The write is made on the writes' thread, and the item shows the rating once it is made.
-    pub(crate) fn set_rating(self: Pin<&mut Self>, at: usize, stars: Rating) {
+    pub(crate) fn set_rating(self: Pin<&mut Self>, at: usize, rating: Option<Rating>) {
         let Some(id) = self.grid.id_at(at) else { return };
-        // Zero stars is no rating: the catalog keeps no row for it.
-        let rating = Some(stars).filter(|r| r.get() > 0);
         let model = self.qt_thread();
         worker::run(move || {
             if edit_outcome(EditOp::Rate, crate::app::get().edit().rate(id, rating)).is_some() {

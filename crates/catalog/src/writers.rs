@@ -563,9 +563,8 @@ impl<'tx> AnalysisWriter<'tx> {
             return Ok(());
         }
         match in_file {
-            // The user's ratings are 1 to 5: a file that holds none (0) clears the catalog's.
-            Some(v) if v.get() >= 1 => self.set_rating.execute(params![file_id.get(), v.get()])?,
-            _ => self.delete_rating.execute([file_id.get()])?,
+            Some(v) => self.set_rating.execute(params![file_id.get(), v.get()])?,
+            None => self.delete_rating.execute([file_id.get()])?,
         };
         match in_file {
             Some(v) => self.set_file_rating.execute(params![file_id.get(), v.get()])?,
@@ -2280,8 +2279,7 @@ mod tests {
     }
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
-        let stars = Rating::new(n).filter(|r| r.get() > 0);
-        c.set_rating(FileId::new(id), stars, false).unwrap();
+        c.set_rating(FileId::new(id), Rating::new(n), false).unwrap();
     }
 
     /// The import's sync of the file's rating, in a transaction of its own.
@@ -2317,6 +2315,28 @@ mod tests {
     }
 
     under_both_rules!(three_way_rating_sync, three_way_rating_sync_windows, three_way_rating_sync_posix);
+
+    // Unrated is no row: a file that holds no rating (a 0 in it, or none at all) leaves the user's rating alone on its
+    // first sync. The store refuses a 0 row.
+    fn a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync(rules: PathRules) {
+        let (mut c, id) = one_file(rules);
+        set_rating(&c, id, 3);
+        sync_file(&mut c, id, None);
+        assert_eq!(raw::rating(&c, id), Some(3));
+    }
+
+    under_both_rules!(
+        a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync,
+        a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync_windows,
+        a_file_with_no_rating_keeps_the_user_rating_on_its_first_sync_posix
+    );
+
+    #[test]
+    fn the_store_refuses_a_zero_rating_row() {
+        let (c, id) = one_file(pg_model::rules::PathRules::Windows);
+        assert!(c.conn.execute("INSERT INTO file_ratings(file_id, value) VALUES (?1, 0)", [id]).is_err());
+        assert!(c.conn.execute("INSERT INTO file_ratings(file_id, value) VALUES (?1, 5)", [id]).is_ok());
+    }
 
     /// A file rated before its first import: the rating is queued for the file (its format isn't known yet), and the
     /// import, which finds no rating in the file, keeps the catalog's while the write is queued.

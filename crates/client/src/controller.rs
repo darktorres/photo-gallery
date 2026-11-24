@@ -124,15 +124,15 @@ pub enum Event {
     Rate {
         /// The item rated.
         item: usize,
-        /// Zero stars takes the rating away.
-        rating: Rating,
+        /// `None` takes the rating away (unrated).
+        rating: Option<Rating>,
     },
     /// A rating made in the viewer: the item is rated, and the viewer moves on to the next one.
     RateInViewer {
         /// The item rated.
         item: usize,
-        /// The rating set.
-        rating: Rating,
+        /// The rating set, or `None` to take it away.
+        rating: Option<Rating>,
     },
     /// A quarter turn of an item, asked for by the user.
     Turn {
@@ -205,8 +205,8 @@ pub enum Command {
     Rate {
         /// The item to rate.
         item: usize,
-        /// The rating to set.
-        rating: Rating,
+        /// The rating to set, or `None` to take it away.
+        rating: Option<Rating>,
     },
     /// Turn an item by quarter turns (model).
     Turn {
@@ -470,8 +470,8 @@ impl Controller {
             input::Command::Act(grid) => {
                 let item = self.input.current()?;
                 match grid {
-                    // The key map rates 0 to 5 only.
-                    GridKey::Rate(stars) => Command::Rate { item, rating: Rating::new(stars)? },
+                    // The key map rates 0 to 5 only, and 0 takes the rating away (`Rating::new` gives `None`).
+                    GridKey::Rate(stars) => Command::Rate { item, rating: Rating::new(stars) },
                     GridKey::Turn { forward } => Command::Turn { item, turns: Turns::of(if forward { 1 } else { -1 }) },
                     _ => Command::ToggleBorderMark(item),
                 }

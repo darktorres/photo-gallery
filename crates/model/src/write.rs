@@ -92,8 +92,8 @@ impl TryFrom<String> for WriteKind {
 /// back through [`Write::from_stored`], so a value out of its kind's range is refused where it is read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Write {
-    /// A rating, written into the file.
-    Rating(Rating),
+    /// A rating, written into the file: `None` is unrated, which the wire carries as 0.
+    Rating(Option<Rating>),
     /// A rotation, as quarter turns clockwise.
     Rotation(Turns),
 }
@@ -107,10 +107,10 @@ impl Write {
         }
     }
 
-    /// The `value` column: the stars 0 to 5, or the turns 0 to 3.
+    /// The `value` column: the stars 0 to 5 (0 is unrated), or the turns 0 to 3.
     pub fn stored(self) -> i64 {
         match self {
-            Write::Rating(rating) => i64::from(rating.get()),
+            Write::Rating(rating) => i64::from(rating.map_or(0, Rating::get)),
             Write::Rotation(turns) => i64::from(turns.get()),
         }
     }
@@ -120,7 +120,10 @@ impl Write {
     pub fn from_stored(kind: WriteKind, value: i64) -> Option<Write> {
         let small = u8::try_from(value).ok()?;
         match kind {
-            WriteKind::Rating => Rating::new(small).map(Write::Rating),
+            WriteKind::Rating => match small {
+                0 => Some(Write::Rating(None)),
+                _ => Rating::new(small).map(|stars| Write::Rating(Some(stars))),
+            },
             WriteKind::Rotation if small <= 3 => Some(Write::Rotation(Turns::new(small))),
             WriteKind::Rotation => None,
         }
@@ -154,12 +157,13 @@ mod tests {
     #[test]
     fn a_write_reads_back_from_its_columns_and_a_value_out_of_range_does_not() {
         for write in [
-            Write::Rating(Rating::new(0).unwrap()),
-            Write::Rating(Rating::new(5).unwrap()),
+            Write::Rating(None),
+            Write::Rating(Rating::new(5)),
             Write::Rotation(Turns::new(3)),
         ] {
             assert_eq!(Write::from_stored(write.kind(), write.stored()), Some(write));
         }
+        assert_eq!(Write::Rating(None).stored(), 0, "unrated is written as 0");
         assert_eq!(Write::from_stored(WriteKind::Rating, 6), None);
         assert_eq!(Write::from_stored(WriteKind::Rotation, 4), None);
         assert_eq!(Write::from_stored(WriteKind::Rotation, -1), None);

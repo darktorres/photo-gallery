@@ -70,7 +70,7 @@ pub(crate) fn library(rules: PathRules) -> crate::core::Catalog {
             ..raw::AnalysisRow::image(id, size, mtime)
         };
         raw::insert_analysis(&c, &row);
-        c.set_rating(FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
+        c.set_rating(FileId::new(id), Rating::new(rating), false).unwrap();
     }
     c
 }

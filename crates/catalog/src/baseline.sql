@@ -84,7 +84,7 @@ CREATE TABLE ratings(
 
 CREATE TABLE file_ratings(
     file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
-    value   INTEGER NOT NULL CHECK (value BETWEEN 0 AND 5)
+    value   INTEGER NOT NULL CHECK (value BETWEEN 1 AND 5)  -- unrated is no row
 );
 
 CREATE TABLE views(

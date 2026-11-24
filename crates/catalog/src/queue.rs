@@ -57,14 +57,11 @@ impl Catalog {
             .optional()?;
         let can_hold = target
             .is_some_and(|(kind, format, failed)| !failed && pg_model::format::rating_in_file_possible(kind, format));
+        // The file's rating as it holds it (no `file_ratings` row is unrated), and the rating it should hold. Unrated is
+        // written as 0, the job's wire value.
         let in_file: Option<u8> =
             tx.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [file_id], |r| r.get(0)).optional()?;
-        // What the file should hold: the rating, or none (0) if it holds one and the rating is cleared.
-        let wanted = match rating {
-            Some(rating) => Some(rating.get()),
-            None if in_file.is_some_and(|v| v > 0) => Some(0),
-            None => in_file,
-        };
+        let wanted: Option<u8> = rating.map(Rating::get);
         if write_back && can_hold && wanted != in_file {
             tx.execute(
                 concat!(
@@ -74,7 +71,7 @@ impl Catalog {
                  ON CONFLICT(file_id, kind) DO UPDATE SET value = excluded.value, queued = excluded.queued,
                     attempts = 0, error = NULL"
                 ),
-                params![file_id, wanted],
+                params![file_id, wanted.unwrap_or(0)],
             )?;
         } else {
             // Back to what the file holds (or not written back): nothing left to write. A write already being
@@ -260,7 +257,7 @@ impl Catalog {
         match effect {
             WriteEffect::FileRating { rewrite, rating } => {
                 file_rewritten(&tx, job.file_id, rewrite)?;
-                set_file_rating(&tx, job.file_id, Some(rating))?;
+                set_file_rating(&tx, job.file_id, rating)?;
             }
             WriteEffect::TurnedBack { rewrite, turns } => {
                 file_rewritten(&tx, job.file_id, rewrite)?;
@@ -473,12 +470,12 @@ mod tests {
         c.queue_rotation(FileId::new(2), Turns::new(1)).unwrap();
         // Both are new: nothing is ready until they settle (a settle time of 0 takes them now).
         let first = c.next_write(0).unwrap().unwrap();
-        assert_eq!((first.file_id, first.write), (FileId::new(1), Write::Rating(Rating::new(3).unwrap())));
+        assert_eq!((first.file_id, first.write), (FileId::new(1), Write::Rating(Rating::new(3))));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
         let rewrite =
             Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
-        c.write_done(&first, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
+        c.write_done(&first, WriteEffect::FileRating { rewrite, rating: Rating::new(3) }).unwrap();
         assert_eq!(raw::queued(&c, 1, "rating"), None);
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
@@ -508,7 +505,7 @@ mod tests {
         let after = (11, 101);
         let rewrite =
             Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
-        c.write_done(&job, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
+        c.write_done(&job, WriteEffect::FileRating { rewrite, rating: Rating::new(3) }).unwrap();
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
         let (size, file_hash): (i64, Option<Vec<u8>>) = c
             .conn
@@ -624,17 +621,17 @@ mod tests {
         assert_eq!((job.file_id, job.kind()), (FileId::new(2), WriteKind::Rating));
         let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
         let (three, five) = (Rating::new(3).unwrap(), Rating::new(5).unwrap());
-        c.record_write_temp(&job, &temp, Write::Rating(three)).unwrap();
+        c.record_write_temp(&job, &temp, Write::Rating(Some(three))).unwrap();
         c.set_rating(FileId::new(2), Some(five), true).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         assert_eq!(
             (job.file_id, job.write, job.temp.as_ref().map(|t| t.1)),
-            (FileId::new(2), Write::Rating(five), Some(Write::Rating(three)))
+            (FileId::new(2), Write::Rating(Some(five)), Some(Write::Rating(Some(three))))
         );
         let rewrite = Rewrite { before: None, after: (11, 9), metadata_only: None };
         c.write_done(
-            &Job { write: Write::Rating(three), ..job.clone() },
-            WriteEffect::FileRating { rewrite, rating: three },
+            &Job { write: Write::Rating(Some(three)), ..job.clone() },
+            WriteEffect::FileRating { rewrite, rating: Some(three) },
         )
         .unwrap();
         assert_eq!(raw::queued(&c, 2, "rating"), Some(5));
@@ -651,7 +648,7 @@ mod tests {
         c.set_rating(FileId::new(2), Rating::new(3), true).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
-        let three = Write::Rating(Rating::new(3).unwrap());
+        let three = Write::Rating(Rating::new(3));
         c.record_write_temp(&job, &temp, three).unwrap();
         let stuck = |c: &Catalog| {
             for _ in 0..MAX_ATTEMPTS {

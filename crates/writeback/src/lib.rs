@@ -572,9 +572,10 @@ impl Inner {
         let (data, pixels_changed) = match job.write {
             Write::Rating(rating) => {
                 let tool = ExifTool::running(exiftool, self.exiftool.as_os_str())?;
-                tool.write_rating(&path, &temp, rating.get())?;
+                // Unrated is written as 0 stars, and reads back as no rating.
+                tool.write_rating(&path, &temp, rating.map_or(0, |stars| stars.get()))?;
                 let written = std::fs::read(&temp).map_err(|e| Error::io(format!("reading {shown_temp}"), e))?;
-                if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
+                if Meta::read(&written, format, &mut MetaScratch::default()).rating != rating {
                     let _ = std::fs::remove_file(&temp);
                     return Err(Error::invalid(format!("{shown}: the rating didn't read back after writing it")));
                 }

@@ -45,12 +45,12 @@ pub struct Rewrite {
 /// (`done`), so the catalog and the queue never disagree. The effect's value is the job's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteEffect {
-    /// The rating is in the file, which was rewritten to hold it (0 stars: it holds none).
+    /// The rating is in the file, which was rewritten to hold it (`None`: it holds none).
     FileRating {
         /// The rewrite that holds the rating.
         rewrite: Rewrite,
-        /// The rating the file now holds.
-        rating: Rating,
+        /// The rating the file now holds, or `None` for unrated.
+        rating: Option<Rating>,
     },
     /// The turns are in the file, which was rewritten to show them: the analysis is turned back to match.
     TurnedBack {

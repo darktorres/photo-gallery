@@ -38,8 +38,8 @@ use crate::xmp::{Packet, XMP_WANTED, stars_of_percent, xmp_percent_stars, xmp_pr
 pub struct Meta {
     /// EXIF orientation 1–8; 1 when absent or unreadable.
     pub orientation: Orientation,
-    /// The file's own rating in stars, as Windows shows it: 0–5, where 0 is an explicit unrated, or `None` when the file
-    /// holds no rating. The fields in Windows' order are XMP `MicrosoftPhoto:Rating` and EXIF `RatingPercent` (percents),
+    /// The file's own rating in stars, as Windows shows it: 1–5, or `None` when the file holds no rating or says it is
+    /// unrated (0). The fields in Windows' order are XMP `MicrosoftPhoto:Rating` and EXIF `RatingPercent` (percents),
     /// then XMP `xmp:Rating` and EXIF `Rating` (stars). The first one the file holds decides, and the rest are ignored.
     /// Stars above 5 show 5, and a percent above 99 shows 99. XMP's -1 ("rejected") reads as no rating.
     pub rating: Option<Rating>,
@@ -540,16 +540,16 @@ mod tests {
         let read = |entries: &[TestEntry]| rating(&tiff_block(true, entries, &[]), Format::Tiff);
         // XMP stars 0 does not hide the XMP percent above it.
         assert_eq!(read(&[xmp(Some("0"), Some("75"))]), Some(4));
-        // XMP stars 0 hides the EXIF stars below it.
-        assert_eq!(read(&[xmp(Some("0"), None), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(5))]), Some(0));
+        // XMP stars 0 hides the EXIF stars below it: unrated, which is no rating.
+        assert_eq!(read(&[xmp(Some("0"), None), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(5))]), None);
         // XMP percent 0 hides the EXIF percent below it.
-        assert_eq!(read(&[xmp(None, Some("0")), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), Some(0));
+        assert_eq!(read(&[xmp(None, Some("0")), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), None);
         // EXIF percent outranks XMP stars: 25 is 2 stars, whatever the 4 stars say.
         assert_eq!(read(&[xmp(Some("4"), None), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), Some(2));
         // EXIF percent 0 hides the EXIF stars below it.
         assert_eq!(
             read(&[(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2))]),
-            Some(0)
+            None
         );
     }
 

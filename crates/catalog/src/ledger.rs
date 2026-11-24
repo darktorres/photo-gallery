@@ -853,14 +853,14 @@ mod tests {
         // A metadata-only write-back: the analysis follows the file, and so does its row; `--retry` failing the same
         // bytes again is the same failure.
         let rating = pg_model::rating::Rating::new(3).unwrap();
-        let write = pg_model::write::Write::Rating(rating);
+        let write = pg_model::write::Write::Rating(Some(rating));
         let job = queue::Job { file_id: FileId::new(1), write, temp: None, attempts: 0 };
         let rewrite = queue::Rewrite {
             before: Some((10, 100)),
             after: (12, 102),
             metadata_only: Some(pg_model::analysis::FileHash([0; 32])),
         };
-        c.write_done(&job, queue::WriteEffect::FileRating { rewrite, rating }).unwrap();
+        c.write_done(&job, queue::WriteEffect::FileRating { rewrite, rating: Some(rating) }).unwrap();
         let moved = raw::rows_of(&c, "SELECT size, mtime FROM file_failures WHERE pass = 'import'", [], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
         });

@@ -325,8 +325,8 @@ fn a_pending_query_and_session_save_make_one_save_at_the_close() {
 fn a_rating_in_the_viewer_rates_and_then_shows_the_next_picture() {
     let mut c = started(listing(""));
     let rating = pg_model::rating::Rating::new(4).expect("four stars is a rating");
-    let out = c.update(1, Event::RateInViewer { item: 2, rating });
-    assert_eq!(out.first(), Some(&Command::Rate { item: 2, rating }), "{out:?}");
+    let out = c.update(1, Event::RateInViewer { item: 2, rating: Some(rating) });
+    assert_eq!(out.first(), Some(&Command::Rate { item: 2, rating: Some(rating) }), "{out:?}");
     assert!(out.contains(&Command::ShowViewer(3)), "{out:?}");
 }
 
@@ -335,8 +335,8 @@ fn a_rating_in_the_viewer_rates_and_then_shows_the_next_picture() {
 fn a_rating_of_the_last_picture_in_the_viewer_shows_no_other() {
     let mut c = started(listing(""));
     let rating = pg_model::rating::Rating::new(5).expect("five stars is a rating");
-    let out = c.update(1, Event::RateInViewer { item: 9, rating });
-    assert!(out.contains(&Command::Rate { item: 9, rating }), "{out:?}");
+    let out = c.update(1, Event::RateInViewer { item: 9, rating: Some(rating) });
+    assert!(out.contains(&Command::Rate { item: 9, rating: Some(rating) }), "{out:?}");
     assert!(!out.iter().any(|c| matches!(c, Command::ShowViewer(_))), "{out:?}");
 }
 

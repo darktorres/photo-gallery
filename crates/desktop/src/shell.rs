@@ -253,9 +253,9 @@ impl qobject::Shell {
 
     /// `rating` is 0 to 5 stars (0 takes the rating away); out of that range, nothing is rated.
     pub(crate) fn rate(self: Pin<&mut Self>, item: i32, rating: i32) {
-        let rating = u8::try_from(rating).ok().and_then(Rating::new);
-        if let (Some(item), Some(rating)) = (crate::rows::row_of(item), rating) {
-            self.dispatch(Event::Rate { item, rating });
+        let Some(stars) = u8::try_from(rating).ok().filter(|&n| n <= Rating::MAX) else { return };
+        if let Some(item) = crate::rows::row_of(item) {
+            self.dispatch(Event::Rate { item, rating: Rating::new(stars) });
         }
     }
 
@@ -275,9 +275,9 @@ impl qobject::Shell {
 
     /// A rating made in the viewer: the item is rated, and the viewer moves on to the next picture.
     pub(crate) fn rate_in_viewer(self: Pin<&mut Self>, item: i32, rating: i32) {
-        let rating = u8::try_from(rating).ok().and_then(Rating::new);
-        if let (Some(item), Some(rating)) = (crate::rows::row_of(item), rating) {
-            self.dispatch(Event::RateInViewer { item, rating });
+        let Some(stars) = u8::try_from(rating).ok().filter(|&n| n <= Rating::MAX) else { return };
+        if let Some(item) = crate::rows::row_of(item) {
+            self.dispatch(Event::RateInViewer { item, rating: Rating::new(stars) });
         }
     }
 

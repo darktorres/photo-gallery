@@ -340,7 +340,10 @@ impl Inner {
         let mut dropped = Dropped::default();
         let drained = self.drain_queue(waker, catalog, exiftool, &mut dropped);
         self.tell_dropped(&mut dropped);
-        drained
+        drained?;
+        // The drain's writes are in the WAL: this thread moves them into the file at the end of its work (PASSIVE), so
+        // no writer's commit pays for the checkpoint. After a failed drain the next one does it.
+        Ok(catalog.checkpoint_passive()?)
     }
 
     /// [`Inner::drain`]'s loop, counting the writes it drops into `dropped`.

@@ -119,8 +119,10 @@ pub(crate) const BUSY_TIMEOUT_MS: u64 = 5000;
 /// background job's writer, a scan) waits up to this long for it, instead of failing at once with "database is locked".
 /// `cache_size` (8 MB) is the writers' and the thumbs' cache: the writes touch a batch's rows and their index pages, and
 /// keep no more. The grid reader raises its own (`Catalog::set_cache_kib`), since its reads touch most of the catalog.
+/// `wal_autocheckpoint = 0`: a commit never runs a checkpoint, so no writer's commit pays for one. The thread that wrote
+/// the WAL runs a PASSIVE checkpoint at the end of its work (`Catalog::checkpoint_passive`).
 pub(crate) const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-     PRAGMA cache_size = -8192; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
+     PRAGMA cache_size = -8192; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000; PRAGMA wal_autocheckpoint = 0;";
 
 /// The version this build's catalogs are at: the baseline, then each migration.
 pub(crate) fn current_version() -> Result<i64> {

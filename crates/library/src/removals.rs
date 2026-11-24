@@ -32,6 +32,8 @@ pub fn finish(
         }
         progress(ids.len())
     })?;
+    // The deletes are in the WAL: this job moves them into the file at the end of its work (PASSIVE).
+    catalog.checkpoint_passive()?;
     catalog.shrink()?;
     thumbs.sweep_orphans(catalog_path)?;
     // The forgotten thumbnails' pages go back to the file system too (the cache keeps a little free space, as its own

@@ -61,6 +61,15 @@ impl Catalog {
         Ok(())
     }
 
+    /// Move the WAL's finished pages into the file, without waiting for readers (PASSIVE). The thread that wrote the WAL
+    /// calls this at the end of its work (a lane's round, a removal's deletes, the writeback's drain), so no writer's commit
+    /// pays for the checkpoint (`SETTINGS` turns the automatic one off). A reader in the way is not an error: the pages it
+    /// holds are moved by a later checkpoint.
+    pub fn checkpoint_passive(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)")?;
+        Ok(())
+    }
+
     /// Prepare the catalog at `path` for this build, creating it when new. A file that is not this build's catalog is
     /// judged before anything is written to it: its schema (every object, and the keys its creation seeds) must be the
     /// one this build makes for its version. One that isn't (an earlier layout, another build's, or not a database at
@@ -866,6 +875,43 @@ mod tests {
     /// The cache size of a connection, in KiB (`PRAGMA cache_size` as the catalog sets it: negative).
     fn cache_kib(conn: &rusqlite::Connection) -> i64 {
         -conn.query_row("PRAGMA cache_size", [], |r| r.get::<_, i64>(0)).unwrap()
+    }
+
+    /// A catalog connection does not checkpoint on a commit (`SETTINGS`): the WAL grows until the thread that wrote it
+    /// checkpoints at the end of its work.
+    #[test]
+    fn a_catalog_connection_does_not_checkpoint_on_a_commit() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "no-autocheckpoint").unwrap();
+        let c = Catalog::prepare(&dir.join("catalog.sqlite"), versions(), pg_platform::native::PATH_RULES).unwrap();
+        let auto: i64 = c.conn.query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0)).unwrap();
+        assert_eq!(auto, 0);
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A PASSIVE checkpoint moves the frames no reader holds, and a reader in the way is not an error.
+    #[test]
+    fn a_passive_checkpoint_moves_the_wal_and_a_reader_in_the_way_is_no_error() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "passive-checkpoint").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        let reader = rusqlite::Connection::open(&path).unwrap();
+        reader.execute_batch("BEGIN; SELECT count(*) FROM meta").unwrap();
+        c.checkpoint_passive().unwrap();
+        reader.execute_batch("COMMIT").unwrap();
+        drop(reader);
+        c.checkpoint_passive().unwrap();
+        // Still in the WAL until the next write resets it, so a further PASSIVE checkpoint reports them all as done.
+        let (busy, log, done): (i64, i64, i64) =
+            c.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(busy, 0);
+        assert!(log > 0, "the writes are in the WAL");
+        assert_eq!(done, log, "the checkpoint moved every frame");
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A file catalog's reader is a connection of its own: read-only, its cache bounded, and it sees what was committed

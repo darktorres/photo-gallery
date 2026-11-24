@@ -632,6 +632,13 @@ need the golden tables.
 
 ## 11. Batch sizes and checkpoints
 
+**Status (2026-11-24).** Implemented, not committed. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
+(`catalog/src/schema.rs`); `Catalog::checkpoint_passive` (`catalog/src/core.rs`), run at the end of each lane's round
+(`library/src/lane.rs`), after the removal's deletes (`library/src/removals.rs`), and when the writeback drain ends
+(`writeback/src/lib.rs`). D7 is unchanged. The catalog tests `a_catalog_connection_does_not_checkpoint_on_a_commit` and
+`a_passive_checkpoint_moves_the_wal_and_a_reader_in_the_way_is_no_error` pass, as do the catalog, library and writeback
+suites. The delete-commit latency check was re-measured on the built code (below), on E:.
+
 **Verified.**
 
 - Two constants are named `WRITE_BATCH`, with different purposes.
@@ -698,7 +705,8 @@ need the golden tables.
   - A PASSIVE checkpoint, run by the thread that wrote the WAL, at the end of its work: each lane at the end of its
     round, the removal job after its deletes, and the writeback when its queue drains.
   - Effect (measured): the writer's commit no longer pays for the checkpoint. The slowest commit of the delete falls
-    from 219 ms to 25 ms. The total work is unchanged.
+    from 236–269 ms to 53–55 ms (re-measured 2026-11-24 on the built code, E:, 30,000 files; see the checks). The total work
+    is not higher: 620–650 ms against 667–996 ms.
   - Not a bound. A write can still wait for a checkpoint: typically microseconds, rarely tens of milliseconds, and under
     heavy write load occasionally a few hundred. "Never blocks a writer" is not the claim.
   - Cost: the WAL grows over the round that writes it. That is bounded by the round, not the library. Reads of a large
@@ -708,8 +716,13 @@ need the golden tables.
 
 **Checks (predicted).**
 
-- Rebuild the delete probe on the built code (the temporary probe was removed). With `wal_autocheckpoint = 0` and the
-  PASSIVE checkpoint, the median slowest commit should stay near 25 ms, against 219 ms with the automatic checkpoint.
+- Measured 2026-11-24 on the built code, on E:, with a file-backed catalog and a temporary probe (since removed). Each
+  run clears the WAL, then removes the folder; the batch intervals are read from the removal's callback. At 30,000 files,
+  where the automatic checkpoint fires during the delete: the automatic setting's slowest batch was 236 and 269 ms, and
+  the delete 667–996 ms in all. With PASSIVE, the slowest batch was 53 and 55 ms, the delete 355–384 ms, and the checkpoint
+  after it 267–269 ms (620–650 ms in all). So the stall leaves the writer's commit, and the total is not higher. The
+  slowest batch is about 54 ms, not the 25 ms predicted. At 10,000 files the WAL does not reach the threshold, and neither
+  mode stalls (slowest batch 36–67 ms in both). The stall is therefore specific to a delete that crosses the threshold.
 - A PASSIVE checkpoint while a reader holds a snapshot returns with busy above zero and no error, and the round ends
   `Done`.
 - After writes that no round or drain follows, the next round's PASSIVE checkpoint reports those frames as checkpointed

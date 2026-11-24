@@ -111,9 +111,14 @@ impl Inner {
                 ],
                 &mut cx,
                 |cx| cx.inner.ctl.stop_requested(),
-            )?
+            )
         };
+        // The round's writes are in the WAL: this thread moves them into the file at the end of its work, so no writer's
+        // commit pays for the checkpoint. A round that failed is checkpointed too.
+        let checked = catalog.checkpoint_passive();
         *conn = Some(catalog);
+        let step = step?;
+        checked?;
         Ok(step)
     }
 }

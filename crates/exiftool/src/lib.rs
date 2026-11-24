@@ -636,6 +636,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // A rating write changes only the rating fields: every other tag the file holds (EXIF, XMP, IPTC) is as it was,
+    // and so are the file-system tags' values, but for the file's own name and dates. Needs ExifTool; skipped without it.
+    #[test]
+    fn a_rating_write_keeps_every_other_tag() {
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::run_folder("scratch_exiftool", "keeps").unwrap();
+        let path = dir.join("in.jpg");
+        let source = pg_codec::fixtures::jpeg_rgb(2, 2, &[0; 12], 90, pg_codec::encode::Chroma::Half).unwrap();
+        std::fs::write(&path, &source).unwrap();
+        // Metadata of several kinds, with a stale percent for the write to replace.
+        let tags = [
+            "-EXIF:Make=TestMake",
+            "-EXIF:DateTimeOriginal=2023:07:15 18:30:05",
+            "-EXIF:Orientation=6",
+            "-EXIF:RatingPercent=75",
+            "-XMP:Rating=4",
+            "-XMP-dc:Subject=alpha",
+            "-XMP-photoshop:Headline=head",
+            "-IPTC:Keywords=kw1",
+            "-XMP-microsoft:RatingPercent=75",
+            "-overwrite_original",
+        ];
+        let mut args: Vec<&OsStr> = tags.iter().map(|t| OsStr::new(*t)).collect();
+        args.push(path.as_os_str());
+        tool.exec(&args).unwrap();
+
+        // The tags other than the rating's and the file's own (name, dates, size, path) that a write could change.
+        let kept = |tool: &mut ExifTool, file: &Path| -> Vec<String> {
+            let (json, _) = tool.exec(&[OsStr::new("-j"), OsStr::new("-G1"), OsStr::new("-a"), OsStr::new("-u"), file.as_os_str()]).unwrap();
+            json.lines()
+                .filter(|line| !line.contains("Rating") && !line.contains("\"System:") && !line.contains("SourceFile"))
+                .map(str::to_owned)
+                .collect()
+        };
+        let before = kept(&mut tool, &path);
+        assert!(before.iter().any(|l| l.contains("TestMake")), "the fixture has its metadata: {before:?}");
+
+        let out = dir.join("out.jpg");
+        tool.write_rating(&path, &out, 2).unwrap();
+        assert_eq!(kept(&mut tool, &out), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // A name whose last byte is whitespace or a CR can't be written by either route: the argument file trims it, and
     // the argument route passes the exact bytes, but ExifTool then takes the type from the extension (`png `), which it
     // doesn't write. The write fails with an error, no copy is left beside the original, and the original is unchanged.

@@ -1,50 +1,8 @@
 # Type mismatch findings: open items
 
-Six findings from the type-mismatch review are still open at HEAD `9d167729`. The findings were first written at `489f3d31`, and every line reference and status below was re-checked against `9d167729`. Items 1 to 5 are rated low. Item 6 is rated medium, because it fails silently at scale. Items 3 and 6 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 2 is partly done, and its entry says what remains.
+Five findings from the type-mismatch review are still open at HEAD `9d167729`. The findings were first written at `489f3d31`, and every line reference and status below was re-checked against `9d167729`. Items 1 to 4 are rated low. Item 5 is rated medium, because it fails silently at scale. Items 2 and 5 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is partly done, and its entry says what remains. The exif IFD pointer finding (formerly item 1) is complete and has been removed from this file.
 
-## 1. Exif IFD pointer narrowed to 32 bits (`crates/metadata/src/tiff.rs:157`)
-
-`uint` narrows the value to `u32`, and returns `None` for anything above `u32::MAX`. For a BigTIFF, the Exif IFD pointer is an 8-byte value, and `exif.rs:61` reads it through `uint`. The other offsets in the reader are `usize`.
-
-**Impact:** a BigTIFF whose Exif IFD sits above 4 GiB loses `DateTimeOriginal` and `DateTimeDigitized`. The date is lost only when the XMP fallback (`crates/metadata/src/lib.rs:92`) also has none. `crates/analysis/src/analyze.rs:114` stores no date in that case.
-
-`uint` also has no arm for IFD (type 13), which TIFF Technical Note 1 defines for pointers, so an Exif IFD pointer written as type 13 is dropped as well. This is from reading the match arms. Checked since: a hand-written TIFF with a type-13 Exif pointer (a test embeds its bytes) reads the same date that ExifTool reads from it. ExifTool's sample images have none: all 49 Exif pointers there are LONG. `uint` also serves the orientation and rating reads at `exif.rs:55-59`, so the fix changes those callers too.
-
-**Status:** implemented, uncommitted. The metadata crate's 30 tests pass, including the item 1 tests below and a 4 GiB BigTIFF test. The tests of the dependent crates (`pg-analysis`, `pg-writeback`, `pg-exiftool`, `pg-edit`, `pg-library`, `pg-render`) pass too.
-
-**Checked against ExifTool's sample images** (46 files in the ExifTool source's `t/images`): orientation matches in 46 of 46, and the rating matches the Windows precedence model applied to ExifTool's fields in 46 of 46. Dates match in 33 of 35. The two misses are not reader errors: one is a maker-note date (`Casio`), which the reader doesn't read, and the other is an ExifTool Composite date with a time zone, where the file holds only a date-only XMP value.
-
-**Fix:** four parts. Each was checked against the code at `9d167729` and against ExifTool.
-
-1. **One lossless reader.** `Tiff::unsigned(&Entry) -> Option<u64>` for every unsigned kind: BYTE, SHORT, LONG, LONG8, IFD (13, added) and IFD8. Nothing in the reader narrows. `uint` is removed rather than kept beside it, because a narrowing reader next to a lossless one lets a future pointer caller pick the wrong one. (`offset_at` is not the fix: it reads an offset stored at a file position, not an entry's value.)
-
-2. **Presence follows ExifTool.** An entry whose value cannot be read (its offset or size falls outside the block) is skipped, so an earlier entry with the same tag stands. The last readable entry wins, for every field. In ExifTool, a "Bad offset" sets `$bad`, the value is never formatted, and `next unless defined $val` skips the entry before `FoundTag` (`lib/Image/ExifTool/Exif.pm:6661`, `:6916`). Its duplicate rule keeps the last readable entry under the plain tag name and moves the earlier value to `Tag (1)` (`lib/Image/ExifTool.pm:9623`). This plan keeps the losing values too, so the reader follows the port's rule rather than a narrower one. `Exif` keeps each tag's superseded readable values in entry order, as ExifTool keeps `Tag (1)`, `Tag (2)` and so on. The winner stays the last readable entry. The port design's duplicate rule (`docs/plans/EXIFTOOL_PORT_DESIGN.md:85`) is the same: keep last-seen at equal priority, `Name (N)` for the rest. The source is commit `3d7a0538` of `exiftool/exiftool`, read in a local clone at `D:\GitHub\exiftool`. This replaces two rules in the current code: the orientation exception (an unreadable last entry keeps the earlier one), and the rule that makes a rating or date absent when its last entry doesn't read.
-
-3. **`Exif` stores raw values; the domain decides validity.** `Exif` keeps the raw `Option<u64>` of each field's last readable entry. The conversions to domain types happen in one place, in `Meta::read`, and a value outside a domain is not a value of that type. ExifTool does the same: its `Rating` (0x4746) and `RatingPercent` (0x4749) have no range conversion, so a stored 7 is reported as 7 (`lib/Image/ExifTool/Exif.pm:1521`, `:1541`). Its XMP module has no range conversion for Rating either.
-   - **Orientation:** `u8::try_from(v).ok().and_then(Orientation::new)`, using the existing validated type (`crates/model/src/orientation.rs`, 1 to 8). Not a new eight-variant enum, which would duplicate it. An invalid value reads as absent, so `orientation()` gives `UPRIGHT`, as now. `[6, 9]` reads as upright, as it does today.
-   - **Rating:** stars above 5 show 5 stars, and a 0 is unrated. Windows clamps (measured: an EXIF or XMP 7 shows 5 stars), so 7 reads as 5, as it did before the item 1 commit. The cap is `min(5)` in `Meta::read`.
-   - **Rating percent:** a percent above 99 shows 99, which is 5 stars (measured: 100 and 101 show 99). The stored value is then mapped to stars by Explorer's bands, in `stars_of_percent` (`crates/metadata/src/xmp.rs`): 1 to 12 is 1 star, 13 to 37 is 2, 38 to 62 is 3, 63 to 87 is 4, and 88 to 99 is 5. These bands replace the ExifTool canonical points, which `percent()` used before (measured: 47 of the 99 percent values differ from `percent()`).
-
-4. **File position.** The Exif IFD pointer is read as `usize` with `usize::try_from`. A value that doesn't fit a `usize` reads as absent, and the entry is skipped as an unreadable one, so its dates are absent.
-
-**Behaviour changes, all deliberate:**
-- Rating 7 reads as 5 stars, as Windows shows it. (The item 1 commit made it no rating; this corrects that.)
-- Rating percent above 100 reads as 5 stars, as Windows shows it. (The item 1 commit made it no rating; this corrects that.)
-- A percent is mapped to stars by Explorer's bands, not by `percent()`.
-- An unreadable last rating, rating percent or date entry leaves the earlier readable value, not an absent one.
-- A BigTIFF Exif pointer above 4 GiB, and IFD- or IFD8-typed pointers, now read their dates.
-- Orientation: no change for any input.
-
-**Tests (written, passing):**
-- a BigTIFF whose Exif IFD is above 4 GiB reads its dates, and a BigTIFF pointer above `u32::MAX` never wraps to a real IFD;
-- an IFD (13) pointer and an IFD8 pointer read;
-- duplicate orientation entries: `[6, 3]` gives 3; `[6, 9]` gives upright; `[6, <out of block>]` gives 6;
-- a tag given three times keeps the two superseded values, in entry order, beside the winner;
-- an unreadable last rating or date entry leaves the earlier one;
-- rating 7 reads as 5 stars, and rating 7 with percent 50 reads as 3 stars (the percent outranks the stars);
-- rating percent 101 reads as 5 stars.
-
-## 2. Rating admits 0, but the APIs spell "unrated" as `None` (`crates/model/src/rating.rs:47`)
+## 1. Rating admits 0, but the APIs spell "unrated" as `None` (`crates/model/src/rating.rs:47`)
 
 *Status at `9d167729`: partly done.* `Command::Rate` (used at `crates/client/src/controller.rs:474`), `Write::Rating` and `WriteEffect::FileRating` (`crates/catalog/src/queue/job.rs:47`) already take a `Rating`, not an `Option`. Still open: `Edit::rate`, `set_rating` and `set_file_rating` take `Option<Rating>`. `set_file_rating` still stores a 0 (`queue.rs:364-370`). The desktop filter (`crates/desktop/src/gallery/edits.rs:105`) and the `Rating::new(n).filter(...)` in the catalog tests (`writers.rs:2283`, `browse/fixtures.rs:73`) still exist. The module doc (`rating.rs:3`) still says an unrated file is `Option<Rating>`.
 
@@ -112,9 +70,13 @@ So the write sets each present rating field to its value on its own scale: stars
 - A file whose only rating row was 0 no longer counts as a child for pairing (`sql.rs:88`).
 - An explicit 0 in a percent field no longer blocks the next field. Windows does the same (measured, rule 3). An XMP 0 still hides EXIF stars, as Windows does.
 
-## 3. Last-file preference uses a row id and a `-1` sentinel (`crates/app/src/prefs.rs:43`)
+## 2. Last-file preference uses a row id and a `-1` sentinel (`crates/app/src/prefs.rs:43`)
 
 **Status:** the saved-file part is implemented (uncommitted at this point). `Prefs.last_file` is an `Option<FileStamp>` (`crates/model/src/ids.rs`: identity, size and mtime), written as `null` or an object, and a number of either sign reads as none. The save takes the shown file's stamp from the catalog (`Catalog::stamp_of`). The start resolves the stamp with `Catalog::find_by_stamp` (identity, size, mtime, not missing), with the catalog open, in `crates/desktop/src/controller.rs`. `start_state` stays a function of the prefs and leaves `last_file` to that caller. Tests: `crates/catalog/src/lookup.rs` (`stamp_tests`) and `crates/app/src/prefs.rs`. The desktop code is compiled and not run here (it needs Qt). The Qt bridge work is still open, as the split note below says.
+
+**Decided next (not yet in code):**
+1. `start_state` takes the resolved file as a parameter (`last_file: Option<FileId>`), so the start builder stays a function of its inputs and the caller resolves the stamp with the catalog open. This replaces the current state, where the caller sets `start.last_file` after the start is built. The 13 test calls in `crates/desktop/src/controller.rs` and the one in `crates/desktop/src/shell.rs` pass the argument.
+2. A catalog error on the save or the restore is reported, not treated as "no file". A new notice `LastFileNotKept { error }` (key `last-file-not-kept`, `Level::Error`, `Source::Catalog`) is wired the way `SessionNotRead` is, in `crates/model/src/notice.rs` (variant, key, level, source, resolver, the test sample list, the next free code) and `crates/wording/src/notice.rs` (the `error` argument). It is resolved by the next successful save of the last file.
 
 *Related, not reconciled:* `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 names `save_last_file(Option)` and `loadedAnchor`, which overlap this item's proposed Rust-side ownership.
 
@@ -137,7 +99,7 @@ So the write sets each present rating field to its value on its own scale: stars
 - A displaced row (`files.volume` NULL) has no identity to remember, so it selects nothing.
 - Tests (revised by validation): identity, size and mtime round-trip; `null` reads as none; a legacy number of either sign reads as none, and is not resolved; a restore whose row's size or mtime differs selects nothing (a reused identity); a renamed file keeps its selection; a row marked `missing` selects nothing; a fresh catalog whose ids start again selects nothing for the saved file.
 
-## 4. CLI accepts buffer size megabytes that saturate (`crates/cli/src/args.rs:58`)
+## 3. CLI accepts buffer size megabytes that saturate (`crates/cli/src/args.rs:58`)
 
 *Changed at `9d167729`: the wrap is gone.* `buffer_mb` is now `Option<u64>` (`args.rs:45`), and the line is `opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1).saturating_mul(1 << 20))`. A value too large for a byte count no longer wraps to a small budget. It saturates to `u64::MAX`, which `Budget::new` (`crates/jobs/src/governor.rs:76`) keeps as an effectively unlimited budget. So the old claim that such a value serialises reads through `Pool::new` is no longer true. The value is still accepted silently, and the byte count is not checked.
 
@@ -147,7 +109,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 *Closed since the first list:* the thumbnail height entry is fixed. `ThumbHeight` (`crates/model/src/size.rs:82`) holds the 16 to 2048 range (`THUMB_HEIGHT`, `size.rs:12`), and the CLI parses it with a clap `value_parser` (`crates/cli/src/args.rs:131`, parser at `args.rs:190`). `pg_thumbs::run` and `ImageRequest::thumb` take it. The plan's `ThumbHeight::clamp(u32)` was not built. The UI clamp in `client/src/image.rs` is gone, and `ThumbHeight::for_row(RowHeight, Scale)` (`size.rs`) does that job instead.
 
-## 5. XMP packets with a UTF-16 or UTF-32 encoding are decoded as UTF-8 (`crates/metadata/src/xmp.rs:62`)
+## 4. XMP packets with a UTF-16 or UTF-32 encoding are decoded as UTF-8 (`crates/metadata/src/xmp.rs:62`)
 
 `String::from_utf8_lossy(packet)` decodes the XMP packet from `crates/metadata/src/lib.rs:76` as lossy UTF-8. There is no BOM or UTF-16/32 detection anywhere in `crates/metadata/src`, as checked at `9d167729`.
 
@@ -157,7 +119,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 *Closed since the first list:* the version counter entry (old item 7) is gone. No version role, `cast_signed()` or `>= 0` version gate remains in the desktop, the QML or `client/src/grid.rs`. The last commit that touched `ROLE_VERSION` is `d28e2f72`.
 
-## 6. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
+## 5. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
 
 *Related, consistent:* `docs/plans/BOUNDED_MEMORY_PLAN.md` decision D29 (exact `f64` ranks and counts, decimal file ids, line 131) and step 7.9 (`qt_int` and `to_i32` deleted, line 1510) match this item's fix. The plan's windowed model also covers its window-slide and stale-reference concerns, which are not listed here.
 
@@ -169,7 +131,7 @@ So the write sets each present rating field to its value on its own scale: stars
 
 - Counts and positions cross as `i64` in Rust and as `real` in QML. A JS number is exact to 2^53, about 9 × 10^15. The `int` declarations in the QML files become `real`. `qt_int`'s saturation is replaced by a checked conversion that fails loudly.
 - The Qt model exposes a window of rows around the viewport, kept under 2^31. Rust keeps absolute positions as `i64`. A flat model cannot reach billions of items, so the gallery needs the window.
-- Item 3's selection must address a window row with an absolute `i64` position, or the file's identity. Any Qt-side row handle inherits the 32-bit row limit. (The `QPersistentModelIndex` plan in item 3 is withdrawn.)
+- Item 2's selection must address a window row with an absolute `i64` position, or the file's identity. Any Qt-side row handle inherits the 32-bit row limit. (The `QPersistentModelIndex` plan in item 2 is withdrawn.)
 - *Probe P5 (property level):* QML doubles round-trip exactly up to 2^53 for integers.
 - *Probe P10 (rendered):* a marker inside a `Flickable`'s content item, moved by `-contentY` in the scene graph, lands on the wrong row from `contentY` 2^24 and collapses by 2^28, because of float32 spacing. A sibling marker whose y is computed in double is exact up to 2e11. So any `real` or `i64` position that reaches the scene graph must stay viewport-relative and sit outside the moving content item. The earlier P5 claim that a `Flickable` at 2e11 "positions its children correctly" was a property check, and is withdrawn.
 - *Window size (probe `window`, and `real` on the user's aspects):* the window (viewport ±1500 px) holds at most 4,140 items at 3840×2160 and 11,462 at 7680×4320 on the user's aspects (the synthetic aspects reach 4,333 and 11,977). Qt's 2^31 row limit is far above these. The 32-bit problem is in the total count, not in the window.

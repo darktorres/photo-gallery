@@ -390,7 +390,7 @@ mod tests {
         block[at..at + 4].copy_from_slice(&end.to_le_bytes());
     }
 
-    // Item 1 of docs/plans/TYPE_MISMATCH_VALIDATION.md. Each test names the rule it checks. A control assertion comes
+    // The Exif IFD pointer finding, completed and removed from docs/plans/TYPE_MISMATCH_VALIDATION.md. Each test names the rule it checks. A control assertion comes
     // first where the test corrupts a block, so a failure is about the rule and not the block.
 
     // Rule: the Exif IFD pointer may be an IFD (type 13, TIFF Technical Note 1), not only a LONG. Fails today: `uint`

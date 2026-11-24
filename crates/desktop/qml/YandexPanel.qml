@@ -212,7 +212,7 @@ Rectangle {
                 selectByMouse: true
             }
 
-            Flickable {
+            WheelFlickable {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true

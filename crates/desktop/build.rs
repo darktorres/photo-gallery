@@ -42,6 +42,7 @@ fn main() -> Result<(), String> {
                 "qml/FilterBar.qml",
                 "qml/Viewer.qml",
                 "qml/WheelListView.qml",
+                "qml/WheelFlickable.qml",
                 "qml/WheelStepper.qml",
                 "qml/YandexPanel.qml",
                 "qml/YandexPreview.qml",

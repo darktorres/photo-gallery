@@ -48,6 +48,19 @@ impl FileIdentity {
     }
 }
 
+/// What says a file is the same file: its identity, and the size and modification time it had when the catalog last saw
+/// it. The identity alone is not enough, since an inode can be reused after a file is deleted; a reused one has other
+/// bytes or a later time. Row ids are not used: they mean something only in the catalog that assigned them.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FileStamp {
+    /// The file's identity on its volume.
+    pub identity: FileIdentity,
+    /// The size in bytes.
+    pub size: i64,
+    /// The modification time (Unix seconds).
+    pub mtime: i64,
+}
+
 /// A folder's row in the catalog (`folders.id`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FolderId(i64);

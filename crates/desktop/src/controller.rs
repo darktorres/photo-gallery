@@ -56,7 +56,13 @@ impl Core {
             Listing::default()
         });
         let options_refused = start_refused(&app::get().prefs().get(), &options, applied.as_ref());
-        let start = start_state(&app::get().prefs().get(), &options, session, applied);
+        let mut start = start_state(&app::get().prefs().get(), &options, session, applied);
+        // The remembered file is found now, with the catalog open: its stamp names a row only while it is still that file.
+        start.last_file = app::get()
+            .prefs()
+            .get()
+            .last_file
+            .and_then(|stamp| app::get().catalogs().find_by_stamp(stamp).ok().flatten());
         let controller = Controller::new(start);
         let recorder =
             pg_platform::env::read(pg_platform::env::Var::Record).and_then(|path| match std::fs::File::create(&path) {
@@ -126,7 +132,8 @@ pub(crate) fn start_state(
         filters_open: options.filters_open.unwrap_or(false),
         show_borders: options.show_borders.unwrap_or(prefs.show_borders) && features.borders,
         dev_mode: options.dev_mode.unwrap_or(prefs.dev_mode),
-        last_file: prefs.last_file,
+        // Resolved by the caller, which has the catalog open (`find_by_stamp`); a start from prefs alone has none yet.
+        last_file: None,
         apply_view,
     }
 }
@@ -193,7 +200,6 @@ pub(crate) fn query_changed(query: pg_model::query::Query) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_model::ids::FileId;
     use pg_model::query::{Query, Sort};
     use pg_model::size::RowHeight;
 
@@ -262,13 +268,18 @@ mod tests {
         assert_eq!(start.saved_row, row(220));
     }
 
-    /// The prefs' last file is the start's, and a view the start applies is remembered once the start is over.
+    /// The prefs' last file is not the start's on its own: the caller resolves it against the catalog. A view the start
+    /// applies is remembered once the start is over.
     #[test]
-    fn the_last_file_is_the_prefs_and_an_applied_view_is_flagged() {
+    fn the_last_file_is_resolved_by_the_caller_and_an_applied_view_is_flagged() {
         let mut saved = prefs(row(220));
-        saved.last_file = Some(FileId::new(42));
+        saved.last_file = Some(pg_model::ids::FileStamp {
+            identity: pg_model::ids::FileIdentity::new(7, 42),
+            size: 10,
+            mtime: 20,
+        });
         let start = start_state(&saved, &options(None, None, None), listing(""), None);
-        assert_eq!(start.last_file, Some(FileId::new(42)));
+        assert_eq!(start.last_file, None);
         assert!(!start.apply_view);
         let view = SavedView { name: "view".into(), listing: listing("view") };
         let start = start_state(&saved, &options(None, None, None), listing(""), Some(view));

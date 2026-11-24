@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use pg_jobs::NoticeSink;
 use pg_model::features::Features;
-use pg_model::ids::FileId;
+use pg_model::ids::FileStamp;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::RowHeight;
 use pg_model::versions::PREFS_VERSION;
@@ -40,7 +40,7 @@ pub struct Prefs {
     pub row_height: RowHeight,
     /// The file selected (or open in the viewer) last, if any.
     #[serde(with = "last_file")]
-    pub last_file: Option<FileId>,
+    pub last_file: Option<FileStamp>,
     /// Dev mode: the window's log view (Ctrl+Shift+D turns it on and off). A start's `--dev=1` or `PG_DEV=1` turns it on
     /// for that run without saving it.
     pub dev_mode: bool,
@@ -108,18 +108,51 @@ mod row_height {
     }
 }
 
-/// `last_file` as the file holds it: the file's id, or `-1` for none. A negative number reads as none.
+/// `last_file` as the file holds it: the file's stamp (its identity, size and mtime), or `null` for none. A number
+/// reads as none, whatever it is: a row id (or the old `-1`) means something only in the catalog that assigned it, and
+/// resolving it would select whichever file holds that id now.
 mod last_file {
-    use pg_model::ids::FileId;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use pg_model::ids::{FileIdentity, FileStamp};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub(crate) fn serialize<S: Serializer>(file: &Option<FileId>, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_i64(file.map_or(-1, FileId::get))
+    #[derive(Serialize, Deserialize)]
+    struct Stored {
+        volume: u64,
+        file_index: u64,
+        size: i64,
+        mtime: i64,
     }
 
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<FileId>, D::Error> {
-        let id = i64::deserialize(deserializer)?;
-        Ok((id >= 0).then(|| FileId::new(id)))
+    /// What the file may hold: a stamp, or anything else, which is read as none (the legacy numbers among it).
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Read {
+        Stamp(Stored),
+        Other(serde::de::IgnoredAny),
+    }
+
+    fn stored(stamp: FileStamp) -> Stored {
+        Stored {
+            volume: stamp.identity.volume,
+            file_index: stamp.identity.file_index,
+            size: stamp.size,
+            mtime: stamp.mtime,
+        }
+    }
+
+    pub(crate) fn serialize<S: Serializer>(file: &Option<FileStamp>, serializer: S) -> Result<S::Ok, S::Error> {
+        file.map(stored).serialize(serializer)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<FileStamp>, D::Error> {
+        Ok(match Option::<Read>::deserialize(deserializer)? {
+            Some(Read::Stamp(s)) => Some(FileStamp {
+                identity: FileIdentity::new(s.volume, s.file_index),
+                size: s.size,
+                mtime: s.mtime,
+            }),
+            Some(Read::Other(_)) | None => None,
+        })
     }
 }
 
@@ -228,7 +261,7 @@ mod tests {
   "real_size": false,
   "show_borders": false,
   "row_height": 220,
-  "last_file": -1,
+  "last_file": null,
   "dev_mode": false,
   "detect_borders": true,
   "detect_duplicates": true,
@@ -266,15 +299,34 @@ mod tests {
         let prefs = Prefs {
             real_size: true,
             row_height: RowHeight::new(334).expect("a row height in range"),
-            last_file: Some(FileId::new(42)),
+            last_file: Some(stamp()),
             dev_mode: true,
             ..Prefs::default()
         };
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"version":1,"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":42,"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
+            r#"{"version":1,"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":{"volume":7,"file_index":42,"size":10,"mtime":20},"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
         );
+    }
+
+    fn stamp() -> FileStamp {
+        FileStamp { identity: pg_model::ids::FileIdentity::new(7, 42), size: 10, mtime: 20 }
+    }
+
+    // A stamp round-trips; `null` is none; a number reads as none, whatever it is (a row id, or the old `-1`).
+    #[test]
+    fn the_last_file_is_its_stamp_and_a_number_reads_as_none() {
+        let with = |value: &str| -> Option<FileStamp> {
+            serde_json::from_str::<Prefs>(&GOLDEN.replace("\"last_file\": null", &format!("\"last_file\": {value}")))
+                .unwrap()
+                .last_file
+        };
+        let saved = r#"{"volume":7,"file_index":42,"size":10,"mtime":20}"#;
+        assert_eq!(with(saved), Some(stamp()));
+        assert_eq!(with("null"), None);
+        assert_eq!(with("-1"), None);
+        assert_eq!(with("42"), None, "a row id is not resolved");
     }
 
     /// A folder whose name is no UTF-8: a lone surrogate (its WTF-8 bytes) on Windows, a raw `0xFF` byte on Unix.

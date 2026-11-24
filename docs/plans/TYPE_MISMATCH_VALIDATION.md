@@ -114,6 +114,8 @@ So the write sets each present rating field to its value on its own scale: stars
 
 ## 3. Last-file preference uses a row id and a `-1` sentinel (`crates/app/src/prefs.rs:43`)
 
+**Status:** the saved-file part is implemented (uncommitted at this point). `Prefs.last_file` is an `Option<FileStamp>` (`crates/model/src/ids.rs`: identity, size and mtime), written as `null` or an object, and a number of either sign reads as none. The save takes the shown file's stamp from the catalog (`Catalog::stamp_of`). The start resolves the stamp with `Catalog::find_by_stamp` (identity, size, mtime, not missing), with the catalog open, in `crates/desktop/src/controller.rs`. `start_state` stays a function of the prefs and leaves `last_file` to that caller. Tests: `crates/catalog/src/lookup.rs` (`stamp_tests`) and `crates/app/src/prefs.rs`. The desktop code is compiled and not run here (it needs Qt). The Qt bridge work is still open, as the split note below says.
+
 *Related, not reconciled:* `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 names `save_last_file(Option)` and `loadedAnchor`, which overlap this item's proposed Rust-side ownership.
 
 `Prefs.last_file` is an `Option<FileId>`, but on disk it is `-1` for none (the `last_file` serializer at `prefs.rs:112`: `serialize` at 117, `deserialize` at 122). The Qt-side copy is no longer in `settings.rs`, which has no `last_file` now. The value reaches the desktop at `crates/desktop/src/controller.rs:129` and is saved at `crates/desktop/src/shell.rs:95`.

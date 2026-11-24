@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use pg_catalog::Catalog;
-use pg_model::ids::FileId;
+use pg_model::ids::{FileId, FileStamp};
 use pg_model::rules::Path as RulePath;
 
 use crate::error::{Error, Result};
@@ -35,6 +35,16 @@ impl Catalogs {
     }
 
     /// Run `f` with a catalog connection: an idle one, or one opened for it (and kept for the next borrower, up to a few).
+    /// The stamp of a file (its identity, size and mtime), for remembering the file across runs.
+    pub fn stamp_of(&self, file_id: FileId) -> Result<Option<FileStamp>> {
+        self.with_catalog(|c| c.stamp_of(file_id))
+    }
+
+    /// The file a remembered stamp names now, if it is still that file (see `Catalog::find_by_stamp`).
+    pub fn find_by_stamp(&self, stamp: FileStamp) -> Result<Option<FileId>> {
+        self.with_catalog(|c| c.find_by_stamp(stamp))
+    }
+
     pub(crate) fn with_catalog<R>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> Result<R> {
         self.pool.with(
             || Catalog::open(&self.path, pg_platform::native::PATH_RULES).map_err(Error::from),

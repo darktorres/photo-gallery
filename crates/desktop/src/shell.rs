@@ -90,9 +90,11 @@ fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
         Command::SaveShowBorders(on) => save_prefs(prefs, |p| p.show_borders = *on),
         // The file the window shows now (none: none is remembered), once the start is over. Read here, on the window's
         // thread, so a save at shutdown (`flush`) sees the same file the window does.
+        // The stamp of the file, not its row id: the stamp names the file in a later run. Nothing is remembered when the
+        // catalog can't say what the file is.
         Command::SaveLastFile => {
-            let file = gallery::shown_file();
-            save_prefs(prefs, |p| p.last_file = file);
+            let stamp = gallery::shown_file().and_then(|file| app::get().catalogs().stamp_of(file).ok().flatten());
+            save_prefs(prefs, |p| p.last_file = stamp);
         }
         // The row height, settled after a pause.
         Command::Size(size::Change::SaveRowHeight(row)) => save_prefs(prefs, |p| p.row_height = *row),

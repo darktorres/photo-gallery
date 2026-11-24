@@ -8,7 +8,7 @@ use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params};
 
 use pg_model::format::Format;
-use pg_model::ids::FileId;
+use pg_model::ids::{FileId, FileIdentity, FileStamp};
 use pg_model::media::Kind;
 use pg_model::name::Name;
 use pg_model::orientation::Orientation;
@@ -98,6 +98,44 @@ impl Catalog {
     }
 
     /// A file's path from its folder's stored bytes and its name's: the folder, the separator, the name.
+    /// The stamp of a file: its identity, size and mtime, as the catalog holds them. `None` for an unknown file, and for a
+    /// displaced row (no identity: `volume` is NULL).
+    pub fn stamp_of(&self, file_id: FileId) -> Result<Option<FileStamp>> {
+        let row: Option<(i64, i64, i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT volume, file_ref, size, mtime FROM files WHERE id = ?1 AND volume IS NOT NULL",
+                [file_id.get()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(volume, file_ref, size, mtime)| FileStamp {
+            identity: FileIdentity::new(volume.cast_unsigned(), file_ref.cast_unsigned()),
+            size,
+            mtime,
+        }))
+    }
+
+    /// The file a stamp names, if it is still that file in the catalog: a row with the same identity, size and mtime that
+    /// isn't missing. A different file that reuses the identity has other bytes or a later time, so it is not matched.
+    /// Ids are not used, so a rebuilt or a new catalog finds the file by what it is.
+    pub fn find_by_stamp(&self, stamp: FileStamp) -> Result<Option<FileId>> {
+        let id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM files WHERE volume = ?1 AND file_ref = ?2 AND size = ?3 AND mtime = ?4 AND missing = 0",
+                params![
+                    crate::convert::identity_to_sql(stamp.identity.volume),
+                    crate::convert::identity_to_sql(stamp.identity.file_index),
+                    stamp.size,
+                    stamp.mtime,
+                ],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(id.map(FileId::new))
+    }
+
     pub(crate) fn file_path_of(&self, folder: &[u8], name: &[u8]) -> Result<RulePath> {
         let mut parts =
             self.rules.parse_bytes(folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
@@ -257,5 +295,65 @@ mod tests {
             .unwrap();
         assert_eq!(c.currents(&files[..1]).unwrap(), [false]);
         assert!(!c.is_current(id, &listed(10, 0)).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+    use crate::test_support::one_file;
+    use pg_model::ids::FileStamp;
+    use pg_model::rules::PathRules;
+
+    /// The one test file: identity (volume 1, file reference 1), 10 bytes, modified at 100.
+    fn the_file() -> FileStamp {
+        FileStamp { identity: FileIdentity::new(1, 1), size: 10, mtime: 100 }
+    }
+
+    #[test]
+    fn a_stamp_names_its_file_while_it_is_still_that_file() {
+        let (c, _) = one_file(PathRules::Windows);
+        assert_eq!(c.stamp_of(FileId::new(1)).unwrap(), Some(the_file()));
+        assert_eq!(c.find_by_stamp(the_file()).unwrap(), Some(FileId::new(1)));
+    }
+
+    #[test]
+    fn a_reused_identity_is_a_different_file() {
+        let (c, _) = one_file(PathRules::Windows);
+        assert_eq!(c.find_by_stamp(FileStamp { size: 11, ..the_file() }).unwrap(), None, "other bytes");
+        assert_eq!(c.find_by_stamp(FileStamp { mtime: 101, ..the_file() }).unwrap(), None, "a later time");
+    }
+
+    #[test]
+    fn a_renamed_file_keeps_its_stamp() {
+        let (c, _) = one_file(PathRules::Windows);
+        c.conn.execute("UPDATE files SET name = ?1 WHERE id = 1", [&b"renamed.jpg"[..]]).unwrap();
+        assert_eq!(c.find_by_stamp(the_file()).unwrap(), Some(FileId::new(1)));
+    }
+
+    #[test]
+    fn a_missing_file_is_not_selected() {
+        let (c, _) = one_file(PathRules::Windows);
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 1", []).unwrap();
+        assert_eq!(c.find_by_stamp(the_file()).unwrap(), None);
+    }
+
+    #[test]
+    fn a_displaced_row_has_no_stamp() {
+        let (c, _) = one_file(PathRules::Windows);
+        c.conn.execute("UPDATE files SET volume = NULL, file_ref = NULL WHERE id = 1", []).unwrap();
+        assert_eq!(c.stamp_of(FileId::new(1)).unwrap(), None);
+        assert_eq!(c.find_by_stamp(the_file()).unwrap(), None);
+    }
+
+    #[test]
+    fn a_stamp_finds_its_file_by_identity_whatever_its_row_id() {
+        // The same file, with file reference 2, is row 1 here: a stamp that names it finds row 1, not an id it had before.
+        let (c, _) = one_file(PathRules::Windows);
+        c.conn.execute("UPDATE files SET file_ref = 2 WHERE id = 1", []).unwrap();
+        assert_eq!(
+            c.find_by_stamp(FileStamp { identity: FileIdentity::new(1, 2), size: 10, mtime: 100 }).unwrap(),
+            Some(FileId::new(1))
+        );
     }
 }

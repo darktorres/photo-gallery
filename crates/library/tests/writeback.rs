@@ -28,7 +28,7 @@ use pg_model::write::WriteKind;
 use pg_platform::testing::held::{Access, hold};
 use pg_thumbcache::ThumbCache;
 use pg_writeback::Writer;
-use pg_writeback::fault::Fault;
+use pg_writeback::fault::{Fault, PauseGate};
 
 /// The tests' result: any error of the crates they use.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -1297,6 +1297,109 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     assert_eq!((done.files, done.deferred), (1, 0));
     assert!(c.removal_markers().unwrap().is_empty());
     assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
+    drop(c);
+    quiet.check();
+}
+
+/// The gate the test below holds its copy at: a static, because the writer's fault names it.
+static HELD_COPY: PauseGate = PauseGate::new();
+
+/// Opens [`HELD_COPY`] when dropped. The test declares it after its writer, so it drops first: a failed assertion then does
+/// not leave the writer's thread held at the gate, which the writer's shutdown would wait for.
+struct OpenHeldCopy;
+
+impl Drop for OpenHeldCopy {
+    fn drop(&mut self) {
+        HELD_COPY.open();
+    }
+}
+
+/// A removal of a folder while a copy of one of its files is in progress: the writer has picked the job, and it waits
+/// before it opens the original. The removal hides the file, and its change waits for the writer (the file is deferred).
+/// The copy goes on and finishes, the writer takes its temp, and the removal then finishes the folder (section 1: a hide
+/// that lands after the pick, which the removal rule covers).
+#[test]
+fn a_copy_in_progress_when_its_folder_is_removed_is_finished_and_the_removal_follows() {
+    let (dir, _files, catalog_path, c) = imported("copy_during_removal").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    c.set_rating(id, Rating::new(3), true).unwrap();
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer = Writer::start_with_fault(
+        catalog_path.clone(),
+        thumbs.clone(),
+        Arc::new(Bus::new(16)),
+        Fault::PauseCopy { file: id, gate: &HELD_COPY },
+        RecordingSink::new(),
+    )
+    .unwrap();
+    let _open = OpenHeldCopy;
+    writer.wake();
+    pg_testkit::wait_until(Duration::from_secs(60), || "the copy is held", || HELD_COPY.entered());
+
+    let root = c.roots().unwrap().remove(0);
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
+    let hidden = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!(hidden.deferred, 1, "the file whose copy is in progress waits for the writer");
+
+    HELD_COPY.open();
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the writer finishes the copy",
+        || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
+    );
+    drop(writer);
+    assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the copy in progress reached the file");
+    assert!(!on_disk(&c, &pg_writeback::temp_of(&db_path, WriteKind::Rating)).exists(), "the writer took its temp");
+
+    let done = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!((done.files, done.deferred), (1, 0));
+    assert!(c.removal_markers().unwrap().is_empty());
+    assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
+    drop(c);
+    quiet.check();
+}
+
+/// A folder removed and added again: its pictures come back with their analyses, and the rating written into a file comes
+/// back with the file (the manual check "remove, then re-add", section 1).
+#[test]
+fn a_removed_folder_added_again_gets_its_analyses_and_its_ratings_back() {
+    let (dir, _files, catalog_path, mut c) = imported("readd").unwrap();
+    let (id, _) = state::file_and_path(&c, "b.png").unwrap();
+    let analysed = state::analysis_sizes(&c).unwrap().len();
+    assert!(analysed > 0, "the folder's pictures are analysed before the removal");
+    c.set_rating(id, Rating::new(3), true).unwrap();
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    writer.wake();
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the rating is written",
+        || state::writes_queued(&c, id).unwrap() == 0 && writer.status().error.is_none(),
+    );
+    drop(writer);
+    assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the rating is in the file");
+
+    let root = c.roots().unwrap().remove(0);
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
+    let gone = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!(gone.deferred, 0, "nothing was waiting to be written");
+    assert_eq!(c.status().unwrap().files, 0, "the folder's files are gone");
+
+    // Added again: scanned and imported, as the app does a folder it is given.
+    assert!(c.add_root(&root.path).unwrap());
+    pg_scan::scan(&mut c, &root.path, &Control::new()).unwrap();
+    pg_import::import(
+        &mut c,
+        &Options::new(pg_platform::priority::Priority::Normal),
+        false,
+        &pg_catalog::VolumeSet::All,
+        &Control::new(),
+    )
+    .unwrap();
+    let (again, _) = state::file_and_path(&c, "b.png").unwrap();
+    assert_eq!(state::analysis_sizes(&c).unwrap().len(), analysed, "the analyses are back");
+    assert_eq!(state::rating_of(&c, again).unwrap(), Some(3), "the rating comes back with the file");
     drop(c);
     quiet.check();
 }

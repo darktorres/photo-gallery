@@ -178,15 +178,21 @@ impl Parks {
 #[cfg(test)]
 type RoundHook = Arc<dyn Fn(&VolumeSet) + Send + Sync>;
 
-/// A hook at a removal's hide, with the marker's folder.
+/// A hook at a removal's hide, before its park, with the marker's folder.
 #[cfg(test)]
 type HideHook = Arc<dyn Fn(&pg_model::rules::Path) + Send + Sync>;
+
+/// A hook once a removal's lanes are parked (its holds taken), before its files are hidden, with the marker's folder. An
+/// error fails the hide there, with the park held, as a hide that fails for real does.
+#[cfg(test)]
+type ParkedHook = Arc<dyn Fn(&pg_model::rules::Path) -> std::result::Result<(), String> + Send + Sync>;
 
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct TestHooks {
     round: Mutex<Option<RoundHook>>,
     hide: Mutex<Option<HideHook>>,
+    parked: Mutex<Option<ParkedHook>>,
 }
 
 #[cfg(test)]
@@ -199,6 +205,24 @@ impl TestHooks {
     /// Runs `hook` in the removal job before each marker's park, with the marker's folder.
     pub(crate) fn on_hide(&self, hook: impl Fn(&pg_model::rules::Path) + Send + Sync + 'static) {
         *self.hide.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// Runs `hook` once a marker's lanes are parked (its holds taken), before its files are hidden. An `Err` fails that
+    /// hide, with the park still held.
+    pub(crate) fn on_parked(
+        &self,
+        hook: impl Fn(&pg_model::rules::Path) -> std::result::Result<(), String> + Send + Sync + 'static,
+    ) {
+        *self.parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// The parked hook, if one is set (called by the removal job once its lanes are held).
+    pub(crate) fn at_parked(&self, path: &pg_model::rules::Path) -> std::result::Result<(), String> {
+        let hook = self.parked.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        match hook {
+            Some(hook) => hook(path),
+            None => Ok(()),
+        }
     }
 
     /// The round hook, if one is set (called by the lane at a round's start).

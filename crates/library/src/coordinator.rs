@@ -135,7 +135,7 @@ pub(crate) struct Lanes {
     /// The crop thread's control: a child of the root, shown as a job of its own.
     crop_ctl: Arc<Control>,
     /// The removals' control: a child of the root too, shown as a job of its own (its progress, and its pause).
-    removal_ctl: Arc<Control>,
+    pub(crate) removal_ctl: Arc<Control>,
     pub(crate) shared: Arc<Shared>,
     /// Splits the file-buffer budget among the lanes (each lane's [`Inner::options`] carries its share).
     governor: Governor,
@@ -589,7 +589,7 @@ impl Lanes {
 
     /// Holds the lanes that own `volumes`, and waits until each has ended its round: a crop or a cut is about to change
     /// files on those volumes, which the lanes read. `None` when the crop is stopped first (the holds are given back).
-    fn park(&self, volumes: &BTreeSet<u64>) -> Option<Vec<Hold>> {
+    pub(crate) fn park(&self, volumes: &BTreeSet<u64>) -> Option<Vec<Hold>> {
         self.park_owners(&Volumes { volumes: volumes.clone(), all: false }, &self.crop_ctl)
     }
 
@@ -605,7 +605,7 @@ impl Lanes {
 
     /// Holds the lanes that own `parked`'s volumes, asks them to stop, and waits until each has ended its round. `stop` is
     /// the caller's control: when it is asked first, `None` (the holds are given back, and nothing was changed).
-    fn park_owners(&self, parked: &Volumes, stop: &Control) -> Option<Vec<Hold>> {
+    pub(crate) fn park_owners(&self, parked: &Volumes, stop: &Control) -> Option<Vec<Hold>> {
         let owners = self.lanes_on(parked);
         let holds: Vec<Hold> = owners
             .iter()
@@ -900,6 +900,10 @@ impl Lanes {
         let Some(holds) = self.park_owners(&volumes, &self.removal_ctl) else {
             return Ok(false);
         };
+        // A test's failure here is the failure of the hide with the park held (see `TestHooks::on_parked`). The holds drop
+        // on the way out, and the park stays: the folder may be partly hidden.
+        #[cfg(test)]
+        self.shared.hooks.at_parked(path).map_err(|e| format!("the hide failed (a test's failure): {e}"))?;
         let hidden = catalog.hide_pages(path);
         self.shared.changes.publish(Change::Scanned);
         drop(holds);

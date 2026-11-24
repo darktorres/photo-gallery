@@ -129,21 +129,25 @@ scanner; temporary probes, since removed).**
   which runs beside the removals thread (`coordinator.rs:768-800`). The removals thread's first pass, which finishes any
   marker left by an earlier run, clears the barrier and releases the holds of each volume once its folders are hidden. A
   volume with no marker is released at once. If that pass fails, the volumes of its markers stay held, the failure is
-  posted, and the pass runs again at the recheck (`REMOVAL_RECHECK`). This closes P4.
+  posted, and the pass runs again at the recheck (`REMOVAL_RECHECK`). This closes P4. Built as one registry that every lane
+  checks at the start of each round, not as holds at spawn: see "Built" below. Tested by
+  `a_removal_an_earlier_run_left_holds_the_lanes_until_its_folder_is_hidden`.
 - **D6. A lane spawned during a removal starts held.** `spawn_lane` makes a new lane with its own control and no hold
   (`coordinator.rs:557-565`), and `assign_lanes` spawns lanes when a folder group has no lane (`coordinator.rs:440-480`).
   A drive plugged in while a hide runs can therefore get a lane that is not parked, and that lane can work on the folder's
   files before they are hidden. The fix is the same mechanism as D5: `Lanes` records the volumes a removal has parked, and
   `spawn_lane` takes a hold on a new lane whose volume is in that set. The removal releases its volumes at the end of the
-  hide. Confirmed by reading; no test yet.
+  hide. Built as the registry (see "Built" below). Tested by `a_lane_spawned_during_a_removal_waits_for_it`.
 - **Trace notes (2026-11-23, by reading).** A park returns no holds when a stop arrives while it waits
   (`coordinator.rs:603-607`), and the holds taken so far are dropped. The removal job must treat that as "try again at the
   recheck", and the marker stays. The crop and cut jobs park the same lanes with their own stop controls. A lane never
   waits on a job, so overlapping holds cannot form a cycle; the holds count, and a stop set by one park is cleared only
-  when the lane runs again. A test with two overlapping parks is still wanted. Writeback is not a lane and is not parked.
-  Its drain checks `file_gone` and `under_marker` when it picks a job (`writeback/lib.rs`, around line 396), and a copy that
-  has started finishes while the folder is still there. A hide that lands after the pick therefore leaves the copy to
-  finish, which the removal rule keeps the temp for. Confirmed by reading; not tested.
+  when the lane runs again. Two overlapping parks are tested (`a_crop_park_and_a_removal_park_on_one_volume_both_hold_the_lane`).
+  Writeback is not a lane and is not parked. Its drain checks `file_gone` and `under_marker` when it picks a job
+  (`writeback/lib.rs`). Tested: a removal while a copy is in progress, after its temp is recorded, defers the change until
+  the copy finishes, and the removal then finishes (`a_copy_in_progress_when_its_folder_is_removed_is_finished_and_the_removal_follows`,
+  with `Fault::PauseCopy`). A hide that lands after the pick but before the temp is recorded was observed to defer nothing:
+  the change goes with the folder. Its end state was not checked.
 
 **Unchanged.** The delete (`drive_removals`), the sweep of orphan thumbnails, the rule that a file with a recorded write
 is kept, and the resume after a crash. A marker whose folder is not hidden yet is the normal state between `begin_removal`
@@ -160,6 +164,12 @@ files on E:, by linear extrapolation from the measurement above. The begin itsel
 lane's current item to reach a stop checkpoint. Stop checks are per item in the passes (`IMPORT_FAILURES_PLAN` row B), so
 the wait is short except for a long video hash, which section 7 fixes.
 
+**Measured (2026-11-24, one run each, ignored tests in `library/src/park_tests.rs`).** The hide of 100,000 files,
+`hide_window_for_100k_files`, timed with no lane to wait for: 1.81 s on D:, 1.85 s on E:. The prediction above was
+extrapolated from a 10,000-file batch measurement and is about twice this. The park wait under a busy import of 3,000
+pictures, `park_wait_under_an_import`: 1.96 ms, with the runner busy when the removal began (so the wait is the stop
+latency of the import's current item). A stop of one item is far below the "well under a second" the checks asked for.
+
 **Built (2026-11-24), and where it departs from D5 and D6.** D5 and D6 are one mechanism, not a hold per lane at spawn: the
 `Parks` registry (`library/src/shared.rs`) holds the volumes each removal has parked, under the folder's display path, and
 every lane checks it at the start of each round (`lane.rs`, `wait_clear`). A lane spawned during a removal finds its
@@ -173,33 +183,52 @@ are split (`removals::drive`); `finish` keeps the synchronous path for a caller 
 from `finish_removals` (D2). `begin_removal` returns the volumes (`Begun::Started { path, volumes }`); a folder with no
 present file, or one with a NULL volume, names every lane.
 
-**Status of the checks (2026-11-24).**
+**Status of the checks (updated 2026-11-24, after the section 1 build and its open items).**
 
-- Done and passing: the P3 guard (`writers.rs`, `a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed`: no error,
-  no pair, so D3's fallback is not needed); the volumes of a removal (`removal.rs`,
-  `a_removal_names_the_volumes_of_its_present_files`); the registry's decisions (`shared.rs`, `parks_tests`: a parked volume
-  blocks only its lanes, release wakes a waiting lane, an all-park blocks every lane); end to end
-  (`lanes.rs`, `a_removal_releases_its_parks_once_its_folder_is_hidden`: a removal parks, the removal job hides and releases,
-  and a later scan runs a round, so no park is left behind). The existing removal, catalog, library, app and writeback
-  suites pass. `pg-desktop`, `pg-cli` and `pg-bench` compile, with their tests.
-- Done, in `library/src/park_tests.rs`, through the job's hooks (`shared::TestHooks`, `#[cfg(test)]` only): D1, a removal
-  waits for the round its lane is in, and the marker stays until the round ends (`a_removal_waits_for_the_round_its_lanes_are_in`);
-  D5, a removal an earlier run left holds the lanes until its folder is hidden (`a_removal_an_earlier_run_left_holds_the_lanes_until_its_folder_is_hidden`);
-  D6, a lane spawned during a removal starts no round until it releases (`a_lane_spawned_during_a_removal_waits_for_it`).
-  Each was checked against a mutant that removes the mechanism it tests: no wait for the owners' rounds fails the D1 test;
-  no startup seed fails the D5 test; no lane round-start check fails the D5 and D6 tests (and not D1, which doesn't use it).
-  The negative checks are bounded (`SETTLE`, 300 ms), not proofs.
-- Not done, and why. D2 locality (a lane on another volume keeps running while the folder's is parked): every test folder
-  sits on this machine's one real volume, and lane volumes come from the real file system, so two fake drives share a volume
-  and nothing here can show the other lane running. It needs a second real volume. Overlapping parks (a crop or cut and a
-  removal on one volume): needs a crop job held at a stop; not built. D1 wait timing with a long import in progress: the
-  wait was shown to hold for a round, not timed against a real import's stop latency; not measured.
-- Lint: `cargo fmt --check` fails on files this change does not touch (`app/src/prefs.rs`, `desktop/src/controller.rs`,
-  `exiftool/src/lib.rs`, `metadata/src/lib.rs`, `metadata/src/xmp.rs`, `model/src/write.rs`). `pg-exiftool` fails clippy
-  (`indexing_slicing`) at baseline, which stops `just lint` at its clippy step; clippy on the changed crates passes with
-  that one lint allowed, and the added lines have no indexing.
+- Done and passing. Each mutant below removes the mechanism its test covers, and the named test then fails.
+  - The volumes of a removal (`removal.rs`, `a_removal_names_the_volumes_of_its_present_files`), and the P3 guard
+    (`writers.rs`, `a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed`: no error and no pair, so D3's fallback
+    is not needed). The registry's decisions (`shared.rs`, `parks_tests`).
+  - D1, a removal waits for the round its lane is in (`a_removal_waits_for_the_round_its_lanes_are_in`). Mutant: the removal
+    takes its holds without waiting for the rounds.
+  - D5, a removal an earlier run left holds its lanes until its folder is hidden
+    (`a_removal_an_earlier_run_left_holds_the_lanes_until_its_folder_is_hidden`). Mutants: no startup seed; no lane round-start
+    check (this also fails D6).
+  - D6, a lane spawned during a removal waits for it (`a_lane_spawned_during_a_removal_waits_for_it`). Mutant: no lane
+    round-start check.
+  - A stop that reaches the removal while it waits keeps the park (`a_stop_while_the_removal_waits_keeps_the_folder_parked`).
+    Mutant: a stop releases the park.
+  - A hide that fails with the park held keeps the park (`a_failed_hide_keeps_the_folder_parked_until_it_completes`).
+    Mutant: a failure releases the park.
+  - Overlapping parks: a crop's park and a removal's park on one volume both hold the lane
+    (`a_crop_park_and_a_removal_park_on_one_volume_both_hold_the_lane`). Mutant: the removal's park takes no holds.
+  - D2 locality, on a second real volume: a park on one volume leaves a lane on another running
+    (`a_park_on_one_volume_leaves_a_lane_on_another_running`). It needs `PG_TEST_OTHER_VOLUME` to name a directory on
+    another real volume; without it the test skips and says so. Run here with a directory on `E:`. Mutant: every lane parked.
+  - P1, a round that starts while a removal is held imports none of the folder's pictures
+    (`a_round_held_when_its_folder_is_removed_imports_none_of_it`). Under the old behaviour (mutant: no park and no wait) the
+    same window ran two import passes over the folder's pictures before the hide.
+  - Removal during a scan leaves no file of the folder and no root (`a_removal_begun_during_a_scan_leaves_no_file_of_the_folder`).
+  - Removal while a copy is in progress, after its temp is recorded (writeback,
+    `a_copy_in_progress_when_its_folder_is_removed_is_finished_and_the_removal_follows`): the change is deferred, the copy
+    finishes, the writer takes its temp, and the removal then finishes.
+  - Remove, then re-add (writeback, `a_removed_folder_added_again_gets_its_analyses_and_its_ratings_back`): the analyses and
+    the rating written into the file come back.
+  - End to end: a removal parks, the removal job hides and releases, and a later scan runs a round
+    (`lanes.rs`, `a_removal_releases_its_parks_once_its_folder_is_hidden`).
+  - Measured (see "Measured" above): the park wait under a busy import, 1.96 ms; the hide of 100,000 files, 1.81 s on D:
+    and 1.85 s on E:.
+  - The existing removal, catalog, library, app and writeback suites pass.
+- Not done.
+  - The removal benches (`ir::removal::folder_removal`, `ir::removal::folder_hide`, in the Linux container). `just linux-bench`
+    benches the committed HEAD's archive, not the working tree, and section 1 is not committed yet. Run them after the commit.
+  - The app's manual checks, in the GUI. No Qt kit is set up here, so the app itself was not run. The library-level
+    equivalents are above: remove during a scan, remove then re-add, and quit during a removal and relaunch (the D5 test:
+    a marker an earlier run left, and no lane works on its folder until it is hidden).
+- Lint: `cargo fmt --check` passes for the whole workspace, and clippy with `-D warnings` (all targets) passes for
+  `pg-library` and `pg-writeback`.
 
-**Checks (predicted; each names the test that settles it).**
+**Checks (from the design; the status above says which are done, and by which test).**
 
 - D1 park: a pass blocked on a channel on the folder's volume. Start a removal: the pass is stopped and no pass runs on the
   folder's files until the hold is released. A lane on another volume keeps running.

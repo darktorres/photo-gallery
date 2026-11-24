@@ -31,7 +31,7 @@ use pg_model::progress::LaneProgress;
 
 /// The background job the module comment describes. It holds the lanes, one per drive the library's folders are on.
 pub struct Runner {
-    lanes: Arc<Lanes>,
+    pub(crate) lanes: Arc<Lanes>,
 }
 
 impl Runner {

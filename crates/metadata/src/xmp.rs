@@ -68,7 +68,7 @@ pub(crate) fn xmp_properties<const N: usize>(
     let which = |ns: &ResolveResult, local: &str| {
         wanted
             .iter()
-            .position(|(uri, name)| matches!(ns, ResolveResult::Bound(Namespace(n)) if n == uri) && local == *name)
+            .position(|(uri, name)| matches!(ns, ResolveResult::Bound(Namespace(n)) if same_namespace(n, uri)) && local == *name)
     };
     let mut keep = |found: &mut [Option<Range<usize>>; N], i: usize, value: &str| {
         let value = value.trim();
@@ -110,19 +110,34 @@ pub(crate) fn xmp_properties<const N: usize>(
     found
 }
 
-/// XMP rating: a real number in -1..=5; -1 (rejected) and anything out of range read as no rating.
-pub(crate) fn xmp_value(v: f64) -> Option<u8> {
-    (0.0..=5.0).contains(&v).then(|| round_u8(v))
+/// Whether a namespace in a packet is `uri`, with or without its trailing slash: ExifTool writes the Microsoft one
+/// without it (`http://ns.microsoft.com/photo/1.0`), and Windows reads that file's percent.
+fn same_namespace(n: &str, uri: &str) -> bool {
+    n == uri || n == uri.trim_end_matches('/')
 }
 
-/// Windows' percentage scale (1, 25, 50, 75, 99), as a rating app mapped it.
-pub(crate) fn percent(v: f64) -> u8 {
-    match round_u8(v) {
-        ..=0 => 0,
-        1..=24 => 1,
-        25..=49 => 2,
-        50..=74 => 3,
-        75..=98 => 4,
+/// An XMP `xmp:Rating` as the stars Windows shows. A value above 5 shows 5 stars (Windows clamps: an XMP 7 shows 5 stars,
+/// measured). -1 (rejected) and anything below 0 read as no rating.
+pub(crate) fn xmp_stars(v: f64) -> Option<u8> {
+    (v >= 0.0).then(|| round_u8(v).min(5))
+}
+
+/// A percent (an XMP `MicrosoftPhoto:Rating` or an EXIF `RatingPercent`) as the stars Windows shows. Windows keeps the
+/// value, clamped to 99 (measured: 100 and 101 show 99), and shows the star band of that stored value. Below 0 reads as
+/// no rating.
+pub(crate) fn xmp_percent_stars(v: f64) -> Option<u8> {
+    (v >= 0.0).then(|| stars_of_percent(round_u8(v).min(99)))
+}
+
+/// The star count Explorer shows for a stored percent: 0 is unrated, 1 to 12 is one star, 13 to 37 two, 38 to 62 three,
+/// 63 to 87 four, and 88 to 99 five. Measured on Explorer's Rating column for every stored value from 0 to 99.
+pub(crate) fn stars_of_percent(stored: u8) -> u8 {
+    match stored {
+        0 => 0,
+        1..=12 => 1,
+        13..=37 => 2,
+        38..=62 => 3,
+        63..=87 => 4,
         _ => 5,
     }
 }
@@ -137,7 +152,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn percent_scale() {
-        assert_eq!([0.0, 1.0, 25.0, 50.0, 75.0, 99.0, 100.0].map(percent), [0, 1, 2, 3, 4, 5, 5]);
+    fn stars_of_percent_are_explorers_bands() {
+        assert_eq!(
+            [0, 1, 12, 13, 37, 38, 62, 63, 87, 88, 99].map(stars_of_percent),
+            [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
+        );
+    }
+
+    #[test]
+    fn stars_clamp_to_five_and_negative_reads_as_none() {
+        assert_eq!([0.0, 4.0, 7.0, -1.0].map(xmp_stars), [Some(0), Some(4), Some(5), None]);
+        assert_eq!([0.0, 75.0, 101.0, -1.0].map(xmp_percent_stars), [Some(0), Some(4), Some(5), None]);
     }
 }

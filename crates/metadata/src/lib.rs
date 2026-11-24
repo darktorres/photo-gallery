@@ -30,7 +30,7 @@ use pg_model::rating::Rating;
 
 use crate::container::Container;
 use crate::exif::{Exif, exif_date};
-use crate::xmp::{Packet, XMP_WANTED, percent, xmp_properties, xmp_value};
+use crate::xmp::{Packet, XMP_WANTED, stars_of_percent, xmp_percent_stars, xmp_properties, xmp_stars};
 
 /// What the import reads from a file's metadata: one walk of its container, one read of its EXIF block, and one
 /// parse of each XMP packet.
@@ -38,9 +38,10 @@ use crate::xmp::{Packet, XMP_WANTED, percent, xmp_properties, xmp_value};
 pub struct Meta {
     /// EXIF orientation 1–8; 1 when absent or unreadable.
     pub orientation: Orientation,
-    /// The file's own rating: 0–5 (0 = explicitly unrated), or `None` when it holds none. XMP `xmp:Rating` first
-    /// (the standard packet, then the extended one), then `MicrosoftPhoto:Rating`, then EXIF Rating and
-    /// RatingPercent. XMP's -1 ("rejected") has no equivalent here and reads as no rating.
+    /// The file's own rating in stars, as Windows shows it: 0–5, where 0 is an explicit unrated, or `None` when the file
+    /// holds no rating. The fields in Windows' order are XMP `MicrosoftPhoto:Rating` and EXIF `RatingPercent` (percents),
+    /// then XMP `xmp:Rating` and EXIF `Rating` (stars). The first one the file holds decides, and the rest are ignored.
+    /// Stars above 5 show 5, and a percent above 99 shows 99. XMP's -1 ("rejected") reads as no rating.
     pub rating: Option<Rating>,
     /// When the picture was taken, as wall-clock time (no time zone: what the camera's clock showed) in Unix
     /// seconds: EXIF DateTimeOriginal, then DateTimeDigitized, then XMP `exif:DateTimeOriginal`,
@@ -76,27 +77,19 @@ impl Meta {
             let found = xmp_properties(packet, XMP_WANTED, xml, values);
             let [rating, ms, original, created, create] = found.map(|v| v.and_then(|r| values.get(r)));
             let number = |v: Option<&str>| v.and_then(|v| v.parse::<f64>().ok());
-            xmp_rating = xmp_rating.or_else(|| number(rating).and_then(xmp_value));
-            microsoft = microsoft.or_else(|| number(ms).map(percent));
+            xmp_rating = xmp_rating.or_else(|| number(rating).and_then(xmp_stars));
+            microsoft = microsoft.or_else(|| number(ms).and_then(xmp_percent_stars));
             xmp_taken =
                 xmp_taken.or_else(|| [original, created, create].into_iter().flatten().find_map(parse_iso_date));
         }
-        // EXIF's own fields, when XMP has no rating. Stars are 1 to 5: a 0 is no value, and so is a value above 5. The
-        // percent is 1 to 100, on Windows' scale: a 0 is no value, and so is a value above 100.
-        let exif_rating = || {
-            exif.rating()
-                .and_then(|v| u8::try_from(v).ok())
-                .filter(|v| (1..=5).contains(v))
-                .or_else(|| {
-                    exif.rating_percent()
-                        .and_then(|v| u8::try_from(v).ok())
-                        .filter(|v| (1..=100).contains(v))
-                        .map(|v| percent(f64::from(v)))
-                })
-        };
+        // EXIF's own fields, as Windows shows them: stars clamp to 5, and a percent clamps to 99 and is then a star band.
+        let exif_stars = exif.rating().map(|v| u8::try_from(v.min(5)).unwrap_or(5));
+        let exif_percent = exif.rating_percent().map(|v| stars_of_percent(u8::try_from(v.min(99)).unwrap_or(99)));
+        // The first field the file holds decides, in Windows' order: XMP percent, EXIF percent, XMP stars, EXIF stars.
+        let stars = microsoft.or(exif_percent).or(xmp_rating).or(exif_stars);
         Meta {
             orientation: exif.orientation(),
-            rating: xmp_rating.or(microsoft).or_else(exif_rating).and_then(Rating::new),
+            rating: stars.and_then(Rating::new),
             taken: exif.dates().iter().flatten().find_map(|d| exif_date(d)).or(xmp_taken),
             frames: container.frames,
         }
@@ -163,10 +156,15 @@ mod tests {
         let windows = br#"<rdf:Description xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/"
             MicrosoftPhoto:Rating="75"/>"#;
         assert_eq!(xmp(windows), Some(4));
+        // ExifTool writes the same namespace without its trailing slash, and Windows reads that file too.
+        let exiftool = br#"<rdf:Description xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0"
+            MicrosoftPhoto:Rating="75"/>"#;
+        assert_eq!(xmp(exiftool), Some(4));
         let rejected = br#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="-1"/>"#;
         assert_eq!(xmp(rejected), None);
-        // An XMP rating in a later packet wins over a MicrosoftPhoto one in the first.
-        assert_eq!(rating(&webp(&[(b"XMP ", windows), (b"XMP ", element)]), Format::Webp), Some(5));
+        // The percent outranks the stars whichever packet holds them, as Windows shows it: the MicrosoftPhoto 75 (4
+        // stars) beats the XMP 5 in a later packet.
+        assert_eq!(rating(&webp(&[(b"XMP ", windows), (b"XMP ", element)]), Format::Webp), Some(4));
     }
 
     /// A little-endian TIFF block whose Exif IFD holds DateTimeOriginal.
@@ -300,13 +298,14 @@ mod tests {
                 (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[3])),
             ];
             assert_eq!(read(&twice, &[]).orientation.get(), 3);
-            // A rating above 5 is no rating (7 alone reads as none); RatingPercent decides only when the rating is absent.
-            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), None);
+            // Stars above 5 clamp to 5, as Windows shows them (measured: 7 shows 5 stars).
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), Some(5));
+            // RatingPercent outranks EXIF Rating, as Windows shows it (measured: stars 2 with percent 50 shows 50).
             let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
             assert_eq!(read(std::slice::from_ref(&percent), &[]).rating.map(Rating::get), Some(3));
             assert_eq!(
                 read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating.map(Rating::get),
-                Some(1)
+                Some(3)
             );
 
             // A value pointing outside the block reads as absent; the rest is still read.
@@ -406,19 +405,18 @@ mod tests {
         assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
     }
 
-    // Rule: a rating outside 1 to 5 is no rating, so the rating falls back to rating percent (50 is 3 stars).
-    // Fails today: 7 reads as 5 stars.
+    // Windows: stars above 5 clamp to 5, and a percent outranks stars. Rating 7 with percent 50 shows 50 (3 stars).
     #[test]
-    fn a_rating_above_five_reads_as_absent_so_the_percent_decides() {
+    fn a_rating_above_five_clamps_and_a_percent_outranks_it() {
         let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(7)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(50))];
         assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(3));
     }
 
-    // Rule: a rating percent outside 0 to 100 is no rating. Fails today: `percent()` saturates 101 to 5 stars.
+    // Windows: a percent above 99 is clamped to 99, which is 5 stars. Percent 101 shows 99.
     #[test]
-    fn a_rating_percent_above_100_reads_as_absent() {
+    fn a_rating_percent_above_100_clamps_to_five_stars() {
         let ifd0 = [(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(101))];
-        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), None);
+        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(5));
     }
 
     // Pinned: the top of the Windows scale is 5 stars, and 100 is in range. Passes today.
@@ -428,11 +426,9 @@ mod tests {
         assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(5));
     }
 
-    // Rule (item 2, rule 3): an EXIF Rating of 0 is no value, so the percent decides. Measured on Windows: EXIF
-    // Rating 0 with EXIF RatingPercent 75 shows 75 (4 stars). Fails today: an explicit 0 reads as unrated and blocks
-    // the percent.
+    // Windows: a percent outranks EXIF Rating, even a 0 in it. EXIF Rating 0 with RatingPercent 75 shows 75 (4 stars).
     #[test]
-    fn an_exif_rating_of_zero_is_no_value_so_the_percent_decides() {
+    fn an_exif_rating_of_zero_is_outranked_by_the_percent() {
         let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(75))];
         assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(4));
     }
@@ -504,6 +500,43 @@ mod tests {
         // Header 16 bytes, then IFD0's 8-byte count: its only entry (the pointer) has its 8-byte value at 36..44.
         block[36..44].copy_from_slice(&((1u64 << 32) + 52).to_le_bytes());
         assert_eq!(taken(&block, Format::Tiff), None);
+    }
+
+    /// An XMP packet with `xmp:Rating` (stars) and `MicrosoftPhoto:Rating` (a percent), each if given.
+    fn xmp_with(stars: Option<&str>, percent: Option<&str>) -> Vec<u8> {
+        let mut attrs =
+            String::from(r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/""#);
+        if let Some(s) = stars {
+            attrs += &format!(r#" xmp:Rating="{s}""#);
+        }
+        if let Some(p) = percent {
+            attrs += &format!(r#" MicrosoftPhoto:Rating="{p}""#);
+        }
+        format!("<rdf:Description {attrs}/>").into_bytes()
+    }
+
+    // Windows' order, measured on Windows 10: XMP percent, then EXIF percent, then XMP stars, then EXIF stars. The first
+    // field the file holds decides. A 0 in it is unrated, and hides the fields below it, but not the fields above it.
+    #[test]
+    fn the_first_field_in_windows_order_decides_and_a_zero_hides_only_the_fields_below() {
+        let xmp = |stars: Option<&str>, percent: Option<&str>| {
+            let packet = xmp_with(stars, percent);
+            (TIFF_TAG_XMP, TIFF_BYTE, u32::try_from(packet.len()).unwrap(), packet)
+        };
+        let read = |entries: &[TestEntry]| rating(&tiff_block(true, entries, &[]), Format::Tiff);
+        // XMP stars 0 does not hide the XMP percent above it.
+        assert_eq!(read(&[xmp(Some("0"), Some("75"))]), Some(4));
+        // XMP stars 0 hides the EXIF stars below it.
+        assert_eq!(read(&[xmp(Some("0"), None), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(5))]), Some(0));
+        // XMP percent 0 hides the EXIF percent below it.
+        assert_eq!(read(&[xmp(None, Some("0")), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), Some(0));
+        // EXIF percent outranks XMP stars: 25 is 2 stars, whatever the 4 stars say.
+        assert_eq!(read(&[xmp(Some("4"), None), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), Some(2));
+        // EXIF percent 0 hides the EXIF stars below it.
+        assert_eq!(
+            read(&[(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2))]),
+            Some(0)
+        );
     }
 
     // Rule (plan item 1): a tag given three times keeps the two readable values it replaces, in entry order, as

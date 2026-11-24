@@ -20,14 +20,15 @@ Six findings from the type-mismatch review are still open at HEAD `9d167729`. Th
 
 3. **`Exif` stores raw values; the domain decides validity.** `Exif` keeps the raw `Option<u64>` of each field's last readable entry. The conversions to domain types happen in one place, in `Meta::read`, and a value outside a domain is not a value of that type. ExifTool does the same: its `Rating` (0x4746) and `RatingPercent` (0x4749) have no range conversion, so a stored 7 is reported as 7 (`lib/Image/ExifTool/Exif.pm:1521`, `:1541`). Its XMP module has no range conversion for Rating either.
    - **Orientation:** `u8::try_from(v).ok().and_then(Orientation::new)`, using the existing validated type (`crates/model/src/orientation.rs`, 1 to 8). Not a new eight-variant enum, which would duplicate it. An invalid value reads as absent, so `orientation()` gives `UPRIGHT`, as now. `[6, 9]` reads as upright, as it does today.
-   - **Rating:** `Stars::new` on the raw value. 1 to 5 are file ratings (item 2). A value above 5 reads as no rating, so the rating falls back to rating percent. An explicit 0 is no value, as Windows treats it (item 2, rule 3). **Behaviour change:** today 7 reads as 5. The cap test at `crates/metadata/src/lib.rs:295` changes with it.
-   - **Rating percent:** a value above 100 reads as absent before `percent()` (`crates/metadata/src/xmp.rs:119`) is called. **Behaviour change:** today `percent()` maps every value from 99 up to 5, so 101 reads as 5. The thresholds in `percent()` (1 to 24, 25 to 49, 50 to 74, 75 to 98, 99 and up) match Windows' scale of 1, 25, 50, 75 and 99 for 1 to 5 stars, as ExifTool maps it (`lib/Image/ExifTool/Microsoft.pm:249-252`).
+   - **Rating:** stars above 5 show 5 stars, and a 0 is unrated. Windows clamps (measured: an EXIF or XMP 7 shows 5 stars), so 7 reads as 5, as it did before the item 1 commit. The cap is `min(5)` in `Meta::read`.
+   - **Rating percent:** a percent above 99 shows 99, which is 5 stars (measured: 100 and 101 show 99). The stored value is then mapped to stars by Explorer's bands, in `stars_of_percent` (`crates/metadata/src/xmp.rs`): 1 to 12 is 1 star, 13 to 37 is 2, 38 to 62 is 3, 63 to 87 is 4, and 88 to 99 is 5. These bands replace the ExifTool canonical points, which `percent()` used before (measured: 47 of the 99 percent values differ from `percent()`).
 
 4. **File position.** The Exif IFD pointer is read as `usize` with `usize::try_from`. A value that doesn't fit a `usize` reads as absent, and the entry is skipped as an unreadable one, so its dates are absent.
 
 **Behaviour changes, all deliberate:**
-- Rating 7 reads as no rating, not 5.
-- Rating percent above 100 reads as absent, not 5.
+- Rating 7 reads as 5 stars, as Windows shows it. (The item 1 commit made it no rating; this corrects that.)
+- Rating percent above 100 reads as 5 stars, as Windows shows it. (The item 1 commit made it no rating; this corrects that.)
+- A percent is mapped to stars by Explorer's bands, not by `percent()`.
 - An unreadable last rating, rating percent or date entry leaves the earlier readable value, not an absent one.
 - A BigTIFF Exif pointer above 4 GiB, and IFD- or IFD8-typed pointers, now read their dates.
 - Orientation: no change for any input.
@@ -38,8 +39,8 @@ Six findings from the type-mismatch review are still open at HEAD `9d167729`. Th
 - duplicate orientation entries: `[6, 3]` gives 3; `[6, 9]` gives upright; `[6, <out of block>]` gives 6;
 - a tag given three times keeps the two superseded values, in entry order, beside the winner;
 - an unreadable last rating or date entry leaves the earlier one;
-- rating 7 reads as no rating and falls back to rating percent;
-- rating percent 101 reads as absent.
+- rating 7 reads as 5 stars, and rating 7 with percent 50 reads as 3 stars (the percent outranks the stars);
+- rating percent 101 reads as 5 stars.
 
 ## 2. Rating admits 0, but the APIs spell "unrated" as `None` (`crates/model/src/rating.rs:47`)
 
@@ -84,7 +85,9 @@ Six findings from the type-mismatch review are still open at HEAD `9d167729`. Th
 
 Under this plan the reader returns all four readings, each as `Option<Stars>` (rule 3). One function derives the effective rating from them, and that function is the only place the precedence lives. The percent readings convert to stars with `percent()`, using the Windows scale of 1, 25, 50, 75 and 99 (`Microsoft.pm:249-252`). Tests cover each pair of fields that disagree, and the measured pairs above, each checked against Windows' result.
 
-**Precedence, measured on Windows 10.** The order is XMP percent, then EXIF percent, then XMP stars, then EXIF stars. A 0 in a percent field is no value, and a 0 in XMP stars hides EXIF stars (rule 3). Each pair tested agrees with this order, and `System.Rating` shows the winner: XMP percent 75 over XMP stars 2 gives 75; EXIF percent 75 over XMP stars 2 gives 75; EXIF percent 75 over EXIF stars 2 gives 75; XMP stars 2 over EXIF stars 5 gives 25; XMP percent 75 over EXIF percent 25 gives 75; XMP percent 25 over EXIF stars 5 gives 25. Today's chain differs in three places: it checks XMP stars before XMP percent, XMP stars before EXIF percent, and EXIF stars before EXIF percent. So the app shows a different rating from Windows for the same file. The plan adopts Windows' order, and the one effective-rating function uses it. These results come from one Windows 10 machine and ExifTool 13.60, so the tests should pin them.
+**Precedence, measured on Windows 10 in a full matrix.** The matrix covers JPEG singles, triples and quads, and TIFF singles: 952 cases, with stars 0 to 7 and percents 0 to 101 (`scratchpad\rating_matrix_ext.ps1`). The first field the file holds decides: XMP percent, then EXIF percent, then XMP stars, then EXIF stars. A 0 there is unrated, and hides the fields below it but not the fields above. The reader matches all 952 cases. PNG and WebP showed no rating at all, so the matrix does not cover them.
+
+The pairs below are the first measurements, kept for reference. The order is XMP percent, then EXIF percent, then XMP stars, then EXIF stars. A 0 in a percent field is no value, and a 0 in XMP stars hides EXIF stars (rule 3). Each pair tested agrees with this order, and `System.Rating` shows the winner: XMP percent 75 over XMP stars 2 gives 75; EXIF percent 75 over XMP stars 2 gives 75; EXIF percent 75 over EXIF stars 2 gives 75; XMP stars 2 over EXIF stars 5 gives 25; XMP percent 75 over EXIF percent 25 gives 75; XMP percent 25 over EXIF stars 5 gives 25. Today's chain differs in three places: it checks XMP stars before XMP percent, XMP stars before EXIF percent, and EXIF stars before EXIF percent. So the app shows a different rating from Windows for the same file. The plan adopts Windows' order, and the one effective-rating function uses it. These results come from one Windows 10 machine and ExifTool 13.60, so the tests should pin them.
 
 **The write updates the rating fields the file already has (measured).** Our writer sets only `XMP:Rating`, and Windows then shows a stale percent. Measured on Windows 10 with ExifTool 13.60, on copies of `sample.jpg`:
 - A file with stale EXIF `Rating` 5, EXIF `RatingPercent` 75, XMP `xmp:Rating` 4 and `XMP-microsoft:RatingPercent` 75. Setting XMP to 2 and updating only the fields present (each to its value on its own scale) makes Windows show 25, and every present field reads 2 stars.

@@ -571,6 +571,71 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // Each format the app writes ratings into: over the rating fields the format holds, the new rating reads back as
+    // written, every rating field agrees with it, and the file's other metadata is kept. A GIF has no EXIF. Needs
+    // ExifTool; skipped without it.
+    #[test]
+    fn a_rating_is_written_over_the_fields_each_format_holds() {
+        use pg_model::format::Format;
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::run_folder("scratch_exiftool", "formats").unwrap();
+        let px = [0u8; 12];
+        let cases: [(&str, Format, Vec<u8>, bool); 5] = [
+            ("a.jpg", Format::Jpeg, pg_codec::fixtures::jpeg_rgb(2, 2, &px, 90, pg_codec::encode::Chroma::Half).unwrap(), true),
+            ("a.png", Format::Png, pg_codec::fixtures::png_rgb(2, 2, &px).unwrap(), true),
+            ("a.webp", Format::Webp, pg_codec::fixtures::webp_lossless_rgb(2, 2, &px, None).unwrap(), true),
+            ("a.gif", Format::Gif, pg_codec::fixtures::gif_rgb(2, 2, &px).unwrap(), false),
+            ("a.tif", Format::Tiff, pg_codec::fixtures::tiff_rgb(2, 2, &px).unwrap(), true),
+        ];
+        for (name, format, source, has_exif) in cases {
+            let path = dir.join(name);
+            std::fs::write(&path, &source).unwrap();
+            // The stale fields the format holds, with a description the write must keep.
+            let mut stale = vec!["-XMP:Rating=4", "-XMP-microsoft:RatingPercent=75", "-XMP-dc:Description=keep"];
+            if has_exif {
+                stale.extend(["-EXIF:Rating=4", "-EXIF:RatingPercent=75"]);
+            }
+            let mut args: Vec<&OsStr> = stale.iter().map(|a| OsStr::new(*a)).collect();
+            args.extend([OsStr::new("-overwrite_original"), path.as_os_str()]);
+            let (_, stderr) = tool.exec(&args).unwrap();
+            assert!(stderr.is_empty(), "{name}: {stderr}");
+            let fields = tool.rating_fields(&path).unwrap();
+            assert_eq!(fields.exif_stars, has_exif, "{name}: EXIF Rating");
+            assert_eq!(fields.exif_percent, has_exif, "{name}: EXIF RatingPercent");
+            assert!(fields.xmp_percent, "{name}: XMP MicrosoftPhoto percent");
+            let before = std::fs::read(&path).unwrap();
+
+            let out = dir.join(format!("out-{name}"));
+            tool.write_rating(&path, &out, 2).unwrap_or_else(|e| panic!("{name}: {e:#}"));
+            let written = std::fs::read(&out).unwrap();
+            let read = pg_metadata::Meta::read(&written, format, &mut pg_metadata::MetaScratch::default());
+            assert_eq!(read.rating.map(|r| r.get()), Some(2), "{name}: the reader's rating after the write");
+
+            let (json, _) = tool
+                .exec(&[
+                    OsStr::new("-j"),
+                    OsStr::new("-G1"),
+                    OsStr::new("-XMP:Rating"),
+                    OsStr::new("-XMP-microsoft:RatingPercent"),
+                    OsStr::new("-XMP-dc:Description"),
+                    OsStr::new("-EXIF:Rating"),
+                    OsStr::new("-EXIF:RatingPercent"),
+                    out.as_os_str(),
+                ])
+                .unwrap();
+            assert!(json.contains("\"XMP-xmp:Rating\": 2"), "{name}: {json}");
+            assert!(json.contains("\"XMP-microsoft:RatingPercent\": 25"), "{name}: {json}");
+            assert!(json.contains("\"XMP-dc:Description\": \"keep\""), "{name}: the description was lost: {json}");
+            if has_exif {
+                assert!(json.contains("\"IFD0:Rating\": 2"), "{name}: {json}");
+                assert!(json.contains("\"IFD0:RatingPercent\": 25"), "{name}: {json}");
+            }
+            assert!(std::fs::read(&path).unwrap() == before, "{name}: the original changed");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // A name whose last byte is whitespace or a CR can't be written by either route: the argument file trims it, and
     // the argument route passes the exact bytes, but ExifTool then takes the type from the extension (`png `), which it
     // doesn't write. The write fails with an error, no copy is left beside the original, and the original is unchanged.

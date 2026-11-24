@@ -76,7 +76,8 @@ Six findings from the type-mismatch review are still open at HEAD `9d167729`. Th
    - EXIF 0 reads as unrated, and `None` writes an explicit 0. The wire round trip (`write.rs:113`, `:123`) gives `None` back.
    - Clearing a file that Windows rated (XMP `xmp:Rating` 4, a stale EXIF `RatingPercent` 75, and the other stale fields) reads as unrated, and Windows shows unrated, after the write below.
    - Sync, adoption: a file cleared by another program (known 4, none in the file) clears the user's rating, as now.
-   - Sync, no change: a file with no rating, never synced, and the user's rating 3 keeps the rating. **Changed:** today this clears it, because today the file's 0 is `Some(0)` against a `None` baseline.
+   - Sync, no change: a file with no rating, never synced, and the user's rating 3 keeps the rating. This holds today (verified: the catalog keeps 3).
+   - Sync, file holds an explicit 0, never synced, and the user's rating 3: **changed.** Today this clears the rating (verified: the catalog reads `None`), because the file's 0 is `Some(0)` against a `None` baseline. The new rule keeps the rating.
    - Clearing writes `None` only into a file that holds a rating.
    - The migration deletes `file_ratings` rows of value 0, and the tightened `CHECK` rejects 0.
    - Pairing: a file whose only rating row was 0 is no longer kept by `has_children` (`crates/catalog/src/sql.rs:88`). **Changed.**

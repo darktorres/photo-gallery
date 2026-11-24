@@ -66,9 +66,9 @@ pub(crate) fn xmp_properties<const N: usize>(
     // Set while inside a wanted element, to read its text.
     let mut inside: Option<usize> = None;
     let which = |ns: &ResolveResult, local: &str| {
-        wanted
-            .iter()
-            .position(|(uri, name)| matches!(ns, ResolveResult::Bound(Namespace(n)) if same_namespace(n, uri)) && local == *name)
+        wanted.iter().position(|(uri, name)| {
+            matches!(ns, ResolveResult::Bound(Namespace(n)) if same_namespace(n, uri)) && local == *name
+        })
     };
     let mut keep = |found: &mut [Option<Range<usize>>; N], i: usize, value: &str| {
         let value = value.trim();
@@ -153,10 +153,7 @@ mod tests {
 
     #[test]
     fn stars_of_percent_are_explorers_bands() {
-        assert_eq!(
-            [0, 1, 12, 13, 37, 38, 62, 63, 87, 88, 99].map(stars_of_percent),
-            [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
-        );
+        assert_eq!([0, 1, 12, 13, 37, 38, 62, 63, 87, 88, 99].map(stars_of_percent), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
     }
 
     #[test]

@@ -273,11 +273,8 @@ mod tests {
     #[test]
     fn the_last_file_is_resolved_by_the_caller_and_an_applied_view_is_flagged() {
         let mut saved = prefs(row(220));
-        saved.last_file = Some(pg_model::ids::FileStamp {
-            identity: pg_model::ids::FileIdentity::new(7, 42),
-            size: 10,
-            mtime: 20,
-        });
+        saved.last_file =
+            Some(pg_model::ids::FileStamp { identity: pg_model::ids::FileIdentity::new(7, 42), size: 10, mtime: 20 });
         let start = start_state(&saved, &options(None, None, None), listing(""), None);
         assert_eq!(start.last_file, None);
         assert!(!start.apply_view);

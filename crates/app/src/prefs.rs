@@ -146,11 +146,9 @@ mod last_file {
 
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<FileStamp>, D::Error> {
         Ok(match Option::<Read>::deserialize(deserializer)? {
-            Some(Read::Stamp(s)) => Some(FileStamp {
-                identity: FileIdentity::new(s.volume, s.file_index),
-                size: s.size,
-                mtime: s.mtime,
-            }),
+            Some(Read::Stamp(s)) => {
+                Some(FileStamp { identity: FileIdentity::new(s.volume, s.file_index), size: s.size, mtime: s.mtime })
+            }
             Some(Read::Other(_)) | None => None,
         })
     }

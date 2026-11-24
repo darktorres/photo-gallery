@@ -156,11 +156,7 @@ mod tests {
 
     #[test]
     fn a_write_reads_back_from_its_columns_and_a_value_out_of_range_does_not() {
-        for write in [
-            Write::Rating(None),
-            Write::Rating(Rating::new(5)),
-            Write::Rotation(Turns::new(3)),
-        ] {
+        for write in [Write::Rating(None), Write::Rating(Rating::new(5)), Write::Rotation(Turns::new(3))] {
             assert_eq!(Write::from_stored(write.kind(), write.stored()), Some(write));
         }
         assert_eq!(Write::Rating(None).stored(), 0, "unrated is written as 0");

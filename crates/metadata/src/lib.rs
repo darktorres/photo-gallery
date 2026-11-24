@@ -100,11 +100,11 @@ impl Meta {
 mod tests {
     use super::*;
     use crate::container::JPEG_XMP;
+    use crate::exif::Value;
     use crate::exif::{
         EXIF_TAG_DATE_TIME_DIGITIZED, EXIF_TAG_DATE_TIME_ORIGINAL, EXIF_TAG_EXIF_IFD, EXIF_TAG_RATING,
         EXIF_TAG_RATING_PERCENT, TIFF_TAG_XMP,
     };
-    use crate::exif::Value;
     use crate::test_support::png_chunk;
     use crate::tiff::{
         EXIF_TAG_ORIENTATION, TIFF_ASCII, TIFF_BYTE, TIFF_IFD8, TIFF_LONG, TIFF_LONG8, TIFF_SHORT, TIFF_UNDEFINED, Tiff,
@@ -408,7 +408,8 @@ mod tests {
     // Windows: stars above 5 clamp to 5, and a percent outranks stars. Rating 7 with percent 50 shows 50 (3 stars).
     #[test]
     fn a_rating_above_five_clamps_and_a_percent_outranks_it() {
-        let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(7)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(50))];
+        let ifd0 =
+            [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(7)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(50))];
         assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(3));
     }
 
@@ -429,7 +430,8 @@ mod tests {
     // Windows: a percent outranks EXIF Rating, even a 0 in it. EXIF Rating 0 with RatingPercent 75 shows 75 (4 stars).
     #[test]
     fn an_exif_rating_of_zero_is_outranked_by_the_percent() {
-        let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(75))];
+        let ifd0 =
+            [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(75))];
         assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(4));
     }
 
@@ -489,7 +491,8 @@ mod tests {
     // Pinned: 9 is not an orientation, so a file whose last readable orientation is 9 is shown as stored. Passes today.
     #[test]
     fn duplicate_orientation_ending_in_an_invalid_value_reads_as_upright() {
-        let ifd0 = [(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(6)), (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(9))];
+        let ifd0 =
+            [(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(6)), (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(9))];
         assert_eq!(orientation(&tiff_block(true, &ifd0, &[]), Format::Tiff).get(), 1);
     }
 
@@ -518,8 +521,9 @@ mod tests {
 
     /// An XMP packet with `xmp:Rating` (stars) and `MicrosoftPhoto:Rating` (a percent), each if given.
     fn xmp_with(stars: Option<&str>, percent: Option<&str>) -> Vec<u8> {
-        let mut attrs =
-            String::from(r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/""#);
+        let mut attrs = String::from(
+            r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/""#,
+        );
         if let Some(s) = stars {
             attrs += &format!(r#" xmp:Rating="{s}""#);
         }
@@ -548,7 +552,10 @@ mod tests {
         assert_eq!(read(&[xmp(Some("4"), None), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(25))]), Some(2));
         // EXIF percent 0 hides the EXIF stars below it.
         assert_eq!(
-            read(&[(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2))]),
+            read(&[
+                (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(0)),
+                (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2))
+            ]),
             None
         );
     }

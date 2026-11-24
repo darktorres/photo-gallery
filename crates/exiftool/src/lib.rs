@@ -562,11 +562,8 @@ mod tests {
         assert!(json.contains("\"XMP-xmp:Rating\": 2"), "{json}");
         // The write-back check reads the copy back with the reader: the new rating must be the one it reads.
         let written = std::fs::read(&out).unwrap();
-        let read = pg_metadata::Meta::read(
-            &written,
-            pg_model::format::Format::Jpeg,
-            &mut pg_metadata::MetaScratch::default(),
-        );
+        let read =
+            pg_metadata::Meta::read(&written, pg_model::format::Format::Jpeg, &mut pg_metadata::MetaScratch::default());
         assert_eq!(read.rating.map(|r| r.get()), Some(2));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -582,7 +579,12 @@ mod tests {
         let dir = pg_testkit::run_folder("scratch_exiftool", "formats").unwrap();
         let px = [0u8; 12];
         let cases: [(&str, Format, Vec<u8>, bool); 5] = [
-            ("a.jpg", Format::Jpeg, pg_codec::fixtures::jpeg_rgb(2, 2, &px, 90, pg_codec::encode::Chroma::Half).unwrap(), true),
+            (
+                "a.jpg",
+                Format::Jpeg,
+                pg_codec::fixtures::jpeg_rgb(2, 2, &px, 90, pg_codec::encode::Chroma::Half).unwrap(),
+                true,
+            ),
             ("a.png", Format::Png, pg_codec::fixtures::png_rgb(2, 2, &px).unwrap(), true),
             ("a.webp", Format::Webp, pg_codec::fixtures::webp_lossless_rgb(2, 2, &px, None).unwrap(), true),
             ("a.gif", Format::Gif, pg_codec::fixtures::gif_rgb(2, 2, &px).unwrap(), false),
@@ -665,11 +667,8 @@ mod tests {
         let out = dir.join("out.jpg");
         tool.write_rating(&path, &out, 0).unwrap();
         let written = std::fs::read(&out).unwrap();
-        let read = pg_metadata::Meta::read(
-            &written,
-            pg_model::format::Format::Jpeg,
-            &mut pg_metadata::MetaScratch::default(),
-        );
+        let read =
+            pg_metadata::Meta::read(&written, pg_model::format::Format::Jpeg, &mut pg_metadata::MetaScratch::default());
         assert_eq!(read.rating, None, "the clear reads back as unrated");
         let (json, _) = tool
             .exec(&[
@@ -722,7 +721,9 @@ mod tests {
 
         // The tags other than the rating's and the file's own (name, dates, size, path) that a write could change.
         let kept = |tool: &mut ExifTool, file: &Path| -> Vec<String> {
-            let (json, _) = tool.exec(&[OsStr::new("-j"), OsStr::new("-G1"), OsStr::new("-a"), OsStr::new("-u"), file.as_os_str()]).unwrap();
+            let (json, _) = tool
+                .exec(&[OsStr::new("-j"), OsStr::new("-G1"), OsStr::new("-a"), OsStr::new("-u"), file.as_os_str()])
+                .unwrap();
             json.lines()
                 .filter(|line| !line.contains("Rating") && !line.contains("\"System:") && !line.contains("SourceFile"))
                 .map(str::to_owned)

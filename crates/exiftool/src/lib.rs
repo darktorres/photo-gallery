@@ -636,6 +636,63 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // A clear writes 0 into every rating field the file holds, and reads back as unrated. A stale value left in any one
+    // would keep the old rating, since the reader takes the first field the file holds. Needs ExifTool; skipped without it.
+    #[test]
+    fn a_clear_is_written_over_stale_fields_and_reads_back_unrated() {
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::run_folder("scratch_exiftool", "clear").unwrap();
+        let source = pg_codec::fixtures::jpeg_rgb(2, 2, &[0; 12], 90, pg_codec::encode::Chroma::Half).unwrap();
+        let path = dir.join("stale.jpg");
+        std::fs::write(&path, &source).unwrap();
+        let stale = [
+            "-XMP:Rating=4",
+            "-EXIF:Rating=5",
+            "-EXIF:RatingPercent=75",
+            "-XMP-microsoft:RatingPercent=75",
+            "-overwrite_original",
+        ];
+        let mut args: Vec<&OsStr> = stale.iter().map(|a| OsStr::new(*a)).collect();
+        args.push(path.as_os_str());
+        let (_, stderr) = tool.exec(&args).unwrap();
+        assert!(stderr.is_empty(), "{stderr}");
+        assert_eq!(
+            tool.rating_fields(&path).unwrap(),
+            RatingFields { exif_stars: true, exif_percent: true, xmp_percent: true }
+        );
+
+        let out = dir.join("out.jpg");
+        tool.write_rating(&path, &out, 0).unwrap();
+        let written = std::fs::read(&out).unwrap();
+        let read = pg_metadata::Meta::read(
+            &written,
+            pg_model::format::Format::Jpeg,
+            &mut pg_metadata::MetaScratch::default(),
+        );
+        assert_eq!(read.rating, None, "the clear reads back as unrated");
+        let (json, _) = tool
+            .exec(&[
+                OsStr::new("-j"),
+                OsStr::new("-G1"),
+                OsStr::new("-XMP:Rating"),
+                OsStr::new("-XMP-microsoft:RatingPercent"),
+                OsStr::new("-EXIF:Rating"),
+                OsStr::new("-EXIF:RatingPercent"),
+                out.as_os_str(),
+            ])
+            .unwrap();
+        for field in [
+            "\"XMP-xmp:Rating\": 0",
+            "\"IFD0:Rating\": 0",
+            "\"IFD0:RatingPercent\": 0",
+            "\"XMP-microsoft:RatingPercent\": 0",
+        ] {
+            assert!(json.contains(field), "{field} missing: {json}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // A rating write changes only the rating fields: every other tag the file holds (EXIF, XMP, IPTC) is as it was,
     // and so are the file-system tags' values, but for the file's own name and dates. Needs ExifTool; skipped without it.
     #[test]

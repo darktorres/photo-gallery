@@ -330,6 +330,24 @@ fn a_rating_in_the_viewer_rates_and_then_shows_the_next_picture() {
     assert!(out.contains(&Command::ShowViewer(3)), "{out:?}");
 }
 
+/// The 0 key takes the rating away: the command carries `None`, not a rating of zero.
+#[test]
+fn the_zero_key_takes_the_rating_away() {
+    let mut c = started(listing(""));
+    c.update(0, Event::CurrentChanged(Some(3)));
+    let out = c.update(3, Event::Key(GridKey::Rate(0)));
+    assert!(out.contains(&Command::Rate { item: 3, rating: None }), "{out:?}");
+}
+
+/// A viewer's 0 takes the rating away, and the viewer still moves on to the next picture.
+#[test]
+fn a_zero_in_the_viewer_takes_the_rating_away_and_shows_the_next_picture() {
+    let mut c = started(listing(""));
+    let out = c.update(1, Event::RateInViewer { item: 2, rating: None });
+    assert_eq!(out.first(), Some(&Command::Rate { item: 2, rating: None }), "{out:?}");
+    assert!(out.contains(&Command::ShowViewer(3)), "{out:?}");
+}
+
 /// The last picture stays where it is: a rating there rates it and shows nothing else.
 #[test]
 fn a_rating_of_the_last_picture_in_the_viewer_shows_no_other() {

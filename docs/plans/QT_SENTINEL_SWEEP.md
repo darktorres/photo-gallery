@@ -37,7 +37,7 @@ Qt 6.12.0 (`C:/Qt/6.12.0/msvc2022_64`), run offscreen. Probes are in the session
 1. **File ids cross as decimal strings, with `""` for none**, as `BOUNDED_MEMORY_PLAN.md` D29 decides. The bridge already passes file ids as `i64` (`bridges/gallery_bridge.rs:187, 192`), so those sites change to the D29 form. `QVariant` works (measured), but it would add a second id convention beside D29, so it is not proposed for file ids.
 2. **Action and selection codes become Rust enums with named variants** (`ViewerAction`, `PanelAction`, `RowKey`, `LedgerKind`, and the lane and notice codes). QML compares the names, not the numbers.
 3. **Absent values are checked in Rust before a typed `int` receiver.** Typed `int` receivers take `undefined` and `null` as 0, and typed `int` properties throw. Neither is safe to rely on for "none".
-4. **Counts and positions** follow item 4 of `TYPE_MISMATCH_VALIDATION.md` (`i64` in Rust, `real` in QML, and a window model). This plan does not decide them.
+4. **Counts and positions** follow item 5 of `TYPE_MISMATCH_VALIDATION.md` (`i64` in Rust, `real` in QML, and a window model). This plan does not decide them.
 5. **The `QPersistentModelIndex` plan for item selections stays withdrawn.** A model-roles probe found that a Rust-owned selected role driven by intents works, and that no `-1` crosses the boundary. The replacement design belongs to Phase 7 step 7.9.
 
 ## Out of scope

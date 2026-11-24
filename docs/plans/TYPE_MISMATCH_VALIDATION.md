@@ -1,6 +1,6 @@
 # Type mismatch findings: open items
 
-Five findings from the type-mismatch review are still open. The findings were first written at `489f3d31`. Item 1 was adversarially validated at `0e6e1fd9`, and its corrections are applied. Item 2 was checked at HEAD (`fd5e727a`), and its design is below. Item 3 was re-validated at `b621641e`, and item 4 at `b621641e`. The Qt sentinel sweep is no longer in item 1; it is its own plan, `docs/plans/QT_SENTINEL_SWEEP.md`. Items 1 to 4 are rated low, except 3b, which is medium. Item 4 is not reached at the 1B-file target, and it must be fixed before Phase 7 of the bounded-memory plan ships. Items 1 and 4 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is open: its row-id defect is fixed, and its entry lists the defects that remain and their planned fixes. The Exif IFD pointer and Rating findings are complete and have been removed from this file.
+Five findings from the type-mismatch review are still open. The findings were first written at `489f3d31`. Item 1 was adversarially validated at `0e6e1fd9`, and its corrections are applied. Item 2 was checked at HEAD (`fd5e727a`), and its design is below. Item 4 was re-validated at `b621641e`, and item 5 at `b621641e`. The Qt sentinel sweep is no longer in item 1; it is its own plan, `docs/plans/QT_SENTINEL_SWEEP.md`. Items 1, 2, 4 and 5 are rated low, except 4b, which is medium. Item 5 is not reached at the 1B-file target, and it must be fixed before Phase 7 of the bounded-memory plan ships. Items 1 and 5 overlap steps of Phase 7 in `docs/plans/BOUNDED_MEMORY_PLAN.md`. Each overlap is noted under its item. The design is not finalized. Each entry gives the current location, the defect, its impact, and the planned fix. Fixed and stale findings are not listed. Item 1 is open: its row-id defect is fixed, and its entry lists the defects that remain and their planned fixes. The Exif IFD pointer and Rating findings are complete and have been removed from this file.
 
 ## 1. The saved last file is lost after a rating, and a catalog error reads as no file (`crates/desktop/src/shell.rs:95`)
 
@@ -57,7 +57,7 @@ Five findings from the type-mismatch review are still open. The findings were fi
 - a lookup that finds no row is a success for the notice's resolver, and only a failed lookup posts `LastFileNotKept`;
 - a failed start reports `LastFileNotKept`, and the notice's own checks pass: the sample, its golden line, the `ordinal`, the resolver table and the words (`crates/model/src/notice.rs`, `crates/wording`).
 
-**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 4); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508), which names a `save_last_file(Option)` that this item does not add.
+**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 5); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508), which names a `save_last_file(Option)` that this item does not add.
 
 **Not verified.** The NTFS behaviour is measured on synthetic files on the local NTFS volumes, not on the library. FAT, exFAT and network identity: see the volume-types trade-off above, which is unconfirmed for FAT and exFAT. A notice raised at the flush is logged: `inbox.post` writes it to the log before anything else (`crates/app/src/inbox.rs:433-434`), and the log is an appended line (`crates/log/src/file.rs:60`). The viewer's and the grid's paths to the save were traced from the code and not run.
 
@@ -102,7 +102,7 @@ Five findings from the type-mismatch review are still open. The findings were fi
 - Tests: under (b) and (c), the held total is at most the budget. Under (a), it is at most the budget plus the largest file. Under (b), each skipped file is reported.
 - Decided: option 1, with the soft limit (fix 5). Option (a) is confirmed: a file larger than the budget is read alone, as today. (b) and (c) would make the limit hard, and are not planned.
 
-**The lanes' memory policy (assessed, from the code; not run; not part of item 2).** The lanes never read the CLI's pipeline flags: `PipelineArgs` is referenced only in `crates/cli`, and the lanes' options come from `pipeline::Options::new` (`crates/library/src/inner.rs:65`). Its findings are item 5 of this file. Decided: each process keeps its own pool and cap, and sharing a budget across processes is out of scope. The library's lanes use a governor, not the CLI's pool budget. Each lane gets one budget: the knee, `(readers + cpus) × 12 MB` (`crates/jobs/src/governor.rs:92`), or the cap split evenly among the lanes when the cap binds (`governor.rs` `split`). The cap is a quarter of physical memory per process (`crates/library/src/coordinator.rs:178`), and the governor rebalances when a lane retires (`coordinator.rs:555`). Each lane's pool is soft, like the CLI's: one file larger than the budget is read alone (`pipeline.rs:836`).
+**The lanes' memory policy (assessed, from the code; not run; not part of item 2).** The lanes never read the CLI's pipeline flags: `PipelineArgs` is referenced only in `crates/cli`, and the lanes' options come from `pipeline::Options::new` (`crates/library/src/inner.rs:65`). Its findings are item 3 of this file. Decided: each process keeps its own pool and cap, and sharing a budget across processes is out of scope. The library's lanes use a governor, not the CLI's pool budget. Each lane gets one budget: the knee, `(readers + cpus) × 12 MB` (`crates/jobs/src/governor.rs:92`), or the cap split evenly among the lanes when the cap binds (`governor.rs` `split`). The cap is a quarter of physical memory per process (`crates/library/src/coordinator.rs:178`), and the governor rebalances when a lane retires (`coordinator.rs:555`). Each lane's pool is soft, like the CLI's: one file larger than the budget is read alone (`pipeline.rs:836`).
 
 - **The cap almost never binds.** With 16 CPUs the knee is 288 MB per lane, so two drives need 576 MB. The cap binds only on a machine with under about 2.3 GB of RAM, or with about 28 lanes on a 32 GB machine.
 - **Slots are not governed.** Each lane's options take the default slot count, `readers + 2 × cpus` (`pipeline.rs:70`, inherited through `inner.rs:65`), so total slots grow with the lane count while the budgets are split. Slots hold whole buffers, which grow to the largest file each one reads.
@@ -113,7 +113,31 @@ Five findings from the type-mismatch review are still open. The findings were fi
 
 *Closed since the first list:* the thumbnail height entry is fixed. `ThumbHeight` (`crates/model/src/size.rs:82`) holds the 16 to 2048 range (`THUMB_HEIGHT`, `size.rs:12`), and the CLI parses it with a clap `value_parser` (`crates/cli/src/args.rs:131`, parser at `args.rs:190`). `pg_thumbs::run` and `ImageRequest::thumb` take it. The plan's `ThumbHeight::clamp(u32)` was not built. The UI clamp in `client/src/image.rs` is gone, and `ThumbHeight::for_row(RowHeight, Scale)` (`size.rs`) does that job instead.
 
-## 3. XMP packets: wide encodings are decoded as UTF-8, and a GIF packet needs its wrapper (`crates/metadata/src/xmp.rs:62`, `crates/metadata/src/container.rs:210`)
+## 3. The lanes' slots and memory cap are not bounded by the budget (`crates/library/src/inner.rs:65`, `crates/library/src/coordinator.rs:178`)
+
+**Current state, checked in the code.** One lane runs per physical drive (`crates/library/src/coordinator.rs:563`, `Inner::new` with `governor.lane()`). Each lane's pool gets a budget from the governor, the knee `(readers + cpus) × 12 MB` (`crates/jobs/src/governor.rs:92`, `pipeline.rs:53`), or the cap split evenly among the lanes when the cap binds. Each lane's pool also takes the default slot count, `readers + 2 × cpus` (`crates/jobs/src/pipeline.rs:70`, inherited through `inner.rs:65`), whatever the number of lanes. The cap is a quarter of physical memory per process (`coordinator.rs:178`, `MEMORY_SHARE` at `coordinator.rs:53`).
+
+**Problems.**
+
+1. Slots are not divided among lanes. The total grows with the number of drives, and each slot's buffer can grow to the largest file its lane reads, while the budgets are split.
+2. The cap almost never binds. With 16 CPUs the knee is 288 MB, so two drives need 576 MB. The cap binds only on a machine with under about 2.3 GB of RAM (two lanes), or with about 28 lanes on 32 GB.
+
+**The knee.** The knee is the budget one lane needs to run at the measured speed. It is `(readers + workers) × 12 MB`: a buffer for each read in flight and for each worker. The measurement in `pipeline.rs:84-87`: on 24 MP JPEGs on an HDD, with 8 readers and 12 workers, 128 MB at the default slots was 4% slower than the default, and 512 MB was no faster than 240 MB.
+
+**Options for the cap.**
+
+- Keep it: a documented process-wide target that rarely binds.
+- Lower it: a fraction that binds on realistic systems. A smaller budget costs little speed, given the measurement above.
+- Remove it: memory is then the sum of the lanes' knees, plus files larger than the budget and the slots, with no process-wide limit. Example: six drives at 288 MB each is about 1.7 GB, and the cap would have no effect.
+
+**Options for slots.**
+
+- Divide each lane's slots by the number of lanes, so readers and workers shrink as drives are added.
+- Count the total slots against the cap, so the total is bounded.
+
+**Status.** Open. The cap and the slots are decided together.
+
+## 4. XMP packets: wide encodings are decoded as UTF-8, and a GIF packet needs its wrapper (`crates/metadata/src/xmp.rs:62`, `crates/metadata/src/container.rs:210`)
 
 **Where it stands (checked at `b621641e`).** `xmp_properties` (`crates/metadata/src/xmp.rs:62`) decodes every packet with `String::from_utf8_lossy`. Nothing in `crates/metadata/src` or `crates/container/src` detects a BOM or a wide encoding. The GIF path finds a packet's end by searching for the ASCII `<?xpacket end=` in two places: `gif_xmp` (`crates/metadata/src/container.rs:210`) and the block walker's `block()` (`crates/container/src/lib.rs:983`). The commits since `9d167729` changed `xmp.rs` and `tiff.rs`, but not these lines.
 
@@ -129,7 +153,7 @@ Five findings from the type-mismatch review are still open. The findings were fi
 | GIF XMP application extension, UTF-16LE with BOM | `None`    | **1** (expected 3)              |
 | GIF XMP application extension, UTF-8 (control)   | `Some(3)` | 3                               |
 
-The wrapper-less GIF case (3b below) was not probed; it rests on code reading. `gif_xmp` returns `None` when the marker is missing, and `block()` returns `None` through `?` at `crates/container/src/lib.rs:983`. `next()` then sets `walk = Broken`, so `complete()` is false, the frame count stays 1, and the rating is dropped.
+The wrapper-less GIF case (4b below) was not probed; it rests on code reading. `gif_xmp` returns `None` when the marker is missing, and `block()` returns `None` through `?` at `crates/container/src/lib.rs:983`. `next()` then sets `walk = Broken`, so `complete()` is false, the frame count stays 1, and the rating is dropped.
 
 **Spec.** The text below was extracted from two Adobe PDFs: [XMP Part 1](https://raw.githubusercontent.com/adobe/XMP-Toolkit-SDK/main/docs/XMPSpecificationPart1.pdf) (April 2012, ISO 16684-1:2011) and [XMP Part 3](https://dl.photoprism.app/pdf/specifications/20120101-Adobe_XMP_Specification_Part_3.pdf). The Part 3 text is the January 2020 edition; the file name says 2012.
 
@@ -142,13 +166,13 @@ The wrapper-less GIF case (3b below) was not probed; it rests on code reading. `
 
 **Findings.**
 
-**3a. Wide-encoded packets lose their rating and dates.** Validated above. The input is non-conforming, and the EXIF fallback covers the rating and dates. Priority: low.
+**4a. Wide-encoded packets lose their rating and dates.** Validated above. The input is non-conforming, and the EXIF fallback covers the rating and dates. Priority: low.
 
-**3b. A conforming GIF without a wrapper loses its rating and frame count.** Part 1 makes the wrapper optional, so a wrapper-less GIF with UTF-8 XMP is conforming, and the path above misreads it. The frame count is wrong, not only the rating. Priority: medium. This is the more important of the two, and it has nothing to do with encoding.
+**4b. A conforming GIF without a wrapper loses its rating and frame count.** Part 1 makes the wrapper optional, so a wrapper-less GIF with UTF-8 XMP is conforming, and the path above misreads it. The frame count is wrong, not only the rating. Priority: medium. This is the more important of the two, and it has nothing to do with encoding.
 
 **Design.**
 
-*Encoding (3a).* Decide by the BOM alone, as the Part 1 rule requires:
+*Encoding (4a).* Decide by the BOM alone, as the Part 1 rule requires:
 
 - `EF BB BF`: UTF-8. The BOM is dropped, and the path is otherwise unchanged.
 - `FF FE 00 00`: UTF-32LE.
@@ -158,11 +182,11 @@ The wrapper-less GIF case (3b below) was not probed; it rests on code reading. `
 
 The 4-byte forms are checked first, so `FF FE 00 00` is not read as a UTF-16LE BOM followed by U+0000. A packet with no BOM stays on the UTF-8 path.
 
-*Decoding (3a).* Decode lossily: `char::decode_utf16` with `REPLACEMENT_CHARACTER` for UTF-16, `char::from_u32` with the same fallback for UTF-32, and a trailing partial unit dropped. This matches the UTF-8 path, which keeps the values and replaces bad bytes, and Part 3 §2.1.2 asks readers to be robust. Damaged values then fail to parse as a rating or date, so no partial value is read. The alternative, a strict decode that skips the packet on any error, is not chosen: it would make a wide packet stricter than a UTF-8 one with the same damage.
+*Decoding (4a).* Decode lossily: `char::decode_utf16` with `REPLACEMENT_CHARACTER` for UTF-16, `char::from_u32` with the same fallback for UTF-32, and a trailing partial unit dropped. This matches the UTF-8 path, which keeps the values and replaces bad bytes, and Part 3 §2.1.2 asks readers to be robust. Damaged values then fail to parse as a rating or date, so no partial value is read. The alternative, a strict decode that skips the packet on any error, is not chosen: it would make a wide packet stricter than a UTF-8 one with the same damage.
 
-*Allocation (3a).* `MetaScratch` promises no allocation once its buffers have grown (`xmp.rs:27-28`). Add a `text: String` field reused across packets, and pass it to `xmp_properties`. The UTF-8 path keeps `Cow::Borrowed`, so its behaviour is unchanged.
+*Allocation (4a).* `MetaScratch` promises no allocation once its buffers have grown (`xmp.rs:27-28`). Add a `text: String` field reused across packets, and pass it to `xmp_properties`. The UTF-8 path keeps `Cow::Borrowed`, so its behaviour is unchanged.
 
-*GIF packet location (3b).* Find the packet's end by the trailer's own bytes, not the wrapper: search for `01 FF FE FD` from the start of the application data, and take the packet to be the bytes before it. The trailer must lie wholly in the file (258 bytes), so a truncated GIF is still incomplete. The search is unambiguous for a conforming packet, because valid UTF-8 never contains `FE` or `FF`. The two sites, `gif_xmp` (`crates/metadata/src/container.rs:210`) and `block()` (`crates/container/src/lib.rs:983`), must agree on the end, so the search goes in one function in `pg_container` that both call. This also removes the encoding dependence: a wide packet in a GIF is read leniently, with no special case.
+*GIF packet location (4b).* Find the packet's end by the trailer's own bytes, not the wrapper: search for `01 FF FE FD` from the start of the application data, and take the packet to be the bytes before it. The trailer must lie wholly in the file (258 bytes), so a truncated GIF is still incomplete. The search is unambiguous for a conforming packet, because valid UTF-8 never contains `FE` or `FF`. The two sites, `gif_xmp` (`crates/metadata/src/container.rs:210`) and `block()` (`crates/container/src/lib.rs:983`), must agree on the end, so the search goes in one function in `pg_container` that both call. This also removes the encoding dependence: a wide packet in a GIF is read leniently, with no special case.
 
 *Out of scope.* A BOM-less wide packet has no spec rule, so it is left to `docs/plans/EXIFTOOL_PORT_PLAN.md:295`, where ExifTool parity is the target. The PNG, WebP and JPEG paths do not search for markers, so they need no change.
 
@@ -170,15 +194,15 @@ The 4-byte forms are checked first, so `FF FE 00 00` is not read as a UTF-16LE B
 
 - `xmp_properties`: UTF-16LE, UTF-16BE, UTF-32LE and UTF-32BE packets with a BOM each read the rating. A UTF-8 packet with a BOM reads as it does now.
 - Lossy behaviour: an odd trailing byte and a lone surrogate, each pinned to its documented outcome.
-- GIF: a wrapper-less animated UTF-8 GIF asserts `(Some(3), 3)`. Run it before the change and expect the 3b failure; that is the first step, because 3b is not probed yet. A UTF-16 GIF with the wrapper asserts `(Some(3), 3)`, a lenient read rather than a conforming one. Both sit beside `a_gif_is_read_only_whole`. The truncation cases must still pass.
+- GIF: a wrapper-less animated UTF-8 GIF asserts `(Some(3), 3)`. Run it before the change and expect the 4b failure; that is the first step, because 4b is not probed yet. A UTF-16 GIF with the wrapper asserts `(Some(3), 3)`, a lenient read rather than a conforming one. Both sit beside `a_gif_is_read_only_whole`. The truncation cases must still pass.
 
-**Cross-references.** `docs/plans/EXIFTOOL_PORT_PLAN.md:295` plans BOM-less detection. When 3a lands, tick its BOM part there and leave the BOM-less part open.
+**Cross-references.** `docs/plans/EXIFTOOL_PORT_PLAN.md:295` plans BOM-less detection. When 4a lands, tick its BOM part there and leave the BOM-less part open.
 
-**Priority and status.** 3a is low, and 3b is medium. Open. Design only; not implemented.
+**Priority and status.** 4a is low, and 4b is medium. Open. Design only; not implemented.
 
 *Closed since the first list:* the version counter entry (old item 7) is gone. No version role, `cast_signed()` or `>= 0` version gate remains in the desktop, the QML or `client/src/grid.rs`. The last commit that touched `ROLE_VERSION` is `d28e2f72`.
 
-## 4. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
+## 5. Counts and positions are 32-bit at the Rust↔QML boundary (`crates/desktop/src/rows.rs:31`)
 
 **Status.** Open, rated low. Validated at `b621641e`. Two parts. The rules and a gate can land now. The windowed model that removes the gate belongs to Phase 7 of `docs/plans/BOUNDED_MEMORY_PLAN.md`, and this item does not build it.
 
@@ -255,27 +279,3 @@ The Qt sweep's selection (`docs/plans/QT_SENTINEL_SWEEP.md`) must address a wind
 - Add the gate now, or wait for Phase 7. Recommended: now. It is one check and one notice kind, and it turns a silent error into a loud one.
 - Keep the rating at low, or raise it to medium.
 - File-id type: the bounded plan must settle D29's decimal strings against `real`.
-
-## 5. The lanes' slots and memory cap are not bounded by the budget (`crates/library/src/inner.rs:65`, `crates/library/src/coordinator.rs:178`)
-
-**Current state, checked in the code.** One lane runs per physical drive (`crates/library/src/coordinator.rs:563`, `Inner::new` with `governor.lane()`). Each lane's pool gets a budget from the governor, the knee `(readers + cpus) × 12 MB` (`crates/jobs/src/governor.rs:92`, `pipeline.rs:53`), or the cap split evenly among the lanes when the cap binds. Each lane's pool also takes the default slot count, `readers + 2 × cpus` (`crates/jobs/src/pipeline.rs:70`, inherited through `inner.rs:65`), whatever the number of lanes. The cap is a quarter of physical memory per process (`coordinator.rs:178`, `MEMORY_SHARE` at `coordinator.rs:53`).
-
-**Problems.**
-
-1. Slots are not divided among lanes. The total grows with the number of drives, and each slot's buffer can grow to the largest file its lane reads, while the budgets are split.
-2. The cap almost never binds. With 16 CPUs the knee is 288 MB, so two drives need 576 MB. The cap binds only on a machine with under about 2.3 GB of RAM (two lanes), or with about 28 lanes on 32 GB.
-
-**The knee.** The knee is the budget one lane needs to run at the measured speed. It is `(readers + workers) × 12 MB`: a buffer for each read in flight and for each worker. The measurement in `pipeline.rs:84-87`: on 24 MP JPEGs on an HDD, with 8 readers and 12 workers, 128 MB at the default slots was 4% slower than the default, and 512 MB was no faster than 240 MB.
-
-**Options for the cap.**
-
-- Keep it: a documented process-wide target that rarely binds.
-- Lower it: a fraction that binds on realistic systems. A smaller budget costs little speed, given the measurement above.
-- Remove it: memory is then the sum of the lanes' knees, plus files larger than the budget and the slots, with no process-wide limit. Example: six drives at 288 MB each is about 1.7 GB, and the cap would have no effect.
-
-**Options for slots.**
-
-- Divide each lane's slots by the number of lanes, so readers and workers shrink as drives are added.
-- Count the total slots against the cap, so the total is bounded.
-
-**Status.** Open. The cap and the slots are decided together.

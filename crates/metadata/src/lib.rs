@@ -62,7 +62,7 @@ impl Meta {
             .unwrap_or_default();
         if format == Format::Tiff {
             // A TIFF file keeps its packet in IFD0.
-            scratch.packets.extend(exif.xmp.map(|x| Packet::InFile(range_in(bytes, x))));
+            scratch.packets.extend(exif.xmp().map(|x| Packet::InFile(range_in(bytes, x))));
         }
         // In packet order: the first packet's value of each, but MicrosoftPhoto's only counts without an XMP one.
         let (mut xmp_rating, mut microsoft, mut xmp_taken) = (None, None, None);
@@ -81,15 +81,23 @@ impl Meta {
             xmp_taken =
                 xmp_taken.or_else(|| [original, created, create].into_iter().flatten().find_map(parse_iso_date));
         }
+        // EXIF's own fields, when XMP has no rating. Stars are 1 to 5: a 0 is no value, and so is a value above 5. The
+        // percent is 1 to 100, on Windows' scale: a 0 is no value, and so is a value above 100.
         let exif_rating = || {
-            exif.rating
-                .map(|v| u8::try_from(v.min(5)).unwrap_or(u8::MAX))
-                .or_else(|| exif.rating_percent.map(|v| percent(f64::from(v))))
+            exif.rating()
+                .and_then(|v| u8::try_from(v).ok())
+                .filter(|v| (1..=5).contains(v))
+                .or_else(|| {
+                    exif.rating_percent()
+                        .and_then(|v| u8::try_from(v).ok())
+                        .filter(|v| (1..=100).contains(v))
+                        .map(|v| percent(f64::from(v)))
+                })
         };
         Meta {
             orientation: exif.orientation(),
             rating: xmp_rating.or(microsoft).or_else(exif_rating).and_then(Rating::new),
-            taken: exif.dates.iter().flatten().find_map(|d| exif_date(d)).or(xmp_taken),
+            taken: exif.dates().iter().flatten().find_map(|d| exif_date(d)).or(xmp_taken),
             frames: container.frames,
         }
     }
@@ -103,6 +111,7 @@ mod tests {
         EXIF_TAG_DATE_TIME_DIGITIZED, EXIF_TAG_DATE_TIME_ORIGINAL, EXIF_TAG_EXIF_IFD, EXIF_TAG_RATING,
         EXIF_TAG_RATING_PERCENT, TIFF_TAG_XMP,
     };
+    use crate::exif::Value;
     use crate::test_support::png_chunk;
     use crate::tiff::{
         EXIF_TAG_ORIENTATION, TIFF_ASCII, TIFF_BYTE, TIFF_IFD8, TIFF_LONG, TIFF_LONG8, TIFF_SHORT, TIFF_UNDEFINED, Tiff,
@@ -291,8 +300,8 @@ mod tests {
                 (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[3])),
             ];
             assert_eq!(read(&twice, &[]).orientation.get(), 3);
-            // Rating, capped at 5; RatingPercent only without it.
-            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), Some(5));
+            // A rating above 5 is no rating (7 alone reads as none); RatingPercent decides only when the rating is absent.
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), None);
             let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
             assert_eq!(read(std::slice::from_ref(&percent), &[]).rating.map(Rating::get), Some(3));
             assert_eq!(
@@ -366,6 +375,184 @@ mod tests {
         }
     }
 
+    /// A little-endian SHORT value.
+    fn le_short(v: u16) -> Vec<u8> {
+        v.to_le_bytes().to_vec()
+    }
+
+    /// The byte position of the value field (its offset or inline value, 4 bytes) of entry `index` in the IFD at `ifd`.
+    fn value_field(ifd: usize, index: usize) -> usize {
+        ifd + 2 + 12 * index + 8
+    }
+
+    /// Points an entry's value offset past the end of the block, so its value can't be read.
+    fn point_past_end(block: &mut [u8], at: usize) {
+        let end = u32::try_from(block.len()).unwrap();
+        block[at..at + 4].copy_from_slice(&end.to_le_bytes());
+    }
+
+    // Item 1 of docs/plans/TYPE_MISMATCH_VALIDATION.md. Each test names the rule it checks. A control assertion comes
+    // first where the test corrupts a block, so a failure is about the rule and not the block.
+
+    // Rule: the Exif IFD pointer may be an IFD (type 13, TIFF Technical Note 1), not only a LONG. Fails today: `uint`
+    // has no arm for type 13, so the dates are dropped.
+    #[test]
+    fn exif_pointer_of_type_ifd_reads_its_dates() {
+        let date = (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, b"2023:07:15 18:30:05\0".to_vec());
+        let mut block = tiff_block(true, &[], &[date]);
+        assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
+        // IFD0's only entry is the pointer: its tag is at 10, and its type is the two bytes after the tag.
+        block[12..14].copy_from_slice(&13u16.to_le_bytes());
+        assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
+    }
+
+    // Rule: a rating outside 1 to 5 is no rating, so the rating falls back to rating percent (50 is 3 stars).
+    // Fails today: 7 reads as 5 stars.
+    #[test]
+    fn a_rating_above_five_reads_as_absent_so_the_percent_decides() {
+        let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(7)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(50))];
+        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(3));
+    }
+
+    // Rule: a rating percent outside 0 to 100 is no rating. Fails today: `percent()` saturates 101 to 5 stars.
+    #[test]
+    fn a_rating_percent_above_100_reads_as_absent() {
+        let ifd0 = [(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(101))];
+        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), None);
+    }
+
+    // Pinned: the top of the Windows scale is 5 stars, and 100 is in range. Passes today.
+    #[test]
+    fn a_rating_percent_of_100_is_five_stars() {
+        let ifd0 = [(EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(100))];
+        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(5));
+    }
+
+    // Rule (item 2, rule 3): an EXIF Rating of 0 is no value, so the percent decides. Measured on Windows: EXIF
+    // Rating 0 with EXIF RatingPercent 75 shows 75 (4 stars). Fails today: an explicit 0 reads as unrated and blocks
+    // the percent.
+    #[test]
+    fn an_exif_rating_of_zero_is_no_value_so_the_percent_decides() {
+        let ifd0 = [(EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(0)), (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, le_short(75))];
+        assert_eq!(rating(&tiff_block(true, &ifd0, &[]), Format::Tiff), Some(4));
+    }
+
+    // Rule: an entry whose value can't be read is skipped, so the last readable entry of the tag wins (ExifTool's
+    // rule: `Bad offset` skips the entry before FoundTag). Fails today: an unreadable last rating makes it absent.
+    #[test]
+    fn an_unreadable_last_rating_keeps_the_earlier_one() {
+        let ifd0 = [
+            (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2)),
+            (EXIF_TAG_RATING, TIFF_SHORT, 3, [le_short(4), le_short(4), le_short(4)].concat()),
+        ];
+        let mut block = tiff_block(true, &ifd0, &[]);
+        assert_eq!(rating(&block, Format::Tiff), Some(4));
+        point_past_end(&mut block, value_field(8, 1));
+        assert_eq!(rating(&block, Format::Tiff), Some(2));
+    }
+
+    // Rule: as above, for a date. Fails today: an unreadable last DateTimeOriginal makes the date absent.
+    #[test]
+    fn an_unreadable_last_date_keeps_the_earlier_one() {
+        let date = |s: &[u8]| (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, [s, b"\0"].concat());
+        let mut block = tiff_block(true, &[], &[date(b"2023:07:15 18:30:05"), date(b"2020:01:02 03:04:05")]);
+        assert_eq!(taken(&block, Format::Tiff), wall_clock_seconds(2020, 1, 2, 3, 4, 5));
+        // The Exif IFD sits after IFD0 (one pointer entry): at 8 + 2 + 12 + 4 = 26.
+        point_past_end(&mut block, value_field(26, 1));
+        assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
+    }
+
+    // Rule: as above, for orientation. Passes today: the orientation keeps the last one that reads, which is the rule
+    // the plan generalises to every field.
+    #[test]
+    fn duplicate_orientation_keeps_the_last_readable_entry() {
+        let ifd0 = [
+            (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(6)),
+            (EXIF_TAG_ORIENTATION, TIFF_SHORT, 3, [le_short(8), le_short(1), le_short(1)].concat()),
+        ];
+        let mut block = tiff_block(true, &ifd0, &[]);
+        assert_eq!(orientation(&block, Format::Tiff).get(), 8);
+        point_past_end(&mut block, value_field(8, 1));
+        assert_eq!(orientation(&block, Format::Tiff).get(), 6);
+    }
+
+    // Pinned: 9 is not an orientation, so a file whose last readable orientation is 9 is shown as stored. Passes today.
+    #[test]
+    fn duplicate_orientation_ending_in_an_invalid_value_reads_as_upright() {
+        let ifd0 = [(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(6)), (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, le_short(9))];
+        assert_eq!(orientation(&tiff_block(true, &ifd0, &[]), Format::Tiff).get(), 1);
+    }
+
+    // Rule (plan item 1): the reader keeps a LONG8 in full. The old `uint` narrowed it to u32 and read a value above
+    // u32::MAX as absent, which is why a BigTIFF's Exif IFD above 4 GiB lost its dates.
+    #[test]
+    fn unsigned_reads_a_long8_above_u32_max_in_full() {
+        let value = (1u64 << 32) + 5;
+        let block = tiff_block_as(true, true, &[(0x9999, TIFF_LONG8, 1, value.to_le_bytes().to_vec())], &[]);
+        let tiff = Tiff::new(&block, true).unwrap();
+        let e = tiff.entries(tiff.ifd0().unwrap()).next().unwrap();
+        assert_eq!(tiff.unsigned(&e), Some(value));
+    }
+
+    // Rule (plan item 1): the narrowing is checked, never a wrap. An Exif pointer of 2^32 + 52 must not wrap to the
+    // Exif IFD at 52, which is in this block. Absent today, and it must stay absent after the fix.
+    #[test]
+    fn a_bigtiff_exif_pointer_above_u32_max_never_wraps_to_a_real_ifd() {
+        let date = (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, b"2023:07:15 18:30:05\0".to_vec());
+        let mut block = tiff_block_as(true, true, &[], &[date]);
+        assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
+        // Header 16 bytes, then IFD0's 8-byte count: its only entry (the pointer) has its 8-byte value at 36..44.
+        block[36..44].copy_from_slice(&((1u64 << 32) + 52).to_le_bytes());
+        assert_eq!(taken(&block, Format::Tiff), None);
+    }
+
+    // Rule (plan item 1): a tag given three times keeps the two readable values it replaces, in entry order, as
+    // ExifTool keeps `Tag (1)` and `Tag (2)`. An unreadable entry is neither the winner nor kept.
+    #[test]
+    fn a_tag_given_three_times_keeps_the_two_values_it_replaces_in_order() {
+        let ifd0 = [
+            (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(1)),
+            (EXIF_TAG_RATING, TIFF_SHORT, 3, [le_short(9), le_short(9), le_short(9)].concat()),
+            (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(2)),
+            (EXIF_TAG_RATING, TIFF_SHORT, 1, le_short(3)),
+        ];
+        let mut block = tiff_block(true, &ifd0, &[]);
+        point_past_end(&mut block, value_field(8, 1));
+        let exif = Exif::read(&block, false).unwrap();
+        assert_eq!(exif.rating(), Some(3));
+        assert_eq!(exif.superseded, vec![(EXIF_TAG_RATING, Value::Number(1)), (EXIF_TAG_RATING, Value::Number(2))]);
+    }
+
+    // Rule (plan item 1): a BigTIFF whose Exif IFD sits above 4 GiB reads its dates. Before the fix, the narrowing to
+    // u32 made such a pointer absent. The block is zeroed, so only the bytes written here are touched.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn a_bigtiff_exif_ifd_above_4_gib_reads_its_dates() {
+        let at = (1usize << 32) + 64;
+        let date_at = at + 8 + 20 + 8;
+        let mut block = vec![0u8; date_at + 20];
+        // Header: "II", 43, an 8-byte offset size, 0, and IFD0 at 16.
+        block[0..2].copy_from_slice(b"II");
+        block[2..4].copy_from_slice(&43u16.to_le_bytes());
+        block[4..6].copy_from_slice(&8u16.to_le_bytes());
+        block[8..16].copy_from_slice(&16u64.to_le_bytes());
+        // IFD0: one entry, the Exif IFD pointer (IFD8, inline), after its 8-byte count.
+        block[16..24].copy_from_slice(&1u64.to_le_bytes());
+        block[24..26].copy_from_slice(&EXIF_TAG_EXIF_IFD.to_le_bytes());
+        block[26..28].copy_from_slice(&TIFF_IFD8.to_le_bytes());
+        block[28..36].copy_from_slice(&1u64.to_le_bytes());
+        block[36..44].copy_from_slice(&(at as u64).to_le_bytes());
+        // The Exif IFD above 4 GiB: one entry, DateTimeOriginal (ASCII, 20 bytes) at date_at, then a zero next offset.
+        block[at..at + 8].copy_from_slice(&1u64.to_le_bytes());
+        let e = at + 8;
+        block[e..e + 2].copy_from_slice(&EXIF_TAG_DATE_TIME_ORIGINAL.to_le_bytes());
+        block[e + 2..e + 4].copy_from_slice(&TIFF_ASCII.to_le_bytes());
+        block[e + 4..e + 12].copy_from_slice(&20u64.to_le_bytes());
+        block[e + 12..e + 20].copy_from_slice(&(date_at as u64).to_le_bytes());
+        block[date_at..date_at + 20].copy_from_slice(b"2023:07:15 18:30:05\0");
+        assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
+    }
+
     // The patcher sets every orientation entry the reader could take, each at its own width, so what it wrote is
     // what the reader reads back: a BYTE, a LONG, a LONG out of its entry, a repeated tag, and LONG8 in BigTIFF.
     #[test]
@@ -406,7 +593,7 @@ mod tests {
                 let tiff = Tiff::new(&patched, true).unwrap();
                 assert_eq!(tiff.orientation_entries().count(), ifd0.len());
                 for (_, e) in tiff.orientation_entries() {
-                    assert_eq!(tiff.uint(&e), Some(3), "{ifd0:?}");
+                    assert_eq!(tiff.unsigned(&e), Some(3), "{ifd0:?}");
                 }
                 // Nothing but the value changed: a single entry patched back to 6 gives the file it was (the
                 // trailing values of an array are kept).

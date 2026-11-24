@@ -1,5 +1,5 @@
-//! What the import reads of an EXIF block (IFD0's orientation, rating and XMP, and the Exif IFD's dates), through
-//! the TIFF reader (`tiff`).
+//! What the import reads of an EXIF block (IFD0's orientation, rating, rating percent and XMP, and the Exif IFD's
+//! dates), through the TIFF reader (`tiff`).
 
 use pg_model::date::wall_clock_seconds;
 use pg_model::orientation::Orientation;
@@ -25,54 +25,132 @@ pub(crate) fn exif_date(data: &[u8]) -> Option<i64> {
 pub(crate) const EXIF_TAG_RATING: u16 = 0x4746;
 pub(crate) const EXIF_TAG_RATING_PERCENT: u16 = 0x4749;
 pub(crate) const TIFF_TAG_XMP: u16 = 700;
-
-/// What the import reads of an EXIF block: IFD0's orientation, rating and XMP (where a TIFF file keeps its
-/// packet), and the Exif IFD's dates. A field that doesn't fit in the block reads as absent, and the rest are still
-/// read. A tag given twice reads as its last entry, and a last entry that doesn't read makes the field absent, except
-/// orientation, which keeps the last one that does.
-#[derive(Default)]
-pub(crate) struct Exif<'a> {
-    orientation: Option<u32>,
-    pub(crate) rating: Option<u32>,
-    pub(crate) rating_percent: Option<u32>,
-    pub(crate) xmp: Option<&'a [u8]>,
-    /// DateTimeOriginal, then DateTimeDigitized.
-    pub(crate) dates: [Option<&'a [u8]>; 2],
-}
-
 pub(crate) const EXIF_TAG_EXIF_IFD: u16 = 0x8769;
 pub(crate) const EXIF_TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
 pub(crate) const EXIF_TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+
+/// An entry's readable value, by what it holds. Numbers are kept whole: the domain conversions happen in the
+/// accessors, so a value that doesn't fit a domain is absent there and never truncated here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Value<'a> {
+    /// A BYTE, SHORT, LONG, IFD, LONG8 or IFD8 entry's first value, in full.
+    Number(u64),
+    /// An ASCII entry's first string (up to its NUL).
+    Text(&'a [u8]),
+    /// A BYTE or UNDEFINED entry's bytes.
+    Bytes(&'a [u8]),
+}
+
+/// What the import reads of an EXIF block. Each tag keeps the value of its last readable entry: an entry whose value
+/// can't be read is skipped, so the earlier readable entry of the tag stands. Each tag also keeps the readable values
+/// that a later entry replaced, in entry order (`superseded`), as ExifTool keeps them under `Tag (1)`, `Tag (2)`, and
+/// so on. Nothing reads `superseded` yet; it is kept so the duplicate rule matches ExifTool's.
+#[derive(Default)]
+pub(crate) struct Exif<'a> {
+    orientation: Option<Value<'a>>,
+    rating: Option<Value<'a>>,
+    rating_percent: Option<Value<'a>>,
+    xmp: Option<Value<'a>>,
+    exif_ifd: Option<Value<'a>>,
+    date_original: Option<Value<'a>>,
+    date_digitized: Option<Value<'a>>,
+    /// The readable values that a later entry of the same tag replaced, as `(tag, value)`, in entry order.
+    pub(crate) superseded: Vec<(u16, Value<'a>)>,
+}
 
 impl<'a> Exif<'a> {
     pub(crate) fn read(block: &'a [u8], bigtiff: bool) -> Option<Exif<'a>> {
         let tiff = Tiff::new(block, bigtiff)?;
         let mut exif = Exif::default();
-        let mut exif_ifd = None;
         for e in tiff.entries(tiff.ifd0()?) {
-            match e.tag {
-                // The last readable one, of the kinds the patcher sets too.
-                EXIF_TAG_ORIENTATION if tiff.orientation_kind(&e) => {
-                    exif.orientation = tiff.uint(&e).or(exif.orientation);
-                }
-                EXIF_TAG_RATING => exif.rating = tiff.uint(&e),
-                EXIF_TAG_RATING_PERCENT => exif.rating_percent = tiff.uint(&e),
-                TIFF_TAG_XMP => exif.xmp = tiff.bytes(&e),
-                EXIF_TAG_EXIF_IFD => exif_ifd = tiff.uint(&e),
-                _ => {}
-            }
+            let value = match e.tag {
+                // The orientation kinds the patcher sets too.
+                EXIF_TAG_ORIENTATION if tiff.orientation_kind(&e) => tiff.unsigned(&e).map(Value::Number),
+                EXIF_TAG_RATING | EXIF_TAG_RATING_PERCENT | EXIF_TAG_EXIF_IFD => tiff.unsigned(&e).map(Value::Number),
+                TIFF_TAG_XMP => tiff.bytes(&e).map(Value::Bytes),
+                _ => continue,
+            };
+            exif.keep(e.tag, value);
         }
-        for e in exif_ifd.into_iter().flat_map(|ifd| tiff.entries(pg_model::num::index(ifd))) {
-            match e.tag {
-                EXIF_TAG_DATE_TIME_ORIGINAL => exif.dates[0] = tiff.ascii(&e),
-                EXIF_TAG_DATE_TIME_DIGITIZED => exif.dates[1] = tiff.ascii(&e),
-                _ => {}
+        // The Exif IFD's position is a file position: a value that doesn't fit a usize is no position.
+        if let Some(at) = number(exif.exif_ifd).and_then(|n| usize::try_from(n).ok()) {
+            for e in tiff.entries(at) {
+                let value = match e.tag {
+                    EXIF_TAG_DATE_TIME_ORIGINAL | EXIF_TAG_DATE_TIME_DIGITIZED => tiff.ascii(&e).map(Value::Text),
+                    _ => continue,
+                };
+                exif.keep(e.tag, value);
             }
         }
         Some(exif)
     }
 
+    /// The slot that holds a tag's winning value, if the tag is one this reader keeps.
+    fn slot(&mut self, tag: u16) -> Option<&mut Option<Value<'a>>> {
+        Some(match tag {
+            EXIF_TAG_ORIENTATION => &mut self.orientation,
+            EXIF_TAG_RATING => &mut self.rating,
+            EXIF_TAG_RATING_PERCENT => &mut self.rating_percent,
+            TIFF_TAG_XMP => &mut self.xmp,
+            EXIF_TAG_EXIF_IFD => &mut self.exif_ifd,
+            EXIF_TAG_DATE_TIME_ORIGINAL => &mut self.date_original,
+            EXIF_TAG_DATE_TIME_DIGITIZED => &mut self.date_digitized,
+            _ => return None,
+        })
+    }
+
+    /// Records one entry's value. An entry that doesn't read (`None`) is skipped: it neither replaces the winner nor
+    /// is kept. A readable entry becomes the winner, and the winner it replaces is kept in `superseded`.
+    fn keep(&mut self, tag: u16, value: Option<Value<'a>>) {
+        let (Some(value), Some(slot)) = (value, self.slot(tag)) else { return };
+        if let Some(replaced) = slot.replace(value) {
+            self.superseded.push((tag, replaced));
+        }
+    }
+
+    /// The winning orientation, as the EXIF value 1 to 8. A value outside that range is no orientation, and the
+    /// picture is shown as stored.
     pub(crate) fn orientation(&self) -> Orientation {
-        self.orientation.and_then(|o| u8::try_from(o).ok()).map_or(Orientation::UPRIGHT, Orientation::from_tag)
+        number(self.orientation)
+            .and_then(|o| u8::try_from(o).ok())
+            .and_then(Orientation::new)
+            .unwrap_or(Orientation::UPRIGHT)
+    }
+
+    /// The winning rating field, EXIF `Rating`, as the number it holds. The domain check is the caller's.
+    pub(crate) fn rating(&self) -> Option<u64> {
+        number(self.rating)
+    }
+
+    /// The winning rating percent, EXIF `RatingPercent`, as the number it holds. The domain check is the caller's.
+    pub(crate) fn rating_percent(&self) -> Option<u64> {
+        number(self.rating_percent)
+    }
+
+    /// The winning XMP packet (where a TIFF file keeps it in IFD0).
+    pub(crate) fn xmp(&self) -> Option<&'a [u8]> {
+        match self.xmp {
+            Some(Value::Bytes(bytes)) => Some(bytes),
+            _ => None,
+        }
+    }
+
+    /// DateTimeOriginal, then DateTimeDigitized.
+    pub(crate) fn dates(&self) -> [Option<&'a [u8]>; 2] {
+        [text(self.date_original), text(self.date_digitized)]
+    }
+}
+
+fn number(value: Option<Value>) -> Option<u64> {
+    match value? {
+        Value::Number(n) => Some(n),
+        _ => None,
+    }
+}
+
+fn text<'a>(value: Option<Value<'a>>) -> Option<&'a [u8]> {
+    match value? {
+        Value::Text(text) => Some(text),
+        _ => None,
     }
 }

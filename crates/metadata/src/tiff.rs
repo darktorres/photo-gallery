@@ -30,6 +30,7 @@ pub(crate) const TIFF_SBYTE: u16 = 6;
 pub(crate) const TIFF_UNDEFINED: u16 = 7;
 pub(crate) const TIFF_SSHORT: u16 = 8;
 pub(crate) const TIFF_LONG8: u16 = 16;
+pub(crate) const TIFF_IFD: u16 = 13;
 pub(crate) const TIFF_IFD8: u16 = 18;
 
 impl<'a> Tiff<'a> {
@@ -121,7 +122,7 @@ impl<'a> Tiff<'a> {
         let unit: usize = match e.kind {
             TIFF_BYTE | TIFF_ASCII | TIFF_SBYTE | TIFF_UNDEFINED => 1,
             TIFF_SHORT | TIFF_SSHORT => 2,
-            4 | 9 | 11 => 4,
+            4 | 9 | 11 | 13 => 4,
             5 | 10 | 12 => 8,
             // LONG8, SLONG8 and IFD8: BigTIFF only.
             16..=18 if self.big => 8,
@@ -137,7 +138,7 @@ impl<'a> Tiff<'a> {
     }
 
     /// Whether an orientation entry is of a kind the reader and the patcher take: BYTE, SHORT or LONG, and LONG8
-    /// in BigTIFF (the kinds [`Tiff::uint`] reads as a number).
+    /// in BigTIFF (the kinds [`Tiff::unsigned`] reads as a number).
     pub(crate) fn orientation_kind(&self, e: &Entry) -> bool {
         matches!(e.kind, TIFF_BYTE | TIFF_SHORT | TIFF_LONG) || (self.big && e.kind == TIFF_LONG8)
     }
@@ -153,14 +154,16 @@ impl<'a> Tiff<'a> {
             .filter_map(|e| Some((self.value_range(&e)?, e)))
     }
 
-    /// An entry's first value as an unsigned integer (BYTE, SHORT or LONG; a LONG8 or IFD8 that fits a LONG).
-    pub(crate) fn uint(&self, e: &Entry) -> Option<u32> {
+    /// An entry's first value as an unsigned integer, in full: BYTE, SHORT, LONG and IFD (13), and LONG8 and IFD8
+    /// (18) without narrowing. `None` for another kind, or a value outside the block. The caller narrows to its own
+    /// domain with a checked conversion.
+    pub(crate) fn unsigned(&self, e: &Entry) -> Option<u64> {
         let v = self.value(e)?;
         match e.kind {
-            TIFF_BYTE => v.first().map(|&b| u32::from(b)),
-            TIFF_SHORT => self.u16_of(v).map(u32::from),
-            TIFF_LONG => self.u32_of(v),
-            TIFF_LONG8 | TIFF_IFD8 => self.u64_of(v).and_then(|n| u32::try_from(n).ok()),
+            TIFF_BYTE => v.first().map(|&b| u64::from(b)),
+            TIFF_SHORT => self.u16_of(v).map(u64::from),
+            TIFF_LONG | TIFF_IFD => self.u32_of(v).map(u64::from),
+            TIFF_LONG8 | TIFF_IFD8 => self.u64_of(v),
             _ => None,
         }
     }

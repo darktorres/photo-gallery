@@ -287,4 +287,27 @@ fn folder_removal((catalog, root): (Catalog, RulePath)) -> (Catalog, Driven) {
     (catalog, black_box(driven))
 }
 
-library_benchmark_group!(name = removal, benchmarks = [folder_removal]);
+// The hide alone, the step the removal's begin is to take on (its files marked missing, in batches): the same setup, measured
+// by itself, so its share of `folder_removal` is the difference.
+#[library_benchmark]
+#[bench::ten_thousand(setup = for_removal)]
+fn folder_hide((catalog, root): (Catalog, RulePath)) -> (Catalog, u64) {
+    let hidden = or_stop(catalog.hide_pages(&root), "the hide");
+    (catalog, black_box(hidden))
+}
+
+// The delete alone (`drive_removals`), after the hide: the setup hides the folder, so the measured function is the delete.
+fn for_hidden_removal() -> (Catalog, RulePath) {
+    let (catalog, root) = for_removal();
+    or_stop(catalog.hide_pages(&root), "the hide");
+    (catalog, root)
+}
+
+#[library_benchmark]
+#[bench::ten_thousand(setup = for_hidden_removal)]
+fn folder_delete((catalog, root): (Catalog, RulePath)) -> (Catalog, Driven) {
+    let driven = or_stop(catalog.drive_removals(&mut |_| true), "the delete");
+    (catalog, black_box(driven))
+}
+
+library_benchmark_group!(name = removal, benchmarks = [folder_removal, folder_hide, folder_delete]);

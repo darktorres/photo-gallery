@@ -256,6 +256,51 @@ fn ratings_and_turns_reach_the_files() {
     quiet.check();
 }
 
+/// A JPEG that Windows rated (4 stars in XMP and a percent of 75 in EXIF) takes a new rating through the queue: the write
+/// is accepted (no write error), and the file reads back the rating written, not the stale percent. Needs ExifTool;
+/// skipped without it.
+#[test]
+fn a_rating_reaches_a_jpeg_that_holds_a_stale_percent() {
+    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+        return;
+    }
+    let dir = pg_testkit::run_folder_with("scratch_library", "stale", &["images"]).unwrap();
+    std::fs::create_dir_all(dir.join("images")).unwrap();
+    let path = dir.join("images").join("stale.jpg");
+    std::fs::write(&path, pattern(64, 48, Encoding::Jpeg).unwrap()).unwrap();
+    let out = std::process::Command::new("exiftool")
+        .args(["-overwrite_original_in_place", "-XMP:Rating=4", "-EXIF:RatingPercent=75"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+    let ctl = Control::new();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+    c.add_root(&root).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    let (id, _) = ids(&c).unwrap().into_iter().next().unwrap();
+
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer =
+        Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
+    c.set_rating(FileId::new(id), Rating::new(2), true).unwrap();
+    writer.wake();
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    let written = std::fs::read(&path).unwrap();
+    assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(2));
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}
+
 /// A JPEG and a video whose names have no UTF-8 form (a lone surrogate on Windows, a raw byte on Unix) are imported, and
 /// the rating reaches the JPEG in place: the write goes by the exact name, the files keep their identities, and the
 /// folder holds no other file. Needs ExifTool; skipped without it.

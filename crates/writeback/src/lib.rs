@@ -812,6 +812,34 @@ mod tests {
         (inner, quiet)
     }
 
+    /// A writer's drain ends with a PASSIVE checkpoint on the catalog it drained (section 11). The drain runs on a service
+    /// that is asked to quit before it starts, so it returns at once, and what is measured is the checkpoint at its end.
+    #[test]
+    fn a_drain_checkpoints_the_wal_at_its_end() {
+        let sink = RecordingSink::new();
+        let (inner, _quiet) = writer_state("writeback-checkpoint", sink.clone());
+        drop(
+            pg_catalog::Catalog::prepare(
+                &inner.catalog_path,
+                pg_catalog::Versions::current(),
+                pg_platform::native::PATH_RULES,
+            )
+            .unwrap(),
+        );
+        let counted = Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX));
+        let seen = counted.clone();
+        let service = Service::start("writeback-checkpoint-probe", move |waker| {
+            let c = Catalog::open(&inner.catalog_path, pg_platform::native::PATH_RULES).unwrap();
+            let mut exiftool = None;
+            inner.drain(waker, &c, &mut exiftool).unwrap();
+            seen.store(c.passive_checkpoints(), std::sync::atomic::Ordering::SeqCst);
+        })
+        .unwrap();
+        service.quit();
+        assert!(service.stop_within(Duration::from_secs(10)), "the drain ends at once");
+        assert_eq!(counted.load(std::sync::atomic::Ordering::SeqCst), 1, "the drain checkpointed once");
+    }
+
     // The status's one choke point tells a failure when it comes or changes, not again while it holds, and clears it
     // when it goes; the drops are told as one event, with their count and the latest's kind.
     #[test]

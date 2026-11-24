@@ -632,12 +632,14 @@ need the golden tables.
 
 ## 11. Batch sizes and checkpoints
 
-**Status (2026-11-24).** Implemented, not committed. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
-(`catalog/src/schema.rs`); `Catalog::checkpoint_passive` (`catalog/src/core.rs`), run at the end of each lane's round
-(`library/src/lane.rs`), after the removal's deletes (`library/src/removals.rs`), and when the writeback drain ends
-(`writeback/src/lib.rs`). D7 is unchanged. The catalog tests `a_catalog_connection_does_not_checkpoint_on_a_commit` and
-`a_passive_checkpoint_moves_the_wal_and_a_reader_in_the_way_is_no_error` pass, as do the catalog, library and writeback
-suites. The delete-commit latency check was re-measured on the built code (below), on E:.
+**Status (2026-11-24).** Implemented, and every check below is run. D8 is in place: `wal_autocheckpoint = 0` in `SETTINGS`
+(`catalog/src/schema.rs`); `Catalog::checkpoint_passive` (`catalog/src/core.rs`), which counts its calls
+(`passive_checkpoints`), run at the end of each lane's round (`library/src/lane.rs`), after the removal's deletes
+(`library/src/removals.rs`), and when the writeback drain ends (`writeback/src/lib.rs`). D7 is unchanged. Tests that pass:
+the catalog's `a_catalog_connection_does_not_checkpoint_on_a_commit`, `a_passive_checkpoint_moves_the_wal_and_a_reader_in_the_way_is_no_error`
+and `a_passive_checkpoint_leaves_the_frames_a_reader_holds`; the library's `a_lane_round_checkpoints_the_wal_at_its_end` and
+`a_removal_checkpoints_the_wal_after_its_deletes`; and the writeback's `a_drain_checkpoints_the_wal_at_its_end`. The catalog,
+library and writeback suites pass in full. The delete-commit latency was re-measured on the built code (below), on E:.
 
 **Verified.**
 
@@ -714,7 +716,7 @@ suites. The delete-commit latency check was re-measured on the built code (below
   - Gap (predicted): writes that none of the three threads follows leave the WAL to grow until a later checkpoint point,
     including the close of the last connection, where SQLite checkpoints on its own. The check below sizes it.
 
-**Checks (predicted).**
+**Checks.**
 
 - Measured 2026-11-24 on the built code, on E:, with a file-backed catalog and a temporary probe (since removed). Each
   run clears the WAL, then removes the folder; the batch intervals are read from the removal's callback. At 30,000 files,
@@ -723,10 +725,15 @@ suites. The delete-commit latency check was re-measured on the built code (below
   after it 267–269 ms (620–650 ms in all). So the stall leaves the writer's commit, and the total is not higher. The
   slowest batch is about 54 ms, not the 25 ms predicted. At 10,000 files the WAL does not reach the threshold, and neither
   mode stalls (slowest batch 36–67 ms in both). The stall is therefore specific to a delete that crosses the threshold.
-- A PASSIVE checkpoint while a reader holds a snapshot returns with busy above zero and no error, and the round ends
-  `Done`.
-- After writes that no round or drain follows, the next round's PASSIVE checkpoint reports those frames as checkpointed
-  (`checkpointed` equal to `log`). This settles the gap above.
+- A PASSIVE checkpoint while a reader holds a snapshot is not an error, and it leaves the frames after that snapshot in
+  the WAL: `checkpointed` is below `log`, and every frame moves once the reader ends. (The first form of this check said
+  `busy` would be above zero; a PASSIVE checkpoint reports `busy` as 0, so the test asserts the frames instead.) Test:
+  `a_passive_checkpoint_leaves_the_frames_a_reader_holds`.
+- After writes that no round or drain follows, the next PASSIVE checkpoint moves them: `checkpointed` equals `log` once the
+  reader is gone. This is the gap above. Test: `a_passive_checkpoint_moves_the_wal_and_a_reader_in_the_way_is_no_error`.
+- Each call site runs its checkpoint: the lane round, the removal's deletes and the writeback drain each leave the catalog's
+  passive count raised. Tests: `a_lane_round_checkpoints_the_wal_at_its_end`, `a_removal_checkpoints_the_wal_after_its_deletes`
+  and `a_drain_checkpoints_the_wal_at_its_end`.
 
 ## Not built, and why
 

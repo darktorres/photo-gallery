@@ -7,7 +7,7 @@
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
@@ -45,6 +45,8 @@ pub struct Catalog {
     /// The shared hold on the file (`pg_dbfile::Live`) for as long as the catalog is open: a rebuild elsewhere waits
     /// for it to go. `None` for `:memory:`. Declared after `conn`, so it is released after the connection closes.
     _live: Option<pg_dbfile::Live>,
+    /// How many PASSIVE checkpoints this catalog has run ([`Catalog::checkpoint_passive`]).
+    passive: AtomicU64,
 }
 
 impl Catalog {
@@ -67,7 +69,14 @@ impl Catalog {
     /// holds are moved by a later checkpoint.
     pub fn checkpoint_passive(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)")?;
+        self.passive.fetch_add(1, Ordering::SeqCst);
         Ok(())
+    }
+
+    /// How many PASSIVE checkpoints this catalog has run. The writers' call sites are checked through it: a lane's round,
+    /// a removal's deletes and a writeback drain each run one.
+    pub fn passive_checkpoints(&self) -> u64 {
+        self.passive.load(Ordering::SeqCst)
     }
 
     /// Prepare the catalog at `path` for this build, creating it when new. A file that is not this build's catalog is
@@ -279,7 +288,7 @@ impl<'a> Prepare<'a> {
         // come in meanwhile, since the preparer's lock is still held).
         drop(exclusive);
         let live = if memory { None } else { Some(take_shared(path)?) };
-        Ok(Catalog { conn, rules, rebuilt, _live: live })
+        Ok(Catalog { conn, rules, rebuilt, _live: live, passive: AtomicU64::new(0) })
     }
 }
 
@@ -326,7 +335,7 @@ impl Catalog {
         }
         check_rules(&conn, path, rules)?;
         register(&conn)?;
-        Ok(Catalog { conn, rules, rebuilt: None, _live: live })
+        Ok(Catalog { conn, rules, rebuilt: None, _live: live, passive: AtomicU64::new(0) })
     }
 
     /// The path rules the catalog's paths are stored under.
@@ -875,6 +884,34 @@ mod tests {
     /// The cache size of a connection, in KiB (`PRAGMA cache_size` as the catalog sets it: negative).
     fn cache_kib(conn: &rusqlite::Connection) -> i64 {
         -conn.query_row("PRAGMA cache_size", [], |r| r.get::<_, i64>(0)).unwrap()
+    }
+
+    /// A PASSIVE checkpoint leaves the frames a reader's snapshot still needs in the WAL, and is not an error: the frames
+    /// written after the snapshot stay until the reader ends, and the next checkpoint moves them.
+    #[test]
+    fn a_passive_checkpoint_leaves_the_frames_a_reader_holds() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "passive-reader-holds").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        let reader = rusqlite::Connection::open(&path).unwrap();
+        reader.execute_batch("BEGIN; SELECT count(*) FROM meta").unwrap();
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        c.checkpoint_passive().unwrap();
+        let (log, done): (i64, i64) =
+            c.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| Ok((r.get(1)?, r.get(2)?))).unwrap();
+        assert!(log > 0, "the writes are in the WAL");
+        assert!(done < log, "the frames after the reader's snapshot stay in the WAL: {done} of {log}");
+        reader.execute_batch("COMMIT").unwrap();
+        drop(reader);
+        c.checkpoint_passive().unwrap();
+        assert_eq!(c.passive_checkpoints(), 2, "each checkpoint call is counted");
+        let (log, done): (i64, i64) =
+            c.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| Ok((r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(done, log, "with the reader gone, every frame moves");
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A catalog connection does not checkpoint on a commit (`SETTINGS`): the WAL grows until the thread that wrote it

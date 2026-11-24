@@ -1250,6 +1250,21 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
     quiet.check();
 }
 
+/// A removal's deletes end with a PASSIVE checkpoint, on the catalog that made them (section 11).
+#[test]
+fn a_removal_checkpoints_the_wal_after_its_deletes() {
+    let (dir, _files, catalog_path, c) = imported("removal-checkpoint").unwrap();
+    let root = c.roots().unwrap().remove(0);
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started(_)));
+    let before = c.passive_checkpoints();
+    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert!(driven.files > 0, "its files were deleted");
+    assert!(c.passive_checkpoints() > before, "the deletes were checkpointed");
+    drop(c);
+    quiet.check();
+}
+
 /// A folder removed while its files have a change waiting, and the folder is still there: the writer finishes each
 /// change from its temp (the whole copy it kept), and then the removal deletes the files, for good.
 #[test]

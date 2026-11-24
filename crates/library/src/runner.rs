@@ -348,6 +348,18 @@ mod tests {
             .collect()
     }
 
+    /// A lane's round ends with a PASSIVE checkpoint on the catalog it used, so the round's writes leave the WAL (section 11).
+    #[test]
+    fn a_lane_round_checkpoints_the_wal_at_its_end() {
+        let (dir, catalog_path, _root) = library_sized("runner-checkpoint", &["a.png"], 300);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
+        let mut conn = None;
+        inner.round(&mut conn).unwrap();
+        assert!(conn.as_ref().expect("the round keeps its catalog").passive_checkpoints() >= 1);
+    }
+
     /// A thumbnail cache that refuses its batch is said (`CacheNotStored`), and the round goes on: the hashes, the pairs
     /// and the borders still run after the thumbnails. (Before this, the error ended the round, and they never ran.)
     #[test]

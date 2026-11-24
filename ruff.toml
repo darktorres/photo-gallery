@@ -48,6 +48,7 @@ ignore = [
 "docker/check.py" = ["S101"]
 "tools/test_ci_files.py" = ["S101"]
 "tools/test_merge_measure.py" = ["S101"]
+".claude/hooks/test_block_timeout.py" = ["S101"]
 # Synthetic benchmark data: `random` is not a secret.
 "tools/profiling/synthetic_library.py" = ["S311"]
 "tools/profiling/pairing/grow_catalog.py" = ["S311"]

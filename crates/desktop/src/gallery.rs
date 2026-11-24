@@ -11,7 +11,7 @@
 //!
 //! The bridge and the registry (`post`) are here; the model's methods are in its children: [`model`] (the rows
 //! and the values the views follow), [`items`] (what it says of one item), [`edits`] and [`nav`], over the roles
-//! ([`roles`]) and the backing struct ([`state`]).
+//! ([`roles`]) and the backing struct ([`GalleryRust`](crate::bridges::gallery_state::GalleryRust)).
 
 mod edits;
 mod items;

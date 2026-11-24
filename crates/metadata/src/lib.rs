@@ -595,14 +595,14 @@ mod tests {
         block[24..26].copy_from_slice(&EXIF_TAG_EXIF_IFD.to_le_bytes());
         block[26..28].copy_from_slice(&TIFF_IFD8.to_le_bytes());
         block[28..36].copy_from_slice(&1u64.to_le_bytes());
-        block[36..44].copy_from_slice(&(at as u64).to_le_bytes());
+        block[36..44].copy_from_slice(&u64::try_from(at).unwrap().to_le_bytes());
         // The Exif IFD above 4 GiB: one entry, DateTimeOriginal (ASCII, 20 bytes) at date_at, then a zero next offset.
         block[at..at + 8].copy_from_slice(&1u64.to_le_bytes());
         let e = at + 8;
         block[e..e + 2].copy_from_slice(&EXIF_TAG_DATE_TIME_ORIGINAL.to_le_bytes());
         block[e + 2..e + 4].copy_from_slice(&TIFF_ASCII.to_le_bytes());
         block[e + 4..e + 12].copy_from_slice(&20u64.to_le_bytes());
-        block[e + 12..e + 20].copy_from_slice(&(date_at as u64).to_le_bytes());
+        block[e + 12..e + 20].copy_from_slice(&u64::try_from(date_at).unwrap().to_le_bytes());
         block[date_at..date_at + 20].copy_from_slice(b"2023:07:15 18:30:05\0");
         assert_eq!(taken(&block, Format::Tiff), Some(1_689_445_805));
     }

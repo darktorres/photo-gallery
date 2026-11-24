@@ -42,7 +42,7 @@ impl Views {
     }
 
     /// Remember the listing for the next start. A session save is a write that no round or drain checkpoints for, so the
-    /// WAL is checkpointed here once it is over [`WAL_CHECKPOINT_OVER`] (section 11). The save stands either way: a
+    /// WAL is checkpointed here once it is over `WAL_CHECKPOINT_OVER` (4 MiB, section 11). The save stands either way: a
     /// checkpoint that fails is logged, not reported as a failed save.
     pub fn save_listing(&self, listing: &Listing) -> Result<()> {
         self.catalogs.with_catalog(|c| c.save_session_listing(listing))?;

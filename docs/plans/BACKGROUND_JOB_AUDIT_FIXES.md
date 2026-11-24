@@ -174,6 +174,7 @@ from `finish_removals` (D2). `begin_removal` returns the volumes (`Begun::Starte
 present file, or one with a NULL volume, names every lane.
 
 **Status of the checks (2026-11-24).**
+
 - Done and passing: the P3 guard (`writers.rs`, `a_pair_with_a_partner_a_removal_deleted_is_skipped_not_failed`: no error,
   no pair, so D3's fallback is not needed); the volumes of a removal (`removal.rs`,
   `a_removal_names_the_volumes_of_its_present_files`); the registry's decisions (`shared.rs`, `parks_tests`: a parked volume
@@ -600,7 +601,7 @@ Notices:
   until it can be read.").
   - Both new kinds follow the procedure in `notice.rs:50-61`: the variant and its ids entry, the level, source and
     lifecycle arms, a sample in `Notice::samples()`, a `golden.jsonl` line, a `resolver_table.golden` row (for example
-    `| \`cache-not-swept\` | — | \`next-success(sweep)\` |`), an arm in the test `ordinal`, the `ftl` entries, and the error
+    ``| `cache-not-swept` | — | `next-success(sweep)` |``), an arm in the test `ordinal`, the `ftl` entries, and the error
     arm at `crates/wording/src/notice.rs:79`. On a golden mismatch the test prints the table, and that output is the new file.
 
 Pair writes and orphans:

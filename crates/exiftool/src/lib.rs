@@ -220,7 +220,7 @@ impl ExifTool {
         if fields.exif_stars {
             tags.push(format!("-EXIF:Rating={rating}"));
         }
-        let percent = PERCENT_OF_STARS[usize::from(rating)];
+        let percent = percent_of_stars(rating);
         if fields.exif_percent {
             tags.push(format!("-EXIF:RatingPercent={percent}"));
         }
@@ -348,8 +348,17 @@ fn read_until(lines: &Receiver<String>, marker: &str, deadline: Instant) -> Resu
 
 /// "1 image files created" (with `-o`).
 /// The percent each star count is written as (0 to 5 stars): ExifTool's mapping for XMP `MicrosoftPhoto:Rating`
-/// (`lib/Image/ExifTool/Microsoft.pm`), which Windows shows as that many stars.
-const PERCENT_OF_STARS: [u8; 6] = [0, 1, 25, 50, 75, 99];
+/// (`lib/Image/ExifTool/Microsoft.pm`), which Windows shows as that many stars. Anything from 5 stars up is 99.
+fn percent_of_stars(stars: u8) -> u8 {
+    match stars {
+        0 => 0,
+        1 => 1,
+        2 => 25,
+        3 => 50,
+        4 => 75,
+        _ => 99,
+    }
+}
 
 /// Which rating fields a file holds (see [`ExifTool::rating_fields`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

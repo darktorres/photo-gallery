@@ -423,159 +423,297 @@ lanes.
 
 ## 10. Thumbnails and pass errors
 
-**Verified.**
+**Verified (read in the code, 2026-11-24).**
 
-- The thumbnail cache evicts at store time, in the store's own transaction (`thumbcache/lib.rs:225-228`, and the writer's
-  store). `cache_full` means eviction could not make room while sparing the current height. So an orphan prune has nothing
-  to do.
-- `sweep_orphans` lists the cache's entries the catalog no longer has, and forgets them (`thumbcache/lib.rs:266-271`). It
-  runs once, when the removals thread starts (`coordinator.rs`, the `swept` flag), and after each removal
-  (`removals.rs:36`).
-- A thumbnail error does not reach the round. `Thumbs` catches the error of `run_while`, posts `CacheNotStored`, and
-  returns `Done` (`passes.rs:280-292`). The round goes on, and the backoff of section 3 does not apply.
-- `CacheNotStored` is a state, cleared by `StoreRecovered` (`notice.rs:1366`), not an event. But the notice's text is
-  the whole error chain under the words "cache not stored", so a catalog error is shown as a cache failure.
-- The error type of `run_while` is typed: `Catalog`, `Cache`, `Make` and `Render` (`thumbs/lib.rs:32-44`). So the pass can
-  tell a cache write from a catalog failure.
+- Eviction is at store time, in the store's own transaction (`thumbcache/src/writer.rs:355-404`,
+  `thumbcache/src/lib.rs:225-236`). A batch that cannot make room is not stored, and `put_batch` returns `false`.
+  Eviction spares the current height (`keep_height`, `writer.rs:397`).
+- `sweep_orphans` drops the cache's entries whose file id the catalog no longer has (`thumbcache/src/lib.rs:266-271`,
+  `reader.rs:23-43`). It reads the catalog through `ATTACH`. It runs once when the removals thread starts, with the
+  `swept` flag set before the attempt (`library/src/coordinator.rs:773-794`), after each `removals::finish`
+  (`library/src/removals.rs:36`), after `discard_removal` (`app/src/library.rs:435`), and in the CLI (`cli/src/lib.rs:451`).
+- A failed startup sweep posts `FolderNotRemoved` on every failure, with no repeat rule (`coordinator.rs:789-793`). That
+  is a plain event (`model/src/notice.rs:1400`, `:1408`). A failed sweep in `finish` is propagated by `?`
+  (`removals.rs:36`) and reported as a removal failure (`coordinator.rs:800-806`), although the folder is already removed.
+- `Thumbs` catches every error of `run_while`, posts `CacheNotStored`, and returns `Done` (`library/src/passes.rs:276-291`).
+  The round goes on, and no backoff applies.
+- `Placeholders` does not catch: `placeholders::run_while(...)?` (`passes.rs:317-324`) returns any error to the round.
+  Both passes use `thumbs::Error`, whose variants are `Catalog`, `Cache`, `Make`, `Render`, `Read`, `Pass` and `Invalid`
+  (`thumbs/src/lib.rs:31-60`).
+- `pipeline::batched` returns `Result<(), Failed>` (`jobs/src/pipeline.rs:441-449`). The flush's error is converted with
+  `From<Error> for JobFailed` (`thumbs/src/lib.rs:65-78`), which maps `Catalog`, `Cache`, `Render` and `Invalid` to
+  `Class::Other`; `ran?` (`:455`) then returns `Error::Pass`. So a catalog error from `currents` (`:334`) and a cache
+  error from `put_batch` (`:386`) leave `run_while` with their kinds lost.
+- Init errors (`Maker::new`, `:421`), and panics and setup failures in the pipeline, fail the whole pass through `run`
+  (`pipeline.rs:215-217`, `:325-328`) and reach `Error::Pass` the same way.
+- A worker's `process` error is an item's result, not a stop: it reaches the flush as `Result<R, Failed>`
+  (`pipeline.rs:448`, `:510-525`). Only the flush stops a pass (`:481-495`).
+- Items are looked up by index in four places: `thumbs/src/lib.rs:337` and `:423`, `placeholders.rs:110` and `:191`.
+- `pending_sql` joins `cat.thumb_sources` and `cat.thumb_failures` with the cache's `entries` table in one statement
+  (`thumbcache/src/reader.rs:202-215`). `pending_for` and `orphans_in` read the catalog through `ATTACH`
+  (`reader.rs:35-36`, `:66-68`), so a catalog read failure surfaces as `thumbcache::Error::Sqlite`, then `Error::Cache`.
+- `run_while` returns through `ran?` (`:455`) before its `stats` are returned. On an error the ledger outcome
+  (`stats.ledger`), the unreadable count and the failures are dropped, and `files_read` and `ledger_written`
+  (`passes.rs:297-298`) are skipped.
+- A per-file failure of class `Other` is not recorded in the ledger and is tried at every pass (`thumbs/src/lib.rs:161-177`).
+- `get_nearest_into` reads the JPEG in a subquery over `data` (`thumbcache/src/lib.rs:179-181`) and treats a missing JPEG
+  as a miss (`:184`). A stored value a column can't hold is `thumbcache::Error::Value` (`thumbcache/src/error.rs:23-25`).
+- `CacheNotStored` is a state, cleared by `StoreRecovered` (`model/src/notice.rs:1366`). Its words are the title "A
+  thumbnail couldn't be kept" and the body "{error}. It was shown all the same." (`wording/locales/en/text.ftl:269-270`).
+  `RoundFailed` is a state cleared by the next `Done` round (`notice.rs:1362`).
+- `rebind` and `replace` delete a fresh row with `DELETE FROM files` (`catalog/src/pair.rs:476`, `:560`). No sweep
+  follows them.
+- Passes on `pipeline::batched` that map a non-file error to a per-file `Other` today: borders
+  (`borders/src/lib.rs:53`), import (`import/src/lib.rs:58`), crop (`crop/src/lib.rs:72`, with its own pipeline pass at
+  `:59-61`), and the CLI borders analyzer (`cli/src/borders.rs:88`, `:93`). Writeback does not use `pipeline::`
+  (`writeback/src/error.rs:73-77` is a job's failure).
 
 **Decisions.**
 
-- **Catalog errors become round errors.** `Thumbs` returns them, so the round records them, the backoff of section 3
-  retries them, and the other passes still run. The `currents` check's error (`thumbs/lib.rs:334`) takes the same path.
-- **Cache errors stay `CacheNotStored`**, with the cache's own text, not the catalog's.
-- **No change to eviction, `cache_full`, or the sweep.**
+Pipeline errors:
 
-## 11. Batch sizes
+- **D1. Typed errors through the pipeline.** `pipeline::batched` is generic over the flush's error `E` and returns
+  `Halt<E>`: `Pipeline(Failed)` for a panic, a lost item or a setup failure, or `Pass(E)` for the pass's own error. The
+  flush returns `Err(E)` to stop the pass. Each caller defines its own error type; `Failed` is not a default. `Error::Pass`
+  and the `From<Error> for JobFailed` conversion for pass errors are removed.
+- **D2. Items carried, and per-item results typed.** The pipeline passes each item with its result, so no index is looked
+  up. A per-item result is `ItemError<E>`: `File(Failed)`, a file's failure with its class, or `Pass(E)`, which halts the
+  pass through the flush. The `Invalid` lookups go.
+- **D3. Init returns the pass's typed error.** `Maker::new` failing is `Render`. Panics and setup failures are
+  `Halt::Pipeline`. Both are round errors.
+- **D4. One contract for every pass on `pipeline::batched`.** No per-file error is `Other`. A file's failure is `Make`'s
+  `Undecodable` or `Unreadable`, or the pipeline's `Read` or `Panic`; every other error is a pass error. Borders, import,
+  crop and the CLI borders analyzer change in their own passes to meet it, and their pass errors become round errors
+  (D7). Writeback is not a pipeline pass and is outside this contract.
+- **D5. The maker source is an argument.** `run_while` in `thumbs` and `placeholders` takes
+  `&(dyn Fn() -> Result<Maker, Error> + Sync)`. Production passes `|| Maker::new().map_err(Error::Render)`, so the `Render`
+  mapping sits at the call site, and a test can pass a failing source. Callers: `library/src/passes.rs:276`, `:317`;
+  `cli/src/lib.rs:541`, `:544`; `library/tests/writeback.rs:143`, `:230`; `thumbs/src/lib.rs:245`, `:613`, `:621`, `:839`.
 
-**Verified.** Two constants share the name `WRITE_BATCH`, with different documented purposes.
+Pass results:
 
-- 500, public, `catalog/src/lib.rs:21-23`: the rows a write batch holds in the import and borders passes. Its users are
-  the import (`import/src/lib.rs:26`, `import/src/hashes.rs:15`), the borders (`borders/src/lib.rs:22`) and the import
-  bench.
-- 1000, `pub(crate)`, `catalog/src/types.rs:120-122`: the most rows a pass over a walk's results writes in one
-  transaction, so another writer waits for one batch at most, never for the pass. Its users are the walk's mark-missing
-  (`roots.rs:201`), the walk's pairing (`pair.rs:39,403`), and the removal's hide and delete (`removal.rs:112,288`).
-- The import's own pairing uses a third value, `WRITE` = 4000 (`import/src/pairs.rs`). The earlier text of this section
-  said pairing used the 500 constant; it does not.
+- **D6. `run_while` returns one type.** It returns `Result<ThumbStats, Stopped>`, where `Stopped { error, stats }`. Before
+  setup the stats are empty. `Thumbs` and `Placeholders` report the ledger outcome, the unreadable count and the failures
+  in every case, then classify the error. The calls after the pipeline, `checked` and `shrink`
+  (`thumbs/src/lib.rs:460-462`), return `Stopped` with the stats so far, not a bare error. Callers that use `?` convert
+  `Stopped` into `Error`.
+- **D7. One classification for `Thumbs` and `Placeholders`.**
+  - **Cache store** (`put_batch`, `checked`, `shrink`): a round error, `CacheStore`. The round posts `CacheNotStored`, not
+    `RoundFailed`.
+  - **Cache read** (`pending`, `totals`, in `Thumbs`): a round error, `CacheRead`. The round posts `CacheNotRead` (D13).
+  - **Placeholders' cache reads** (`cached`, `placeholders.rs:118`): a cache-level error is a `Pass` result of
+    `CacheRead`, mapped explicitly at `cached` (D8). A row-level value error is a miss (D8). The read in `read`
+    (`placeholders.rs:101`) keeps its fall-back: if the cache read fails there, the file is read, and the worker's read
+    decides the pass.
+  - **Catalog** (the catalog open, `recorded_failures`, `currents`, and the candidate reads of D10), **Render**, and the
+    pipeline's own failures: round errors, with `RoundFailed`.
+  - **Make** and **Read**: per-file. `Undecodable` is recorded in the ledger; `Unreadable` is retried by the next pass.
+- **D8. A row's value error is a miss; a cache-level error is the pass's.** `thumbcache::Error::Value` belongs to one row:
+  that file's read is a miss, its entry is forgotten (`forget_height`, `thumbcache/src/lib.rs:276`, best effort, as the
+  touch is), and the next thumbs pass remakes it. Every other cache error (a missing table, a statement that won't prepare,
+  I/O, a damaged file) is cache-level, as D7. The split is made at the cache's call sites, not in the pass.
+- **D9. Retry, and said once.** A round error is retried with section 3's backoff, with a 60 s cap and no give-up, as goal
+  3 requires. A permanent error is retried every 60 seconds and shown once, as `RoundFailed` or as its cache state (D7).
 
-**Decision.** No change: keep both constants, since they bound different waits. The removal's batches are of the
-walk-results kind, because another writer waits on them, so they keep 1000. The earlier decision to unify on 500 is
-dropped: it would double the removal's transactions, with no measured gain.
+The pending query and the sweep:
 
-**Measured (2026-11-23).** The delete alone: `ir::removal::folder_delete::ten_thousand`, the new bench (callgrind, in
-memory): 895,915,093 instructions; with the hide (796,777,538) that is the full removal's 1,696,398,183. On the real
-catalog on E:, the delete per batch (a temporary timing example, since removed; 10,000 files, 3 runs): median 15 ms,
-and the whole delete a median 324 ms.
+- **D10. The pending query is split by owner and joined as a streamed merge, in a fixed order.**
+  1. The catalog's volumes, when the set is `All` (`catalog_volumes`, `reader.rs:124`). `checkpoint_since` needs them.
+  2. The cache's checkpoints for the height (`checkpoint_since`, `reader.rs:107`) and its `evictions` (`checked`), on the
+     cache's own connection. They give the `since` change number.
+  3. `Catalog::thumb_candidates(height, volumes, since)` in `pg_catalog` streams the candidate files in file-id order,
+     with their volumes. It returns the catalog's change number and `since_checked` from the same read. It applies the
+     current rules: `since` is used only when `since ≤ seq` (`reader.rs:59-60`, `:77`), and files that failed and have
+     not changed are left out by `thumb_failures` (`reader.rs:210-211`).
+  The cache then streams its entries at the height in file-id order. The thumbs pass merges the two streams, keeps the
+  candidates that need work, and sorts those by volume and file reference, as the query's `ORDER BY` does now.
+  - **Ordering.** The checkpoint written after the pass uses the change number from step 3, never a later one. No shared
+    snapshot is needed for correctness: each made thumbnail is re-checked against the catalog before it is stored
+    (`thumbs/src/lib.rs:334-349`), so a stale candidate costs only work.
+  - **Memory (measured 2026-11-24, 100,000 files, a temporary probe since removed).** `pending` raised the working set by
+    5.8 MB with no work items (every entry current), and by 10.9 MB with 100,000 work items (about 50 bytes each above the
+    5.8 MB). The current query is therefore not bounded by its work alone: SQLite's page cache grows with the pages read,
+    up to the 128 MiB set at `reader.rs:65`. The streamed merge drops that component, and its cost is bounded by the work.
+    The saving over the current query is at most 128 MiB at the cap. The 4.6-million-row case is not measured.
+- **D11. The sweep streams the same way, bounded by the id high-water.** `thumb_high_water` is read first. The catalog's
+  file ids are then streamed in id order up to it, and the cache's entries are merged against them
+  (`reader.rs:19-20`, `:36`). A file added during the merge is outside the bound. `orphans_in` loses its `ATTACH`.
 
-**The slow window, traced (2026-11-23, temporary per-statement timers, since removed).** In each run one window of about
-200 ms is the tenth batch's commit: its commit takes 182–190 ms, where the other nine commits take about 0.5 ms each.
-The final step's commit takes about 30 ms, and its statements under 1 ms. The batch's own delete is 10–20 ms, like the
-others. So the stall is one commit. In WAL mode with `synchronous = NORMAL`, a commit waits for nothing, and a checkpoint
-fsyncs the database, so this is consistent with the automatic checkpoint that runs once the WAL reaches its threshold
-(the checkpoint itself is not observed; the stall in the commit is).
+Notices:
 
-The consequence for section 11: the stall belongs to the checkpoint, not to the batch. Its length does not depend on the
-batch size, and any writer's commit can absorb it, not only the removal's. So "keep 1000" is a decision about typical
-batch work (10–20 ms, measured), and the checkpoint stall (about 0.2 s on E: in this run) is a separate bound that applies
-to every writer whatever the batch size.
+- **D12. A failed sweep is a keyed state at every call site.** A new `Notice::CacheNotSwept { error }` (code
+  `cache-not-swept`) is a `State` with key `cache-not-swept` and resolver `NextSuccess(Op::Sweep)`, a new `Op` variant
+  with key `sweep`. It is `Warning` and source `Cache`, as `CacheNotStored` (`notice.rs:1243-1260`, `:1315-1320`). A
+  repeat failure replaces the state. Each sweep call site posts it on failure and resolves it on success with
+  `notices.resolve(Trigger::Op(Op::Sweep))`, as `library/src/tally.rs:100` does for a round.
+  - The startup sweep (`coordinator.rs:787-794`) sets `swept` only on success, and is retried at each removal recheck
+    (`REMOVAL_RECHECK`, 30 s, `coordinator.rs:150`).
+  - The sweep in `finish` (`removals.rs:36`) no longer fails the removal. `finish` returns the sweep's outcome, and its
+    caller posts it. The folder is already hidden and deleted, and `finish`'s own doc (`removals.rs:14-17`) says a
+    thumbnail failure is not a reason to fail the removal.
+  - The app's `discard_removal` (`app/src/library.rs:435`) posts through the inbox. The CLI (`cli/src/lib.rs:451`) prints
+    the outcome, as its report resolves nothing (`cli/src/report.rs:71`).
+- **D13. A failed cache read is its own keyed state.** A new `Notice::CacheNotRead { error }` (code `cache-not-read`) is
+  posted when `Thumbs` cannot read the cache (`pending` or `totals`). It is a `State` with key `cache-not-read` and
+  resolver `NextSuccess(Op::CacheRead)`, a new `Op` variant with key `cache-read`, cleared by the next successful cache
+  read of `Thumbs`. It is `Warning` and source `Cache`. `CacheNotStored` is not reused: its title says a thumbnail couldn't
+  be kept, which is false for a read, and its resolver (`StoreRecovered`) is a store's recovery. Wording:
+  `msg-notice-cache-not-read-title` ("The thumbnail cache couldn't be read") and `-body` ("{error}. Its thumbnails wait
+  until it can be read.").
+  - Both new kinds follow the procedure in `notice.rs:50-61`: the variant and its ids entry, the level, source and
+    lifecycle arms, a sample in `Notice::samples()`, a `golden.jsonl` line, a `resolver_table.golden` row (for example
+    `| \`cache-not-swept\` | — | \`next-success(sweep)\` |`), an arm in the test `ordinal`, the `ftl` entries, and the error
+    arm at `crates/wording/src/notice.rs:79`. On a golden mismatch the test prints the table, and that output is the new file.
 
-**Decision: the checkpoint bound.** A writer's commit should never run a checkpoint, and the job's own threads should
-pay for checkpoints when they have nothing to write.
+Pair writes and orphans:
 
-- **Today (verified).** The catalog's connections use SQLite's automatic checkpoint, every 1000 WAL pages, and the
-  commit that crosses the threshold runs it (`schema.rs:122`, `SETTINGS`, no `wal_autocheckpoint` set). Explicit
-  checkpoints exist in a few places (`removal.rs:269-271`, `work.rs:563`, `core.rs:60`, `rebuild.rs`), none on a writer's
+- **D14. Pair writes forget their thumbnails.** `rebind` (`catalog/src/pair.rs:476`) and `replace` (`:560`) return the ids
+  of the fresh rows they delete. The pass forgets those thumbnails after the commit, in the same `forget_replaced` call
+  that handles replaced thumbnails (`passes.rs:88`, over `pairing.replaced_ids`). No sweep is needed for them.
+- **D15. The sweep is the orphan prune; nothing more is built.** Orphans from a removal are swept (`removals.rs:36`, and
+  the startup sweep). Orphans from the pair writes are forgotten by D14. A rebuild leaves none: it carries every row or
+  none (a refused row is an error, not a drop), keeps the catalog id and the file ids when it carries rows, and gets a
+  new catalog id, so the cache starts over, when it carries none (`rebuild.rs:199-253`, `:284-301`). The removal and
+  rebuild cases are checked below. Eviction is not the reason: it is least-recently-used and spares the current height.
+
+Unchanged:
+
+- **D16. No change** to eviction, `cache_full`, or the wording of `CacheNotStored`.
+
+**Dependencies.** D7's round errors need section 3's isolation: without it, a round error stops Placeholders, Hashes,
+Pairing and Borders for the round. Build after item 3 of the order of work. D10 adds a query to `pg_catalog`. D12 and D13
+need the golden tables.
+
+**Checks (each names the fault that makes it happen, so no test needs an injected error).**
+
+- Catalog error: a fixture drops the view the candidate query reads (`thumb_sources` today) before a pass. The round
+  returns an error, `RoundFailed` is posted, no cache state is posted, the later passes run, and the round is retried
+  after the backoff.
+- Cache store: `pg_thumbcache::fault::refuse_stores` (as `library/src/runner.rs:357` does). `CacheNotStored` is posted with
+  the cache's text, `RoundFailed` is not, and the lane retries after the backoff, with no wake.
+- Cache read: the `checked` table is dropped in the cache file before a pass, so `pending` fails. `CacheNotRead` is
+  posted, and the lane retries after the backoff. The fixture recreates the table with the exact definition at
+  `thumbcache/src/schema.rs:52-54`; a reopen is not assumed to restore it (not checked). The next successful read
+  resolves the state.
+- Locks: no check uses a write lock, since WAL readers are not blocked by writers.
+- Placeholders: a dropped `placeholders` table (`work.rs:150-159`) is a round error. Dropping `data` fails the statement
+  in `get_nearest_into` (`thumbcache/src/lib.rs:179-181`), so the pass posts `CacheNotRead`. A row whose `jpeg` is set
+  to a non-blob value is a miss: that entry is forgotten, the pass completes, and the next thumbs pass remakes it. A
+  refused cache confirms only that the pass posts nothing.
+- Per-file: a failure is `Make` or `Read`, recorded or retried by its class, and never `Other`. The Undecodable and
+  Unreadable cases in `thumbs/src/lib.rs:720-736` cover this.
+- Row value in the entries stream: an `entries` row whose `mtime` is text is a miss once D10 exists. The pass completes,
+  and the entry is forgotten.
+- Ledger: a trigger in the fixture aborts inserts into `file_failures` for a file with no existing row. The ledger
+  upserts (`writers.rs:892-896`), and an upsert onto an existing row may not fire an insert trigger. `thumb_failures` is
+  a view over `file_failures` (`baseline.sql:281`), so `pending` still succeeds. With `refuse_stores` also set, the flush
+  and the final ledger write both fail; both are reported and `LedgerNotWritten` is posted. The trigger's upsert
+  behaviour is confirmed when the test is written.
+- Maker startup: a source that returns `Error::Render` (D5) makes the pass a round error: `RoundFailed` is posted, no cache
+  state is posted, and the lane retries after the backoff. `a_failed_init_fails_the_pass`
+  (`crates/jobs/src/pipeline.rs:1231`) asserts the error's text ("worker setup", "no state"); it is extended to assert the
+  typed error (D1).
+- Startup sweep: the view `thumb_file_ids` is dropped before the startup sweep. The sweep fails, and `CacheNotSwept` is
+  posted, not `FolderNotRemoved`. Restoring the view and the next recheck sweeps the orphans and resolves the state.
+- Removal finish: the same drop during a removal's `finish`. The folder is hidden and deleted, `finish` returns the
+  sweep's outcome, no `FolderNotRemoved` is posted, and `CacheNotSwept` is posted.
+- Pair writes: a thumbnail made for a fresh row is gone after `rebind` and after `replace` commit.
+- Orphans, removal (measured 2026-11-24 with a temporary probe in `crates/library/tests/writeback.rs`, since removed): an
+  imported folder of six files had six thumbnails. `begin_removal`, `hide_pages` and `drive_removals` deleted the six
+  files without a forget, leaving six orphaned entries. `sweep_orphans` dropped six, and a second sweep dropped none. The
+  real path (`removals::finish`) forgets each batch first and then sweeps, so it leaves none either way.
+- Orphans, rebuild (checked by reading and by existing tests, 2026-11-24): `a_queued_write_the_layout_refuses_is_an_error_not_a_dropped_row`
+  (`rebuild.rs`) and `a_cache_of_another_catalog_starts_over` (`thumbcache/src/lib.rs:1400`) pass.
+- Callers of `pending` and `orphans_in` are rewritten against the new API: `thumbcache/src/lib.rs:1208-1384` and `:1470`,
+  `reader.rs:147-195` and `:339-344`, `thumbs/src/lib.rs:617` and `:624`, and the bench at
+  `bench/benches/ir/catalog.rs:165`. The checkpoint and `since` tests (`lib.rs:1239-1384`) keep their expectations. The
+  streamed merge returns the same work list, in the same order, on each fixture.
+- `the_resolver_table_is_the_golden_one` passes after the golden table is regenerated for both new kinds.
+
+## 11. Batch sizes and checkpoints
+
+**Verified.**
+
+- Two constants are named `WRITE_BATCH`, with different purposes.
+  - 500, public (`catalog/src/lib.rs:23`): the rows a batch holds in the import, hashes and borders passes
+    (`import/src/lib.rs:26`, `import/src/hashes.rs:15`, `borders/src/lib.rs:22`).
+  - 1000, `pub(crate)` (`catalog/src/types.rs:122`): the most rows a pass over a walk's results writes in one
+    transaction, so another writer waits for one batch at most. Its users are the walk's mark-missing (`roots.rs:201`),
+    the walk's pairing (`pair.rs:39,403`) and the removal's hide and delete (`removal.rs:112,288`).
+- The import's own pairing uses `WRITE` = 4000 (`import/src/pairs.rs:39`).
+- Every catalog connection runs `SETTINGS` (`schema.rs:122`): WAL, `synchronous = NORMAL`, and no
+  `wal_autocheckpoint`. So SQLite's automatic checkpoint runs in the commit that crosses 1000 WAL pages.
+- Explicit checkpoints are at `removal.rs:269-271`, `work.rs:563`, `core.rs:60` and `rebuild.rs`. None is on a writer's
   path during a batch.
-- **Prior measurement (`docs/reference/PROFILING.md`, the pairing write).** One automatic checkpoint over 4.9 MB of WAL
-  cost about 22 ms, with `wal_autocheckpoint = 0` giving 23 commits against 45. That was a different disk; the stall here
-  is about 185 ms, so the cost depends on the disk and the WAL's size.
-- **Decision.** Set `wal_autocheckpoint = 0` in `SETTINGS` (every catalog connection). A PASSIVE checkpoint is run by the
-  thread that wrote the WAL, at the end of its work: each lane at the end of its round, the removal job after its deletes,
-  and the writeback when its queue drains. A PASSIVE checkpoint does not wait for readers, and it does not hold up writers
-  in general (measured below), so a UI write's commit no longer pays for the checkpoint's work. A writer can still wait
-  for one occasionally (measured below).
-- **Cost.** The WAL grows while a round writes, up to that round's work. That is bounded by the round, not the library,
-  and a long import round is the case to watch. Reads of a large WAL are slower until it is checkpointed.
-- **Not covered.** The thumbnail cache's own WAL (`thumbcache/src/writer.rs`, a separate file with its own checkpoints).
-- **Validated (2026-11-23, the delete, on E:, the real catalog code, temporary probe since removed; alternating runs,
-  3 each).**
-  - Automatic checkpoint (today): drive median 435 ms; the slowest commit (window) median 219 ms, which is the checkpoint
-    stall. WAL 4.6 MB at the end.
-  - `wal_autocheckpoint = 0`: drive median 217 ms; the slowest window median 25 ms. The PASSIVE checkpoint after the
-    loop: median 207 ms, `done` 1200 pages, busy 0. WAL 4.8 MB before it.
-  - The stall is removed from the writer's commit (219 to 25 ms). The checkpoint's work is not removed: it moves to the
-    thread that runs it, and the total is the same (217 + 207 = 424 ms against 435 ms).
-  - **A second writer during the checkpoint (same day, E:, temporary probe since removed; 3 runs, a writer connection
-    making small write transactions while the checkpoint ran).** The checkpoint took 229 to 1,215 ms (longer than alone,
-    207 ms, because the writer kept adding WAL). The writer committed throughout: 8,000 to 41,000 writes during the
-    checkpoint, with a median of 21 µs, the same as outside it (21 µs). But the tail was not clean: the slowest write
-    during a checkpoint was 1.3 ms, 30 ms and 134 ms in the three runs. The 134 ms is not explained.
-  - **An import round, over real JPEGs (same day, E:, the real `pg_import::import`, 300 photos of 640 x 480, 3 runs
-    each way, alternating).** The round wrote 527 KiB of WAL, under the 1000-page automatic threshold (about 4 MB), so
-    no automatic checkpoint ran in either mode. Medians: automatic 55 ms; off 55 ms, and the PASSIVE checkpoint after
-    it 71 ms (27 pages). So for a round of this size the policy changes nothing. The WAL of a larger round is not
-    measured; an import's rows are small, so the delete (about 4.8 MB of WAL for 10,000 files) is the case that
-    crosses the threshold.
-  - **The writer tail over ten runs (same day, E:, 278,478 writes during the checkpoints).** Median 22 µs, p99 85 µs,
-    p99.9 175 µs. The maximum was 330 ms, in a run whose checkpoint took 3.75 s under sustained writing. Other runs'
-    slowest writes were 1 to 35 ms, and one run had 0.9 ms. The checkpoint itself took 151 ms to 3.75 s, longer as the
-    writer added WAL during it.
-  - **Revised conclusion.** A PASSIVE checkpoint leaves the writer's typical latency unchanged (p99.9 under 0.2 ms), so a
-    UI write does not pay for the checkpoint's work in the typical case. It is not a hard bound: a write can wait
-    tens of milliseconds, and in one run out of ten about 0.3 s, while a checkpoint runs under sustained writing. The
-    stated rule "never blocks a writer" is therefore too strong. The bound for a UI write is "typically microseconds,
-    rarely tens of milliseconds, and in heavy write load occasionally a few hundred milliseconds".
-  - **Trace of the slow writes (same day, temporary probe since removed; 4 runs per drive, the real catalog code).** On
-    E: (hard disk) the checkpoints took 234 ms to 1.2 s, and each run had one write of 2.7 to 49 ms that overlapped the
-    checkpoint. Those writes fell 28 to 89% of the way through it, not at its end. On D: (NVMe) the checkpoints took 6 to
-    9 ms, and no write was slow in any run. The slow writes fell in the middle of the checkpoint, not at its end, where a
-    WAL reset would be. The samples are small, and the two drives' checkpoints differ in length.
-  - **Flush contention, tested and refuted (same day, E:, a temporary test with no SQLite; 4 runs).** A thread appended
-    4 KiB every millisecond to one file while another wrote 16 MiB to a second file and called `sync_all` on it. Each flush
-    took 148 to 256 ms, and roughly 500 appends during the flushes took 2 ms or more in none of the runs. So a flush on the
-    same disk does not stall small writes to other files, and the flush is not the cause of the writer's stalls.
-  - **The checkpoint's flush, and a control that did not work.** A checkpoint with `synchronous = OFF` (no flush) reported
-    the same pages as one with `NORMAL` (about 3,900 each), but took about 46 µs against 0.3 to 3.7 s. Copying 15 MB of
-    pages cannot take 46 µs, so this control is unexplained, and it cannot be used to separate the flush from the page
-    writes.
-  - **Below SQLite, the file operations (same day, E:, a temporary delegating VFS registered as SQLite's default file layer,
-    timing every file call of the writer and the checkpointer; 3 runs; the real SQLite, the catalog's WAL setting).** The
-    checkpointer's time is one `xSync` of the database file: 276 ms, 512 ms, 755 ms, 944 ms, 1.01 s across the runs, and
-    its other calls take microseconds. The writer's only slow file operations are `xWrite` calls to the WAL: 33 to
-    196 ms, at 66 to 86% into the checkpoint, inside that `xSync`. The writer had no gaps of 2 ms or more between its
-    file calls, so the time is in the writes, not in SQLite's code between them. The writer's other calls (`xShmLock`,
-    reads) take microseconds.
-  - **Conclusion.** The stall is the writer's WAL write waiting while the database file's flush runs on the same
-    volume. That is the flush hypothesis again, now at the file-call level. The earlier plain-file test did not stall
-    small appends during a 16 MiB flush, so it does not refute this: its pattern differs (a sequential stream of one
-    appender, not SQLite's WAL, which must extend a file that another flush is holding). What the kernel does during the
-    wait (the NTFS log, or the volume's cache flush) is not shown.
-  - **Elevated trace (same day; `wpr` with the general, disk and file profiles, in an administrator shell; a standalone
-    Python reproduction on E:, `scratchpad/etw_repro.py`, not the catalog).** The reproduction shows the stall without the
-    catalog: writes of 6 to 72 ms overlap a checkpoint of about one second, and a 10 s checkpoint has writes of 400 to
-    550 ms. The trace (2 GB `.etl`, in the scratchpad) shows the E: disk busy 70 to 93% of each second for about ten
-    seconds around those checkpoints, with few requests per second: a queue of large transfers, not many small ones.
-    That fits the writer's small WAL writes waiting behind the checkpoint's writes on the same disk.
-  - **Queue or flush, tested (same day, E:, a standalone script in the scratchpad, 3 runs each).** A writer appended
-    small commits while (a) nothing else ran, (b) a 16 MiB write went to another file with no flush, (c) the same write
-    was flushed. Alone and unflushed: no commit of 2 ms or more, worst 0.2 to 0.3 ms. Flushed: 0 to 2 commits of 2 ms or
-    more, worst 2.9 ms in the median run. The unflushed write lands in the OS cache and does not stall the writer, so the
-    queue of cached writes is not the cause; the flush is. (The stalls of the checkpoint runs are larger, because the
-    checkpoint's flush covers more dirty data.)
-  - **Small checkpoints, tested (same day, E:, paced writer: 4,000 commits in both modes).** One checkpoint of all the
-    WAL, started while the writer runs, against a checkpoint every 200 commits (21 in all). The single checkpoint: 2 slow
-    commits, worst 39 ms, p99 108 µs, checkpoints 313 ms in total. The 21 small ones: 13 slow commits, worst 34 ms, p99
-    146 µs, checkpoints 1,044 ms in total. So small checkpoints do not reduce the stall. Each checkpoint carries a fixed
-    flush cost, so more checkpoints mean more stalls and more total time. Rejected as a fix, though a small checkpoint
-    stalls for less time each.
-  - **Not validated:** the individual request latencies (which disk request the writer's WAL write waited on, and for how
-    long): the per-request dump is too large to read in this session, and the analysis needs the trace viewer; the 330 ms
-    write (not reproduced at the file level); the thumbnail cache's WAL (out of scope). Two scratch folders on E:
-    (`E:\etw-trace-scratch`, `E:\wal-queue-tests`) are left for the user to delete: the tool refused to remove them.
-  - **Options left:** a writer-side bound is not available from the catalog, because the stall is a flush on the same
-    disk. Lowering the flush cost (`synchronous = OFF` for the checkpoint) would remove the flush, but would let a
-    power loss leave the database file behind the WAL reset. That is a durability decision, not a tuning one, and is
-    not recommended. Moving the catalog to an SSD removes the stall on that drive (measured: the NVMe drive had none).
+- The thumbnail cache has its own WAL and checkpoints (`thumbcache/src/writer.rs`). This section does not cover it.
+
+**Measured (2026-11-23, the real catalog code; temporary probes, since removed).** E: is a hard disk; D: is NVMe.
+
+- Batch work is small. The delete's batches of 1000 files commit in about 0.5 ms each, with 10–20 ms of statements per
+  batch (median 15 ms over 3 runs). The whole delete of 10,000 files has a median of 324 ms.
+- Removal bench, in memory (callgrind, `ir::removal`): the hide is 796,777,538 instructions and the delete 895,915,093.
+  The hide is about 47% of the removal's 1,696,398,183.
+- The stall is a checkpoint, not a batch. In each run one commit of 182–190 ms was the tenth batch's; the other commits
+  took about 0.5 ms.
+- Delete of 10,000 files on E:, alternating runs, 3 each:
+
+  | Mode | Drive, median | Slowest commit, median |
+  |---|---|---|
+  | Automatic checkpoint (today) | 435 ms | 219 ms |
+  | `wal_autocheckpoint = 0`, PASSIVE checkpoint after the loop | 217 ms | 25 ms |
+
+  The PASSIVE checkpoint took 207 ms (1,200 pages, busy 0, 4.8 MB of WAL before it). The total is the same (217 + 207 =
+  424 ms, against 435 ms). The work moves from the writer's commit to the thread that wrote the WAL.
+- Writer latency during checkpoints (E:, 10 runs, 278,478 writes from a second connection): median 22 µs, p99 85 µs,
+  p99.9 175 µs. The slowest write was 1–35 ms in most runs. One run had 330 ms, while its checkpoint took 3.75 s under
+  sustained writing. Checkpoints took 151 ms to 3.75 s, longer as the writer added WAL during them.
+- On D:, checkpoints took 6–9 ms and no write was slow. On E:, checkpoints took 234 ms to 1.2 s, and each run had one
+  write of 2.7–49 ms that overlapped one.
+- A round of realistic size does not reach the threshold. An import of 300 JPEGs (640 × 480) wrote 527 KiB of WAL, far
+  under the automatic threshold, so no automatic checkpoint ran in either mode. Medians were 55 ms each way (3 runs,
+  alternating).
+- Where the wait is (E:, a delegating VFS timing every file call, 3 runs): the checkpointer's time is one `xSync` of the
+  database file, 276 ms to 1.01 s. The writer's slow calls are its `xWrite`s to the WAL, 33–196 ms, and they fall inside
+  that sync. Its other calls take microseconds, and it had no gap of 2 ms or more between calls. What the kernel does
+  inside the wait is not shown.
+- Not established: a flush of another file on the same volume. In the two tests that ran one, the writer saw at most two
+  commits of 2 ms or more (worst 2.9 ms). The VFS trace is the strongest evidence, and it points at the database flush.
+
+**Rejected.**
+
+- Small checkpoints (one every 200 commits, 21 in all) against one checkpoint of the whole WAL: 13 slow commits against
+  2, and 1,044 ms of checkpoint time against 313 ms.
+- `synchronous = OFF` for the checkpoint. It removes the flush, but a power loss could then leave the database file
+  behind the WAL reset. That is a durability decision, not a tuning one. A control run gave a 46 µs checkpoint, which
+  cannot be a copy of 15 MB of pages; it is unexplained, so it is not used as evidence.
+- Moving the catalog to an SSD. The NVMe drive showed no stall. That is a hardware choice, outside this plan.
+
+**Decisions.**
+
+- **D7. Batch sizes: no change.** Keep both constants, since they bound different waits. Batches of 1000 cost 10–20 ms
+  of statements each (measured), so the removal keeps 1000. Unifying on 500 would double the removal's transactions
+  with no measured gain, so it is dropped.
+- **D8. Checkpoint policy.**
+  - `wal_autocheckpoint = 0` in `SETTINGS` (`schema.rs:122`), for every catalog connection.
+  - A PASSIVE checkpoint, run by the thread that wrote the WAL, at the end of its work: each lane at the end of its
+    round, the removal job after its deletes, and the writeback when its queue drains.
+  - Effect (measured): the writer's commit no longer pays for the checkpoint. The slowest commit of the delete falls
+    from 219 ms to 25 ms. The total work is unchanged.
+  - Not a bound. A write can still wait for a checkpoint: typically microseconds, rarely tens of milliseconds, and under
+    heavy write load occasionally a few hundred. "Never blocks a writer" is not the claim.
+  - Cost: the WAL grows over the round that writes it. That is bounded by the round, not the library. Reads of a large
+    WAL are slower until it is checkpointed.
+  - Gap (predicted): writes that none of the three threads follows leave the WAL to grow until a later checkpoint point,
+    including the close of the last connection, where SQLite checkpoints on its own. The check below sizes it.
+
+**Checks (predicted).**
+
+- Rebuild the delete probe on the built code (the temporary probe was removed). With `wal_autocheckpoint = 0` and the
+  PASSIVE checkpoint, the median slowest commit should stay near 25 ms, against 219 ms with the automatic checkpoint.
+- A PASSIVE checkpoint while a reader holds a snapshot returns with busy above zero and no error, and the round ends
+  `Done`.
+- After writes that no round or drain follows, the next round's PASSIVE checkpoint reports those frames as checkpointed
+  (`checkpointed` equal to `log`). This settles the gap above.
 
 ## Not built, and why
 
@@ -611,7 +749,14 @@ The migration question in the earlier version does not arise.
    checkpoint at the end of each lane's round, the removal job's deletes and the writeback's drain (section 11).
 8. Notices: `RoundPanicked` as a state through the tally; a failed walk's `ScanFailed` as a `RootWalk` condition; the
    golden table (`model/src/notice.rs`, `library/src/tally.rs`, `library/src/lane.rs`, `library/src/passes.rs`).
-9. Tests (below), one `cargo build`, `cargo test` for the crates touched, then `just lint`.
+9. Thumbnails and pass errors (section 10): typed errors through `pipeline::batched`, `init` and per-item results (D1–D3);
+   items carried, not indexed (D2, `thumbs/src/lib.rs`, `thumbs/src/placeholders.rs`); `run_while` returns `Stopped` (D6);
+   the contract of D4 in borders, import, crop and the CLI borders analyzer, each checked when its pass changes
+   (`borders/src/lib.rs:53`, `import/src/lib.rs:58`, `crop/src/lib.rs:72`, `cli/src/borders.rs:88`); the maker source (D5);
+   the candidate query in `pg_catalog` and the entries read in `thumbcache`, joined as a streamed merge with no `ATTACH`
+   (D10, D11); the keyed sweep and cache-read states and their golden tables (D12, D13); the pair writes forget their
+   thumbnails (D14). Needs item 3. Test (section 10, Checks).
+10. Tests (below), one `cargo build`, `cargo test` for the crates touched, then `just lint`.
 
 ## Tests
 
@@ -627,6 +772,8 @@ The migration question in the earlier version does not arise.
 - A malformed stored hash is skipped and counted, and the pairing pass still completes.
 - A whole-file read whose length changes during the read stores nothing, and a gathered JPEG still stores.
 - A video hash stops within one chunk.
+- Section 10's checks: the catalog, cache-store, cache-read, placeholder, ledger, maker-startup, sweep and removal cases,
+  and the pair-write forget (D1–D14).
 
 ## Verification
 

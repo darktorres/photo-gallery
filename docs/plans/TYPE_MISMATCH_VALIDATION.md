@@ -8,9 +8,11 @@ Six findings from the type-mismatch review are still open at HEAD `9d167729`. Th
 
 **Impact:** a BigTIFF whose Exif IFD sits above 4 GiB loses `DateTimeOriginal` and `DateTimeDigitized`. The date is lost only when the XMP fallback (`crates/metadata/src/lib.rs:92`) also has none. `crates/analysis/src/analyze.rs:114` stores no date in that case.
 
-`uint` also has no arm for IFD (type 13), which TIFF Technical Note 1 defines for pointers, so an Exif IFD pointer written as type 13 is dropped as well. This is from reading the match arms; no file with that type has been checked. `uint` also serves the orientation and rating reads at `exif.rs:55-59`, so the fix changes those callers too.
+`uint` also has no arm for IFD (type 13), which TIFF Technical Note 1 defines for pointers, so an Exif IFD pointer written as type 13 is dropped as well. This is from reading the match arms. Checked since: a hand-written TIFF with a type-13 Exif pointer (a test embeds its bytes) reads the same date that ExifTool reads from it. ExifTool's sample images have none: all 49 Exif pointers there are LONG. `uint` also serves the orientation and rating reads at `exif.rs:55-59`, so the fix changes those callers too.
 
 **Status:** implemented, uncommitted. The metadata crate's 30 tests pass, including the item 1 tests below and a 4 GiB BigTIFF test. The tests of the dependent crates (`pg-analysis`, `pg-writeback`, `pg-exiftool`, `pg-edit`, `pg-library`, `pg-render`) pass too.
+
+**Checked against ExifTool's sample images** (46 files in the ExifTool source's `t/images`): orientation matches in 46 of 46, and the rating matches the Windows precedence model applied to ExifTool's fields in 46 of 46. Dates match in 33 of 35. The two misses are not reader errors: one is a maker-note date (`Casio`), which the reader doesn't read, and the other is an ExifTool Composite date with a time zone, where the file holds only a date-only XMP value.
 
 **Fix:** four parts. Each was checked against the code at `9d167729` and against ExifTool.
 

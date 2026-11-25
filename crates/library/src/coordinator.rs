@@ -24,6 +24,7 @@ use pg_jobs::governor::Governor;
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::service::{Service, Waker, Woke};
+use pg_jobs::tuner::MAX_READERS;
 use pg_model::ids::FileId;
 use pg_model::job::Change;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
@@ -51,6 +52,21 @@ const RETIRE_WAIT: Duration = Duration::from_secs(10);
 const COORDINATOR: usize = usize::MAX;
 /// The share of the machine's physical memory the lanes may hold for their file buffers together: a quarter.
 const MEMORY_SHARE: u64 = 4;
+/// The free memory the lanes leave to everything else: unmeasured, provisional (`docs/plans/ADAPTIVE_READERS_PLAN.md`).
+const MEMORY_HEADROOM: u64 = 1 << 30;
+/// How often the coordinator looks at the machine's free memory, and moves the lanes' cap when it moved.
+const GOVERN_EVERY: Duration = Duration::from_secs(5);
+
+/// The lanes' soft cap now, with `held` bytes in their pools (`pg_jobs::governor::soft_cap`).
+fn current_cap(held: u64) -> Option<u64> {
+    pg_jobs::governor::soft_cap(
+        pg_platform::memory::physical_bytes(),
+        pg_platform::memory::available_bytes(),
+        held,
+        MEMORY_SHARE,
+        MEMORY_HEADROOM,
+    )
+}
 
 /// A lane, as the coordinator keeps it: its state and its thread, and the library roots it walks.
 #[derive(Clone)]
@@ -174,9 +190,13 @@ impl Lanes {
         // The lanes' CPU is shared: their workers take permits, so two drives' decoders share the cores.
         let cpus = pg_jobs::pipeline::cpus();
         root.share_cpu(cpus);
-        // The lanes together hold a quarter of the machine's memory for file buffers, each up to the measured knee.
-        let cap = pg_platform::memory::physical_bytes().map(|bytes| bytes / MEMORY_SHARE);
-        let governor = Governor::new(Options::new(Priority::BelowNormal).buffer_bytes.get(), cap);
+        // The lanes together hold at most a quarter of the machine's memory for file buffers, and no more than is free
+        // beyond a headroom (`soft_cap`, which the coordinator keeps up to date), each up to the knee: the budget of the
+        // most readers a tuned pass takes. The budget stays at that static most: a lane that reads with fewer holds less
+        // through fewer reads in flight, and no lane's decisions move another's share.
+        let knee = Options::budget(MAX_READERS, pg_jobs::pipeline::default_workers())
+            .map_or(Options::new(Priority::BelowNormal).buffer_bytes.get(), |bytes| bytes.get());
+        let governor = Governor::new(knee, current_cap(0));
         let lanes = Arc::new(Lanes {
             root,
             crop_ctl,
@@ -228,6 +248,7 @@ impl Lanes {
                     progress,
                     since_work,
                     paused: lane.inner.ctl.is_own_paused(),
+                    readers: lane.inner.readers_now(),
                 }
             })
             .collect()
@@ -435,9 +456,11 @@ impl Lanes {
             let before = lane_names(&reg.lanes);
             let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
             for lane in &reg.lanes {
-                lane.inner.set_label(crate::lanes::drive_label(&lane.roots, |root| {
-                    places.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone())
-                }));
+                let place_of =
+                    |root: &RulePath| places.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone());
+                lane.inner.set_label(crate::lanes::drive_label(&lane.roots, place_of));
+                // The lane's tuners follow its drive: bound on every round, started again only when it changed.
+                lane.inner.bind_drive(crate::lanes::lane_drive(&lane.roots, place_of).as_ref());
             }
             // A label that changed and a lane that retired change the rows without any progress event: tell the hook.
             // The hook only publishes on the bus, so it is safe under the registry lock.
@@ -549,6 +572,8 @@ impl Lanes {
             // A lane that doesn't end in time is left to its own end: its walk stops by its lease (`Busy`) if another
             // lane takes its folder meanwhile.
             lane.service.stop_within(deadline.saturating_duration_since(Instant::now()));
+            // What the lane learned of its drive is kept for the next lane on it.
+            lane.inner.save_profiles();
             let moved = lane.inner.take_scans();
             self.shared.tally.lane_retired(lane.inner.number);
             let mut reg = self.registry();
@@ -760,15 +785,22 @@ impl Lanes {
     }
 }
 
-/// The coordinator's thread: a round each time it is woken, or when the next probe is due.
+/// The coordinator's thread: a round each time it is woken, or when the next probe is due; and the lanes' memory cap,
+/// looked at every [`GOVERN_EVERY`].
 fn coordinate(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     let mut catalog: Option<Catalog> = None;
     let mut next: Option<Duration> = None;
+    let mut governed = Instant::now();
     loop {
-        if waker.wait(next) == Woke::Quit {
+        let wait = Some(next.map_or(GOVERN_EVERY, |next| next.min(GOVERN_EVERY)));
+        if waker.wait(wait) == Woke::Quit {
             return;
         }
         let Some(lanes) = weak.upgrade() else { return };
+        if governed.elapsed() >= GOVERN_EVERY {
+            governed = Instant::now();
+            lanes.govern();
+        }
         next = match lanes.route(&mut catalog) {
             Ok(next) => {
                 lanes.shared.tally.round(COORDINATOR, None);
@@ -780,6 +812,16 @@ fn coordinate(weak: &Weak<Lanes>, waker: &Waker<'_>) {
             }
         };
         drop(lanes);
+    }
+}
+
+impl Lanes {
+    /// Moves the lanes' soft cap to the machine's free memory now, and rebalances their shares when it moved by more than
+    /// the hysteresis (`Governor::set_cap`).
+    fn govern(&self) {
+        if self.governor.set_cap(current_cap(self.governor.held())) {
+            self.governor.rebalance();
+        }
     }
 }
 

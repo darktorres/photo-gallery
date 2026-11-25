@@ -43,7 +43,7 @@ impl Drives for Fake {
             .iter()
             .find(|(folder, _)| *folder == name)
             .ok_or_else(|| io::Error::other("no drive is known for this path"))?;
-        Ok(Drive { key: key.clone(), kind: Kind::Rotational, label: format!("{key:?}") })
+        Ok(Drive { key: key.clone(), kind: Kind::Rotational, label: format!("{key:?}"), identity: None })
     }
 }
 

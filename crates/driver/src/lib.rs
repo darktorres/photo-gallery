@@ -83,6 +83,17 @@ pub struct Status {
     pub folder_failures: usize,
 }
 
+/// One lane's reader decision, as a run reads it back ([`Headless::lane_readers`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LaneReaders {
+    /// The lane's number.
+    pub number: usize,
+    /// Its drive, for people (`E:`).
+    pub drive: String,
+    /// The reads in flight its tuner chose last (`None`: pinned, or no tuned pass yet).
+    pub readers: Option<usize>,
+}
+
 /// A failure of a driver operation.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -170,10 +181,13 @@ impl Headless {
         }
         let config = Config {
             start: StartConfig {
+                // The lanes' profiles go to the run's own home (the app puts them beside its preferences), so a run never
+                // writes the user's.
                 runner: RunnerConfig {
                     pin_readers: setup.pin_readers,
                     pin_workers: setup.pin_workers,
                     passes: setup.passes,
+                    ..RunnerConfig::default()
                 },
                 writer: setup.writer,
                 #[cfg(feature = "fault")]
@@ -293,6 +307,20 @@ impl Headless {
             roots,
             removals: catalog.removal_markers()?.len(),
             folder_failures: catalog.failed_folders(1000)?.len(),
+        })
+    }
+
+    /// Each lane's drive and the reads in flight its tuner chose for its last tuned pass (`LaneProgress::readers`; `None`
+    /// for a pinned run, or a lane that has run no tuned pass): a run's reader decisions, read back. Empty before the job
+    /// starts.
+    pub fn lane_readers(&self) -> Vec<LaneReaders> {
+        self.app.library().running().map_or_else(Vec::new, |library| {
+            library
+                .lane_lines()
+                .lanes
+                .into_iter()
+                .map(|lane| LaneReaders { number: lane.number, drive: lane.label, readers: lane.readers })
+                .collect()
         })
     }
 

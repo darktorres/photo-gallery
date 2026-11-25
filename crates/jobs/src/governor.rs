@@ -67,41 +67,102 @@ impl Drop for Permit {
 
 /// The bytes of file buffers a pass may hold, as the run's governor sets them: read by the pass's pool on every grant
 /// (and every wait, so a change is seen within the pool's wait step). Shrinking it holds back grants until the buffers
-/// held come back; it never frees a buffer in use.
+/// held come back; it never frees a buffer in use. It also counts the bytes its pools hold now, which the governor's soft
+/// cap reads ([`soft_cap`]).
 #[derive(Debug)]
-pub struct Budget(AtomicU64);
+pub struct Budget {
+    bytes: AtomicU64,
+    held: AtomicU64,
+}
 
 impl Budget {
     /// A budget of `bytes` (at least one byte).
     pub fn new(bytes: u64) -> Budget {
-        Budget(AtomicU64::new(bytes.max(1)))
+        Budget { bytes: AtomicU64::new(bytes.max(1)), held: AtomicU64::new(0) }
     }
 
     /// The budget now.
     pub fn get(&self) -> u64 {
-        self.0.load(Ordering::SeqCst)
+        self.bytes.load(Ordering::SeqCst)
     }
 
     /// Sets the budget (at least one byte).
     pub fn set(&self, bytes: u64) {
-        self.0.store(bytes.max(1), Ordering::SeqCst);
+        self.bytes.store(bytes.max(1), Ordering::SeqCst);
+    }
+
+    /// The bytes its pools hold now (lent out, or idle in a pool).
+    pub fn held(&self) -> u64 {
+        self.held.load(Ordering::SeqCst)
+    }
+
+    /// A pool holds `bytes` more.
+    pub fn hold(&self, bytes: u64) {
+        self.move_held(|held| held.saturating_add(bytes));
+    }
+
+    /// A pool holds `bytes` less.
+    pub fn release(&self, bytes: u64) {
+        self.move_held(|held| held.saturating_sub(bytes));
+    }
+
+    /// Sets what is held to `to(held)`, atomically.
+    fn move_held(&self, to: impl Fn(u64) -> u64) {
+        let mut held = self.held.load(Ordering::SeqCst);
+        loop {
+            match self.held.compare_exchange_weak(held, to(held), Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return,
+                Err(now) => held = now,
+            }
+        }
     }
 }
+
+/// No cap, as the governor's atomic holds it.
+const NO_CAP: u64 = u64::MAX;
 
 /// The file-buffer budgets of a run's lanes. Each lane holds one [`Budget`], which the governor sets: the lane's
 /// `knee` (what one lane wants, the measured one: `pg_jobs::Options::budget`), or, when `cap` (the most every lane
 /// holds together) binds, the cap split evenly among the lanes. A lane that is retired drops its budget, and the next
-/// [`Governor::rebalance`] gives its share to the others.
+/// [`Governor::rebalance`] gives its share to the others. The cap changes as the machine's memory does
+/// ([`Governor::set_cap`], from [`soft_cap`]): the coordinator sets it on a timer and rebalances when it moved.
 pub struct Governor {
     knee: u64,
-    cap: Option<u64>,
+    cap: AtomicU64,
     lanes: Mutex<Vec<Weak<Budget>>>,
 }
+
+/// A cap's relative change under which [`Governor::set_cap`] keeps the old one: small moves of the machine's free memory
+/// rebalance nothing.
+pub const CAP_HYSTERESIS: f64 = 0.05;
 
 impl Governor {
     /// A governor of lanes that each want `knee` bytes, and together hold at most `cap` (`None`: no cap).
     pub fn new(knee: u64, cap: Option<u64>) -> Governor {
-        Governor { knee: knee.max(1), cap, lanes: Mutex::new(Vec::new()) }
+        Governor { knee: knee.max(1), cap: AtomicU64::new(cap.unwrap_or(NO_CAP)), lanes: Mutex::new(Vec::new()) }
+    }
+
+    /// The cap now (`None`: no cap).
+    pub fn cap(&self) -> Option<u64> {
+        let cap = self.cap.load(Ordering::SeqCst);
+        (cap != NO_CAP).then_some(cap)
+    }
+
+    /// Sets the cap, unless it moved by less than [`CAP_HYSTERESIS`] of the old one. Whether it changed: the caller then
+    /// rebalances.
+    pub fn set_cap(&self, cap: Option<u64>) -> bool {
+        let old = self.cap();
+        if !moved(old, cap) {
+            return false;
+        }
+        self.cap.store(cap.unwrap_or(NO_CAP), Ordering::SeqCst);
+        true
+    }
+
+    /// The bytes every lane's pools hold now.
+    pub fn held(&self) -> u64 {
+        let lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+        lanes.iter().filter_map(Weak::upgrade).map(|budget| budget.held()).fold(0, u64::saturating_add)
     }
 
     /// A new lane's budget, registered, with every lane's share rebalanced to include it.
@@ -117,7 +178,7 @@ impl Governor {
     pub fn rebalance(&self) {
         let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
         lanes.retain(|lane| lane.strong_count() > 0);
-        let share = split(self.knee, self.cap, lanes.len());
+        let share = split(self.knee, self.cap(), lanes.len());
         for budget in lanes.iter().filter_map(Weak::upgrade) {
             budget.set(share);
         }
@@ -128,6 +189,32 @@ impl Governor {
         let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
         lanes.retain(|lane| lane.strong_count() > 0);
         lanes.len()
+    }
+}
+
+/// Whether a cap moved from `old` to `new` by enough to change it ([`CAP_HYSTERESIS`]): a cap that appears or goes always
+/// does.
+fn moved(old: Option<u64>, new: Option<u64>) -> bool {
+    match (old, new) {
+        (None, None) => false,
+        (Some(old), Some(new)) => {
+            let (old, new) = (pg_model::num::size(old), pg_model::num::size(new));
+            (new - old).abs() > old * CAP_HYSTERESIS
+        }
+        _ => true,
+    }
+}
+
+/// The run's soft cap on what its lanes' buffers hold together: the lesser of `physical / share` (a fixed share of the
+/// machine) and `held + available − headroom` (what the lanes hold now, and what the machine has free beyond the
+/// headroom). `held` is added back so the cap does not ratchet: as the lanes fill, `available` falls by what they took,
+/// and the sum stays. `None` when the system says neither.
+pub fn soft_cap(physical: Option<u64>, available: Option<u64>, held: u64, share: u64, headroom: u64) -> Option<u64> {
+    let fixed = physical.map(|bytes| bytes / share.max(1));
+    let live = available.map(|bytes| held.saturating_add(bytes).saturating_sub(headroom));
+    match (fixed, live) {
+        (Some(fixed), Some(live)) => Some(fixed.min(live)),
+        (one, None) | (None, one) => one,
     }
 }
 
@@ -215,6 +302,57 @@ mod tests {
         governor.rebalance();
         assert_eq!(governor.lanes(), 1);
         assert_eq!(first.get(), 240, "the retired lane's share is the other's again");
+    }
+
+    // As the lanes fill, the machine's free memory falls by what they took: the cap stays. As they empty, it is back.
+    #[test]
+    fn the_soft_cap_does_not_ratchet_as_the_lanes_fill_and_empty() {
+        let (physical, headroom) = (Some(64 << 30), 2 << 30);
+        let free = 10u64 << 30;
+        let empty = soft_cap(physical, Some(free), 0, 4, headroom);
+        assert_eq!(empty, Some(8 << 30), "the live bound (10 − 2 GiB) is under a quarter (16 GiB)");
+        for taken in [1u64 << 30, 4 << 30, 8 << 30] {
+            assert_eq!(soft_cap(physical, Some(free - taken), taken, 4, headroom), empty, "{taken} held");
+        }
+        // Something else takes memory: the cap falls.
+        assert_eq!(soft_cap(physical, Some(4 << 30), 0, 4, headroom), Some(2 << 30));
+    }
+
+    #[test]
+    fn the_soft_cap_is_the_fixed_share_where_memory_is_free_and_none_without_facts() {
+        assert_eq!(soft_cap(Some(16 << 30), Some(15 << 30), 0, 4, 1 << 30), Some(4 << 30));
+        assert_eq!(soft_cap(Some(16 << 30), None, 0, 4, 1 << 30), Some(4 << 30));
+        assert_eq!(soft_cap(None, Some(3 << 30), 0, 4, 1 << 30), Some(2 << 30));
+        assert_eq!(soft_cap(None, None, 0, 4, 1 << 30), None);
+        assert_eq!(soft_cap(None, Some(1 << 20), 0, 4, 1 << 30), Some(0), "no room beyond the headroom");
+    }
+
+    #[test]
+    fn a_small_move_of_the_cap_changes_nothing_and_a_large_one_rebalances() {
+        let governor = Governor::new(240, Some(1000));
+        let lane = governor.lane();
+        assert!(!governor.set_cap(Some(1040)), "4%: kept");
+        assert_eq!(governor.cap(), Some(1000));
+        assert!(governor.set_cap(Some(300)));
+        governor.rebalance();
+        assert_eq!(lane.get(), 240, "one lane: its knee, under the cap");
+        let second = governor.lane();
+        assert_eq!((lane.get(), second.get()), (150, 150), "the new cap is split");
+        assert!(governor.set_cap(None), "no cap any more");
+        governor.rebalance();
+        assert_eq!((lane.get(), second.get()), (240, 240));
+    }
+
+    #[test]
+    fn a_budget_counts_what_its_pools_hold() {
+        let governor = Governor::new(240, None);
+        let (a, b) = (governor.lane(), governor.lane());
+        a.hold(100);
+        b.hold(50);
+        a.release(30);
+        assert_eq!((a.held(), b.held(), governor.held()), (70, 50, 120));
+        b.release(500);
+        assert_eq!(b.held(), 0, "never below zero");
     }
 
     #[test]

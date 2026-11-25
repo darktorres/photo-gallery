@@ -37,6 +37,29 @@ pub struct Drive {
     pub kind: Kind,
     /// For people: `E:` on Windows (the volume's GUID path when it has no letter), the disk's name on Linux.
     pub label: String,
+    /// The drive's identity across restarts: a hash of each disk's vendor, product and serial number (`stable_hash`),
+    /// and of their sorted hashes for a drive of several disks. `None` when a disk has no serial number (some USB
+    /// bridges), or the drive is opaque: such a drive has no stored profile (`pg_library::tuning`). A `DriveKey` is
+    /// not that: disk numbers and device numbers change at a restart.
+    pub identity: Option<u64>,
+}
+
+/// A fixed 64-bit FNV-1a hash of `bytes`: the same on every build and platform (`DefaultHasher` is not stable across Rust
+/// versions), so a disk's identity (`Drive::identity`) keys its stored profile across restarts and upgrades.
+pub fn stable_hash(bytes: &[u8]) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    bytes.iter().fold(OFFSET, |hash, &byte| (hash ^ u64::from(byte)).wrapping_mul(PRIME))
+}
+
+/// A disk's identity from its vendor, product and serial number (`vendor|product|serial`, each trimmed). `None` without
+/// a serial number: a disk that can't be told from another of its model has no identity of its own.
+pub(crate) fn disk_identity(vendor: &str, product: &str, serial: &str) -> Option<u64> {
+    let serial = serial.trim();
+    if serial.is_empty() {
+        return None;
+    }
+    Some(stable_hash(format!("{}|{}|{serial}", vendor.trim(), product.trim()).as_bytes()))
 }
 
 /// The drive a path is on, as a trait so a caller is tested with a fake.

@@ -1,7 +1,8 @@
 //! The job (`runner`) that runs the passes over the originals in order, for the app and for the developer's driver (`pg_driver`),
 //! where the data folders are (`layout`), and how a catalog folder is opened for them (`open_catalog`, `open_thumbs`,
 //! `versions`). What both front ends do around the passes is here too, once: adding a folder (`folders`) and what
-//! follows a scan (`scans`). The passes are their own crates, which the caller depends on directly: `pg-scan`, `pg-import`,
+//! follows a scan (`scans`). Each lane tunes its reads to its drive (`tuning`), and keeps what it learned in a store the
+//! caller gives (`tuning::ProfileStore`). The passes are their own crates, which the caller depends on directly: `pg-scan`, `pg-import`,
 //! `pg-thumbs`, `pg-borders`, `pg-crop` and `pg-writeback`.
 //!
 //! The passes report what they did as values (their stats, the failures they hit), and print nothing: whoever runs
@@ -23,6 +24,7 @@ pub mod runner;
 pub mod scans;
 pub mod shared;
 mod tally;
+pub mod tuning;
 
 #[cfg(test)]
 mod park_tests;

@@ -1732,6 +1732,7 @@ dependencies = [
  "pg-perf",
  "pg-platform",
  "pg-testkit",
+ "proptest",
  "serde_json",
 ]
 

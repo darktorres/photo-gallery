@@ -24,6 +24,7 @@ use pg_thumbcache::ThumbCache;
 use crate::mask::{PassCell, PassMask};
 use crate::pair_gate::PairGate;
 use crate::tally::Tally;
+use crate::tuning::{ProfileStore, TuningLog};
 
 /// The thumbnail height the grid asks for. It is held here, not given to the job at its start, so the height may be set
 /// before the job starts (the window's scale arrives after the library is made). The thumbnail pass makes thumbnails only
@@ -272,8 +273,15 @@ pub(crate) struct Shared {
     /// The passes a round runs (`Runner::set_passes`): read at the start of each round.
     pub(crate) passes: PassCell,
     /// The pass options of the run's lanes (`inner::pinned_options`): the defaults, or the counts a developer pinned
-    /// (`RunnerConfig`), checked when the run starts. Each lane adds its share of the budget (`Inner::options`).
+    /// (`RunnerConfig`), checked when the run starts. Sized for the most readers a tuned pass takes. Each lane adds its
+    /// share of the budget and its tuner (`Inner::options`).
     pub(crate) options: Options,
+    /// Whether the run pinned its readers: its lanes then read with that count, tune nothing and write no profile.
+    pub(crate) pinned: bool,
+    /// Where the lanes keep what they learned of their drives (`RunnerConfig::profiles`); none: nothing is kept.
+    pub(crate) profiles: Option<Arc<dyn ProfileStore>>,
+    /// Told a line for each change of a lane's reader count (`RunnerConfig::on_tuning`).
+    pub(crate) on_tuning: Option<TuningLog>,
     /// The test hooks (none in a build that is not a test).
     #[cfg(test)]
     pub(crate) hooks: Arc<TestHooks>,
@@ -302,7 +310,11 @@ impl Shared {
             tally,
             parks: Parks::default(),
             passes: PassCell::new(PassMask::ALL),
-            options: Options::new(Priority::BelowNormal),
+            options: crate::inner::pinned_options(Pins::default())
+                .unwrap_or_else(|_| Options::new(Priority::BelowNormal)),
+            pinned: false,
+            profiles: None,
+            on_tuning: None,
             #[cfg(test)]
             hooks: Arc::default(),
             pairing: PairGate::default(),

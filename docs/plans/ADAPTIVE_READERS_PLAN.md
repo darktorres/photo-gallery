@@ -4,6 +4,22 @@ Part C of one plan that was split in phase 0. The combined text is in commit `a8
 
 **Global phase order:** A1, A2 (`HEADLESS_SESSION_PLAN.md`); B3, B4 (`STORAGE_AND_CLEANUPS_PLAN.md`); C5 to C10 (this document). Phases C5 to C7 do not depend on the CLI removal. Phases C8 to C10 wait for B3, because they change `Options`, and C9 also needs `RunnerConfig` from A1.
 
+## Status (2026-11-25)
+
+Phases C5 to C10 are implemented, without the manual measurements: the tuner's thresholds are the provisional constants of `TunerConfig` (`crates/jobs/src/tuner.rs`), not yet locked by the C5 measurements, and the memory headroom (`MEMORY_HEADROOM`, 1 GiB, `crates/library/src/coordinator.rs`) is unmeasured. No standby-cache purge was run.
+
+What was built, and where it differs from the text below:
+
+- **Meters** (`pipeline.rs` `Timing`): the readers' time through the gate, the disk time (around the opens, reads and gathers, not the pool's wait), the reads and their bytes, the pool's order and capacity waits (in `Pool::take` and `Pool::pass`), the workers' permit wait, and the age of the oldest read in flight (`Flight`). `readers_busy_pct` is now of the readers' time through the gate. The meters stay on the pass's stack, shared by reference within its scope, rather than in an `Arc`.
+- **Read seam** (`crates/jobs/src/source.rs`): `FileSource::open` returns the reader and the size, because the pool admits a file by its size between the open and the read; the pipeline does the read itself, through `ReadSeek`. The container's gathers are unchanged: the import passes them `&mut &mut dyn ReadSeek`, which is `Read + Seek` itself.
+- **Gate** (`crates/jobs/src/gate.rs`) and **sampler** (`pipeline::sample`), as designed. `Readers::{Fixed, Auto(Tuning)}`; `Tuning` holds the lane's tuner and a change hook.
+- **Tuner** (`crates/jobs/src/tuner.rs`): the hill climb explores by halving, doubling, then one step down and up; fewer readers win a tie (`keep_lower`, 0.95), more must gain 12%. Unit tests that feed it windows of measured curves (the Exos's, a flash disk's), and laws (`crates/jobs/tests/tuner_laws.rs`). **No simulated disk** (decided after it was built): a test that sleeps real threads and asserts where the tuner converged depends on the OS's short sleeps and the runner's load, and flaked here (one run in three). The pure tests cover the algorithm, the gate's and the pipeline's real-thread tests assert only that parked readers are released and a bound holds, and convergence on real disks is the manual validation below. The read seam stays, for tests of sources that fail or stall.
+- **Memory governance**: `memory::available_bytes`, `Budget` counts what its pools hold, `Governor::set_cap` with a 5% hysteresis, `governor::soft_cap`, and the coordinator's timed `govern` every 5 s. The knee is the budget of 16 readers.
+- **Wiring** (`crates/library/src/tuning.rs`, `inner.rs`): `LaneTuner` per lane, one tuner per `TunedPass`; the binding is set beside the label. `LaneProgress::readers`, `Headless::lane_readers`, the perf record's tuner fields, and one log line per change through `RunnerConfig::on_tuning` (the app logs it under `readers`).
+- **Persistence**: `Drive::identity` (FNV-1a of vendor, product and serial; Windows' device descriptor, Linux's sysfs `serial` or `wwid`), `pg_model::profile`, `ProfileStore` (`load` and `merge`, so two lanes writing at once lose nothing), the app's `JsonProfiles` in `drive-profiles.json`. The OS is stored by name, not by build.
+
+Still open: the manual validation runs, and the threshold and headroom measurements.
+
 ## Context
 
 The pipeline reads files with a fixed number of reader threads (`READERS = 8`, `crates/jobs/src/pipeline.rs:56`) and a fixed memory budget (`(readers + workers) × 12 MiB`, `pipeline.rs:53, 89`). Both were chosen on one machine. Measurements in this work show that the right reader count depends on the drive and on the cache state:

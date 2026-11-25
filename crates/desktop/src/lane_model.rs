@@ -161,6 +161,7 @@ pub(crate) fn parse_fixture(text: &str) -> Result<LaneLines, String> {
                     progress: progress_of(phase, done, total, elapsed).map_err(|e| format!("line {at}: {e}"))?,
                     since_work: since_of(since).map_err(|e| format!("line {at}: {e}"))?,
                     paused: flag_of(paused).map_err(|e| format!("line {at}: {e}"))?,
+                    readers: None,
                 };
                 lines.lanes.push(lane);
             }
@@ -343,7 +344,7 @@ mod tests {
     }
 
     fn lane(number: usize, progress: Progress, since_work: Option<Duration>, paused: bool) -> LaneProgress {
-        LaneProgress { number, label: format!("{number}:"), progress, since_work, paused }
+        LaneProgress { number, label: format!("{number}:"), progress, since_work, paused, readers: None }
     }
 
     fn lines(crop_since: Option<Duration>, lanes: Vec<LaneProgress>) -> LaneLines {

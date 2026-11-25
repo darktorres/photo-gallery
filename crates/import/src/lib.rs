@@ -140,11 +140,13 @@ pub fn import_while(
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);
             let size = usize::try_from(item.size).unwrap_or(usize::MAX);
+            // The gathers read through the pipeline's source (`pg_jobs::source::ReadSeek`), a trait object: the
+            // container's readers take it by a reference to it, which is `Read + Seek` itself.
             if size > JPEG_HINT && is_named(name, &[b".jpg", b".jpeg", b".jfif"]) {
-                return Read::Gather { hint: JPEG_HINT, gather: |file| pg_container::jpeg_import_bytes(file) };
+                return Read::Gather { hint: JPEG_HINT, gather: |mut file| pg_container::jpeg_import_bytes(&mut file) };
             }
             if size > PNG_GATHER_FROM && is_named(name, &[b".png"]) {
-                return Read::Gather { hint: PNG_HINT, gather: |file| pg_container::png_import_bytes(file) };
+                return Read::Gather { hint: PNG_HINT, gather: |mut file| pg_container::png_import_bytes(&mut file) };
             }
             Read::File
         },

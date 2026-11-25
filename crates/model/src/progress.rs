@@ -23,6 +23,8 @@ pub struct LaneProgress {
     pub since_work: Option<Duration>,
     /// Whether this lane is paused itself (not the run's global pause).
     pub paused: bool,
+    /// The reads in flight its last tuned pass held (`pg_jobs::tuner`): `None` before one ran, or for a pinned lane.
+    pub readers: Option<usize>,
 }
 
 /// The phase a pass is in, and what it works on.

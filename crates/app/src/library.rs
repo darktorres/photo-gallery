@@ -47,7 +47,7 @@ const RESTART_RESET: Duration = Duration::from_secs(60);
 /// How a library starts: the job's settings (`RunnerConfig`), and whether the writer runs. The app runs the writer. A headless
 /// run on a real catalog does not, so the ratings and turns queued in the catalog are written into the files only when a run
 /// asks for it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct StartConfig {
     /// The job's settings.
     pub runner: RunnerConfig,
@@ -170,7 +170,7 @@ impl Library {
             features,
             changes.clone(),
             notices.clone(),
-            start.runner,
+            start.runner.clone(),
         )
         .map_err(failed)?;
         let writer = if start.writer {
@@ -443,7 +443,7 @@ impl LibraryService {
             self.heights.clone(),
             self.features.clone(),
             self.inbox.clone(),
-            *start,
+            start.clone(),
         )?;
         Ok(self.cell.get_or_init(|| library))
     }

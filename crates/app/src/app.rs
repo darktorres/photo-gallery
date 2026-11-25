@@ -111,13 +111,23 @@ impl App {
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let features = prefs.get().features();
+        // The lanes keep what they learn of their drives beside the preferences (a run's own home for the driver), and
+        // each change of a lane's reader count is a line in the log (the dev-mode log view).
+        let mut start = config.start.clone();
+        if start.runner.profiles.is_none() {
+            let path = config.layout.home().join(crate::profiles::FILE);
+            start.runner.profiles = Some(Arc::new(crate::profiles::JsonProfiles::open(path)));
+        }
+        if start.runner.on_tuning.is_none() {
+            start.runner.on_tuning = Some(Arc::new(|line: &str| pg_log::info("readers", line)));
+        }
         let library = Arc::new(LibraryService::new(
             catalog_path,
             catalogs.clone(),
             thumbs.clone(),
             inbox.clone(),
             features,
-            config.start,
+            start,
         ));
         let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone());
         let images = Images::new(catalogs.clone(), makers, thumbs.clone(), inbox.clone());

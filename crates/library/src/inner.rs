@@ -5,20 +5,24 @@
 use std::collections::VecDeque;
 #[cfg(test)]
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use pg_catalog::VolumeSet;
 use pg_jobs::control::Control;
 use pg_jobs::governor::Budget;
-use pg_jobs::pipeline::{Options, SizeRefused};
+use pg_jobs::pipeline::{self, Options, Readers, SizeRefused, Tuning};
+use pg_jobs::tuner::{Decision, MAX_READERS, TunerConfig};
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
+use pg_platform::drive::Drive;
 use pg_platform::priority::Priority;
 use pg_thumbs::LedgerOutcome;
 
 use crate::shared::{Pins, Shared};
+use crate::tuning::{Binding, LaneTuner, TunedPass, now_secs};
 
 /// A lane's state, shared by its thread and by whoever routes to it (the coordinator, the runner's requests).
 pub(crate) struct Inner {
@@ -43,16 +47,21 @@ pub(crate) struct Inner {
     /// Whether a round is running (`active`, with `idle` told when it ends): a holder waits for it to end.
     active: Mutex<bool>,
     idle: Condvar,
+    /// The lane's tuners, one per pass kind, and its drive (`tuning`).
+    tuning: Mutex<LaneTuner>,
+    /// The reads in flight its last tuned pass let through (0: none yet), for the lane's progress.
+    readers_now: Arc<AtomicUsize>,
 }
 
 /// The pass options a run's lanes give their passes, below normal (the one background priority): the defaults, or the
-/// counts a run pinned (`Pins`), with the slots and the budget that follow from them as they do by default. Refused when
-/// the pinned counts are out of range (`Options::sized`): the runner does not start with them.
+/// counts a run pinned (`Pins`), with the slots and the budget that follow from them as they do by default. Unpinned, the
+/// readers are sized for the most a tuned pass takes ([`MAX_READERS`]); each lane hands its passes its tuners
+/// ([`Inner::options`]). Refused when the pinned counts are out of range (`Options::sized`): the runner does not start
+/// with them.
 pub(crate) fn pinned_options(pins: Pins) -> Result<Options, SizeRefused> {
-    let default = Options::new(Priority::BelowNormal);
-    let readers = pins.readers.unwrap_or(default.readers);
-    let workers = pins.workers.unwrap_or(default.workers);
-    Options::sized(readers, workers, Priority::BelowNormal)
+    let readers = pins.readers.unwrap_or(MAX_READERS);
+    let workers = pins.workers.unwrap_or_else(pipeline::default_workers);
+    Options::sized(Readers::Fixed(readers), workers, Priority::BelowNormal)
 }
 
 impl Inner {
@@ -69,13 +78,69 @@ impl Inner {
             busy: Mutex::new(Vec::new()),
             active: Mutex::new(false),
             idle: Condvar::new(),
+            tuning: Mutex::new(LaneTuner::new(TunerConfig::default())),
+            readers_now: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    /// Pass options for this lane, below normal: the run's (`Shared::options`, with the counts a pinned run took), and the
-    /// lane's budget as the pass's, so the governor's share holds.
-    pub(crate) fn options(&self) -> Options {
+    /// The run's pass options with the lane's budget as the pass's, so the governor's share holds, and no tuner: for a
+    /// pass that reads no file through the readers (the pairing).
+    pub(crate) fn base_options(&self) -> Options {
         Options { budget: Some(self.budget.clone()), ..self.shared.options.clone() }
+    }
+
+    /// Pass options for this lane's `pass`, below normal: [`Inner::base_options`], with the lane's tuner for the pass
+    /// kind, unless the run pinned its readers.
+    pub(crate) fn options(&self, pass: TunedPass) -> Options {
+        let mut opts = self.base_options();
+        if self.shared.pinned {
+            return opts;
+        }
+        let tuner = self.tuning().tuner(pass, self.shared.profiles.as_deref(), now_secs());
+        let first = tuner.lock().unwrap_or_else(PoisonError::into_inner).target().get();
+        self.readers_now.store(first, Ordering::Relaxed);
+        let readers_now = self.readers_now.clone();
+        let log = self.shared.on_tuning.clone();
+        let number = self.number;
+        let drive = self.label();
+        let on_change = move |decision: Decision| {
+            readers_now.store(decision.target.get(), Ordering::Relaxed);
+            if let Some(log) = &log {
+                log(&format!(
+                    "lane {number} ({drive}) {}: {} readers ({})",
+                    pass.name(),
+                    decision.target,
+                    decision.reason.name()
+                ));
+            }
+        };
+        opts.readers = Readers::Auto(Tuning { max: MAX_READERS, tuner, on_change: Some(Arc::new(on_change)) });
+        opts
+    }
+
+    fn tuning(&self) -> MutexGuard<'_, LaneTuner> {
+        self.tuning.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Binds the lane's tuners to `drive` (the coordinator's probe of its roots): a different drive starts them again.
+    pub(crate) fn bind_drive(&self, drive: Option<&Drive>) {
+        self.tuning().bind(drive.map(Binding::of));
+    }
+
+    /// The reads in flight the lane's last tuned pass let through, if one ran.
+    pub(crate) fn readers_now(&self) -> Option<usize> {
+        Some(self.readers_now.load(Ordering::Relaxed)).filter(|&n| n > 0)
+    }
+
+    /// Keeps what the lane learned of its drive in the run's store, if it has one and the run is not pinned: when the
+    /// lane goes idle, and when it is retired. A failed write is not the lane's failure: the profile is a hint.
+    pub(crate) fn save_profiles(&self) {
+        if self.shared.pinned {
+            return;
+        }
+        if let Some(store) = &self.shared.profiles {
+            let _ = self.tuning().write(store.as_ref(), now_secs());
+        }
     }
 
     /// Whether a round is running now.
@@ -205,12 +270,12 @@ mod pin_tests {
     }
 
     #[test]
-    fn unpinned_options_are_the_defaults_below_normal() {
+    fn unpinned_options_are_sized_for_a_tuned_pass_below_normal() {
         let opts = pinned_options(Pins::default()).unwrap();
-        let default = Options::new(Priority::BelowNormal);
-        assert_eq!((opts.readers, opts.workers), (default.readers, default.workers));
-        assert_eq!(opts.slots, default.slots);
-        assert_eq!(opts.buffer_bytes, default.buffer_bytes);
+        let workers = pipeline::default_workers();
+        assert_eq!((opts.readers.max(), opts.workers), (MAX_READERS, workers));
+        assert_eq!(Some(opts.slots), Options::slots(MAX_READERS, workers));
+        assert_eq!(Some(opts.buffer_bytes), Options::budget(MAX_READERS, workers));
         assert_eq!(opts.priority, Priority::BelowNormal);
         assert!(opts.budget.is_none());
     }
@@ -219,7 +284,7 @@ mod pin_tests {
     fn pinned_counts_replace_the_defaults_and_the_slots_and_budget_follow() {
         let pins = Pins { readers: Some(n(3)), workers: Some(n(2)) };
         let opts = pinned_options(pins).unwrap();
-        assert_eq!((opts.readers, opts.workers), (n(3), n(2)));
+        assert_eq!((opts.readers.max(), opts.workers), (n(3), n(2)));
         assert_eq!(Some(opts.slots), Options::slots(n(3), n(2)));
         assert_eq!(Some(opts.buffer_bytes), Options::budget(n(3), n(2)));
     }
@@ -235,7 +300,7 @@ mod pin_tests {
         let budget = Arc::new(Budget::new(1 << 20));
         let run = pinned_options(Pins { readers: Some(n(3)), workers: Some(n(2)) }).unwrap();
         let lane = Options { budget: Some(budget.clone()), ..run.clone() };
-        assert_eq!((lane.readers, lane.workers, lane.slots), (run.readers, run.workers, run.slots));
+        assert_eq!((lane.readers.max(), lane.workers, lane.slots), (run.readers.max(), run.workers, run.slots));
         assert!(lane.budget.as_ref().is_some_and(|shared| Arc::ptr_eq(shared, &budget)), "the lane's budget is kept");
     }
 }

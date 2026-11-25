@@ -17,6 +17,7 @@ use crate::Error;
 use crate::inner::Inner;
 use crate::scans;
 use crate::shared::Shared;
+use crate::tuning::TunedPass;
 
 /// A lane's pass context: the lane, and its round's connection.
 pub(crate) struct Cx<'a> {
@@ -138,7 +139,8 @@ pub(crate) struct Import;
 impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let volumes = cx.inner.volume_set();
-        let s = pg_import::import_while(cx.catalog, &cx.inner.options(), &volumes, &|| true, &cx.inner.ctl)?;
+        let opts = cx.inner.options(TunedPass::Import);
+        let s = pg_import::import_while(cx.catalog, &opts, &volumes, &|| true, &cx.inner.ctl)?;
         if s.files > 0 {
             cx.inner.imported();
         }
@@ -159,7 +161,7 @@ impl Pass<Cx<'_>> for Hashes {
         let volumes = cx.inner.volume_set();
         let s = pg_import::hashes::hash(
             cx.catalog,
-            &cx.inner.options(),
+            &cx.inner.options(TunedPass::Hashes),
             &volumes,
             &|| features.get().duplicates,
             &cx.inner.ctl,
@@ -191,7 +193,7 @@ impl Pass<Cx<'_>> for Pairing {
             return Ok(Step::Done);
         }
         while gate.next() {
-            let s = match pg_import::pairs::pair(cx.catalog, &cx.inner.options(), &cx.inner.ctl) {
+            let s = match pg_import::pairs::pair(cx.catalog, &cx.inner.base_options(), &cx.inner.ctl) {
                 Ok(s) => s,
                 Err(e) => {
                     gate.abandon();
@@ -227,7 +229,7 @@ impl Pass<Cx<'_>> for Borders {
         let volumes = cx.inner.volume_set();
         let s = pg_borders::find_while(
             cx.catalog,
-            &cx.inner.options(),
+            &cx.inner.options(TunedPass::Borders),
             &volumes,
             &|| features.get().borders,
             &cx.inner.ctl,
@@ -262,7 +264,7 @@ impl Pass<Cx<'_>> for Thumbs {
             return Ok(Step::Done);
         }
         let heights = cx.inner.shared.heights.clone();
-        let opts = cx.inner.options();
+        let opts = cx.inner.options(TunedPass::Thumbs);
         let volumes = cx.inner.volume_set();
         let thumbs = &cx.inner.shared.thumbs;
         let s = match pg_thumbs::run_while(
@@ -309,7 +311,7 @@ impl Pass<Cx<'_>> for Placeholders {
         pg_thumbs::placeholders::run_while(
             cx.catalog,
             thumbs,
-            &cx.inner.options(),
+            &cx.inner.options(TunedPass::Placeholders),
             &volumes,
             &|| !thumbs.suspended(),
             &cx.inner.ctl,

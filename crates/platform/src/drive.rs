@@ -19,7 +19,10 @@ use std::path::Path;
 
 mod types;
 
-pub use types::{Drive, DriveKey, Drives, Kind};
+pub use types::{Drive, DriveKey, Drives, Kind, stable_hash};
+
+#[cfg(test)]
+use types::disk_identity;
 
 /// The system's drives: Windows' volume and disk queries, or sysfs on Linux.
 pub struct SystemDrives;
@@ -138,6 +141,20 @@ mod facts {
         /// Its backing can't be seen (see [`DriveKey::Opaque`]).
         pub(super) opaque: bool,
         pub(super) kind: Kind,
+        /// Its identity across restarts (`super::disk_identity`), when it has a serial number.
+        pub(super) identity: Option<u64>,
+    }
+
+    /// The identity of a drive of these disks: the one disk's, or a hash of the disks' sorted identities; `None` when
+    /// any has none.
+    fn identity_of(disks: &[DiskFact]) -> Option<u64> {
+        let mut ids: Vec<u64> = disks.iter().map(|disk| disk.identity).collect::<Option<_>>()?;
+        if let [one] = ids.as_slice() {
+            return Some(*one);
+        }
+        ids.sort_unstable();
+        let bytes: Vec<u8> = ids.iter().flat_map(|id| id.to_le_bytes()).collect();
+        Some(super::types::stable_hash(&bytes))
     }
 
     /// The drive a volume is on, from the disks it is on. A disk that can't be seen makes the volume opaque. Otherwise
@@ -147,7 +164,7 @@ mod facts {
             return Err(io::Error::other(format!("{label}: no disk is behind the volume")));
         }
         if disks.iter().any(|disk| disk.opaque) {
-            return Ok(Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label });
+            return Ok(Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label, identity: None });
         }
         let kind = if disks.iter().any(|disk| disk.kind == Kind::Rotational) {
             Kind::Rotational
@@ -157,7 +174,7 @@ mod facts {
             Kind::Solid
         };
         let key = DriveKey::Disks(disks.iter().map(|disk| disk.disk).collect::<BTreeSet<u64>>());
-        Ok(Drive { key, kind, label })
+        Ok(Drive { key, kind, label, identity: identity_of(disks) })
     }
 }
 
@@ -194,10 +211,23 @@ mod windows_facts {
                     Some(false) if bus != BUS_USB => Kind::Solid,
                     _ => Kind::Unknown,
                 };
-                DiskFact { disk, opaque: false, kind }
+                DiskFact { disk, opaque: false, kind, identity: None }
             }
-            _ => DiskFact { disk, opaque: true, kind: Kind::Unknown },
+            _ => DiskFact { disk, opaque: true, kind: Kind::Unknown, identity: None },
         }
+    }
+
+    /// The disk's identity from a `STORAGE_DEVICE_DESCRIPTOR`: its vendor, product and serial number, each a
+    /// NUL-terminated string at the offset its field gives (`VendorIdOffset` at 12, `ProductIdOffset` at 16,
+    /// `SerialNumberOffset` at 24; an offset of 0 is no string). `None` without a serial number.
+    pub(super) fn parse_identity(buf: &[u8]) -> Option<u64> {
+        let text = |field: usize| -> String {
+            let at = le_u32(buf, field).and_then(|at| usize::try_from(at).ok()).filter(|&at| at > 0);
+            let bytes = at.and_then(|at| buf.get(at..)).unwrap_or_default();
+            let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+            String::from_utf8_lossy(bytes.get(..end).unwrap_or_default()).into_owned()
+        };
+        super::types::disk_identity(&text(12), &text(16), &text(24))
     }
 
     /// A little-endian `u32` at `at`, or `None` when the buffer is too short.
@@ -354,15 +384,18 @@ mod win {
         let disk = open(&format!(r"\\.\PhysicalDrive{number}"))?;
         let mut bus_buf = vec![0u8; 1024];
         let bus_query = query(StorageDeviceProperty);
-        let bus = control(&disk, IOCTL_STORAGE_QUERY_PROPERTY, Some(bus_query.as_slice()), &mut bus_buf)
+        let descriptor = control(&disk, IOCTL_STORAGE_QUERY_PROPERTY, Some(bus_query.as_slice()), &mut bus_buf)
             .ok()
-            .and_then(|n| wf::parse_bus(bus_buf.get(..n).unwrap_or_default()));
+            .map(|n| bus_buf.get(..n).unwrap_or_default());
+        let bus = descriptor.and_then(wf::parse_bus);
+        let identity = descriptor.and_then(wf::parse_identity);
         let mut penalty_buf = vec![0u8; 64];
         let penalty_query = query(StorageDeviceSeekPenaltyProperty);
         let penalty = control(&disk, IOCTL_STORAGE_QUERY_PROPERTY, Some(penalty_query.as_slice()), &mut penalty_buf)
             .ok()
             .and_then(|n| wf::parse_seek_penalty(penalty_buf.get(..n).unwrap_or_default()));
-        Ok(wf::disk_fact(u64::from(number), bus, penalty))
+        let fact = wf::disk_fact(u64::from(number), bus, penalty);
+        Ok(DiskFact { identity: if fact.opaque { None } else { identity }, ..fact })
     }
 
     /// A `STORAGE_PROPERTY_QUERY` for `property`, as a standard query: the property id, the query type, and one byte.
@@ -430,7 +463,7 @@ mod linux {
         let dev = read_dev(&real)?;
         let text = real.to_string_lossy();
         if text.contains("/devices/virtual/") {
-            out.push(DiskFact { disk: dev, opaque: true, kind: Kind::Unknown });
+            out.push(DiskFact { disk: dev, opaque: true, kind: Kind::Unknown, identity: None });
             return Ok(());
         }
         if real.join("partition").exists() {
@@ -440,8 +473,18 @@ mod linux {
         let rotational = fs::read_to_string(real.join("queue").join("rotational")).ok();
         // A USB bridge reports no rotation for a spinning disk, so only "rotational" is trusted behind one.
         let usb = text.contains("/usb");
-        out.push(DiskFact { disk: dev, opaque: false, kind: kind_of(rotational.as_deref(), usb) });
+        let identity = identity_in(&real.join("device"));
+        out.push(DiskFact { disk: dev, opaque: false, kind: kind_of(rotational.as_deref(), usb), identity });
         Ok(())
+    }
+
+    /// A whole disk's identity from its sysfs `device` folder: its `vendor` and `model`, and its `serial`, or its
+    /// `wwid` where it has no serial (SCSI and NVMe disks give one or the other). `None` with neither.
+    fn identity_in(device: &Path) -> Option<u64> {
+        let read = |name: &str| fs::read_to_string(device.join(name)).unwrap_or_default();
+        let serial = read("serial");
+        let serial = if serial.trim().is_empty() { read("wwid") } else { serial };
+        super::types::disk_identity(&read("vendor"), &read("model"), &serial)
     }
 
     /// The kind of a whole disk from its `queue/rotational` text.
@@ -494,6 +537,9 @@ mod linux {
             };
             write("devices/pci/block/sda/dev", "8:0\n");
             write("devices/pci/block/sda/queue/rotational", "1\n");
+            write("devices/pci/block/sda/device/vendor", "ATA     \n");
+            write("devices/pci/block/sda/device/model", "ST8000NM\n");
+            write("devices/pci/block/sda/device/wwid", "naa.5000c500a1b2c3d4\n");
             write("devices/pci/block/sda/sda1/dev", "8:1\n");
             write("devices/pci/block/sda/sda1/partition", "1\n");
             write("devices/virtual/block/dm-0/dev", "253:0\n");
@@ -541,6 +587,19 @@ mod linux {
             assert_eq!(drive.key, DriveKey::Disks([makedev(8, 0)].into_iter().collect()));
             assert_eq!(drive.kind, Kind::Rotational);
             assert_eq!(drive.label, "sda");
+        }
+
+        // A disk's identity is its vendor, model and serial (its wwid, with no serial), the same through a partition and
+        // a device-mapper device over it; a disk with neither (the USB disk here) has none.
+        #[test]
+        fn a_disk_with_a_wwid_has_an_identity_and_one_without_has_none() {
+            let sysfs = sysfs();
+            let expected = super::super::types::disk_identity("ATA", "ST8000NM", "naa.5000c500a1b2c3d4");
+            assert!(expected.is_some());
+            assert_eq!(drive_of_dev(&sysfs, makedev(8, 0)).unwrap().identity, expected);
+            assert_eq!(drive_of_dev(&sysfs, makedev(8, 1)).unwrap().identity, expected, "through the partition");
+            assert_eq!(drive_of_dev(&sysfs, makedev(253, 0)).unwrap().identity, expected, "through device-mapper");
+            assert_eq!(drive_of_dev(&sysfs, makedev(8, 16)).unwrap().identity, None);
         }
 
         #[test]
@@ -643,8 +702,50 @@ mod tests {
     use super::windows_facts as wf;
     use super::*;
 
+    /// A disk of identity `disk + 1000`.
     fn disk(disk: u64, kind: Kind) -> DiskFact {
-        DiskFact { disk, opaque: false, kind }
+        DiskFact { disk, opaque: false, kind, identity: Some(disk + 1000) }
+    }
+
+    #[test]
+    fn the_stable_hash_is_fnv_1a() {
+        // The published FNV-1a 64 values of "" and "a".
+        assert_eq!(stable_hash(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(stable_hash(b"a"), 0xaf63_dc4c_8601_ec8c);
+    }
+
+    #[test]
+    fn a_disk_without_a_serial_number_has_no_identity() {
+        assert_eq!(disk_identity("ATA", "ST8000", "  "), None);
+        assert_eq!(disk_identity(" ATA ", "ST8000 ", "ZA1 "), disk_identity("ATA", "ST8000", "ZA1"), "trimmed");
+        assert_ne!(disk_identity("ATA", "ST8000", "ZA1"), disk_identity("ATA", "ST8000", "ZA2"));
+    }
+
+    #[test]
+    fn a_drive_of_one_disk_is_its_identity_and_of_several_their_sorted_hash() {
+        let one = drive_of_dev_facts(&[disk(1, Kind::Solid)]).unwrap();
+        assert_eq!(one.identity, Some(1001));
+        let ab = drive_of_dev_facts(&[disk(1, Kind::Solid), disk(2, Kind::Solid)]).unwrap();
+        let ba = drive_of_dev_facts(&[disk(2, Kind::Solid), disk(1, Kind::Solid)]).unwrap();
+        assert_eq!(ab.identity, ba.identity, "the order of the disks does not matter");
+        assert!(ab.identity.is_some() && ab.identity != one.identity);
+        let unknown = DiskFact { identity: None, ..disk(3, Kind::Solid) };
+        assert_eq!(drive_of_dev_facts(&[disk(1, Kind::Solid), unknown]).unwrap().identity, None);
+    }
+
+    #[test]
+    fn the_identity_is_read_from_the_device_descriptors_strings() {
+        let mut descriptor = vec![0u8; 96];
+        put(&mut descriptor, 12, 40);
+        put(&mut descriptor, 16, 48);
+        put(&mut descriptor, 24, 64);
+        descriptor[40..44].copy_from_slice(b"ATA\0");
+        descriptor[48..55].copy_from_slice(b"ST8000\0");
+        descriptor[64..69].copy_from_slice(b"ZA1 \0");
+        assert_eq!(wf::parse_identity(&descriptor), disk_identity("ATA", "ST8000", "ZA1"));
+        put(&mut descriptor, 24, 0);
+        assert_eq!(wf::parse_identity(&descriptor), None, "no serial number");
+        assert_eq!(wf::parse_identity(&descriptor[..8]), None, "cut short");
     }
 
     fn key(disks: &[u64]) -> DriveKey {
@@ -673,7 +774,7 @@ mod tests {
 
     #[test]
     fn a_volume_with_a_hidden_disk_is_opaque() {
-        let hidden = DiskFact { disk: 2, opaque: true, kind: Kind::Unknown };
+        let hidden = DiskFact { disk: 2, opaque: true, kind: Kind::Unknown, identity: None };
         let drive = drive_of_dev_facts(&[disk(1, Kind::Solid), hidden]).unwrap();
         assert_eq!((drive.key, drive.kind), (DriveKey::Opaque, Kind::Unknown));
     }

@@ -8,8 +8,8 @@
 //! tells the user, [`Inbox`]), the catalog connections, the thumbnails, placeholders and the viewer's original, the catalog
 //! reads off the UI thread ([`Reading`]), the folders, the scan and the write-back, ratings and marks, the place the grid
 //! shows and the saved views, the reverse image search and saving its results (`yandex`, a public module), the preferences
-//! and the JSON file they are kept in (`store`, a public module), bounded pools of connections and makers (`pool`, a
-//! public module), and the error type ([`Error`]).
+//! and the JSON file they are kept in (`store`, a public module), the reader counts the lanes learned per disk (`profiles`,
+//! a public module), bounded pools of connections and makers (`pool`, a public module), and the error type ([`Error`]).
 
 #![forbid(unsafe_code)]
 
@@ -24,6 +24,7 @@ mod library;
 mod makers;
 pub mod pool;
 mod prefs;
+pub mod profiles;
 mod reader;
 pub mod store;
 mod views;

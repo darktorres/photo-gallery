@@ -85,6 +85,18 @@ pub(crate) fn drive_label<'a>(
         .unwrap_or_default()
 }
 
+/// The drive of a lane's roots, as its tuners are bound to it: the drive of the first of them whose place is known, `None`
+/// when none is. The lane's roots are on one drive (`assign`), so the first known is the lane's.
+pub(crate) fn lane_drive<'a>(
+    roots: impl IntoIterator<Item = &'a RulePath>,
+    place_of: impl Fn(&RulePath) -> Option<Place>,
+) -> Option<Drive> {
+    roots.into_iter().find_map(|root| match place_of(root) {
+        Some(Place::Mounted { drive, .. }) => Some(drive),
+        _ => None,
+    })
+}
+
 /// The lane of each root, by index: roots on the same drive share a number, and the numbers run from 0 in the order the
 /// drives first appear. Two roots share a lane when their disks overlap (`same_drive`), so a volume spanning two disks
 /// and a volume on one of them are one lane.
@@ -140,7 +152,7 @@ mod tests {
 
     #[test]
     fn a_volume_id_above_i64_max_is_mounted_as_the_catalog_stores_it() {
-        let drive = Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string() };
+        let drive = Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string(), identity: None };
         assert!(matches!(place_on_volume(u64::MAX, drive), Place::Mounted { volume: u64::MAX, .. }));
     }
 
@@ -149,11 +161,12 @@ mod tests {
             key: DriveKey::Disks(numbers.iter().copied().collect::<BTreeSet<u64>>()),
             kind: Kind::Rotational,
             label: format!("{numbers:?}"),
+            identity: None,
         })
     }
 
     fn opaque() -> RootDrive {
-        Some(Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string() })
+        Some(Drive { key: DriveKey::Opaque, kind: Kind::Unknown, label: "virtual".to_string(), identity: None })
     }
 
     #[test]

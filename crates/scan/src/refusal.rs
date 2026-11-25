@@ -272,7 +272,7 @@ mod ntfs_tests {
     impl Drives for FakeDrives {
         fn of(&self, _path: &Path) -> io::Result<Drive> {
             let key = self.0.clone().map_err(io::Error::other)?;
-            Ok(Drive { key, kind: Kind::Unknown, label: "D:".into() })
+            Ok(Drive { key, kind: Kind::Unknown, label: "D:".into(), identity: None })
         }
     }
 

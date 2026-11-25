@@ -10,8 +10,13 @@
 //! bytes, and handed back once processed. Readers wait while either is taken, so they stay a bounded way ahead of
 //! the workers, a folder of large files holds no more than one of small files, and the buffers are reused from file
 //! to file: a pass makes about `slots` of them, whatever its length.
+//!
+//! The readers are started up to their most (`Readers::max`, no more than the pass has items), and a gate lets a number
+//! of them claim items (`crate::gate`): all of them for a fixed count, and for a tuned one (`Readers::Auto`) the
+//! target a sampler thread sets each window from the pass's meters, through the lane's tuner (`crate::tuner`). The files
+//! are opened and read through `Options::source` (`crate::source`), the system's files by default.
 
-use std::io::{Read as _, Seek as _, SeekFrom};
+use std::io::{Seek as _, SeekFrom};
 use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -28,15 +33,49 @@ use serde_json::json;
 
 use crate::control::Control;
 use crate::failure::{Class, Failed};
+use crate::gate::ReaderGate;
 use crate::governor::Budget;
 use crate::panics;
+use crate::source::{Access, FileSource, OsFiles, ReadSeek};
+use crate::tuner::{Decision, Reason, Sample, Tuner};
+
+/// How many threads read a pass's files.
+#[derive(Clone)]
+pub enum Readers {
+    /// This many, from start to end: the crop's jobs, the tests, and a developer's pinned run.
+    Fixed(NonZeroUsize),
+    /// As many as the lane's tuner finds best on its drive, up to `Tuning::max`.
+    Auto(Tuning),
+}
+
+impl Readers {
+    /// The most readers the pass starts: what its slots and its budget are sized by.
+    pub fn max(&self) -> NonZeroUsize {
+        match self {
+            Readers::Fixed(n) => *n,
+            Readers::Auto(tuning) => tuning.max,
+        }
+    }
+}
+
+/// What a tuned pass needs: its bound, its lane's tuner (one per drive and pass kind, kept across passes), and who is
+/// told when the target changes.
+#[derive(Clone)]
+pub struct Tuning {
+    /// The most readers.
+    pub max: NonZeroUsize,
+    /// The lane's tuner for this pass kind.
+    pub tuner: Arc<Mutex<Tuner>>,
+    /// Told each change of the target, with the decision (the lane's progress, and the dev-mode log).
+    pub on_change: Option<Arc<dyn Fn(Decision) + Send + Sync>>,
+}
 
 /// How a pipeline runs: how many threads read and how many process, and how much is in flight at once. Every count is
 /// typed so that no caller can build a pool with none of them: zero can't be written, and the slots have a maximum.
 #[derive(Clone)]
 pub struct Options {
-    /// The threads that read the files.
-    pub readers: NonZeroUsize,
+    /// The threads that read the files: a fixed count, or a tuned one.
+    pub readers: Readers,
     /// The threads that process the files.
     pub workers: NonZeroUsize,
     /// The files in flight at most: being read, read and waiting for a worker, or being processed. A file a worker
@@ -51,6 +90,8 @@ pub struct Options {
     /// Thread priority of the readers and workers (a `Priority`). Below normal keeps the app's own threads
     /// (the UI, thumbnails on screen) ahead of a background pass.
     pub priority: Priority,
+    /// Where the files are opened and read: the system's files ([`OsFiles`]), or a test's source.
+    pub source: Arc<dyn FileSource>,
 }
 
 /// The budget per read in flight and per worker: a large camera JPEG (24 MP at high quality).
@@ -71,6 +112,11 @@ const MAX_DEFAULT_WORKERS: NonZeroUsize = NonZeroUsize::MIN.saturating_add(4095)
 /// The logical CPUs the pools are sized by: `available_parallelism`, or 4 where the platform cannot say.
 pub fn cpus() -> usize {
     std::thread::available_parallelism().map_or(4, |n| n.get())
+}
+
+/// The workers of the default options: a worker per logical CPU (4 where the platform cannot say), at most 4096.
+pub fn default_workers() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN.saturating_add(3)).min(MAX_DEFAULT_WORKERS)
 }
 
 /// Why reader and worker counts make no [`Options`] ([`Options::sized`]).
@@ -120,20 +166,22 @@ impl Options {
         reason = "8 readers and at most 4096 workers make 8200 slots (under MAX_SLOTS) and 4104 × 12 MiB"
     )]
     pub fn new(priority: Priority) -> Options {
-        let cpus = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN.saturating_add(3));
-        Options::sized(READERS, cpus.min(MAX_DEFAULT_WORKERS), priority).expect("the default counts fit")
+        Options::sized(Readers::Fixed(READERS), default_workers(), priority).expect("the default counts fit")
     }
 
-    /// `readers` and `workers`, with the [`Options::slots`] and the [`Options::budget`] that follow from them, or why
-    /// they are refused: more slots than [`MAX_SLOTS`], or a budget past `u64`. Nothing is clamped.
-    pub fn sized(readers: NonZeroUsize, workers: NonZeroUsize, priority: Priority) -> Result<Options, SizeRefused> {
+    /// `readers` and `workers`, with the [`Options::slots`] and the [`Options::budget`] that follow from them (from the
+    /// readers' most, for a tuned count), reading the system's files, or why they are refused: more slots than
+    /// [`MAX_SLOTS`], or a budget past `u64`. Nothing is clamped.
+    pub fn sized(readers: Readers, workers: NonZeroUsize, priority: Priority) -> Result<Options, SizeRefused> {
+        let most = readers.max();
         Ok(Options {
             readers,
             workers,
-            slots: Options::slots(readers, workers).ok_or(SizeRefused::TooManySlots)?,
-            buffer_bytes: Options::budget(readers, workers).ok_or(SizeRefused::BudgetOverflows)?,
+            slots: Options::slots(most, workers).ok_or(SizeRefused::TooManySlots)?,
+            buffer_bytes: Options::budget(most, workers).ok_or(SizeRefused::BudgetOverflows)?,
             budget: None,
             priority,
+            source: Arc::new(OsFiles),
         })
     }
 
@@ -173,8 +221,9 @@ pub enum Read {
     Gather {
         /// How many bytes `gather` is expected to need.
         hint: usize,
-        /// Reads the bytes `process` gets from the file, seeking where it needs to.
-        gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>>,
+        /// Reads the bytes `process` gets from the file, seeking where it needs to: through the source's reader
+        /// ([`ReadSeek`]), so any source serves a gather as it serves a whole read.
+        gather: fn(&mut dyn ReadSeek) -> std::io::Result<Option<Vec<u8>>>,
     },
 }
 
@@ -185,15 +234,26 @@ enum Outcome<R> {
     SetupFailed(Failed),
 }
 
-/// Where a pass's threads spend their time: nanoseconds per stage, summed over the threads of the stage.
+/// Where a pass's threads spend their time: nanoseconds per stage, summed over the threads of the stage, and what the
+/// readers read. Every meter is lock-free (`Relaxed`): a statistic, which no other memory is ordered by. The sampler of a
+/// tuned pass reads their differences each window; the perf record reads their totals.
 #[derive(Default)]
 struct Timing {
     /// Readers: reading a file, including its turn in the pool.
     read: Clock,
     /// Readers: handing a read file on, which waits while the workers are behind.
     read_send: Clock,
+    /// Readers: the time they were let through by the gate, summed: over the wall time, the active readers on average.
+    active: Clock,
+    /// Readers: the time at the disk, around the opens and the reads only (no wait for the pool).
+    disk: Clock,
+    /// Readers: the files read at the disk (not a streamed one), and their bytes.
+    reads: Counter,
+    bytes: Counter,
     /// Workers: waiting for a read file.
     work_wait: Clock,
+    /// Workers: waiting for a CPU permit, when the run's lanes share the cores.
+    permit_wait: Clock,
     /// Workers: processing a file.
     work: Clock,
     /// Workers: handing a result on, which waits while the sink is behind.
@@ -206,6 +266,22 @@ struct Timing {
     write_wait: Clock,
     /// The writer of [`batched`]: flushing a batch.
     write: Clock,
+    /// What the tuner did over the pass, for a tuned one.
+    tuned: Mutex<Option<Tuned>>,
+}
+
+/// A tuned pass's readers over its run, for the perf record.
+#[derive(Clone, Copy, Debug)]
+struct Tuned {
+    /// The target at the end, and the lowest and highest it had.
+    chosen: usize,
+    min: usize,
+    max: usize,
+    /// The last decision's reason.
+    reason: Reason,
+    /// The changes of target and the probes in this pass.
+    changes: u64,
+    probes: u64,
 }
 
 #[derive(Default)]
@@ -215,19 +291,99 @@ impl Clock {
     /// Adds the time since `since`.
     fn add(&self, since: Instant) {
         let nanos = u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        // Relaxed: a statistic for the timing report, which no other memory is ordered by.
         self.0.fetch_add(nanos, Ordering::Relaxed);
     }
 
+    fn nanos(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+
     fn secs(&self) -> f64 {
-        Duration::from_nanos(self.0.load(Ordering::Relaxed)).as_secs_f64()
+        Duration::from_nanos(self.nanos()).as_secs_f64()
+    }
+}
+
+/// A count a meter adds to.
+#[derive(Default)]
+struct Counter(AtomicU64);
+
+impl Counter {
+    fn add(&self, n: u64) {
+        self.0.fetch_add(n, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+/// Adds a reader's time through the gate to [`Timing::active`] when dropped: a guard, so each `break` of the reader's
+/// loop counts its time too.
+struct Active<'a> {
+    clock: &'a Clock,
+    since: Instant,
+}
+
+impl<'a> Active<'a> {
+    fn new(clock: &'a Clock) -> Active<'a> {
+        Active { clock, since: Instant::now() }
+    }
+}
+
+impl Drop for Active<'_> {
+    fn drop(&mut self) {
+        self.clock.add(self.since);
+    }
+}
+
+/// When each reader's read in flight began, in nanoseconds since the pass's start plus one (0: none), so the sampler sees
+/// the age of the oldest read before it completes: a stall is then not one window's late surprise.
+struct Flight {
+    epoch: Instant,
+    starts: Vec<AtomicU64>,
+}
+
+impl Flight {
+    fn new(readers: usize) -> Flight {
+        Flight { epoch: Instant::now(), starts: (0..readers).map(|_| AtomicU64::new(0)).collect() }
+    }
+
+    fn since_epoch(&self, at: Instant) -> u64 {
+        u64::try_from(at.saturating_duration_since(self.epoch).as_nanos()).unwrap_or(u64::MAX)
+    }
+
+    /// Reader `id` began a read now.
+    fn begin(&self, id: usize) {
+        if let Some(start) = self.starts.get(id) {
+            start.store(self.since_epoch(Instant::now()).saturating_add(1), Ordering::Relaxed);
+        }
+    }
+
+    /// Reader `id` has no read in flight.
+    fn end(&self, id: usize) {
+        if let Some(start) = self.starts.get(id) {
+            start.store(0, Ordering::Relaxed);
+        }
+    }
+
+    /// The age of the oldest read in flight at `now` (0: none).
+    fn oldest(&self, now: Instant) -> u64 {
+        let now = self.since_epoch(now).saturating_add(1);
+        self.starts
+            .iter()
+            .map(|start| start.load(Ordering::Relaxed))
+            .filter(|&start| start > 0)
+            .map(|start| now.saturating_sub(start))
+            .max()
+            .unwrap_or(0)
     }
 }
 
 impl Timing {
     /// Records the pass's stage times in the perf log, as a `pipeline` record under the span the pass runs in (inert
     /// without a sink): each stage's busy and waiting shares of the pass's wall time, and the time the user paused it.
-    /// A pass with a writer also reports the writer's stage.
+    /// The readers' shares are of their time through the gate (their time-weighted active count), and a tuned pass adds
+    /// what its tuner chose. A pass with a writer also reports the writer's stage.
     fn report(&self, items: usize, wall: Duration, paused: Duration, opts: &Options, writer: bool) {
         if !pg_perf::enabled() {
             return;
@@ -235,12 +391,19 @@ impl Timing {
         let secs = wall.as_secs_f64().max(1e-9);
         let count = |n: usize| f64::from(u32::try_from(n).unwrap_or(u32::MAX));
         let pct = |c: &Clock, threads: usize| 100.0 * c.secs() / (count(threads.max(1)) * secs);
+        let active = self.active.secs().max(1e-9);
+        let of_active = |c: &Clock| 100.0 * c.secs() / active;
+        let reads = self.reads.get();
+        let disk_ms = if reads == 0 { 0.0 } else { self.disk.secs() * 1e3 / pg_model::num::size(reads) };
         let mut fields = vec![
             ("items", json!(items)),
-            ("readers", json!(opts.readers.get())),
+            ("readers", json!(opts.readers.max().get())),
+            ("readers_avg", json!(self.active.secs() / secs)),
             ("workers", json!(opts.workers.get())),
-            ("readers_busy_pct", json!(pct(&self.read, opts.readers.get()))),
-            ("readers_handing_pct", json!(pct(&self.read_send, opts.readers.get()))),
+            ("readers_busy_pct", json!(of_active(&self.read))),
+            ("readers_handing_pct", json!(of_active(&self.read_send))),
+            ("disk_ms_avg", json!(disk_ms)),
+            ("workers_permit_wait_pct", json!(pct(&self.permit_wait, opts.workers.get()))),
             ("workers_busy_pct", json!(pct(&self.work, opts.workers.get()))),
             ("workers_wait_reads_pct", json!(pct(&self.work_wait, opts.workers.get()))),
             ("workers_handing_pct", json!(pct(&self.work_send, opts.workers.get()))),
@@ -252,7 +415,155 @@ impl Timing {
             fields.push(("writer_busy_pct", json!(pct(&self.write, 1))));
             fields.push(("writer_wait_pct", json!(pct(&self.write_wait, 1))));
         }
+        let tuned = *self.tuned.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(t) = tuned {
+            fields.push(("readers_chosen", json!(t.chosen)));
+            fields.push(("readers_min", json!(t.min)));
+            fields.push(("readers_max", json!(t.max)));
+            fields.push(("tuner_reason", json!(t.reason.name())));
+            fields.push(("tuner_changes", json!(t.changes)));
+            fields.push(("tuner_probes", json!(t.probes)));
+        }
         pg_perf::record("pipeline", wall, &fields);
+    }
+
+    /// The meters' totals now, for a window's differences.
+    fn snapshot(&self, pool: &Pool, ctl: &Control) -> Totals {
+        Totals {
+            at: Instant::now(),
+            paused: ctl.paused_total(),
+            reads: self.reads.get(),
+            bytes: self.bytes.get(),
+            disk: self.disk.nanos(),
+            active: self.active.nanos(),
+            work_wait: self.work_wait.nanos(),
+            permit_wait: self.permit_wait.nanos(),
+            work: self.work.nanos(),
+            order_wait: pool.order_wait.nanos(),
+            capacity_wait: pool.capacity_wait.nanos(),
+        }
+    }
+}
+
+/// The meters' totals at one moment: a window is the difference of two.
+#[derive(Clone, Copy)]
+struct Totals {
+    at: Instant,
+    paused: Duration,
+    reads: u64,
+    bytes: u64,
+    disk: u64,
+    active: u64,
+    work_wait: u64,
+    permit_wait: u64,
+    work: u64,
+    order_wait: u64,
+    capacity_wait: u64,
+}
+
+impl Totals {
+    /// The window from `self` to `later`, as the tuner takes it.
+    fn window(&self, later: &Totals, oldest_read_ns: u64, workers: usize) -> Sample {
+        let elapsed = later.at.saturating_duration_since(self.at);
+        let active = later.active.saturating_sub(self.active);
+        let active_readers =
+            if elapsed.is_zero() { 0.0 } else { pg_model::num::size(active) / (elapsed.as_secs_f64() * 1e9) };
+        let reads = later.reads.saturating_sub(self.reads);
+        Sample {
+            elapsed,
+            paused: later.paused.saturating_sub(self.paused),
+            reads,
+            disk_ns: later.disk.saturating_sub(self.disk),
+            bytes: later.bytes.saturating_sub(self.bytes),
+            oldest_read_ns,
+            work_wait_ns: later.work_wait.saturating_sub(self.work_wait),
+            permit_wait_ns: later.permit_wait.saturating_sub(self.permit_wait),
+            work_busy_ns: later.work.saturating_sub(self.work),
+            pool_order_wait_ns: later.order_wait.saturating_sub(self.order_wait),
+            pool_capacity_wait_ns: later.capacity_wait.saturating_sub(self.capacity_wait),
+            active_readers,
+            workers,
+            files: reads,
+        }
+    }
+}
+
+/// The end of a pass, which its sampler waits on: set by [`Ender::halt`], so no window outlasts the pass.
+#[derive(Default)]
+struct Ending {
+    done: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Ending {
+    fn end(&self) {
+        *self.done.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.changed.notify_all();
+    }
+
+    /// Waits `window`, or until the pass ends. Whether it ended.
+    fn wait(&self, window: Duration) -> bool {
+        let done = self.done.lock().unwrap_or_else(PoisonError::into_inner);
+        let (done, _) =
+            self.changed.wait_timeout_while(done, window, |done| !*done).unwrap_or_else(PoisonError::into_inner);
+        *done
+    }
+}
+
+/// The sampler of a tuned pass: every window it takes the meters' differences, asks the lane's tuner, and moves the
+/// gate to its target (never past the readers the pass started). It ends with the pass.
+#[expect(clippy::too_many_arguments, reason = "the pass's parts the sampler reads: each is its own")]
+fn sample(
+    tuning: &Tuning,
+    timing: &Timing,
+    pool: &Pool,
+    flight: &Flight,
+    gate: &ReaderGate,
+    ending: &Ending,
+    ctl: &Control,
+    workers: usize,
+    started: usize,
+) {
+    let (window, changes_before, probes_before) = {
+        let tuner = tuning.tuner.lock().unwrap_or_else(PoisonError::into_inner);
+        (tuner.config().window, tuner.changes(), tuner.probes())
+    };
+    let mut last = timing.snapshot(pool, ctl);
+    loop {
+        if ending.wait(window) {
+            return;
+        }
+        let now = timing.snapshot(pool, ctl);
+        let s = last.window(&now, flight.oldest(now.at), workers);
+        let (decision, changes, probes) = {
+            let mut tuner = tuning.tuner.lock().unwrap_or_else(PoisonError::into_inner);
+            let decision = tuner.update(&s);
+            (decision, tuner.changes(), tuner.probes())
+        };
+        let target = decision.target.get().min(started);
+        if target != gate.target() {
+            gate.set_target(target);
+            if let Some(told) = &tuning.on_change {
+                told(decision);
+            }
+        }
+        let mut tuned = timing.tuned.lock().unwrap_or_else(PoisonError::into_inner);
+        let seen = tuned.get_or_insert(Tuned {
+            chosen: target,
+            min: target,
+            max: target,
+            reason: decision.reason,
+            changes: 0,
+            probes: 0,
+        });
+        seen.chosen = target;
+        seen.min = seen.min.min(target);
+        seen.max = seen.max.max(target);
+        seen.reason = decision.reason;
+        seen.changes = changes.saturating_sub(changes_before);
+        seen.probes = probes.saturating_sub(probes_before);
+        drop(tuned);
+        last = now;
     }
 }
 
@@ -329,44 +640,72 @@ where
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
     let (raw_tx, raw_rx) = bounded::<(usize, Result<Lease, Failed>, usize)>(pool.slots);
     let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers.get().saturating_mul(4));
+    // The readers are started up to their most, and no more than the items: a pass of three files starts three. The
+    // gate lets the target through: all of them for a fixed count, the tuner's for a tuned one.
+    let started = opts.readers.max().get().min(items.len());
+    let first = match &opts.readers {
+        Readers::Fixed(n) => n.get(),
+        Readers::Auto(tuning) => tuning.tuner.lock().unwrap_or_else(PoisonError::into_inner).target().get(),
+    };
+    let gate = ReaderGate::new(first.min(started.max(1)));
+    let flight = Flight::new(started);
+    let ending = Ending::default();
+    let source = opts.source.as_ref();
 
     std::thread::scope(|s| {
-        // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool or paused at a
-        // checkpoint stop waiting.
-        let _stop = StopOnDrop(&stop, &pool, ctl);
-        for _ in 0..opts.readers.get() {
+        // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool, at the gate or paused
+        // at a checkpoint stop waiting, and the sampler ends.
+        let ender = Ender { stop: &stop, pool: &pool, ctl, gate: &gate, ending: &ending };
+        let _stop = StopOnDrop(ender);
+        if let Readers::Auto(tuning) = &opts.readers {
+            let (timing, pool, flight, gate, ending) = (timing, &pool, &flight, &gate, &ending);
+            let workers = opts.workers.get();
+            s.spawn(move || sample(tuning, timing, pool, flight, gate, ending, ctl, workers, started));
+        }
+        for id in 0..started {
             let raw_tx = raw_tx.clone();
             let (next, sent, stop, read, pool, timing) = (&next, &sent, &stop, &read, &pool, timing);
+            let (gate, flight) = (&gate, &flight);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
                 let mut wide = NativePath::default();
-                while ctl.checkpoint_until(stop) {
+                // The gate comes before the checkpoint and the claim: a reader never parks holding a claimed index, which
+                // the pool's in-order grants would wait for; and one released after a pause claims no item it may not.
+                let done = || {
+                    stop.load(Ordering::SeqCst) || ctl.stop_requested() || next.load(Ordering::Relaxed) >= items.len()
+                };
+                while gate.enter(id, done) && ctl.checkpoint_until(stop) {
+                    let _active = Active::new(&timing.active);
                     // Relaxed: the index only makes each item go to one reader; the item's data reaches the reader
                     // through `items`, and the hand-off to the workers goes through the channel.
                     let i = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(item) = items.get(i) else { break };
+                    let Some(item) = items.get(i) else {
+                        // The items ran out: the readers parked at the gate need not wait for a target.
+                        gate.close();
+                        break;
+                    };
                     let started = Instant::now();
-                    let (bytes, streamed) = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
-                        Ok(Read::File) => match read_whole(pool, i, &wide) {
-                            Some(bytes) => (bytes.map_err(read_error), 0),
-                            None => break, // stopped
-                        },
-                        Ok(Read::Gather { hint, gather }) => match read_gather(pool, i, &wide, hint, gather) {
-                            Some(bytes) => (bytes.map_err(read_error), 0),
-                            None => break, // stopped
-                        },
+                    flight.begin(id);
+                    let reader = Reader { pool, source, timing, i };
+                    let outcome = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
+                        Ok(Read::File) => reader.whole(&wide).map(|bytes| (bytes.map_err(read_error), 0)),
+                        Ok(Read::Gather { hint, gather }) => {
+                            reader.gather(&wide, hint, gather).map(|bytes| (bytes.map_err(read_error), 0))
+                        }
                         Ok(Read::Streamed { bytes }) => {
                             pool.pass(i);
-                            (Ok(Lease::empty()), usize::try_from(bytes).unwrap_or(usize::MAX))
+                            Some((Ok(Lease::empty()), usize::try_from(bytes).unwrap_or(usize::MAX)))
                         }
                         Err(payload) => {
                             // The item's turn in the pool is passed all the same, or the items after it would wait
                             // for it forever; the path it left half-written is not used again.
                             pool.pass(i);
                             wide = NativePath::default();
-                            (Err(Failed::panic(panics::message(&*payload).to_string())), 0)
+                            Some((Err(Failed::panic(panics::message(&*payload).to_string())), 0))
                         }
                     };
+                    flight.end(id);
+                    let Some((bytes, streamed)) = outcome else { break }; // stopped
                     timing.read.add(started);
                     let handing = Instant::now();
                     if raw_tx.send((i, bytes, streamed)).is_err() {
@@ -407,7 +746,10 @@ where
                         Ok(lease) => {
                             let len = lease.bytes.len().saturating_add(streamed);
                             // A CPU permit for the processing, when the run's lanes share the cores (not for the reading).
+                            // Its wait is the workers' own meter: another lane holding the cores is a decode-bound pass.
+                            let asking = Instant::now();
                             let permit = ctl.cpu_permit();
+                            timing.permit_wait.add(asking);
                             let working = Instant::now();
                             let out = panics::guard(AssertUnwindSafe(|| process(&mut state, i, &lease.bytes)));
                             timing.work.add(working);
@@ -460,7 +802,7 @@ where
             // included, and the queued ones are dropped. The loop goes on until the workers have ended.
             if !halted && ctl.stop_requested() {
                 halted = true;
-                halt(&stop, &pool, ctl);
+                ender.halt();
             }
         }
         // Every worker has ended, and every reader before them: what was sent is final, and each item has a result or was
@@ -675,109 +1017,148 @@ impl std::error::Error for ReadFailure {
     }
 }
 
-/// The file at `path`, open for reading, and its size.
-fn open_sized(path: &NativePath) -> std::io::Result<(std::fs::File, usize)> {
-    sized(pg_platform::file::open_read(path)?)
-}
-
-fn sized(file: std::fs::File) -> std::io::Result<(std::fs::File, usize)> {
-    let size = usize::try_from(file.metadata()?.len())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::FileTooLarge, e))?;
-    Ok((file, size))
-}
-
-/// Read the file at `path` (item `i`) into a buffer from the pool, its size reserved in list
-/// order. `None` once the pass stops.
-fn read_whole<'p>(pool: &'p Pool, i: usize, path: &NativePath) -> Option<std::io::Result<Lease<'p>>> {
-    let (mut file, size) = match open_sized(path) {
-        Ok(opened) => opened,
-        Err(e) => {
-            pool.pass(i);
-            return Some(Err(e));
-        }
-    };
-    let mut lease = pool.take(i, size)?;
-    Some(file.read_to_end(&mut lease.bytes).map(|_| lease))
-}
-
-/// [`Read::Gather`] of the file at `path` (item `i`): what `gather` makes of it, read from the reader's thread in its turn.
-/// The admission is the hint's: the item's turn in the pool comes before the read, so the reads in flight stay in list
-/// order. A file no longer than `hint` is read whole. Whatever `gather` doesn't give (`None`, or a panic) is the whole
-/// file, read from its start ([`read_the_rest`]). The file is opened for reads here and there: the system reads no
-/// further ahead than each read asks (measured on an NVMe disk, its read-ahead after each end of a PNG cost a fifth of
-/// the rate). `None` once the pass stops.
-fn read_gather<'p>(
+/// One item's read on a reader's thread: the pool its buffer comes from, the source its file is opened through, the
+/// meters it adds to, and the item's index (its turn in the pool).
+struct Reader<'p> {
     pool: &'p Pool,
+    source: &'p dyn FileSource,
+    timing: &'p Timing,
     i: usize,
-    path: &NativePath,
-    hint: usize,
-    gather: fn(&mut std::fs::File) -> std::io::Result<Option<Vec<u8>>>,
-) -> Option<std::io::Result<Lease<'p>>> {
-    let (mut file, size) = match pg_platform::file::open_read_random(path).and_then(sized) {
-        Ok(opened) => opened,
-        Err(e) => {
-            pool.pass(i);
+}
+
+impl<'p> Reader<'p> {
+    /// The file at `path`, opened for `access`, with its open timed as disk time. An error passes the item's turn.
+    fn open(&self, path: &NativePath, access: Access) -> std::io::Result<crate::source::Opened> {
+        let opening = Instant::now();
+        let opened = self.source.open(path, access);
+        self.timing.disk.add(opening);
+        if opened.is_err() {
+            self.pool.pass(self.i);
+        }
+        opened
+    }
+
+    /// `file`'s bytes from where it is to its end, into `lease`: timed as disk time, and counted as a read.
+    fn read_rest(&self, file: &mut dyn ReadSeek, lease: &mut Lease<'_>) -> std::io::Result<()> {
+        let reading = Instant::now();
+        let before = lease.bytes.len();
+        let read = file.read_to_end(&mut lease.bytes);
+        self.timing.disk.add(reading);
+        self.note(lease.bytes.len().saturating_sub(before));
+        read.map(drop)
+    }
+
+    /// A read of `bytes` done: one more read for the meters.
+    fn note(&self, bytes: usize) {
+        self.timing.reads.add(1);
+        self.timing.bytes.add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    }
+
+    /// Read the file at `path` into a buffer from the pool, its size reserved in list order. `None` once the pass stops.
+    fn whole(&self, path: &NativePath) -> Option<std::io::Result<Lease<'p>>> {
+        let mut opened = match self.open(path, Access::Sequential) {
+            Ok(opened) => opened,
+            Err(e) => return Some(Err(e)),
+        };
+        let mut lease = self.pool.take(self.i, opened.size)?;
+        Some(self.read_rest(opened.file.as_mut(), &mut lease).map(|()| lease))
+    }
+
+    /// [`Read::Gather`] of the file at `path`: what `gather` makes of it, read from the reader's thread in its turn. The
+    /// admission is the hint's: the item's turn in the pool comes before the read, so the reads in flight stay in list
+    /// order. A file no longer than `hint` is read whole. Whatever `gather` doesn't give (`None`, or a panic) is the whole
+    /// file, read from its start ([`Reader::rest_alone`]). The file is opened for reads here and there: the system reads
+    /// no further ahead than each read asks (measured on an NVMe disk, its read-ahead after each end of a PNG cost a fifth
+    /// of the rate). `None` once the pass stops.
+    fn gather(
+        &self,
+        path: &NativePath,
+        hint: usize,
+        gather: fn(&mut dyn ReadSeek) -> std::io::Result<Option<Vec<u8>>>,
+    ) -> Option<std::io::Result<Lease<'p>>> {
+        let opened = match self.open(path, Access::Random) {
+            Ok(opened) => opened,
+            Err(e) => return Some(Err(e)),
+        };
+        let (mut file, size) = (opened.file, opened.size);
+        if size <= hint {
+            let mut lease = self.pool.take(self.i, size)?;
+            return Some(self.read_rest(file.as_mut(), &mut lease).map(|()| lease));
+        }
+        let mut lease = self.pool.take(self.i, hint)?;
+        let gathering = Instant::now();
+        let gathered = panics::catch(AssertUnwindSafe(|| gather(file.as_mut())));
+        self.timing.disk.add(gathering);
+        match gathered {
+            Ok(Ok(Some(bytes))) => {
+                self.note(bytes.len());
+                if let Err(e) = lease.grow_to(bytes.len()) {
+                    return Some(Err(e));
+                }
+                lease.bytes.extend_from_slice(&bytes);
+                return Some(Ok(lease));
+            }
+            Ok(Err(e)) => return Some(Err(e)),
+            Ok(Ok(None)) | Err(_) => {}
+        }
+        // Not gathered: the whole file, from its start (the gather may have moved the file's position).
+        if let Err(e) = file.seek(SeekFrom::Start(0)) {
             return Some(Err(e));
         }
-    };
-    if size <= hint {
-        let mut lease = pool.take(i, size)?;
-        return Some(file.read_to_end(&mut lease.bytes).map(|_| lease));
+        lease.bytes.clear();
+        self.rest_alone(lease, file.as_mut(), size)
     }
-    let mut lease = pool.take(i, hint)?;
-    match panics::catch(AssertUnwindSafe(|| gather(&mut file))) {
-        Ok(Ok(Some(bytes))) => {
-            if let Err(e) = lease.grow_to(bytes.len()) {
-                return Some(Err(e));
-            }
-            lease.bytes.extend_from_slice(&bytes);
-            return Some(Ok(lease));
+
+    /// The rest of a file read whole, after `lease` holds the first bytes of it (`file` is at their end, or at the start
+    /// of the file when `lease` is empty): one oversize read at a time, so the others wait here holding their gathers'
+    /// admissions. `None` once the pass stops.
+    fn rest_alone(
+        &self,
+        mut lease: Lease<'p>,
+        file: &mut dyn ReadSeek,
+        size: usize,
+    ) -> Option<std::io::Result<Lease<'p>>> {
+        let _one = self.pool.oversize.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.pool.is_stopped() {
+            return None;
         }
-        Ok(Err(e)) => return Some(Err(e)),
-        Ok(Ok(None)) | Err(_) => {}
+        if let Err(e) = lease.grow_to(size) {
+            return Some(Err(e));
+        }
+        Some(self.read_rest(file, &mut lease).map(|()| lease))
     }
-    // Not gathered: the whole file, from its start (the gather may have moved the file's position).
-    if let Err(e) = file.seek(SeekFrom::Start(0)) {
-        return Some(Err(e));
-    }
-    lease.bytes.clear();
-    read_the_rest(pool, lease, &mut file, size)
 }
 
-/// The rest of a file read whole, after `lease` holds the first bytes of it (`file` is at their end, or at the start of
-/// the file when `lease` is empty): one oversize read at a time, so the others wait here holding their gathers' admissions.
-/// `None` once the pass stops.
-fn read_the_rest<'p>(
-    pool: &'p Pool,
-    mut lease: Lease<'p>,
-    file: &mut std::fs::File,
-    size: usize,
-) -> Option<std::io::Result<Lease<'p>>> {
-    let _one = pool.oversize.lock().unwrap_or_else(PoisonError::into_inner);
-    if pool.is_stopped() {
-        return None;
-    }
-    if let Err(e) = lease.grow_to(size) {
-        return Some(Err(e));
-    }
-    Some(file.read_to_end(&mut lease.bytes).map(|_| lease))
+/// What ends a pass: its stop flag, its pool, its control, its reader gate and the end its sampler waits on.
+#[derive(Clone, Copy)]
+struct Ender<'a> {
+    stop: &'a AtomicBool,
+    pool: &'a Pool,
+    ctl: &'a Control,
+    gate: &'a ReaderGate,
+    ending: &'a Ending,
 }
 
-/// Stops the reading of a pass: the readers stop at their next checkpoint, a reader waiting for the pool stops waiting,
-/// and the readers paused at a checkpoint (which look at the stop under the pause lock, so the wake can't come between
-/// their check and their wait). The workers then drop what they have not started.
-fn halt(stop: &AtomicBool, pool: &Pool, ctl: &Control) {
-    stop.store(true, Ordering::SeqCst);
-    pool.stop();
-    ctl.wake();
+impl Ender<'_> {
+    /// Stops the reading of a pass: the readers stop at their next checkpoint, a reader waiting for the pool or parked
+    /// at the gate stops waiting, and the readers paused at a checkpoint (which look at the stop under the pause lock,
+    /// so the wake can't come between their check and their wait). The sampler ends. The workers then drop what they
+    /// have not started.
+    fn halt(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.pool.stop();
+        self.gate.close();
+        self.ending.end();
+        self.ctl.wake();
+    }
 }
 
 /// Ends the pass when the scope's closure returns (done, stopped, an error from `sink`, or a sink that said stop).
-struct StopOnDrop<'a>(&'a AtomicBool, &'a Pool, &'a Control);
+struct StopOnDrop<'a>(Ender<'a>);
 
 impl Drop for StopOnDrop<'_> {
     fn drop(&mut self) {
-        halt(self.0, self.1, self.2);
+        self.0.halt();
     }
 }
 
@@ -792,8 +1173,12 @@ struct Pool {
     slots: usize,
     state: Mutex<PoolState>,
     changed: Condvar,
-    /// Held by the one gather that reads its file whole ([`read_the_rest`]).
+    /// Held by the one gather that reads its file whole ([`Reader::rest_alone`]).
     oversize: Mutex<()>,
+    /// The readers' wait for their item's turn in the in-order grants.
+    order_wait: Clock,
+    /// The readers' wait, in their turn, for a slot or for room in the budget: the workers are behind.
+    capacity_wait: Clock,
 }
 
 struct PoolState {
@@ -856,7 +1241,26 @@ impl Pool {
     fn with_budget(budget: Arc<Budget>, slots: Slots) -> Pool {
         let slots = slots.get();
         let state = PoolState { serving: 0, held: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
-        Pool { budget, slots, state: Mutex::new(state), changed: Condvar::new(), oversize: Mutex::new(()) }
+        Pool {
+            budget,
+            slots,
+            state: Mutex::new(state),
+            changed: Condvar::new(),
+            oversize: Mutex::new(()),
+            order_wait: Clock::default(),
+            capacity_wait: Clock::default(),
+        }
+    }
+
+    /// The buffers' bytes went from `before` to `after`: the budget's count of what its pools hold follows (the
+    /// governor's soft cap reads it).
+    fn held_moved(&self, before: usize, after: usize) {
+        let bytes = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
+        if after >= before {
+            self.budget.hold(bytes(after - before));
+        } else {
+            self.budget.release(bytes(before - after));
+        }
     }
 
     /// A buffer that holds `size` bytes for item `i`, once the items before it have theirs, a slot is free, and the
@@ -885,6 +1289,7 @@ impl Pool {
                 }
                 // None is large enough: the smallest grows, and the other idle ones are freed, largest first, while
                 // it wouldn't fit the budget.
+                let before = st.held;
                 let smallest = st.idle.last().map_or(0, Vec::capacity);
                 let others = st.idle.len().saturating_sub(1);
                 let mut freed = 0;
@@ -902,11 +1307,17 @@ impl Pool {
                     bytes.clear();
                     bytes.reserve_exact(size);
                     st.held = st.held - smallest + bytes.capacity();
+                    self.held_moved(before, st.held);
                     return Some(self.grant(&mut st, bytes));
                 }
+                self.held_moved(before, st.held);
             }
+            // Its turn not come is the order's wait; its turn come, and no slot or room, the capacity's.
+            let meter = if st.serving == i { &self.capacity_wait } else { &self.order_wait };
+            let waiting = Instant::now();
             // Timed, so a budget the governor changes is seen without a grant to wake this.
             let (guard, _) = self.changed.wait_timeout(st, BUDGET_WAIT).unwrap_or_else(PoisonError::into_inner);
+            meter.add(waiting);
             st = guard;
         }
     }
@@ -923,7 +1334,9 @@ impl Pool {
     fn pass(&self, i: usize) {
         let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         while st.serving != i && !st.stopped {
+            let waiting = Instant::now();
             st = self.changed.wait(st).unwrap_or_else(PoisonError::into_inner);
+            self.order_wait.add(waiting);
         }
         if st.serving == i {
             st.serving += 1;
@@ -935,7 +1348,9 @@ impl Pool {
     /// while it was read grew it.
     fn give(&self, bytes: Vec<u8>, counted: usize) {
         let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let before = st.held;
         st.held = st.held + bytes.capacity() - counted;
+        self.held_moved(before, st.held);
         st.lent -= 1;
         st.idle.push(bytes);
         self.changed.notify_all();
@@ -943,7 +1358,10 @@ impl Pool {
 
     /// A lease's buffer grew by `bytes` ([`Lease::grow_to`]): held, as the lease counts it.
     fn grew(&self, bytes: usize) {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner).held += bytes;
+        let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let before = st.held;
+        st.held += bytes;
+        self.held_moved(before, st.held);
     }
 
     fn is_stopped(&self) -> bool {
@@ -956,10 +1374,19 @@ impl Pool {
     }
 }
 
+/// A pool that ends frees its buffers: its budget no longer counts them.
+impl Drop for Pool {
+    fn drop(&mut self) {
+        let held = self.state.get_mut().unwrap_or_else(PoisonError::into_inner).held;
+        self.held_moved(held, 0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pg_platform::native::{NativePath, Unit};
     use std::fs::File;
+    use std::io::Read as _;
 
     use super::*;
 
@@ -977,12 +1404,13 @@ mod tests {
     /// Options of `readers`, `workers` and `slots`, with a 1 MiB budget, at normal priority.
     fn sized(readers: usize, workers: usize, slots: usize) -> Options {
         Options {
-            readers: NonZeroUsize::new(readers).unwrap(),
+            readers: Readers::Fixed(NonZeroUsize::new(readers).unwrap()),
             workers: NonZeroUsize::new(workers).unwrap(),
             slots: Slots::new(slots).unwrap(),
             buffer_bytes: BufferBytes::new(1 << 20).unwrap(),
             budget: None,
             priority: Priority::Normal,
+            source: Arc::new(OsFiles),
         }
     }
 
@@ -999,10 +1427,11 @@ mod tests {
         assert_eq!(Options::budget(n(8), n(12)).map(BufferBytes::get), Some(240 << 20));
         assert_eq!(Options::budget(n(usize::MAX), n(1)), None, "the sum overflows");
         assert_eq!(Options::budget(n(usize::MAX / 2), n(1)), None, "the bytes overflow");
-        assert_eq!(Options::sized(n(8), n(MAX_SLOTS), Priority::Normal).err(), Some(SizeRefused::TooManySlots));
+        let refused = Options::sized(Readers::Fixed(n(8)), n(MAX_SLOTS), Priority::Normal).err();
+        assert_eq!(refused, Some(SizeRefused::TooManySlots));
         let default = Options::new(Priority::Normal);
-        assert_eq!(default.readers, READERS);
-        assert_eq!(Some(default.slots), Options::slots(default.readers, default.workers));
+        assert_eq!(default.readers.max(), READERS);
+        assert_eq!(Some(default.slots), Options::slots(default.readers.max(), default.workers));
     }
 
     /// What the pool holds: its bytes are the sum of its buffers' capacities, and there are no more buffers than
@@ -1391,7 +1820,7 @@ mod tests {
                 wide.set(&[&units(p)]);
                 Read::Gather {
                     hint: 1000,
-                    gather: |file| match file.metadata().unwrap().len() {
+                    gather: |file| match file.seek(SeekFrom::End(0)).unwrap() {
                         5000 => Ok(Some(vec![9; 10])),
                         6000 => Ok(None),
                         7000 => panic!("a gather that panics"),
@@ -1414,6 +1843,160 @@ mod tests {
     #[test]
     fn a_gather_gives_its_bytes_and_a_file_it_gives_nothing_for_is_read_whole() {
         assert_eq!(within_timeout(a_gather_pass), [10, 6000, 7000, 300]);
+    }
+
+    /// The reads in flight of a [`Slow`] source: now, and the most at once.
+    #[derive(Default)]
+    struct InFlight {
+        now: AtomicUsize,
+        most: AtomicUsize,
+    }
+
+    /// A source of 64 KiB files whose first read of each sleeps `delay`, counting the reads in flight: a disk whose
+    /// throughput grows with the readers.
+    struct Slow {
+        delay: Duration,
+        flight: Arc<InFlight>,
+    }
+
+    struct SlowFile {
+        data: std::io::Cursor<Vec<u8>>,
+        delay: Duration,
+        flight: Arc<InFlight>,
+        slept: bool,
+    }
+
+    impl std::io::Read for SlowFile {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if !std::mem::replace(&mut self.slept, true) {
+                let now = self.flight.now.fetch_add(1, Ordering::SeqCst) + 1;
+                self.flight.most.fetch_max(now, Ordering::SeqCst);
+                std::thread::sleep(self.delay);
+                self.flight.now.fetch_sub(1, Ordering::SeqCst);
+            }
+            self.data.read(buf)
+        }
+    }
+
+    impl std::io::Seek for SlowFile {
+        fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+            self.data.seek(pos)
+        }
+    }
+
+    impl FileSource for Slow {
+        fn open(&self, _path: &NativePath, _access: Access) -> std::io::Result<crate::source::Opened> {
+            let file = SlowFile {
+                data: std::io::Cursor::new(vec![7; 64 << 10]),
+                delay: self.delay,
+                flight: self.flight.clone(),
+                slept: false,
+            };
+            Ok(crate::source::Opened { file: Box::new(file), size: 64 << 10 })
+        }
+    }
+
+    /// Options of `readers` tuned from one reader up to `max`, with windows of 20 ms, over a [`Slow`] source of `delay`.
+    fn tuned(max: usize, delay: Duration) -> (Options, Arc<InFlight>) {
+        let flight = Arc::new(InFlight::default());
+        let cfg = crate::tuner::TunerConfig::scaled(Duration::from_millis(20));
+        let one = NonZeroUsize::MIN;
+        let tuner =
+            Arc::new(Mutex::new(Tuner::new(cfg, crate::tuner::Prior { start: one, expected: None, fallback: one })));
+        let tuning = Tuning { max: NonZeroUsize::new(max).unwrap(), tuner, on_change: None };
+        let mut opts = Options::sized(Readers::Auto(tuning), NonZeroUsize::new(2).unwrap(), Priority::Normal).unwrap();
+        opts.source = Arc::new(Slow { delay, flight: flight.clone() });
+        (opts, flight)
+    }
+
+    /// A pass of `items` over `opts` whose process does nothing: the results it sank.
+    fn pass_of(items: usize, opts: &Options, ctl: &Control) -> usize {
+        let paths: Vec<usize> = (0..items).collect();
+        let mut sunk = 0;
+        run(
+            Pass { items: &paths, opts, ctl },
+            |_, wide| {
+                wide.set(&[&units("x")]);
+                Read::File
+            },
+            || Ok::<(), Failed>(()),
+            |_, _, bytes| Ok::<usize, Failed>(bytes.len()),
+            |_, out, _| {
+                out.unwrap();
+                sunk += 1;
+                Ok(true)
+            },
+        )
+        .unwrap();
+        sunk
+    }
+
+    // A fixed count lets every reader through: no more reads are in flight than the readers.
+    #[test]
+    fn a_fixed_count_reads_no_more_at_once_than_its_readers() {
+        let flight = Arc::new(InFlight::default());
+        let mut opts = sized(3, 2, 8);
+        opts.source = Arc::new(Slow { delay: Duration::from_millis(2), flight: flight.clone() });
+        assert_eq!(within_timeout(move || pass_of(60, &opts, &Control::new())), 60);
+        assert!(flight.most.load(Ordering::SeqCst) <= 3);
+    }
+
+    // A pass of fewer items than its readers starts no more readers than items, and the parked readers are released
+    // when the items run out: the pass ends, the scope joins.
+    #[test]
+    fn readers_parked_at_the_gate_are_released_when_the_items_run_out() {
+        let (opts, flight) = tuned(16, Duration::from_millis(1));
+        assert_eq!(within_timeout(move || pass_of(5, &opts, &Control::new())), 5);
+        assert_eq!(flight.most.load(Ordering::SeqCst), 1, "one reader let through, the others parked");
+    }
+
+    // A stop while readers are parked ends the pass.
+    #[test]
+    fn a_stop_with_readers_parked_ends_the_pass() {
+        let (opts, _) = tuned(8, Duration::from_millis(5));
+        let sunk = within_timeout(move || {
+            let ctl = Control::new();
+            let paths: Vec<usize> = (0..10_000).collect();
+            let mut sunk = 0usize;
+            run(
+                Pass { items: &paths, opts: &opts, ctl: &ctl },
+                |_, wide| {
+                    wide.set(&[&units("x")]);
+                    Read::File
+                },
+                || Ok::<(), Failed>(()),
+                |_, _, _| Ok::<(), Failed>(()),
+                |_, _, _| {
+                    sunk += 1;
+                    if sunk == 20 {
+                        ctl.request_stop();
+                    }
+                    Ok(true)
+                },
+            )
+            .unwrap();
+            sunk
+        });
+        assert!(sunk < 10_000, "the stop ended the pass after {sunk}");
+    }
+
+    // A pause while readers are parked, then a resume, and the pass completes.
+    #[test]
+    fn a_pause_with_readers_parked_completes_after_the_resume() {
+        let (opts, _) = tuned(8, Duration::from_millis(1));
+        let sunk = within_timeout(move || {
+            let ctl = Arc::new(Control::new());
+            ctl.set_paused(true);
+            let resume = ctl.clone();
+            let resumer = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                resume.set_paused(false);
+            });
+            let sunk = pass_of(200, &opts, &ctl);
+            resumer.join().unwrap();
+            sunk
+        });
+        assert_eq!(sunk, 200);
     }
 
     // A lease grown past its admission is counted by the pool as it grew, and given back as one buffer.

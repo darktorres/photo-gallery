@@ -31,19 +31,39 @@ use pg_thumbcache::ThumbCache;
 use crate::coordinator::Lanes;
 use crate::mask::{PassKind, PassMask};
 use crate::shared::{FeatureCell, Generation, HeightCell, Pins, Shared};
+use crate::tuning::{ProfileStore, TuningLog};
 use pg_model::progress::LaneProgress;
 
-/// The settings a job starts with: the counts a developer pins for the run, and the passes a round runs. The handles the job
-/// shares (the cells, the change bus, the notices, the drives) are arguments of [`Runner::start`], not settings.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The settings a job starts with: the counts a developer pins for the run, the passes a round runs, where the lanes keep
+/// what they learn of their drives, and who is told when a lane's reader count changes. The handles the job shares (the
+/// cells, the change bus, the notices, the drives) are arguments of [`Runner::start`], not settings.
+#[derive(Clone, Default)]
 pub struct RunnerConfig {
-    /// The reads in flight, pinned for the run (a developer's sweep). `None` keeps the default; a pinned run writes no
-    /// learned profile.
+    /// The reads in flight, pinned for the run (a developer's sweep). `None`: each lane tunes its own (`tuning`); a pinned
+    /// run tunes nothing and writes no learned profile.
     pub pin_readers: Option<NonZeroUsize>,
     /// The decode threads, pinned for the run. `None` keeps the default (one per logical CPU).
     pub pin_workers: Option<NonZeroUsize>,
     /// The passes each round runs. Every pass by default; a pass left out is skipped in the real round.
     pub passes: PassMask,
+    /// Where the lanes keep the reader counts they learned (the app's `drive-profiles.json`). `None`: each run starts from
+    /// the drive kinds' priors, and keeps nothing.
+    pub profiles: Option<Arc<dyn ProfileStore>>,
+    /// Told one line for each change of a lane's reader count (the app logs it, for the dev-mode log view: the library
+    /// writes no log of its own).
+    pub on_tuning: Option<TuningLog>,
+}
+
+impl std::fmt::Debug for RunnerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunnerConfig")
+            .field("pin_readers", &self.pin_readers)
+            .field("pin_workers", &self.pin_workers)
+            .field("passes", &self.passes)
+            .field("profiles", &self.profiles.is_some())
+            .field("on_tuning", &self.on_tuning.is_some())
+            .finish()
+    }
 }
 
 /// The background job the module comment describes. It holds the lanes, one per drive the library's folders are on.
@@ -132,6 +152,9 @@ impl Runner {
         let pins = Pins { readers: config.pin_readers, workers: config.pin_workers };
         shared.options = crate::inner::pinned_options(pins)
             .map_err(|refused| Error::step(format!("the pinned counts {pins:?} are refused"), refused))?;
+        shared.pinned = pins.readers.is_some();
+        shared.profiles = config.profiles;
+        shared.on_tuning = config.on_tuning;
         let shared = Arc::new(shared);
         let root = Arc::new(Control::new());
         let announce = shared.changes.clone();

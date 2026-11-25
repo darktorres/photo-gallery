@@ -41,6 +41,8 @@ impl Inner {
         let mut again = false;
         loop {
             if !again {
+                // Going idle: what the lane learned of its drive is kept (when it learned something new).
+                self.save_profiles();
                 let idle = (!self.busy().is_empty()).then_some(BUSY_RETRY);
                 if waker.wait(idle) == Woke::Quit {
                     return;

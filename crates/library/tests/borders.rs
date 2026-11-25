@@ -38,7 +38,7 @@ fn imported(prefix: &str) -> Result<(std::path::PathBuf, Vec<u8>, Catalog)> {
     let root = pg_platform::names::normalize_path(&images)?;
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
-    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_import::import(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl)?;
     Ok((a, good, c))
 }
 
@@ -77,7 +77,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() -> Result<()> {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((state::borders_due(&c, "a.png").unwrap(), state::borders_due(&c, "b.png").unwrap()), (1, 1));
 
     // a.png is held: the pass can't read it. Where the permissions don't stop this process (root), there is nothing to
@@ -122,7 +122,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() -> Result
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // Damaged in place after the import, at the same size and time: the catalog has the file as it was.
     let mtime = std::fs::metadata(&a).unwrap().modified().unwrap();
     let rewrite = |bytes: &[u8]| {

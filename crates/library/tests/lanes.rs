@@ -133,19 +133,6 @@ fn a_drive_that_cannot_be_told_collapses_the_lanes() -> Result<()> {
     Ok(())
 }
 
-/// The escape hatch: with serial drives on, folders on two drives still make one lane.
-#[test]
-fn serial_drives_make_one_lane_even_on_two_drives() -> Result<()> {
-    let (dir, catalog_path, a, b) = two_folders("serial")?;
-    let drives = Fake(vec![("a", disk(1)), ("b", disk(2))]);
-    let serial = Features { serial_drives: true, ..Features::ALL };
-    let (runner, _quiet) = start(&dir, &catalog_path, drives, serial)?;
-    runner.scan(vec![a, b]);
-    pg_testkit::wait_until(WAIT, || "one lane", || runner.lanes() == 1);
-    assert!(runner.stop(WAIT));
-    Ok(())
-}
-
 /// A drive with no root left retires its lane: removing its folder from the library leaves the other lane.
 #[test]
 fn removing_a_drives_last_folder_retires_its_lane() -> Result<()> {

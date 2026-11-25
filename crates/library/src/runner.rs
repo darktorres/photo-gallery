@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use crate::Result;
+use crate::{Error, Result};
 use pg_catalog::Catalog;
 use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
@@ -129,7 +129,9 @@ impl Runner {
     ) -> Result<Runner> {
         shared.passes.set(config.passes);
         let mut shared = shared;
-        shared.pins = Pins { readers: config.pin_readers, workers: config.pin_workers };
+        let pins = Pins { readers: config.pin_readers, workers: config.pin_workers };
+        shared.options = crate::inner::pinned_options(pins)
+            .map_err(|refused| Error::step(format!("the pinned counts {pins:?} are refused"), refused))?;
         let shared = Arc::new(shared);
         let root = Arc::new(Control::new());
         let announce = shared.changes.clone();
@@ -364,7 +366,7 @@ mod tests {
         features.listen(move || {
             counter.fetch_add(1, Ordering::Relaxed);
         });
-        let no_duplicates = Features { borders: true, duplicates: false, serial_drives: false };
+        let no_duplicates = Features { borders: true, duplicates: false };
         features.set(Features::ALL);
         features.set(no_duplicates);
         features.set(no_duplicates);
@@ -396,7 +398,6 @@ mod tests {
         pg_import::import_while(
             &mut c,
             &Options::new(Priority::Normal),
-            false,
             &pg_catalog::VolumeSet::All,
             &|| true,
             &Control::new(),
@@ -413,7 +414,7 @@ mod tests {
         let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache.clone(), sink.clone());
-        inner.shared.features.set(Features { borders: false, duplicates: false, serial_drives: false });
+        inner.shared.features.set(Features { borders: false, duplicates: false });
         let due = pg_catalog::fixture::state::borders_due(&Catalog::open(&catalog_path, PATH_RULES).unwrap(), "a.png")
             .unwrap();
         assert_eq!(run(&mut Hashes, &inner), Step::Done);
@@ -423,7 +424,7 @@ mod tests {
         assert_eq!(c.owed_hashes().unwrap(), 1, "the hashes stay owed while duplicates is off");
         assert_eq!(pg_catalog::fixture::state::borders_due(&c, "a.png").unwrap(), due, "the borders are not touched");
 
-        inner.shared.features.set(Features { borders: false, duplicates: true, serial_drives: false });
+        inner.shared.features.set(Features { borders: false, duplicates: true });
         assert_eq!(run(&mut Hashes, &inner), Step::Done);
         assert_eq!(c.owed_hashes().unwrap(), 0, "turned on, the pass makes them");
     }
@@ -513,7 +514,7 @@ mod tests {
             sink,
             Arc::new(Bus::new(16)),
         );
-        let budget = Arc::new(pg_jobs::governor::Budget::new(Options::budget(8, 4)));
+        let budget = Arc::new(pg_jobs::governor::Budget::new(48 << 20));
         Inner::new(Arc::new(shared), 0, Arc::new(Control::new()), budget)
     }
 

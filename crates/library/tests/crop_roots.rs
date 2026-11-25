@@ -58,7 +58,7 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
     }
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
 
     let ids: Vec<FileId> = state::present_files(&c).unwrap().into_iter().map(|(id, _)| id).collect();

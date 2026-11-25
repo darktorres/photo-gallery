@@ -1,4 +1,4 @@
-//! Thread priorities. The scan and import readers and workers run below normal, or idle, so the app keeps its processor time.
+//! Thread priorities. The scan and import readers and workers run below normal, so the app keeps its processor time.
 
 #![expect(unsafe_code, reason = "FFI: the Windows thread priority calls, and libc's setpriority and gettid on Unix")]
 
@@ -6,32 +6,27 @@
 /// keeps its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Priority {
-    /// The system's normal priority.
+    /// The system's normal priority: work the user is waiting for.
     Normal,
-    /// Below normal: the work yields to the interactive app.
+    /// Below normal: the work yields to the interactive app. The one background class, for every pass.
     BelowNormal,
-    /// The lowest: the work runs only when nothing else wants the processor.
-    Idle,
 }
 
 /// Set the calling thread's priority.
 #[cfg(windows)]
 pub fn set_current_thread(priority: Priority) {
     use windows_sys::Win32::System::Threading::{
-        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_IDLE, THREAD_PRIORITY_NORMAL,
+        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL,
     };
     let value = match priority {
         Priority::Normal => THREAD_PRIORITY_NORMAL,
         Priority::BelowNormal => THREAD_PRIORITY_BELOW_NORMAL,
-        Priority::Idle => THREAD_PRIORITY_IDLE,
     };
     // SAFETY: GetCurrentThread's pseudo-handle is always valid for the calling thread.
     unsafe { SetThreadPriority(GetCurrentThread(), value) };
 }
 
-/// On Linux a thread's nice value is its own (setpriority with a thread id names that thread). Idle is nice 19, not
-/// SCHED_IDLE: an idle-class thread gets no processor time while any normal thread can run, so one that holds a lock a
-/// normal thread waits for would stall it for as long as the machine is busy. Nice 19 still gets a small share.
+/// On Linux a thread's nice value is its own (setpriority with a thread id names that thread). Below normal is nice 5.
 /// Normal is left as it is, and a thread that can't be given a lower nice value (an unprivileged one can't) keeps its own:
 /// the threads that are set here end with their run.
 #[cfg(target_os = "linux")]
@@ -39,7 +34,6 @@ pub fn set_current_thread(priority: Priority) {
     let nice = match priority {
         Priority::Normal => return,
         Priority::BelowNormal => 5,
-        Priority::Idle => 19,
     };
     // SAFETY: setpriority takes a thread id and a nice value; a failure is a thread that keeps its priority.
     unsafe { libc::setpriority(libc::PRIO_PROCESS, current_thread_id(), nice) };
@@ -80,8 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_below_normal_are_nice_values() -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(nice_after(Priority::Idle)?, 19);
+    fn below_normal_is_nice_5() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(nice_after(Priority::BelowNormal)?, 5);
         Ok(())
     }

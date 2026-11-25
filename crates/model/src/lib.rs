@@ -13,7 +13,7 @@
 //!   Yandex search's and save's (`yandex`), and the notices (`notice`).
 //! - The plain data the catalog and the jobs hand out: the inbox's entries and counts (`inbox`), the folder and file
 //!   failures of a ledger (`ledger`), the filter bar's counts (`facets`), a removal's outcome (`removal`), a job's
-//!   events and causes (`job`), a write's error (`write`), and the thumbnail cache's size limit (`cache`).
+//!   events and causes (`job`), a write's error (`write`), the thumbnail cache's size limit (`cache`), and a pass's buffer budget (`buffer`).
 
 // no_std: the model reads no clock, thread, file, socket, process or environment, by construction. The `specta` feature
 // (the web client's TypeScript types) needs std: its derive expands to `::std` paths.
@@ -25,6 +25,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod analysis;
+pub mod buffer;
 pub mod cache;
 pub mod date;
 pub mod details;

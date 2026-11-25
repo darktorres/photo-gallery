@@ -1598,10 +1598,11 @@ mod tests {
 
     fn a_round_with_nothing_to_import_reads_one_index(rules: PathRules) {
         let (c, _) = one_file(rules);
-        let plan = raw::query_plan(&c, &pending_import_sql(false, &VolumeSet::All), []);
+        let plan = raw::query_plan(&c, &pending_import_sql(&VolumeSet::All), []);
         assert!(plan.contains("USING INDEX files_to_import") && !plan.contains("TEMP B-TREE"), "{plan}");
-        let retry = raw::query_plan(&c, &pending_import_sql(true, &VolumeSet::All), []);
-        assert!(retry.contains("files_to_import") && retry.contains("analysis_failed"), "{retry}");
+        // The Retry of the import's failures reads them from their partial index, not from every analysis.
+        let retry = raw::query_plan(&c, crate::ledger::IMPORT_RETRY, []);
+        assert!(retry.contains("analysis_failed"), "{retry}");
     }
 
     under_both_rules!(

@@ -102,6 +102,7 @@ msg-refused-reason = { $code ->
     [unreadable-real-path] the folder's real path can't be read: { $error }
     [unreadable-real-volume] its real volume can't be read: { $error }
     [unreadable-file-system] its file system can't be read: { $error }
+    [unreadable-drive] its disk can't be read: { $error }
     [network-drive] its drive is a network drive
     [removable-drive] its drive is removable
     [other-drive] its drive is not a fixed local disk
@@ -109,6 +110,7 @@ msg-refused-reason = { $code ->
     [real-not-local] its real location is not on a local drive
     [real-on-other-volume] its real location is on another volume
     [not-ntfs] its file system is { $file_system }, not NTFS
+    [opaque-disk] its disk is virtual, part of Storage Spaces or a RAID, an iSCSI disk, or on a bus that can't be told: only plain physical disks are supported
     [nfs] it is on an NFS mount
     [smb] it is on an SMB or CIFS share
     [fat] its file system is FAT, whose file numbers change when it is mounted again

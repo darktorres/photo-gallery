@@ -4,6 +4,10 @@ Part B of one plan that was split in phase 0. The combined text is in commit `a8
 
 **Global phase order:** A1, A2 (`HEADLESS_SESSION_PLAN.md`); B3, B4 (this document); C5 to C10 (`ADAPTIVE_READERS_PLAN.md`). Phase numbers are global. Phase B3 and phase B4 both wait for A2, because the CLI still uses the items they remove.
 
+## Status (2026-11-25)
+
+Phases B3 and B4 are implemented. The `BelowNormal` against `Idle` measurement was not taken, by the user's decision: `Idle` is removed without it. Still open: the Windows CI run of the scan tests under the real storage check, the Intel RST ("RAID On") check on such a machine, and the confirmation that "SCSI" means iSCSI (ordinary SCSI and SAS are taken).
+
 ## Context
 
 Part A removes the CLI. Four behaviours in the code are there because the CLI or its flags needed them. They can go once the CLI is gone, or they have to change on their own:

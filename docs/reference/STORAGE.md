@@ -48,9 +48,23 @@ read at once, and folders on one drive stay one stream.
   a spindle with another such disk, so all of them are one opaque drive, in one lane, apart from the physical drives.
 - **If any library folder's drive can't be told**, every folder goes into one lane, as before the lanes. An unplugged
   folder has no lane, and its files wait under the offline notice until the drive returns.
-- **The escape hatch** (removed: `serial_drives` and `--serial` go with the plan's phase B3; `docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`)
-  runs every folder in one lane. Use it for a setup the probe can't see through: two disk images on one spindle, or a
-  pool the system spreads over disks.
+- **No escape hatch.** `serial_drives` and `--serial`, which put every folder in one lane, are removed on both platforms
+  (`docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`, phase B3). On Windows the setups they were for are refused (below). On
+  Linux the gap is accepted: an opaque device and the real disk under it get separate lanes.
+
+### Which disks are supported (Windows)
+
+Only NTFS on plain physical disks. After the network, removable, link and NTFS checks, the scan's folder check
+(`pg_scan::refusal`, step 7) asks the drive probe (`pg_platform::drive::Drives`, the same one the lanes use) for the
+folder's drive, and refuses an opaque one (`RefusedReason::OpaqueDisk`): a virtual or file-backed disk (VHD, VHDX),
+Storage Spaces, a RAID controller, iSCSI, or an unknown bus. The rule is the probe's own (`OPAQUE_BUSES`), not a second
+list. A USB disk is taken; its kind is `Unknown`. SCSI and SAS are taken: "SCSI" in the rule is read as iSCSI (to be
+confirmed). A probe that can't be read refuses the folder (`Fact::Drive`). A folder already in the library on such a
+disk gets the same refusal at its next scan, through the folder ledger. Linux is unchanged: ext4 and the like are
+accepted, and opaque devices stay `DriveKey::Opaque`.
+
+Not measured: a SATA or NVMe disk behind a RAID driver (Intel RST "RAID On") may report the RAID bus, and be refused.
+Every scan test on Windows runs the real check, so a machine whose temp folder is on such a disk fails them.
 
 ## Other file systems (unsupported)
 

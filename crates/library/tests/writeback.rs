@@ -86,7 +86,6 @@ fn imported(prefix: &str) -> Result<Imported> {
     pg_import::import(
         &mut c,
         &Options::new(pg_platform::priority::Priority::Normal),
-        false,
         &pg_catalog::VolumeSet::All,
         &ctl,
     )?;
@@ -138,7 +137,7 @@ fn ratings_and_turns_reach_the_files() {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // The placeholders the grid shows, made from the originals (no cache): their turns are what the turns below check.
     pg_thumbs::placeholders::run_while(
         &mut c,
@@ -223,7 +222,7 @@ fn ratings_and_turns_reach_the_files() {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "re-imported upright sizes: {:?}", dims(&c));
     // Until the Placeholders pass makes them again, the placeholders show the pixels they were made from, turned.
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "before the pass: {:?}", placeholder_turns(&c));
@@ -247,7 +246,7 @@ fn ratings_and_turns_reach_the_files() {
     assert!(out.status.success());
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!(state::rating_of(&c, FileId::new(before[0].0)).unwrap(), Some(2));
 
     drop(writer);
@@ -282,7 +281,7 @@ fn a_rating_reaches_a_jpeg_that_holds_a_stale_percent() {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     let (id, _) = ids(&c).unwrap().into_iter().next().unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
@@ -332,7 +331,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), 2, "both imported: {before:?}");
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
@@ -738,7 +737,6 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     pg_import::import(
         &mut c,
         &Options::new(pg_platform::priority::Priority::Normal),
-        false,
         &pg_catalog::VolumeSet::All,
         &ctl,
     )
@@ -968,7 +966,6 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     pg_import::import(
         &mut c,
         &Options::new(pg_platform::priority::Priority::Normal),
-        false,
         &pg_catalog::VolumeSet::All,
         &ctl,
     )
@@ -1060,7 +1057,6 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     pg_import::import(
         &mut c,
         &Options::new(pg_platform::priority::Priority::Normal),
-        false,
         &pg_catalog::VolumeSet::All,
         &ctl,
     )
@@ -1393,7 +1389,6 @@ fn a_removed_folder_added_again_gets_its_analyses_and_its_ratings_back() {
     pg_import::import(
         &mut c,
         &Options::new(pg_platform::priority::Priority::Normal),
-        false,
         &pg_catalog::VolumeSet::All,
         &Control::new(),
     )

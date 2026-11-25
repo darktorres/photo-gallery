@@ -3,17 +3,19 @@
 //! which `pg_wording` words. A check that can't read a fact refuses: the checks fail closed.
 
 use std::io;
+use std::path::Path;
 
 use pg_model::refusal::{Fact, RefusedReason};
 use pg_platform::dir::{DriveType, FsKind, ROOT_CHECK, RootCheck, RootFacts, SystemFacts, fs_kind};
+use pg_platform::drive::{DriveKey, Drives, SystemDrives};
 use pg_platform::names::units_of;
 use pg_platform::native::{SEP, Unit};
 
-/// Whether the folder at `path` may be scanned for its identities: the checks this system's folders take
-/// ([`ROOT_CHECK`]).
-pub(crate) fn check_root(path: &[Unit]) -> Result<(), RefusedReason> {
+/// Whether the folder at `path` (`folder` as a path the drive probe takes) may be scanned for its identities: the
+/// checks this system's folders take ([`ROOT_CHECK`]).
+pub(crate) fn check_root(path: &[Unit], folder: &Path) -> Result<(), RefusedReason> {
     match ROOT_CHECK {
-        RootCheck::Ntfs => check_ntfs(&SystemFacts, path),
+        RootCheck::Ntfs => check_ntfs(&SystemFacts, &SystemDrives, path, folder),
         RootCheck::FsType => check_fs(path),
         RootCheck::Unsupported => Err(RefusedReason::UnsupportedSystem),
     }
@@ -35,8 +37,9 @@ fn unreadable(fact: Fact, error: &io::Error) -> RefusedReason {
 }
 
 /// The Windows checks, in order, before the folder is listed: NTFS on a fixed local disk, the folder itself and
-/// where it really is.
-fn check_ntfs<F: RootFacts>(facts: &F, path: &[Unit]) -> Result<(), RefusedReason> {
+/// where it really is, and a plain physical disk under the volume. `drives` is the drive probe (`pg_platform::drive`),
+/// a seam of its own: the facts are `dir`'s, and `drive` already uses `dir`, so the probe can't be one of them.
+fn check_ntfs<F: RootFacts>(facts: &F, drives: &dyn Drives, path: &[Unit], folder: &Path) -> Result<(), RefusedReason> {
     // 1. A network path, refused by its text: no call is made.
     if path.starts_with(&[SEP, SEP]) {
         return Err(RefusedReason::NetworkPath);
@@ -61,6 +64,13 @@ fn check_ntfs<F: RootFacts>(facts: &F, path: &[Unit]) -> Result<(), RefusedReaso
     let file_system = facts.file_system(&handle).map_err(|e| unreadable(Fact::FileSystem, &e))?;
     if file_system != "NTFS" {
         return Err(RefusedReason::NotNtfs { file_system });
+    }
+    // 7: the volume is on plain physical disks. A disk whose backing can't be seen (virtual or file-backed, Storage
+    // Spaces, RAID, iSCSI, an unknown bus) makes it opaque, the probe's one rule (`pg_platform::drive`); a USB disk is
+    // not opaque, and is taken. A probe that can't be read refuses.
+    let drive = drives.of(folder).map_err(|e| unreadable(Fact::Drive, &e))?;
+    if drive.key == DriveKey::Opaque {
+        return Err(RefusedReason::OpaqueDisk);
     }
     Ok(())
 }
@@ -161,8 +171,9 @@ mod fs_type_tests {
         if ROOT_CHECK != RootCheck::FsType {
             return;
         }
-        assert_eq!(check_root(&units_of(b"/")), Ok(()));
-        assert_eq!(check_root(&units_of(b"/proc")), Err(RefusedReason::Pseudo { file_system: "proc".into() }));
+        assert_eq!(check_root(&units_of(b"/"), Path::new("/")), Ok(()));
+        let proc = check_root(&units_of(b"/proc"), Path::new("/proc"));
+        assert_eq!(proc, Err(RefusedReason::Pseudo { file_system: "proc".into() }));
         assert_eq!(check_mount(&units_of(b"/proc")), Err(RefusedReason::Pseudo { file_system: "proc".into() }));
     }
 }
@@ -171,6 +182,9 @@ mod fs_type_tests {
 #[cfg(all(test, windows))]
 mod ntfs_tests {
     use std::cell::Cell;
+    use std::collections::BTreeSet;
+
+    use pg_platform::drive::{Drive, Kind};
 
     use super::*;
 
@@ -252,13 +266,55 @@ mod ntfs_tests {
         }
     }
 
+    /// The drive probe the checks see: the drive it answers, or an error.
+    struct FakeDrives(Result<DriveKey, &'static str>);
+
+    impl Drives for FakeDrives {
+        fn of(&self, _path: &Path) -> io::Result<Drive> {
+            let key = self.0.clone().map_err(io::Error::other)?;
+            Ok(Drive { key, kind: Kind::Unknown, label: "D:".into() })
+        }
+    }
+
+    /// A plain physical disk, as the probe answers for one.
+    fn physical() -> FakeDrives {
+        FakeDrives(Ok(DriveKey::Disks(BTreeSet::from([0]))))
+    }
+
     fn check(f: &Fake) -> Result<(), RefusedReason> {
-        check_ntfs(f, &u(r"D:\photos"))
+        check_on(f, &physical())
+    }
+
+    fn check_on(f: &Fake, drives: &FakeDrives) -> Result<(), RefusedReason> {
+        check_ntfs(f, drives, &u(r"D:\photos"), Path::new(r"D:\photos"))
     }
 
     #[test]
     fn a_fixed_local_ntfs_folder_is_allowed() {
         assert_eq!(check(&Fake::local()), Ok(()));
+    }
+
+    // The probe's answer decides: an opaque drive (a disk whose backing can't be seen: virtual or file-backed, Storage
+    // Spaces, RAID, iSCSI, an unknown bus; `pg_platform::drive` tests which bus is which) is refused, and a drive of
+    // physical disks (USB, SATA, NVMe, SCSI, SAS), one or spanned, is taken.
+    #[test]
+    fn a_folder_on_an_opaque_disk_is_refused_and_one_on_physical_disks_is_taken() {
+        assert_eq!(check_on(&Fake::local(), &FakeDrives(Ok(DriveKey::Opaque))), Err(RefusedReason::OpaqueDisk));
+        assert_eq!(check_on(&Fake::local(), &physical()), Ok(()));
+        let spanned = FakeDrives(Ok(DriveKey::Disks(BTreeSet::from([0, 1]))));
+        assert_eq!(check_on(&Fake::local(), &spanned), Ok(()));
+    }
+
+    #[test]
+    fn a_drive_probe_that_fails_refuses_with_the_drive_as_its_fact() {
+        let refused = check_on(&Fake::local(), &FakeDrives(Err("injected")));
+        assert_eq!(refused, Err(RefusedReason::Unreadable { fact: Fact::Drive, error: "injected".into() }));
+    }
+
+    #[test]
+    fn the_earlier_checks_refuse_before_the_drive_is_asked() {
+        let refused = check_on(&Fake { fs: "FAT32", ..Fake::local() }, &FakeDrives(Ok(DriveKey::Opaque)));
+        assert_eq!(refused, Err(RefusedReason::NotNtfs { file_system: "FAT32".into() }));
     }
 
     #[test]
@@ -309,16 +365,17 @@ mod ntfs_tests {
     #[test]
     fn a_unc_path_is_refused_before_any_call() {
         let f = Fake::local();
-        assert_eq!(check_ntfs(&f, &u(r"\\localhost\D$\photos")), Err(RefusedReason::NetworkPath));
+        let path = r"\\localhost\D$\photos";
+        assert_eq!(check_ntfs(&f, &physical(), &u(path), Path::new(path)), Err(RefusedReason::NetworkPath));
         assert_eq!(f.calls.get(), 0, "the text is refused without asking the system");
     }
 
-    // A real call: the test binary's folder is on a fixed NTFS disk.
+    // A real call: the test binary's folder is on a fixed NTFS disk, a plain physical one.
     #[test]
     fn a_folder_on_a_fixed_ntfs_disk_is_accepted() {
         let dir = std::env::current_dir().unwrap();
         let path = pg_platform::names::canonical_of(&dir);
-        assert_eq!(check_root(&units_of(&path)), Ok(()), "{}", dir.display());
+        assert_eq!(check_root(&units_of(&path), &dir), Ok(()), "{}", dir.display());
     }
 
     #[test]

@@ -1336,7 +1336,7 @@ mod tests {
         // A new detector: due again, without a new import; the mark stays.
         raw::older_borders_version(&c);
         raw::start_borders_version(&c);
-        assert!(c.pending_import(false, &crate::VolumeSet::All).unwrap().is_empty());
+        assert!(c.pending_import(&crate::VolumeSet::All).unwrap().is_empty());
         let due = c.pending_borders(&crate::VolumeSet::All).unwrap();
         assert_eq!(due.len(), 1);
         let tx = c.tx().unwrap();
@@ -1498,7 +1498,7 @@ mod tests {
             writer.record_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
-            let item = c.pending_import(false, &crate::VolumeSet::All).unwrap().items.remove(0);
+            let item = c.pending_import(&crate::VolumeSet::All).unwrap().items.remove(0);
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];

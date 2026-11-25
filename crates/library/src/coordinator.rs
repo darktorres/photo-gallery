@@ -176,7 +176,7 @@ impl Lanes {
         root.share_cpu(cpus);
         // The lanes together hold a quarter of the machine's memory for file buffers, each up to the measured knee.
         let cap = pg_platform::memory::physical_bytes().map(|bytes| bytes / MEMORY_SHARE);
-        let governor = Governor::new(Options::budget(pg_jobs::pipeline::READERS, cpus), cap);
+        let governor = Governor::new(Options::new(Priority::BelowNormal).buffer_bytes.get(), cap);
         let lanes = Arc::new(Lanes {
             root,
             crop_ctl,
@@ -431,8 +431,7 @@ impl Lanes {
                     _ => None,
                 })
                 .collect();
-            let serial = self.shared.features.get().serial_drives;
-            let groups = lanes::plan(&places, serial);
+            let groups = lanes::plan(&places);
             let before = lane_names(&reg.lanes);
             let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
             for lane in &reg.lanes {

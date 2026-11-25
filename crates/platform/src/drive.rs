@@ -687,6 +687,28 @@ mod tests {
         drive_of_disks("test".to_string(), facts)
     }
 
+    // Each bus the storage rule names (`pg_scan::refusal`: only plain physical disks are taken on Windows): the ones whose
+    // disks can't be seen make the volume opaque, and the physical ones (USB, SATA, NVMe, and SCSI and SAS, which are not
+    // iSCSI) do not.
+    #[test]
+    fn each_bus_is_opaque_or_a_physical_disk_as_the_storage_rule_has_it() {
+        use wf::*;
+        const SCSI: i32 = 1;
+        const SAS: i32 = 10;
+        const NVME: i32 = 17;
+        let opaque = [BUS_VIRTUAL, BUS_FILE_BACKED_VIRTUAL, BUS_SPACES, BUS_RAID, BUS_ISCSI, BUS_UNKNOWN];
+        let physical = [BUS_USB, BUS_SATA, NVME, SCSI, SAS];
+        for bus in opaque {
+            let drive = drive_of_dev_facts(&[wf::disk_fact(1, Some(bus), Some(true))]).unwrap();
+            assert_eq!(drive.key, DriveKey::Opaque, "bus {bus}");
+        }
+        for bus in physical {
+            let drive = drive_of_dev_facts(&[wf::disk_fact(1, Some(bus), Some(true))]).unwrap();
+            assert_eq!(drive.key, key(&[1]), "bus {bus}");
+        }
+        assert_eq!(drive_of_dev_facts(&[wf::disk_fact(1, None, None)]).unwrap().key, DriveKey::Opaque, "no bus answer");
+    }
+
     #[test]
     fn a_disk_is_read_by_its_bus_and_its_seek_penalty() {
         use wf::*;

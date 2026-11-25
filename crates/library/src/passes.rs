@@ -11,7 +11,6 @@ use pg_jobs::schedule::{Pass, Step};
 use pg_model::ids::FileId;
 use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, tidy};
 use pg_model::rules::Path as RulePath;
-use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 
 use crate::Error;
@@ -139,14 +138,7 @@ pub(crate) struct Import;
 impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let volumes = cx.inner.volume_set();
-        let s = pg_import::import_while(
-            cx.catalog,
-            &cx.inner.options(Priority::BelowNormal),
-            false,
-            &volumes,
-            &|| true,
-            &cx.inner.ctl,
-        )?;
+        let s = pg_import::import_while(cx.catalog, &cx.inner.options(), &volumes, &|| true, &cx.inner.ctl)?;
         if s.files > 0 {
             cx.inner.imported();
         }
@@ -167,7 +159,7 @@ impl Pass<Cx<'_>> for Hashes {
         let volumes = cx.inner.volume_set();
         let s = pg_import::hashes::hash(
             cx.catalog,
-            &cx.inner.options(Priority::BelowNormal),
+            &cx.inner.options(),
             &volumes,
             &|| features.get().duplicates,
             &cx.inner.ctl,
@@ -199,7 +191,7 @@ impl Pass<Cx<'_>> for Pairing {
             return Ok(Step::Done);
         }
         while gate.next() {
-            let s = match pg_import::pairs::pair(cx.catalog, &cx.inner.options(Priority::BelowNormal), &cx.inner.ctl) {
+            let s = match pg_import::pairs::pair(cx.catalog, &cx.inner.options(), &cx.inner.ctl) {
                 Ok(s) => s,
                 Err(e) => {
                     gate.abandon();
@@ -235,7 +227,7 @@ impl Pass<Cx<'_>> for Borders {
         let volumes = cx.inner.volume_set();
         let s = pg_borders::find_while(
             cx.catalog,
-            &cx.inner.options(Priority::BelowNormal),
+            &cx.inner.options(),
             &volumes,
             &|| features.get().borders,
             &cx.inner.ctl,
@@ -270,7 +262,7 @@ impl Pass<Cx<'_>> for Thumbs {
             return Ok(Step::Done);
         }
         let heights = cx.inner.shared.heights.clone();
-        let opts = cx.inner.options(Priority::Idle);
+        let opts = cx.inner.options();
         let volumes = cx.inner.volume_set();
         let thumbs = &cx.inner.shared.thumbs;
         let s = match pg_thumbs::run_while(
@@ -317,7 +309,7 @@ impl Pass<Cx<'_>> for Placeholders {
         pg_thumbs::placeholders::run_while(
             cx.catalog,
             thumbs,
-            &cx.inner.options(Priority::Idle),
+            &cx.inner.options(),
             &volumes,
             &|| !thumbs.suspended(),
             &cx.inner.ctl,

@@ -59,21 +59,8 @@ impl Catalog {
 }
 
 /// `Catalog::pending_import`'s query, for `volumes`.
-pub(crate) fn pending_import_sql(retry_errors: bool, volumes: &VolumeSet) -> String {
-    let and = volumes.and_in("f.volume");
-    if retry_errors {
-        // A UNION, as an OR would scan every file; the failures are read from their index first. The set's filter is in
-        // both branches.
-        format!(
-            "{}{and} UNION SELECT {}, f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record
-             FROM analysis a CROSS JOIN files f
-             WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0{and} ORDER BY volume, record",
-            pending_files!(),
-            work_columns!(),
-        )
-    } else {
-        format!("{}{and} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF", pending_files!())
-    }
+pub(crate) fn pending_import_sql(volumes: &VolumeSet) -> String {
+    format!("{}{} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF", pending_files!(), volumes.and_in("f.volume"))
 }
 
 /// The due-borders rows joined for `volumes`: from the queue for every volume (the due analyses are few), and from the
@@ -441,26 +428,20 @@ impl Reader<'_> {
 const OWED: &str = concat!("FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND ", present_ready!(f));
 
 impl Catalog {
-    /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
-    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD.
-    /// Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe. `volumes`
+    /// Files whose analysis is absent or stale (`files.pending`), in on-disk order (volume, then MFT record number), which
+    /// reads ~3× faster than path order on an HDD. It's read in that order from `files_to_import`, so nothing pending is
+    /// one probe. A failed file is listed once the user's Retry marks it pending (`Catalog::retry_failures`). `volumes`
     /// limits the list to those volumes.
-    pub fn pending_import(&self, retry_errors: bool, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
-        // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its
-        // index alone.
+    pub fn pending_import(&self, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
+        // Counted in the same snapshot, from the index alone: the list's bound.
         let tx = self.conn.unchecked_transaction()?;
-        let count = |sql: &str| -> Result<usize> { Ok(tx.query_row(sql, [], |r| r.get(0))?) };
         let and = volumes.and_in("f.volume");
-        let mut bound = count(&format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND f.pending = 1{and}"))?;
-        if retry_errors {
-            bound += match volumes {
-                VolumeSet::All => count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?,
-                VolumeSet::Only(_) => count(&format!(
-                    "SELECT count(*) FROM analysis a CROSS JOIN files f WHERE a.error IS NOT NULL AND f.id = a.file_id{and}"
-                ))?,
-            };
-        }
-        let sql = pending_import_sql(retry_errors, volumes);
+        let bound: usize = tx.query_row(
+            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND f.pending = 1{and}"),
+            [],
+            |r| r.get(0),
+        )?;
+        let sql = pending_import_sql(volumes);
         let list = work_list(&tx, &mut tx.prepare(&sql)?, bound)?;
         tx.commit()?;
         Ok(list)
@@ -644,7 +625,7 @@ mod tests {
             raw::set_volume(&c, FileId::new(id), Some(volume));
         }
         for id in [1, 3, 4] {
-            let items = c.pending_import(false, &VolumeSet::All).unwrap().items;
+            let items = c.pending_import(&VolumeSet::All).unwrap().items;
             let item = items.iter().find(|i| i.id == FileId::new(id)).unwrap();
             store_taken(&mut c, item, None);
         }
@@ -654,7 +635,7 @@ mod tests {
     /// The ids of the import, hashes, borders and placeholder lists for `volumes`, in the order each gives them.
     fn lists(c: &Catalog, volumes: &VolumeSet) -> [Vec<i64>; 4] {
         [
-            c.pending_import(false, volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
+            c.pending_import(volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
             c.pending_hashes(volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
             c.pending_borders(volumes).unwrap().items.iter().map(|i| i.id.get()).collect(),
             c.pending_placeholders(volumes).unwrap().items.iter().map(|p| p.item.id.get()).collect(),
@@ -692,7 +673,7 @@ mod tests {
     #[test]
     fn the_import_list_of_a_volume_is_a_search_of_the_volume_index_with_no_sort() {
         let c = three_volumes();
-        let plan = raw::query_plan(&c, &pending_import_sql(false, &VolumeSet::Only(vec![1])), []);
+        let plan = raw::query_plan(&c, &pending_import_sql(&VolumeSet::Only(vec![1])), []);
         assert!(plan.contains("files_to_import (volume=?)") && !plan.contains("TEMP B-TREE"), "{plan}");
     }
 
@@ -740,11 +721,11 @@ mod tests {
     }
 
     #[test]
-    fn the_import_list_filters_each_branch_of_the_retry_union() {
-        let sql = pending_import_sql(true, &VolumeSet::Only(vec![3]));
-        assert_eq!(sql.matches("f.volume IN (3)").count(), 2, "{sql}");
-        assert!(!pending_import_sql(true, &VolumeSet::All).contains("IN ("));
-        assert!(pending_import_sql(false, &VolumeSet::All).ends_with("ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"));
+    fn the_import_list_filters_by_its_volumes_in_record_order() {
+        let sql = pending_import_sql(&VolumeSet::Only(vec![3]));
+        assert_eq!(sql.matches("f.volume IN (3)").count(), 1, "{sql}");
+        assert!(!pending_import_sql(&VolumeSet::All).contains("IN ("));
+        assert!(pending_import_sql(&VolumeSet::All).ends_with("ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"));
     }
 
     #[test]
@@ -753,10 +734,9 @@ mod tests {
         let volume: i64 = c.conn.query_row("SELECT volume FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
         let here = VolumeSet::Only(vec![volume.cast_unsigned()]);
         let elsewhere = VolumeSet::Only(vec![volume.cast_unsigned() + 1]);
-        assert_eq!(c.pending_import(false, &VolumeSet::All).unwrap().len(), 1);
-        assert_eq!(c.pending_import(false, &here).unwrap().len(), 1, "its own volume lists it");
-        assert!(c.pending_import(false, &elsewhere).unwrap().is_empty(), "another volume does not");
-        assert!(c.pending_import(true, &elsewhere).unwrap().is_empty(), "the retry form too");
+        assert_eq!(c.pending_import(&VolumeSet::All).unwrap().len(), 1);
+        assert_eq!(c.pending_import(&here).unwrap().len(), 1, "its own volume lists it");
+        assert!(c.pending_import(&elsewhere).unwrap().is_empty(), "another volume does not");
         assert!(c.pending_borders(&elsewhere).unwrap().is_empty());
         assert!(c.pending_hashes(&elsewhere).unwrap().is_empty());
     }

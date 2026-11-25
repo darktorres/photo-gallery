@@ -13,10 +13,12 @@ use std::time::Duration;
 use pg_catalog::VolumeSet;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::Bus;
+use pg_jobs::pipeline::Options;
 use pg_model::features::Features;
 use pg_model::job::Change;
 use pg_model::removal::Volumes;
 use pg_model::size::ThumbHeight;
+use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
 use crate::mask::{PassCell, PassMask};
@@ -244,8 +246,8 @@ impl TestHooks {
     }
 }
 
-/// The counts a developer pinned for a run (`RunnerConfig`): a lane's options take them in place of the defaults, and a pinned
-/// lane writes no learned profile. Nothing else reads the environment or a flag for them.
+/// The counts a developer pinned for a run (`RunnerConfig`): the run's pass options take them in place of the defaults
+/// (`inner::pinned_options`). Nothing else reads the environment or a flag for them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Pins {
     /// The reads in flight, when pinned.
@@ -269,8 +271,9 @@ pub(crate) struct Shared {
     pub(crate) parks: Parks,
     /// The passes a round runs (`Runner::set_passes`): read at the start of each round.
     pub(crate) passes: PassCell,
-    /// The counts a developer pinned for the run (`RunnerConfig`), in place of the defaults.
-    pub(crate) pins: Pins,
+    /// The pass options of the run's lanes (`inner::pinned_options`): the defaults, or the counts a developer pinned
+    /// (`RunnerConfig`), checked when the run starts. Each lane adds its share of the budget (`Inner::options`).
+    pub(crate) options: Options,
     /// The test hooks (none in a build that is not a test).
     #[cfg(test)]
     pub(crate) hooks: Arc<TestHooks>,
@@ -299,7 +302,7 @@ impl Shared {
             tally,
             parks: Parks::default(),
             passes: PassCell::new(PassMask::ALL),
-            pins: Pins::default(),
+            options: Options::new(Priority::BelowNormal),
             #[cfg(test)]
             hooks: Arc::default(),
             pairing: PairGate::default(),

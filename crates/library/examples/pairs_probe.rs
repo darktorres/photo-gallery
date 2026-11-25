@@ -37,7 +37,7 @@ fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
 
 fn main() -> Result<()> {
     let folder = PathBuf::from(std::env::args().nth(1).ok_or("usage: pairs_probe <folder with catalog.sqlite>")?);
-    let workers = env(pg_testkit::inputs::PROBE_WORKERS).unwrap_or(1);
+    let workers: std::num::NonZeroUsize = env(pg_testkit::inputs::PROBE_WORKERS).unwrap_or(std::num::NonZeroUsize::MIN);
     let keep = std::env::var_os(pg_testkit::inputs::PROBE_KEEP_OWED).is_some();
     let mut settings = pg_import::pairs::Settings::default();
     settings.slice = env(pg_testkit::inputs::PROBE_SLICE).unwrap_or(settings.slice);
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     let t = stats.timings;
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
     // What the join ran with: its tuning resolved for the pass's threads, as the join resolves it.
-    let few = settings.join.few_entries_on(workers);
+    let few = settings.join.few_entries_on(workers.get());
     writeln!(
         std::io::stdout(),
         "owed {owed} analyses; paired {} files, {} pairs in {seconds:.3} s (workers {workers}, slice {}, cache {} KiB, \

@@ -36,7 +36,7 @@ pub enum Place {
 /// A root whose place is [`Place::Unknown`] puts every other root that is not unplugged in one lane: fail closed, the
 /// one-lane behaviour, since the unknown root's files could be on any drive. A root that isn't probed yet (`None`) has no
 /// lane until it is, unless an unknown root collapses the rest. An unplugged root has none at all.
-pub fn plan(roots: &[(RulePath, Option<Place>)], serial: bool) -> Vec<Vec<RulePath>> {
+pub fn plan(roots: &[(RulePath, Option<Place>)]) -> Vec<Vec<RulePath>> {
     if roots.iter().any(|(_, place)| matches!(place, Some(Place::Unknown))) {
         let all: Vec<RulePath> = roots
             .iter()
@@ -53,7 +53,7 @@ pub fn plan(roots: &[(RulePath, Option<Place>)], serial: bool) -> Vec<Vec<RulePa
         })
         .collect();
     let drives: Vec<RootDrive> = mounted.iter().map(|(_, drive)| Some((*drive).clone())).collect();
-    let lane_of = assign(&drives, serial);
+    let lane_of = assign(&drives);
     let count = lane_of.iter().copied().max().map_or(0, |most| most + 1);
     let mut lanes: Vec<Vec<RulePath>> = vec![Vec::new(); count];
     for ((root, _), lane) in mounted.iter().zip(lane_of) {
@@ -90,10 +90,10 @@ pub(crate) fn drive_label<'a>(
 /// and a volume on one of them are one lane.
 ///
 /// Fails closed: a root whose drive is unknown puts every root in lane 0, the one-lane behaviour, since its disks could
-/// be any other root's. `serial` (the escape hatch for setups the probe can't see through: two disk images on one
-/// spindle, Storage Spaces) does the same by choice.
-pub fn assign(drives: &[RootDrive], serial: bool) -> Vec<usize> {
-    if serial || drives.iter().any(Option::is_none) {
+/// be any other root's. A setup the probe can't see through (an opaque device on Linux and the real disk under it) gets
+/// a lane per device: that gap is accepted (`docs/reference/STORAGE.md`).
+pub fn assign(drives: &[RootDrive]) -> Vec<usize> {
+    if drives.iter().any(Option::is_none) {
         return vec![0; drives.len()];
     }
     let keys: Vec<DriveKey> = drives.iter().flatten().map(|drive| drive.key.clone()).collect();
@@ -158,41 +158,36 @@ mod tests {
 
     #[test]
     fn roots_on_different_drives_are_different_lanes() {
-        assert_eq!(assign(&[disks(&[1]), disks(&[2])], false), vec![0, 1]);
+        assert_eq!(assign(&[disks(&[1]), disks(&[2])]), vec![0, 1]);
     }
 
     #[test]
     fn roots_on_one_drive_share_a_lane_and_lanes_number_from_the_first_root() {
-        assert_eq!(assign(&[disks(&[1]), disks(&[2]), disks(&[1])], false), vec![0, 1, 0]);
+        assert_eq!(assign(&[disks(&[1]), disks(&[2]), disks(&[1])]), vec![0, 1, 0]);
     }
 
     #[test]
     fn a_spanned_volume_and_a_volume_on_one_of_its_disks_are_one_lane() {
-        assert_eq!(assign(&[disks(&[1, 2]), disks(&[3]), disks(&[2])], false), vec![0, 1, 0]);
+        assert_eq!(assign(&[disks(&[1, 2]), disks(&[3]), disks(&[2])]), vec![0, 1, 0]);
     }
 
     #[test]
     fn an_unknown_drive_puts_every_root_in_one_lane() {
-        assert_eq!(assign(&[disks(&[1]), None, disks(&[2])], false), vec![0, 0, 0]);
-    }
-
-    #[test]
-    fn serial_puts_every_root_in_one_lane_even_on_different_drives() {
-        assert_eq!(assign(&[disks(&[1]), disks(&[2])], true), vec![0, 0]);
+        assert_eq!(assign(&[disks(&[1]), None, disks(&[2])]), vec![0, 0, 0]);
     }
 
     #[test]
     fn opaque_roots_share_one_lane_and_are_apart_from_physical_disks() {
-        assert_eq!(assign(&[opaque(), disks(&[1]), opaque()], false), vec![0, 1, 0]);
+        assert_eq!(assign(&[opaque(), disks(&[1]), opaque()]), vec![0, 1, 0]);
     }
 
     #[test]
     fn no_roots_is_no_lanes() {
-        assert!(assign(&[], false).is_empty());
+        assert!(assign(&[]).is_empty());
     }
 
     fn plan_of(roots: &[(RulePath, Option<Place>)]) -> Vec<Vec<RulePath>> {
-        plan(roots, false)
+        plan(roots)
     }
 
     fn root(path: &str) -> RulePath {

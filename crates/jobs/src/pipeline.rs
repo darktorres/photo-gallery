@@ -12,6 +12,7 @@
 //! to file: a pass makes about `slots` of them, whatever its length.
 
 use std::io::{Read as _, Seek as _, SeekFrom};
+use std::num::NonZeroUsize;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -20,6 +21,7 @@ use std::time::{Duration, Instant};
 // crossbeam-channel rather than std::sync::mpsc: the readers and workers share one receiver each (`raw_rx.clone()`), and
 // std's `Receiver` cannot be cloned. Every one-to-one handoff elsewhere in the workspace uses std::sync::mpsc.
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
+use pg_model::buffer::BufferBytes;
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 use serde_json::json;
@@ -29,18 +31,20 @@ use crate::failure::{Class, Failed};
 use crate::governor::Budget;
 use crate::panics;
 
-/// How a pipeline runs: how many threads read and how many process, and how much is in flight at once.
+/// How a pipeline runs: how many threads read and how many process, and how much is in flight at once. Every count is
+/// typed so that no caller can build a pool with none of them: zero can't be written, and the slots have a maximum.
+#[derive(Clone)]
 pub struct Options {
     /// The threads that read the files.
-    pub readers: usize,
+    pub readers: NonZeroUsize,
     /// The threads that process the files.
-    pub workers: usize,
+    pub workers: NonZeroUsize,
     /// The files in flight at most: being read, read and waiting for a worker, or being processed. A file a worker
     /// opens itself (a video) counts only while it waits. [`Options::slots`] by default.
-    pub slots: usize,
+    pub slots: Slots,
     /// The bytes of file buffers the pass holds at most (read, waiting, being processed, or idle in the pool). A
-    /// file larger than all of it is read alone. [`Options::budget`] by default.
-    pub buffer_bytes: u64,
+    /// target, not a strict bound: a file larger than all of it is read alone. [`Options::budget`] by default.
+    pub buffer_bytes: BufferBytes,
     /// The budget a governor shares among a run's lanes ([`crate::governor::Governor`]): when set, the pool reads it as it
     /// changes, in place of `buffer_bytes`.
     pub budget: Option<Arc<Budget>>,
@@ -53,40 +57,99 @@ pub struct Options {
 const BUFFER_PER_SLOT: u64 = 12 << 20;
 
 /// The reads in flight of a pipeline (`Options::new`), and the default the other pools are sized by.
-pub const READERS: usize = 8;
+pub const READERS: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
+
+/// The most files a pass holds in flight ([`Slots`]). The pool makes room for that many buffers up front
+/// (`Vec::with_capacity`), so a larger count would be a large allocation for nothing: the default for 8 readers and
+/// 128 workers is 264.
+pub const MAX_SLOTS: usize = 1 << 16;
+
+/// The most workers the default options take, whatever the CPU count: their default slots (`READERS + 2 × workers`)
+/// then stay below [`MAX_SLOTS`].
+const MAX_DEFAULT_WORKERS: NonZeroUsize = NonZeroUsize::MIN.saturating_add(4095);
 
 /// The logical CPUs the pools are sized by: `available_parallelism`, or 4 where the platform cannot say.
 pub fn cpus() -> usize {
     std::thread::available_parallelism().map_or(4, |n| n.get())
 }
 
+/// Why reader and worker counts make no [`Options`] ([`Options::sized`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SizeRefused {
+    /// The files in flight they make (`readers + 2 × workers`) are more than [`MAX_SLOTS`].
+    TooManySlots,
+    /// The buffer budget they make (`(readers + workers) × 12 MiB`) overflows `u64`.
+    BudgetOverflows,
+}
+
+impl std::fmt::Display for SizeRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SizeRefused::TooManySlots => write!(f, "more than {MAX_SLOTS} files in flight"),
+            SizeRefused::BudgetOverflows => f.write_str("a buffer budget past 2^64 bytes"),
+        }
+    }
+}
+
+impl std::error::Error for SizeRefused {}
+
+/// A count of files in flight: at least one, and at most [`MAX_SLOTS`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Slots(NonZeroUsize);
+
+impl Slots {
+    /// `n` slots, or `None` for zero or more than [`MAX_SLOTS`].
+    pub fn new(n: usize) -> Option<Slots> {
+        if n > MAX_SLOTS {
+            return None;
+        }
+        NonZeroUsize::new(n).map(Slots)
+    }
+
+    /// The count.
+    pub fn get(self) -> usize {
+        self.0.get()
+    }
+}
+
 impl Options {
-    /// [`READERS`] reads in flight, a worker per logical CPU, and their [`Options::budget`].
+    /// [`READERS`] reads in flight, a worker per logical CPU (at most 4096), and their [`Options::slots`] and
+    /// [`Options::budget`].
+    #[expect(
+        clippy::expect_used,
+        reason = "8 readers and at most 4096 workers make 8200 slots (under MAX_SLOTS) and 4104 × 12 MiB"
+    )]
     pub fn new(priority: Priority) -> Options {
-        let cpus = cpus();
-        Options {
-            readers: READERS,
-            workers: cpus,
-            slots: Options::slots(READERS, cpus),
-            buffer_bytes: Options::budget(READERS, cpus),
+        let cpus = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN.saturating_add(3));
+        Options::sized(READERS, cpus.min(MAX_DEFAULT_WORKERS), priority).expect("the default counts fit")
+    }
+
+    /// `readers` and `workers`, with the [`Options::slots`] and the [`Options::budget`] that follow from them, or why
+    /// they are refused: more slots than [`MAX_SLOTS`], or a budget past `u64`. Nothing is clamped.
+    pub fn sized(readers: NonZeroUsize, workers: NonZeroUsize, priority: Priority) -> Result<Options, SizeRefused> {
+        Ok(Options {
+            readers,
+            workers,
+            slots: Options::slots(readers, workers).ok_or(SizeRefused::TooManySlots)?,
+            buffer_bytes: Options::budget(readers, workers).ok_or(SizeRefused::BudgetOverflows)?,
             budget: None,
             priority,
-        }
+        })
     }
 
     /// The default count of files in flight: one per read, and two per worker (the one it processes and the next,
     /// so that it doesn't wait for the disk). As fast as no bound by count (24 MP JPEGs on the HDD,
-    /// 8 readers and 12 workers: 273 MB/s with 32 slots, or 56, or unbounded; 271 with 20).
-    pub fn slots(readers: usize, workers: usize) -> usize {
-        readers + 2 * workers
+    /// 8 readers and 12 workers: 273 MB/s with 32 slots, or 56, or unbounded; 271 with 20). `None` past [`MAX_SLOTS`].
+    pub fn slots(readers: NonZeroUsize, workers: NonZeroUsize) -> Option<Slots> {
+        Slots::new(workers.get().checked_mul(2)?.checked_add(readers.get())?)
     }
 
     /// The default budget: a large camera file for each read in flight and each worker, since a worker holds its
     /// file while it processes it. Less starves the readers (24 MP JPEGs on the HDD, 8 readers and
     /// 12 workers, read 4% slower with 128 MB at the default slots, and no faster with 512 MB than with this,
-    /// 240 MB).
-    pub fn budget(readers: usize, workers: usize) -> u64 {
-        u64::try_from(readers + workers).unwrap_or(u64::MAX).saturating_mul(BUFFER_PER_SLOT)
+    /// 240 MB). `None` when the sum or the bytes overflow.
+    pub fn budget(readers: NonZeroUsize, workers: NonZeroUsize) -> Option<BufferBytes> {
+        BufferBytes::per(readers.get().checked_add(workers.get())?, BUFFER_PER_SLOT)
     }
 }
 
@@ -174,13 +237,13 @@ impl Timing {
         let pct = |c: &Clock, threads: usize| 100.0 * c.secs() / (count(threads.max(1)) * secs);
         let mut fields = vec![
             ("items", json!(items)),
-            ("readers", json!(opts.readers)),
-            ("workers", json!(opts.workers)),
-            ("readers_busy_pct", json!(pct(&self.read, opts.readers))),
-            ("readers_handing_pct", json!(pct(&self.read_send, opts.readers))),
-            ("workers_busy_pct", json!(pct(&self.work, opts.workers))),
-            ("workers_wait_reads_pct", json!(pct(&self.work_wait, opts.workers))),
-            ("workers_handing_pct", json!(pct(&self.work_send, opts.workers))),
+            ("readers", json!(opts.readers.get())),
+            ("workers", json!(opts.workers.get())),
+            ("readers_busy_pct", json!(pct(&self.read, opts.readers.get()))),
+            ("readers_handing_pct", json!(pct(&self.read_send, opts.readers.get()))),
+            ("workers_busy_pct", json!(pct(&self.work, opts.workers.get()))),
+            ("workers_wait_reads_pct", json!(pct(&self.work_wait, opts.workers.get()))),
+            ("workers_handing_pct", json!(pct(&self.work_send, opts.workers.get()))),
             ("sink_busy_pct", json!(pct(&self.sink, 1))),
             ("sink_wait_pct", json!(pct(&self.sink_wait, 1))),
             ("paused_ms", json!(paused.as_secs_f64() * 1e3)),
@@ -261,17 +324,17 @@ where
     // The items a stopped pass dropped unrun: each was sent, and has no result.
     let dropped = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes)));
+    let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes.get())));
     let pool = Pool::with_budget(budget, opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
     let (raw_tx, raw_rx) = bounded::<(usize, Result<Lease, Failed>, usize)>(pool.slots);
-    let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers * 4);
+    let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers.get().saturating_mul(4));
 
     std::thread::scope(|s| {
         // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool or paused at a
         // checkpoint stop waiting.
         let _stop = StopOnDrop(&stop, &pool, ctl);
-        for _ in 0..opts.readers {
+        for _ in 0..opts.readers.get() {
             let raw_tx = raw_tx.clone();
             let (next, sent, stop, read, pool, timing) = (&next, &sent, &stop, &read, &pool, timing);
             s.spawn(move || {
@@ -316,7 +379,7 @@ where
         }
         drop(raw_tx);
 
-        for _ in 0..opts.workers {
+        for _ in 0..opts.workers.get() {
             let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
             let (init, process, timing, stop, dropped) = (&init, &process, timing, &stop, &dropped);
             s.spawn(move || {
@@ -786,11 +849,12 @@ impl Drop for Lease<'_> {
 impl Pool {
     #[cfg(test)]
     fn new(budget: u64, slots: usize) -> Pool {
-        Pool::with_budget(Arc::new(Budget::new(budget)), slots)
+        Pool::with_budget(Arc::new(Budget::new(budget)), Slots::new(slots).unwrap())
     }
 
-    fn with_budget(budget: Arc<Budget>, slots: usize) -> Pool {
-        let slots = slots.max(1);
+    /// A pool of `slots` buffers within `budget`. The slots are at most [`MAX_SLOTS`], so the room made up front is bounded.
+    fn with_budget(budget: Arc<Budget>, slots: Slots) -> Pool {
+        let slots = slots.get();
         let state = PoolState { serving: 0, held: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
         Pool { budget, slots, state: Mutex::new(state), changed: Condvar::new(), oversize: Mutex::new(()) }
     }
@@ -908,6 +972,37 @@ mod tests {
     #[cfg(unix)]
     fn units(s: &str) -> Vec<Unit> {
         s.as_bytes().to_vec()
+    }
+
+    /// Options of `readers`, `workers` and `slots`, with a 1 MiB budget, at normal priority.
+    fn sized(readers: usize, workers: usize, slots: usize) -> Options {
+        Options {
+            readers: NonZeroUsize::new(readers).unwrap(),
+            workers: NonZeroUsize::new(workers).unwrap(),
+            slots: Slots::new(slots).unwrap(),
+            buffer_bytes: BufferBytes::new(1 << 20).unwrap(),
+            budget: None,
+            priority: Priority::Normal,
+        }
+    }
+
+    // A count of slots is at least one and at most the maximum; the defaults' arithmetic refuses what overflows.
+    #[test]
+    fn slots_and_budgets_out_of_range_are_refused() {
+        assert_eq!(Slots::new(0), None);
+        assert_eq!(Slots::new(MAX_SLOTS + 1), None);
+        assert_eq!(Slots::new(MAX_SLOTS).map(Slots::get), Some(MAX_SLOTS));
+        let n = |n: usize| NonZeroUsize::new(n).unwrap();
+        assert_eq!(Options::slots(n(8), n(12)).map(Slots::get), Some(32));
+        assert_eq!(Options::slots(n(8), n(MAX_SLOTS)), None, "past the maximum");
+        assert_eq!(Options::slots(n(1), n(usize::MAX)), None, "2 × workers overflows");
+        assert_eq!(Options::budget(n(8), n(12)).map(BufferBytes::get), Some(240 << 20));
+        assert_eq!(Options::budget(n(usize::MAX), n(1)), None, "the sum overflows");
+        assert_eq!(Options::budget(n(usize::MAX / 2), n(1)), None, "the bytes overflow");
+        assert_eq!(Options::sized(n(8), n(MAX_SLOTS), Priority::Normal).err(), Some(SizeRefused::TooManySlots));
+        let default = Options::new(Priority::Normal);
+        assert_eq!(default.readers, READERS);
+        assert_eq!(Some(default.slots), Options::slots(default.readers, default.workers));
     }
 
     /// What the pool holds: its bytes are the sum of its buffers' capacities, and there are no more buffers than
@@ -1032,14 +1127,7 @@ mod tests {
                 path.to_str().unwrap().to_string()
             })
             .collect();
-        let opts = Options {
-            readers: 4,
-            workers: 1,
-            slots: 6,
-            buffer_bytes: 1 << 20,
-            budget: None,
-            priority: Priority::Normal,
-        };
+        let opts = sized(4, 1, 6);
         let mut seen = vec![false; paths.len()];
         run(
             Pass { items: &paths, opts: &opts, ctl: &Control::new() },
@@ -1091,14 +1179,7 @@ mod tests {
     /// Each item's result in a pass whose `read` or `process` panics on item 3, and how many times `init` ran.
     fn a_pass_panicking_on_item_3(in_read: bool) -> (Vec<Option<Result<usize, bool>>>, usize) {
         let (dir, items) = numbered_files(if in_read { "pipeline-read-panic" } else { "pipeline-panic" }, 8);
-        let opts = Options {
-            readers: 2,
-            workers: 2,
-            slots: 4,
-            buffer_bytes: 1 << 20,
-            budget: None,
-            priority: Priority::Normal,
-        };
+        let opts = sized(2, 2, 4);
         let inits = AtomicUsize::new(0);
         let mut results = vec![None; items.len()];
         run(
@@ -1132,14 +1213,7 @@ mod tests {
     #[test]
     fn a_stop_sinks_the_items_in_flight_and_runs_no_more() {
         let (dir, items) = numbered_files("pipeline-stop", 40);
-        let opts = Options {
-            readers: 2,
-            workers: 4,
-            slots: 8,
-            buffer_bytes: 1 << 20,
-            budget: None,
-            priority: Priority::Normal,
-        };
+        let opts = sized(2, 4, 8);
         let ctl = Control::new();
         let ran = Mutex::new(Vec::new());
         let sunk = Mutex::new(Vec::new());
@@ -1179,14 +1253,7 @@ mod tests {
     #[test]
     fn a_sink_that_says_stop_is_not_called_again() {
         let (dir, items) = numbered_files("pipeline-sink-stop", 20);
-        let opts = Options {
-            readers: 2,
-            workers: 2,
-            slots: 4,
-            buffer_bytes: 1 << 20,
-            budget: None,
-            priority: Priority::Normal,
-        };
+        let opts = sized(2, 2, 4);
         let calls = AtomicUsize::new(0);
         run(
             Pass { items: &items, opts: &opts, ctl: &Control::new() },
@@ -1231,14 +1298,7 @@ mod tests {
     fn a_failed_init_fails_the_pass() {
         let outcome = within_timeout(|| {
             let (dir, items) = numbered_files("pipeline-init", 4);
-            let opts = Options {
-                readers: 2,
-                workers: 2,
-                slots: 4,
-                buffer_bytes: 1 << 20,
-                budget: None,
-                priority: Priority::Normal,
-            };
+            let opts = sized(2, 2, 4);
             let outcome = run(
                 Pass { items: &items, opts: &opts, ctl: &Control::new() },
                 |(_, p), wide| {
@@ -1262,14 +1322,7 @@ mod tests {
     fn a_sink_error_while_paused_returns_without_a_resume() {
         let outcome = within_timeout(|| {
             let (dir, items) = numbered_files("pipeline-paused", 40);
-            let opts = Options {
-                readers: 2,
-                workers: 1,
-                slots: 64,
-                buffer_bytes: 1 << 20,
-                budget: None,
-                priority: Priority::Normal,
-            };
+            let opts = sized(2, 1, 64);
             let ctl = Control::new();
             let outcome = run(
                 Pass { items: &items, opts: &opts, ctl: &ctl },
@@ -1330,14 +1383,7 @@ mod tests {
                 (i, path.to_str().unwrap().to_string())
             })
             .collect();
-        let opts = Options {
-            readers: 2,
-            workers: 2,
-            slots: 4,
-            buffer_bytes: 1 << 20,
-            budget: None,
-            priority: Priority::Normal,
-        };
+        let opts = sized(2, 2, 4);
         let mut lengths = vec![0; items.len()];
         run(
             Pass { items: &items, opts: &opts, ctl: &Control::new() },
@@ -1399,7 +1445,7 @@ mod tests {
     fn a_shrink_with_buffers_held_waits_for_them_to_come_back() {
         within_timeout(|| {
             let budget = Arc::new(Budget::new(100));
-            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), 4));
+            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), Slots::new(4).unwrap()));
             let a = pool.take(0, 60).unwrap();
             budget.set(40);
             check(&pool, &[&a]);
@@ -1422,7 +1468,7 @@ mod tests {
     fn a_grow_is_seen_by_a_waiting_take_within_a_few_periods() {
         within_timeout(|| {
             let budget = Arc::new(Budget::new(100));
-            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), 4));
+            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), Slots::new(4).unwrap()));
             let a = pool.take(0, 60).unwrap();
             let waiting = take_on_thread(&pool, 1, 50);
             // 60 + 50 is over 100: the take is still waiting after a couple of periods.
@@ -1464,7 +1510,7 @@ mod tests {
         within_timeout(|| {
             let budget = Arc::new(Budget::new(0));
             assert_eq!(budget.get(), 1, "at least one byte");
-            let pool = Arc::new(Pool::with_budget(budget, 4));
+            let pool = Arc::new(Pool::with_budget(budget, Slots::new(4).unwrap()));
             let big = pool.take(0, 500).unwrap();
             assert!(big.bytes.capacity() >= 500);
             check(&pool, &[&big]);
@@ -1495,7 +1541,7 @@ mod batched_tests {
 
     fn options() -> Options {
         let mut opts = Options::new(Priority::Normal);
-        opts.workers = 2;
+        opts.workers = NonZeroUsize::new(2).unwrap();
         opts
     }
 

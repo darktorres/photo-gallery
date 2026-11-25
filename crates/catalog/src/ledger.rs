@@ -30,7 +30,7 @@
 //! - **The import's rows mirror its failed analyses**, kept by triggers on `analysis` (`analysis_import`,
 //!   `analysis_import_rewritten`, `analysis_import_removed`), with the state of the bytes the analysis read.
 //!   `analysis_import` fires its body only for a failure or for a file that has
-//!   a row, so the common analysis, a success with nothing recorded, costs the import one index probe. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, `gallery import --retry`) keeps
+//!   a row, so the common analysis, a success with nothing recorded, costs the import one index probe. A re-analysis that fails on the same bytes (an `IMPORT_VERSION` bump, the user's Retry) keeps
 //!   the row and its serial; a changed file that fails again is a new row with a new serial (a dismissed entry comes back);
 //!   a fixed file's row goes, and so does a deleted analysis's. An in-place update of the analysis by a write-back (the
 //!   app rewrote the file: `file_rewritten`, `analysis_turned_back`) copies the new state into the row and keeps the
@@ -83,10 +83,11 @@
 //! own mark, and a new one makes every height forget how far it was checked, so the next pass looks at every file once. A
 //! new **`BORDERS_VERSION`** (`pg_analysis::borders`, its owner) empties the borders' ledger, as the pass redoes them all.
 //!
-//! **Retry** (the thumbnails' entry) is `Catalog::retry_failures`: the rows go, and the files are listed again by the next
-//! pass, which the job is woken for. The import's rows mirror its analyses and are never deleted by a Retry; its failures
-//! are retried by the import's own retry (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4), and its entry has "Show the failed files", which lists every file whose analysis
-//! failed (the `failed` status, in every folder).
+//! **Retry** is `Catalog::retry_failures`. For the thumbnails and the borders the rows go, and the files are listed again
+//! by the next pass, which the job is woken for. The import's rows mirror its analyses and are never deleted by a Retry:
+//! the present files whose analysis failed are marked pending, the next import pass analyzes them again, and their rows
+//! are hidden while they wait. Its entry also has "Show the failed files", which lists every file whose analysis failed
+//! (the `failed` status, in every folder).
 
 use std::collections::BTreeSet;
 
@@ -109,6 +110,12 @@ use failure::relist_failures;
 mod state;
 pub use failure::{ERROR_BYTES, Failure};
 pub use state::{LedgerAck, LedgerRow, LedgerState};
+
+/// The import's Retry (`Catalog::retry_failures`): every present file whose analysis failed is pending again, in one
+/// bulk statement whose failures are read from their partial index (`analysis_failed`). A file already pending is set
+/// as it is; a missing one waits until it is back and rescanned.
+pub(crate) const IMPORT_RETRY: &str =
+    "UPDATE files SET pending = 1 WHERE missing = 0 AND id IN (SELECT file_id FROM analysis WHERE error IS NOT NULL)";
 
 /// A ledger as the inbox shows it: one entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,15 +192,18 @@ impl Catalog {
         Ok(gone)
     }
 
-    /// Try every failed file of `pass` again: the pass's next run lists them (their `seq` moves on), and the rows go, so
-    /// what still fails is recorded anew. The user's Retry, for the thumbnails and the borders. The import's rows mirror
-    /// its analyses, so they are never deleted here: its failures are retried by the import's own retry (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4), and this
-    /// does nothing for it.
+    /// Try every failed file of `pass` again: the user's Retry. For the thumbnails and the borders, the pass's next run
+    /// lists them (their `seq` moves on), and the rows go, so what still fails is recorded anew. The import's rows mirror
+    /// its analyses, so they are not deleted: the present files whose analysis failed are marked pending, in one statement
+    /// (`IMPORT_RETRY`), and the next import pass analyzes them again. While they are pending the ledger's trigger hides
+    /// their rows (`file_failures_hidden`); a file that fails again is listed again, and one that is made leaves it.
     pub fn retry_failures(&self, pass: FilePass) -> Result<()> {
+        let tx = write_transaction(&self.conn)?;
         if pass == FilePass::Import {
+            tx.execute(IMPORT_RETRY, [])?;
+            tx.commit()?;
             return Ok(());
         }
-        let tx = write_transaction(&self.conn)?;
         relist_failures(&tx, pass.key(), |tx| Ok(tx.execute(failures_relisted!(""), [pass.key()])?))?;
         tx.commit()?;
         Ok(())
@@ -672,7 +682,7 @@ mod tests {
         let [entry] = c.ledger_entries(false).unwrap()[..] else { panic!("one entry") };
         assert_eq!((entry.kind, entry.newest, entry.created), (IMPORT, serial, 5));
         assert_eq!(c.failed_files(FilePass::Import, 10).unwrap()[0].error, "it doesn't decode");
-        // Again, from the same bytes (`--retry`): the same serial, the new error.
+        // Again, from the same bytes (the user's Retry): the same serial, the new error.
         analysis(&c, 1, 10, 100, Some("still no"));
         assert_eq!(serials(&c, "import"), [(1, serial)]);
         assert_eq!(c.failed_files(FilePass::Import, 10).unwrap()[0].error, "still no");
@@ -688,10 +698,45 @@ mod tests {
         assert_eq!(serials(&c, "import").len(), 1);
         c.conn.execute("DELETE FROM analysis WHERE file_id = 2", []).unwrap();
         assert!(serials(&c, "import").is_empty());
-        // Its Retry is the import's own (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4): the catalog's leaves the rows.
+        // Its Retry leaves the rows: it marks the files pending, and the rows are hidden while they wait.
         analysis(&c, 3, 10, 100, Some("no"));
         c.retry_failures(FilePass::Import).unwrap();
         assert_eq!(serials(&c, "import").len(), 1);
+        assert!(!state(&c, IMPORT).live, "hidden while pending");
+    }
+
+    /// Whether file `id` is pending for the import.
+    fn pending(c: &Catalog, id: i64) -> bool {
+        c.conn.query_row("SELECT pending FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+    }
+
+    // The import's Retry marks only the present files whose analysis failed: not one that was analysed, and not one that
+    // is missing. The next import lists them; one that fails again is listed again in the ledger, one that is made leaves it.
+    #[test]
+    fn the_imports_retry_marks_only_present_failed_files_and_a_new_failure_is_listed_again() {
+        let c = catalog(PathRules::Posix);
+        analysis(&c, 1, 10, 100, Some("no"));
+        analysis(&c, 2, 10, 100, None);
+        analysis(&c, 3, 10, 100, Some("no"));
+        analysis(&c, 4, 10, 100, Some("no"));
+        raw::set_missing(&c, FileId::new(3));
+        assert!((1..=4).all(|id| !pending(&c, id)), "every file is analysed as it is");
+        c.retry_failures(FilePass::Import).unwrap();
+        assert_eq!((1..=4).map(|id| pending(&c, id)).collect::<Vec<_>>(), [true, false, false, true]);
+        let mut listed: Vec<i64> =
+            c.pending_import(&crate::VolumeSet::All).unwrap().items.iter().map(|item| item.id.get()).collect();
+        listed.sort_unstable();
+        assert_eq!(listed, [1, 4], "the next import lists the present failed files");
+        assert!(!state(&c, IMPORT).live, "their rows are hidden while they wait");
+        // The import again: file 1 fails again and is listed again; file 4 is made and leaves the ledger.
+        analysis(&c, 1, 10, 100, Some("still no"));
+        analysis(&c, 4, 10, 100, None);
+        assert!(!pending(&c, 1) && !pending(&c, 4));
+        assert!(state(&c, IMPORT).live, "the file that failed again is listed");
+        let failed: Vec<(i64, String)> =
+            c.failed_files(FilePass::Import, 10).unwrap().into_iter().map(|f| (f.file_id.get(), f.error)).collect();
+        assert!(failed.contains(&(1, "still no".to_string())), "{failed:?}");
+        assert!(!failed.iter().any(|(id, _)| *id == 4), "{failed:?}");
     }
 
     under_both_rules!(
@@ -742,7 +787,7 @@ mod tests {
     }
 
     // A turn written back into the file turns its analysis, and the import row follows the analysis's rotation through
-    // `analysis_import_rewritten`, keeping its serial: the same failure, turned. A `--retry` of the same bytes at that
+    // `analysis_import_rewritten`, keeping its serial: the same failure, turned. A Retry of the same bytes at that
     // rotation is the same failure again.
     #[test]
     fn a_turn_written_back_moves_the_import_rows_rotation_and_keeps_its_serial() {
@@ -765,7 +810,7 @@ mod tests {
         // One turn back is rotation 3 (`analysis_turned_back`): the row takes it, and is the same failure.
         assert_eq!(rotations(&c), [3]);
         assert_eq!(serials(&c, "import"), seen, "the same failure, turned: not news");
-        // `--retry` of the same bytes, analysed at that rotation: the row is kept.
+        // The Retry, and the same bytes analysed again at that rotation: the row is kept.
         c.retry_failures(FilePass::Import).unwrap();
         c.conn
             .execute(
@@ -821,7 +866,7 @@ mod tests {
 
     // The import's rows are hidden while their file is missing or pending, and come back with their serials, so none
     // is news again: missing and back, a new IMPORT_VERSION failing the same bytes again, a thumbnail Retry, and a
-    // metadata-only write-back (and a `--retry` after it).
+    // metadata-only write-back (and a Retry after it).
     #[test]
     fn the_imports_rows_come_back_with_their_serials() {
         let c = catalog(PathRules::Posix);
@@ -850,7 +895,7 @@ mod tests {
         c.record_failures(FilePass::Thumbs, &[failure(1, "t")], 2).unwrap();
         c.retry_failures(FilePass::Thumbs).unwrap();
         quiet(&c, "a thumbnail retry");
-        // A metadata-only write-back: the analysis follows the file, and so does its row; `--retry` failing the same
+        // A metadata-only write-back: the analysis follows the file, and so does its row; a Retry failing the same
         // bytes again is the same failure.
         let rating = pg_model::rating::Rating::new(3).unwrap();
         let write = pg_model::write::Write::Rating(Some(rating));

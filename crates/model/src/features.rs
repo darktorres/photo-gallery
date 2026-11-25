@@ -11,14 +11,11 @@ pub struct Features {
     /// Duplicate hashing and pairing: the Hashes pass computes the file and pixel hashes and PDQ when on, and the
     /// Pairing pass runs. The import itself hashes nothing (it reads headers only), so the hashes wait for this.
     pub duplicates: bool,
-    /// Escape hatch: every library folder is processed in one lane, one after another, even on different drives (a setup
-    /// the drive probe can't see through, such as two disk images on one spindle). Off: a lane per physical drive.
-    pub serial_drives: bool,
 }
 
 impl Features {
-    /// The features on as the app starts: borders and duplicates, with a lane per physical drive.
-    pub const ALL: Features = Features { borders: true, duplicates: true, serial_drives: false };
+    /// The features on as the app starts: borders and duplicates.
+    pub const ALL: Features = Features { borders: true, duplicates: true };
 }
 
 #[cfg(test)]
@@ -27,6 +24,6 @@ mod tests {
 
     #[test]
     fn all_features_are_on() {
-        assert_eq!(Features::ALL, Features { borders: true, duplicates: true, serial_drives: false });
+        assert_eq!(Features::ALL, Features { borders: true, duplicates: true });
     }
 }

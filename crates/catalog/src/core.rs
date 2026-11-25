@@ -752,17 +752,16 @@ mod tests {
         let first = next_work(&c);
         let id = first.id;
         assert!(due(&c, id));
-        // Analyzed as it is: done. A failure counts as done; only --retry redoes it.
+        // Analyzed as it is: done. A failure counts as done; only the user's Retry redoes it.
         analyzed(&mut c, &first);
         assert!(!due(&c, id));
-        assert!(c.pending_import(false, &crate::VolumeSet::All).unwrap().is_empty());
-        assert_eq!(c.pending_import(true, &crate::VolumeSet::All).unwrap().len(), 1);
+        assert!(c.pending_import(&crate::VolumeSet::All).unwrap().is_empty());
         // A rescan that changes nothing changes nothing, for the import or the thumbnails.
         let seq = raw::file_seq(&c, id);
         scanned(&mut c, scan, "a.jpg", 10, 100);
         assert_eq!(state(&c, id), (false, seq));
         // Changed while it was being analyzed: what's stored is of the old file.
-        let old = c.pending_import(true, &crate::VolumeSet::All).unwrap().items.remove(0);
+        let old = crate::work::work_item(&c.conn, id).unwrap().unwrap();
         scanned(&mut c, scan, "a.jpg", 11, 101);
         analyzed(&mut c, &old);
         assert!(due(&c, id));
@@ -804,7 +803,7 @@ mod tests {
         let gone = raw::file_seq(&c, id);
         let back = begin(&mut c, &p(rules, r"D:\x"));
         scanned(&mut c, back, "a.mp4", 13, 103);
-        assert_eq!(c.pending_import(false, &crate::VolumeSet::All).unwrap().len(), 0);
+        assert_eq!(c.pending_import(&crate::VolumeSet::All).unwrap().len(), 0);
         assert!(seq < gone && gone < raw::file_seq(&c, id));
     }
 
@@ -864,12 +863,12 @@ mod tests {
         let files =
             files.map(|(id, folder, name)| fixture::File::new(FileId::new(id), FolderId::new(folder), name, 10, 100));
         fixture::insert(&c, &files).unwrap();
-        for item in c.pending_import(false, &crate::VolumeSet::All).unwrap().items {
+        for item in c.pending_import(&crate::VolumeSet::All).unwrap().items {
             analyzed(&mut c, &item);
         }
         // Analyzed, then gone.
         raw::set_missing(&c, FileId::new(5));
-        assert!(c.pending_import(false, &crate::VolumeSet::All).unwrap().is_empty());
+        assert!(c.pending_import(&crate::VolumeSet::All).unwrap().is_empty());
 
         // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
         let mut under = c.files_under(&p(rules, r"D:\x\y")).unwrap();
@@ -883,13 +882,13 @@ mod tests {
         assert_eq!(c.mark_pending(&[FileId::new(2), FileId::new(4), FileId::new(5)]).unwrap(), 2);
         assert_eq!(state(&c, FileId::new(2)), (true, seq));
         assert!(due(&c, FileId::new(4)) && !due(&c, FileId::new(5)) && !due(&c, FileId::new(1)));
-        let work = c.pending_import(false, &crate::VolumeSet::All).unwrap();
+        let work = c.pending_import(&crate::VolumeSet::All).unwrap();
         assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [FileId::new(2), FileId::new(4)]);
         // Analyzed again, as they are: done.
         for item in work.items {
             analyzed(&mut c, &item);
         }
-        assert!(c.pending_import(false, &crate::VolumeSet::All).unwrap().is_empty());
+        assert!(c.pending_import(&crate::VolumeSet::All).unwrap().is_empty());
     }
 
     under_both_rules!(

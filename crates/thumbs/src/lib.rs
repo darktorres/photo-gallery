@@ -523,7 +523,7 @@ mod tests {
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) = Some(state::file_id(&c, "a.png").unwrap());
         let before = announced.load(Ordering::SeqCst);
 
@@ -586,7 +586,7 @@ mod tests {
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
-        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+        pg_import::import(&mut c, &Options::new(Priority::Normal), &pg_catalog::VolumeSet::All, &ctl).unwrap();
         let (events, quiet) = Quiet::bus();
         let cache = ThumbCache::open(
             &dir.join("thumbs.sqlite"),
@@ -760,7 +760,7 @@ mod tests {
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         // Damaged after the import, at the same size and time (as a disk error would leave it): the catalog has it as
         // it was. Another goes.
         let a = images.join("a.png");
@@ -812,7 +812,7 @@ mod tests {
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
-        pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+        pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
         // Damaged after the import, at the same size and time: the import's analysis is what the catalog has.
         let b = images.join("b.png");
         let (len, mtime) = {

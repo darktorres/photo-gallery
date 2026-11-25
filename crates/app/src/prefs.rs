@@ -49,9 +49,6 @@ pub struct Prefs {
     /// Detect the duplicates (on by default): the import hashes the files, and the pairing pass pairs them. Off: the
     /// import leaves the hashes out (the Hashes pass makes them when it is back on), and the pairing waits.
     pub detect_duplicates: bool,
-    /// Process the library folders one after another, even on different drives (the escape hatch of `pg_model::features`).
-    /// Off: a lane per physical drive, so two drives are read and written at once.
-    pub serial_drives: bool,
     /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: nothing is kept or read from it, so every
     /// thumbnail is decoded from its original each time it is shown, the background thumbnail pass waits, and the
     /// Placeholders pass makes no new ThumbHashes (the stored ones still show). What the cache holds is kept, and the
@@ -62,7 +59,7 @@ pub struct Prefs {
 impl Prefs {
     /// The background features these preferences turn on (`pg_model::features`).
     pub fn features(&self) -> Features {
-        Features { borders: self.detect_borders, duplicates: self.detect_duplicates, serial_drives: self.serial_drives }
+        Features { borders: self.detect_borders, duplicates: self.detect_duplicates }
     }
 }
 
@@ -167,7 +164,6 @@ impl Default for Prefs {
             dev_mode: false,
             detect_borders: true,
             detect_duplicates: true,
-            serial_drives: false,
             thumb_cache: true,
         }
     }
@@ -263,7 +259,6 @@ mod tests {
   "dev_mode": false,
   "detect_borders": true,
   "detect_duplicates": true,
-  "serial_drives": false,
   "thumb_cache": true
 }"#;
 
@@ -304,7 +299,7 @@ mod tests {
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"version":1,"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":{"volume":7,"file_index":42,"size":10,"mtime":20},"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"serial_drives":false,"thumb_cache":true}"#
+            r#"{"version":1,"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":334,"last_file":{"volume":7,"file_index":42,"size":10,"mtime":20},"dev_mode":true,"detect_borders":true,"detect_duplicates":true,"thumb_cache":true}"#
         );
     }
 

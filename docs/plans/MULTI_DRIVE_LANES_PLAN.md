@@ -1,7 +1,8 @@
 # Process library folders on different physical drives in parallel (lane per drive)
 
-> **Note (plan phase A2).** The `gallery` command line is removed, and with it `--serial` (plan phase B3 removes `serial_drives`
-> too). The per-drive groups the CLI had are gone; the app's lanes are the only lanes. The `gallery <pass>` names below are
+> **Note (plan phases A2 and B3).** The `gallery` command line is removed, and with it `--serial`; phase B3 removed the
+> `serial_drives` setting and the `serial` parameter of `lanes::plan` and `assign`, and phase B4 refuses opaque disks on
+> Windows (`docs/reference/STORAGE.md`). The per-drive groups the CLI had are gone; the app's lanes are the only lanes. The `gallery <pass>` names below are
 > historical. See `docs/plans/HEADLESS_SESSION_PLAN.md` and `docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`.
 >
 > **Status (2026-11-18).** Phases 0–6 are built in the tree, with the gaps listed below; nothing is committed.

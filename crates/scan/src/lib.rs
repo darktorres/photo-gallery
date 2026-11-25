@@ -415,7 +415,7 @@ impl std::error::Error for ScanError {}
 /// Whether the folder `root` may be scanned for its identities: the reason it may not, if not. The
 /// scan makes this check first, and so does adding a folder to the library.
 pub fn check_folder(rules: PathRules, root: &RulePath) -> Result<(), RefusedReason> {
-    refusal::check_root(&units_of(&rules.join(root)))
+    refusal::check_root(&units_of(&rules.join(root)), &pg_platform::names::disk_path(rules, root))
 }
 
 /// The volume `root` (a library folder) is on, as the walk stores its files' volume (`Listing::volume` of the folder,
@@ -2100,7 +2100,7 @@ mod tests {
         // import's queue holds exactly the two files.
         assert_eq!(c.status().unwrap().analyzed, 2, "both analyses are still stored, stale");
         assert_eq!(
-            c.pending_import(false, &pg_catalog::VolumeSet::All).unwrap().items.len(),
+            c.pending_import(&pg_catalog::VolumeSet::All).unwrap().items.len(),
             2,
             "both files are due for the import"
         );

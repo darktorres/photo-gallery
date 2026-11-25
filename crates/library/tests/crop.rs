@@ -83,7 +83,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     for (id, _) in ids(&c).unwrap() {
         assert!(
             c.crop_source(FileId::new(id), &mut PathArena::default()).unwrap().is_none(),
@@ -181,7 +181,7 @@ fn library_with_borders(dir: &Path) -> Result<(Catalog, Vec<(i64, String)>)> {
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     let found = ids(&c)?;
     Ok((c, found))
@@ -271,7 +271,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() -> Result<()> {
     assert_eq!((s.changed, s.missing, s.pairing.replaced), (0, 0, 0));
 
     // The next import analyzes the cut files, and the border pass looks at them: it finds no border in any.
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     for (id, name) in &found {
         assert!(c.border_sides(FileId::new(*id)).unwrap().is_empty(), "{name}: a border found in the cut");

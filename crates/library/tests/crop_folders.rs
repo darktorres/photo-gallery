@@ -58,7 +58,7 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     let root = pg_platform::names::normalize_path(&images)?;
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl)?;
     let files = state::present_files(&c)?;
     if files.len() != 2 {

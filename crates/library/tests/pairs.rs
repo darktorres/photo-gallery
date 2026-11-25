@@ -36,7 +36,7 @@ fn imported(prefix: &str) -> Result<(Catalog, Control, PathBuf)> {
     let root = pg_platform::names::normalize_path(&images)?;
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
-    pg_import::import(&mut c, &opts(), false, &pg_catalog::VolumeSet::All, &ctl)?;
+    pg_import::import(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl)?;
     // The Hashes pass makes the hashes the import leaves owed: the pairs are made from them.
     pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl)?;
     Ok((c, ctl, dir))
@@ -71,7 +71,7 @@ fn analysed_again(c: &mut Catalog, ctl: &Control) -> Result<()> {
 fn analysed_file_again(c: &mut Catalog, name: &str, ctl: &Control) -> Result<()> {
     let id = state::file_id(c, name)?;
     assert_eq!(c.mark_pending(&[id])?, 1);
-    pg_import::import(c, &opts(), false, &pg_catalog::VolumeSet::All, ctl)?;
+    pg_import::import(c, &opts(), &pg_catalog::VolumeSet::All, ctl)?;
     pg_import::hashes::hash(c, &opts(), &pg_catalog::VolumeSet::All, &|| true, ctl)?;
     Ok(())
 }
@@ -79,7 +79,7 @@ fn analysed_file_again(c: &mut Catalog, name: &str, ctl: &Control) -> Result<()>
 /// Whether the import would analyse the file called `name` now (`files.pending`, of a present file).
 fn due(c: &Catalog, name: &str) -> Result<bool> {
     let id = state::file_id(c, name)?;
-    Ok(c.pending_import(false, &pg_catalog::VolumeSet::All)?.items.iter().any(|i| i.id == id))
+    Ok(c.pending_import(&pg_catalog::VolumeSet::All)?.items.iter().any(|i| i.id == id))
 }
 
 /// Whether the file called `name` is present (not found missing).
@@ -129,7 +129,7 @@ fn the_pair_is_made_while_its_partner_is_away(prefix: &str, away: Step, back: St
 
     let mut c = back(c, &dir, &ctl)?;
     assert!(state::shown_pairs(&c)?.contains(&(lo, hi, 0)), "shown, with b.png back");
-    assert!(c.pending_import(false, &pg_catalog::VolumeSet::All)?.is_empty(), "b.png is back as it was analysed");
+    assert!(c.pending_import(&pg_catalog::VolumeSet::All)?.is_empty(), "b.png is back as it was analysed");
     assert_eq!(c.owed_pairs()?, 0);
     let again = pg_import::pairs::pair(&mut c, &opts(), &ctl)?;
     assert_eq!(again.files, 0, "nothing for a pass to make");

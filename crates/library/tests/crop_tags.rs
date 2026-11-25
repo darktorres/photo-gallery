@@ -46,7 +46,7 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() -> Result<()> 
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     let id = state::file_id(&c, "d.tif").unwrap();
 
@@ -76,7 +76,7 @@ fn a_cut_that_cannot_be_tagged_leaves_the_original_as_it_was() -> Result<()> {
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    pg_import::import(&mut c, &opts, false, &pg_catalog::VolumeSet::All, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     pg_borders::find(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     let id = state::file_id(&c, "d.tif").unwrap();
     let before = std::fs::read(&path).unwrap();

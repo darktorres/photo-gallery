@@ -504,8 +504,9 @@ impl Inbox {
         }
     }
 
-    /// Try `pass`'s failed files again (`pg_catalog::Catalog::retry_failures`), one write of the writer's; `then` runs
-    /// once that is written (the job is woken to make them). When it fails the inbox is read again, so the entry is shown
+    /// Try `pass`'s failed files again (`pg_catalog::Catalog::retry_failures`), one write of the writer's: the thumbnails'
+    /// and the borders' rows go, and the import's failed files are marked pending. `then` runs once that is written (the
+    /// job is woken to make them). When it fails the inbox is read again, so the entry is shown
     /// as it is.
     pub fn retry(&self, pass: FilePass, then: Box<dyn FnOnce() + Send>) {
         self.push(|w| w.mutation(Mutation::Retry(pass, then)));

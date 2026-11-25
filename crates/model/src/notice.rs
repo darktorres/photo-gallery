@@ -1531,7 +1531,9 @@ impl Notice {
     pub fn actions(&self) -> Vec<Action> {
         match self.lifecycle() {
             Lifecycle::Transient => Vec::new(),
-            Lifecycle::Ledger(LedgerKind::File(FilePass::Import)) => vec![Action::ShowFailedFiles, Action::CopyDetails],
+            Lifecycle::Ledger(LedgerKind::File(FilePass::Import)) => {
+                vec![Action::Retry, Action::ShowFailedFiles, Action::CopyDetails]
+            }
             Lifecycle::Ledger(LedgerKind::File(FilePass::Thumbs)) => vec![Action::Retry, Action::CopyDetails],
             Lifecycle::Ledger(LedgerKind::File(FilePass::Borders) | LedgerKind::ScanFolders)
             | Lifecycle::Event

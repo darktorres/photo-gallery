@@ -98,11 +98,10 @@ struct Counts {
 pub fn import(
     catalog: &mut Catalog,
     opts: &Options,
-    retry_errors: bool,
     volumes: &pg_catalog::VolumeSet,
     ctl: &Control,
 ) -> Result<ImportStats> {
-    import_while(catalog, opts, retry_errors, volumes, &|| true, ctl)
+    import_while(catalog, opts, volumes, &|| true, ctl)
 }
 
 /// Analyzes the pending files of `volumes`. `still_wanted` is asked after each batch: false ends the pass there, and the
@@ -110,7 +109,6 @@ pub fn import(
 pub fn import_while(
     catalog: &mut Catalog,
     opts: &Options,
-    retry_errors: bool,
     volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
     ctl: &Control,
@@ -119,7 +117,7 @@ pub fn import_while(
     let mut pass = pg_perf::span("pass.import");
     let tx_at = pg_catalog::tx_mark();
     let pending = pg_perf::span("pending.import");
-    let work = catalog.pending_import(retry_errors, volumes)?;
+    let work = catalog.pending_import(volumes)?;
     drop(pending);
     let stored_at = STORE.mark();
     let items = &work.items;

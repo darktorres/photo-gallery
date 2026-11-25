@@ -98,6 +98,9 @@ pub enum RefusedReason {
         /// The file system's name.
         file_system: String,
     },
+    /// The folder's volume is on a disk whose backing can't be seen (Windows): a virtual or file-backed disk (VHD, VHDX),
+    /// Storage Spaces, a RAID controller, iSCSI, or an unknown bus. Only NTFS on plain physical disks is supported.
+    OpaqueDisk,
     /// An NFS mount (Linux): its inode numbers come from the server.
     Nfs,
     /// An SMB or CIFS share (Linux).
@@ -129,6 +132,8 @@ pub enum Fact {
     RealVolume,
     /// The file system's type.
     FileSystem,
+    /// The disks the folder's volume is on, and their buses (`pg_platform::drive`).
+    Drive,
 }
 
 impl RefusedReason {
@@ -141,6 +146,7 @@ impl RefusedReason {
             RefusedReason::Unreadable { fact: Fact::RealPath, .. } => "unreadable-real-path",
             RefusedReason::Unreadable { fact: Fact::RealVolume, .. } => "unreadable-real-volume",
             RefusedReason::Unreadable { fact: Fact::FileSystem, .. } => "unreadable-file-system",
+            RefusedReason::Unreadable { fact: Fact::Drive, .. } => "unreadable-drive",
             RefusedReason::NetworkDrive => "network-drive",
             RefusedReason::RemovableDrive => "removable-drive",
             RefusedReason::OtherDrive => "other-drive",
@@ -148,6 +154,7 @@ impl RefusedReason {
             RefusedReason::RealNotLocal => "real-not-local",
             RefusedReason::RealOnOtherVolume => "real-on-other-volume",
             RefusedReason::NotNtfs { .. } => "not-ntfs",
+            RefusedReason::OpaqueDisk => "opaque-disk",
             RefusedReason::Nfs => "nfs",
             RefusedReason::Smb => "smb",
             RefusedReason::Fat => "fat",

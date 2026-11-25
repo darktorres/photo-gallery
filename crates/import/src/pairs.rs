@@ -150,7 +150,8 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     let loading = Instant::now();
     // Read on connections of their own, `analysis` in as many parts as the join has threads, closed (their caches
     // freed) as soon as the pictures are read.
-    let parts = settings.load_parts.unwrap_or(opts.workers);
+    let workers = opts.workers.get();
+    let parts = settings.load_parts.unwrap_or(workers);
     let mut work = catalog.reader(settings.cache_kib)?.pairing_work_split(parts, &start)?;
     if settings.guard {
         // An epoch no catalog has: every write finds another.
@@ -172,7 +173,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     // as the store is made, freed on a thread of its own beside the first join (on the pass's thread it took 1.9 ms, a
     // proven 1% of a one-worker join for 300 owed), and the guard asks the join for a picture's (`Joiner::original`).
     let hashes = std::mem::take(&mut work.hashes);
-    let joiner = Joiner::new_on(&hashes, &work.owed, opts.workers, &start)?.tuned(settings.join);
+    let joiner = Joiner::new_on(&hashes, &work.owed, workers, &start)?.tuned(settings.join);
     stats.timings.store = building.elapsed();
 
     // The phase ends when this is dropped, however the pass leaves. Its progress is the owed pictures paired so far.
@@ -191,7 +192,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
         start();
         let joining = Instant::now();
         let joined = match (slice.first(), slice.last()) {
-            (Some(&first), Some(&last)) => joiner.join(first..last + 1, opts.workers, &start, &control, &stop),
+            (Some(&first), Some(&last)) => joiner.join(first..last + 1, workers, &start, &control, &stop),
             _ => Some(Joined { pairs: Vec::new(), times: JoinTimes::default() }),
         };
         (joined, joining.elapsed())

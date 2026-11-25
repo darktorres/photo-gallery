@@ -296,7 +296,9 @@ When a feature is switched off, its pass returns `Done` before `ctl.begin`. The 
 
 ### 2.10 Thread priorities
 
-- `Priority::AboveNormal` is added to `pg_platform::priority::Priority` (`crates/platform/src/priority.rs:6-10`; today `Normal`, `BelowNormal`, `Idle`). Windows: `THREAD_PRIORITY_ABOVE_NORMAL` (value 1 in windows-sys 0.61, which the workspace pins in `[workspace.dependencies]`); the match at `:18-22` gains the arm. Linux: `AboveNormal` is a no-op, like `Normal`. Setting nice 0 would reset a thread that an earlier call had lowered, and a negative nice needs privilege. Other platforms: no-op (`:53-54`).
+> **Note (STORAGE_AND_CLEANUPS_PLAN phase B3).** `Priority::Idle` is removed: every pass runs at `BelowNormal`, the one background class, and `Normal` stays for work the user waits for. The `Idle` arm below and the thumbnails' `Idle` in the priorities table further down are historical.
+
+- `Priority::AboveNormal` is added to `pg_platform::priority::Priority` (`crates/platform/src/priority.rs:6-10`; then `Normal`, `BelowNormal`, `Idle`). Windows: `THREAD_PRIORITY_ABOVE_NORMAL` (value 1 in windows-sys 0.61, which the workspace pins in `[workspace.dependencies]`); the match at `:18-22` gains the arm. Linux: `AboveNormal` is a no-op, like `Normal`. Setting nice 0 would reset a thread that an earlier call had lowered, and a negative nice needs privilege. Other platforms: no-op (`:53-54`).
 
 ```rust
 let nice = match priority {

@@ -4,7 +4,7 @@
 
 /// Whether the `files` row being written needs its analysis (re)done: no analysis made from it as it is now (at
 /// `meta.import_version` or later, from the same size, mtime, catalog rotation and kind). A failure counts as made:
-/// `--retry-errors` redoes those. Inside `UPDATE files … WHERE id = …`.
+/// the user's Retry marks those pending (`Catalog::retry_failures`). Inside `UPDATE files … WHERE id = …`.
 macro_rules! stale {
     () => {
         "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id

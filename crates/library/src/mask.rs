@@ -1,4 +1,4 @@
-//! Which of a lane's passes a round runs. The app runs them all; a driver (`pg-dev`, the tests) can run a chosen set, and the
+//! Which of a lane's passes a round runs. The app runs them all; a driver (`pg-driver`, the tests) can run a chosen set, and the
 //! passes it leaves out are skipped in the real round, not run some other way. The set is held in a cell the job reads at
 //! the start of each round, so a change applies from the next round.
 

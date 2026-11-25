@@ -18,7 +18,8 @@ const WAIT: Duration = Duration::from_secs(120);
 /// the home and the images.
 fn library(prefix: &str, names: &[&str]) -> Result<(PathBuf, PathBuf, PathBuf), Box<dyn std::error::Error>> {
     let dir = pg_testkit::run_folder_with("pg_driver_tests", prefix, &["home", "images"])?;
-    let pixels: Vec<u8> = (0..8u32 * 8 * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap_or(0)).collect();
+    let pixels: Vec<u8> =
+        (0..8u32 * 8 * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap_or(0)).collect();
     let images = dir.join("images");
     for name in names {
         std::fs::write(images.join(name), pg_codec::fixtures::png_rgb(8, 8, &pixels)?)?;

@@ -313,8 +313,8 @@ def pin_failure_times(catalog: Path) -> None:
 
 def new_template(driver: Path, folder: Path, template: str) -> Path:
     """One side's template catalog, made by the side's own driver (`pg-driver`), with everything the app would do in the
-    background done: a run starts with nothing left to process. The borders pass runs last, since the app runs it after the import, and it
-    races the screenshot's wait while any file is still due.
+    background done: a run starts with nothing left to process. The borders pass runs last, since the app runs it after the
+    import, and it races the screenshot's wait while any file is still due.
 
     `default` is made from nothing over the library. `broken` is made incrementally from the side's default template (the
     sibling folder `default`, made first): its catalog copied, target/shots/broken added as a library folder, then the

@@ -40,7 +40,8 @@ fn a_pinned_reader_count_is_the_one_the_pipeline_reads_with() {
 fn a_missing_home_is_refused_unless_it_is_created() {
     let dir = pg_testkit::run_folder("pg_driver_tests", "missing-home").unwrap();
     let home = dir.join("nowhere");
-    let refused = Command::new(env!("CARGO_BIN_EXE_pg-driver")).arg("status").arg("--home").arg(&home).output().unwrap();
+    let refused =
+        Command::new(env!("CARGO_BIN_EXE_pg-driver")).arg("status").arg("--home").arg(&home).output().unwrap();
     assert!(!refused.status.success(), "a missing home is refused");
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--create"), "the refusal says how to make it");
     assert!(!home.exists(), "nothing is made without --create");

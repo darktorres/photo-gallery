@@ -1,8 +1,8 @@
 # Profiling
 
 > The `gallery` command line that many runs here were made with is gone (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2).
-> Read `gallery <pass>` as `pg-dev run --passes <name>` against a home folder of its own, and `gallery perf <file>` as
-> `pg-dev perf <file>`. The recorded numbers are unchanged.
+> Read `gallery <pass>` as `pg-driver run --passes <name>` against a home folder of its own, and `gallery perf <file>` as
+> `pg-driver perf <file>`. The recorded numbers are unchanged.
 
 How the app's CPU cost is measured, and what the measurements say. Costs are counted in **instructions executed**, not
 time: the tools below instrument every instruction, so the counts are exact and do not depend on clock speed or

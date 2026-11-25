@@ -11,8 +11,8 @@ be running.
     linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
     linux.py eval SCRIPT [ARGS...] an eval script (a path under eval/), on the working tree, with the pg-eval volume
     linux.py ann-worker JOB        eval/ann/cpu_worker.py on one job file (eval/ann/methods.py runs it)
-    linux.py driver OUT            a headless Linux `pg-driver` (release, the developer's driver: no Qt) of the working tree, copied
-                                   into OUT, to run elsewhere (WSL runs binaries, and builds nothing)
+    linux.py driver OUT            a headless Linux `pg-driver` (release, the developer's driver: no Qt) of the working
+                                   tree, copied into OUT, to run elsewhere (WSL runs binaries, and builds nothing)
     linux.py shell                 a shell in the checks image, on the working tree
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs and nothing is
@@ -275,11 +275,42 @@ def run(image, command, mounts_list, flags=(), env=(), workdir="/work", tty=Fals
     return subprocess.run(cmd, check=False).returncode
 
 
+def other_volume():
+    """The second volume the park test needs (crates/library/src/park_tests.rs): a Docker named volume, which is a file system
+    of its own beside the container's root. The test reads its path from PG_TEST_OTHER_VOLUME, and it is skipped without it.
+    A new volume belongs to root, so it is handed to the container's user first (as docker/README.md does for the caches)."""
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            "root",
+            "--entrypoint",
+            "chown",
+            "-v",
+            "pg-other-volume:/other-volume",
+            CHECKS,
+            "-R",
+            "pg:pg",
+            "/other-volume",
+        ],
+        check=True,
+    )
+    return ["-v", "pg-other-volume:/other-volume"]
+
+
 def check(head):
     ensure_image(CHECKS, "base")
     if head:
         refresh_head()
-    return run(CHECKS, ["python3", "docker/check.py"], mounts(), workdir="/head" if head else "/work")
+    return run(
+        CHECKS,
+        ["python3", "docker/check.py"],
+        [*mounts(), *other_volume()],
+        env=["PG_TEST_OTHER_VOLUME=/other-volume"],
+        workdir="/head" if head else "/work",
+    )
 
 
 def head_run(tag, target, command, flags=(), extra_mounts=(), env=()):
@@ -462,7 +493,9 @@ def main():
     eval_parser.add_argument("script", help="the script, a path under eval/")
     ann_parser = commands.add_parser("ann-worker", help="eval/ann/cpu_worker.py on one job file")
     ann_parser.add_argument("job", help="the job file (job.json), with this machine's paths")
-    driver_parser = commands.add_parser("driver", help="a headless Linux pg-driver (the developer's driver), copied into a host folder")
+    driver_parser = commands.add_parser(
+        "driver", help="a headless Linux pg-driver (the developer's driver), copied into a host folder"
+    )
     driver_parser.add_argument("out", help="the host folder to copy it into")
     commands.add_parser("shell", help="a shell in the checks image")
     options, rest = parser.parse_known_args()

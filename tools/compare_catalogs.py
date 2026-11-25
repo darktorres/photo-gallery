@@ -19,7 +19,7 @@ def counts(path):
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
             )
         ]
-        return {name: conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0] for name in names}
+        return {name: conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0] for name in names}  # noqa: S608 (the names are the file's own tables, from sqlite_master)
     finally:
         conn.close()
 

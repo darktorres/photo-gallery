@@ -43,9 +43,7 @@ pub(crate) fn install() -> Option<String> {
     let perf = pg_platform::env::read(pg_platform::env::Var::PerfLog).and_then(|file| {
         let meta = serde_json::json!({ "program": pg_perf::PROGRAM, "version": env!("CARGO_PKG_VERSION") });
         let path = std::path::Path::new(&file);
-        pg_perf::open(path, meta)
-            .err()
-            .map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
+        pg_perf::open(path, meta).err().map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
     });
     problem.or(perf)
 }

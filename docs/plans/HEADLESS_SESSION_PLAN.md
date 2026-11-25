@@ -2,6 +2,8 @@
 
 Part A of one plan that was split in phase 0. The combined text is in commit `a8efee20`. The other parts are `STORAGE_AND_CLEANUPS_PLAN.md` (Part B) and `ADAPTIVE_READERS_PLAN.md` (Part C).
 
+> **Naming (added when it shipped).** This plan calls the driver `pg-dev`, `crates/dev` and `pg_dev`. It shipped as `pg-driver`, `crates/driver` and `pg_driver`, with the type `Headless`. The Linux check container keeps the name `pg-dev` (`docker/`, `tools/linux.py`).
+
 **Global phase order:** A1, A2 (this document); B3, B4 (`STORAGE_AND_CLEANUPS_PLAN.md`); C5 to C10 (`ADAPTIVE_READERS_PLAN.md`). Phase numbers are global, so references between the documents stay valid.
 
 ## Context

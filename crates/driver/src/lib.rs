@@ -48,6 +48,9 @@ pub struct Setup {
     pub passes: PassMask,
     /// The background work on: the borders and the duplicates.
     pub features: Features,
+    /// Where the writer fails, for the tests of a failing writer (the `fault` feature). `None` is the writer as the app runs it.
+    #[cfg(feature = "fault")]
+    pub writer_fault: Option<pg_writeback::fault::Fault>,
 }
 
 impl Setup {
@@ -61,6 +64,8 @@ impl Setup {
             pin_workers: None,
             passes: PassMask::ALL,
             features: Features::ALL,
+            #[cfg(feature = "fault")]
+            writer_fault: None,
         }
     }
 }
@@ -171,6 +176,8 @@ impl Headless {
                     passes: setup.passes,
                 },
                 writer: setup.writer,
+                #[cfg(feature = "fault")]
+                writer_fault: setup.writer_fault,
             },
             ..Config::from_layout(layout.clone())
         };
@@ -255,10 +262,13 @@ impl Headless {
             self.app.library().wake_writer();
             let left = self.catalog()?.left_to_write()?;
             // A write that fails leaves the queue too, so the writer's error is read even when nothing is left: the run
-            // fails with it. A writer that stopped with changes still queued ends the run now, not at the timeout.
+            // fails with it. A writer that stopped while this run had changes to write ends the run now, not at the timeout:
+            // a change the writer had taken when it stopped is no longer counted as left, so `queued` decides.
             if let Some(library) = self.app.library().running() {
                 let activity = library.status();
-                let stopped = activity.writer_stopped && left > 0;
+                // The writer's thread ended: whatever it had taken is not known to be written, so a run that had changes to write
+                // fails with it, rather than waiting for the app to give up restarting the writer.
+                let stopped = activity.writer_down && queued > 0;
                 if let Some(error) = writer_failure(left, activity.writes.error.as_ref(), stopped) {
                     return Err(error);
                 }

@@ -77,7 +77,7 @@ dev *args: _qt
 # The unit and integration tests. Qt's bin is on PATH (above): pg-desktop's tests link Qt and need its DLLs. FFmpeg isn't
 # on PATH: pg-video loads its DLLs by full path (crates/video/src/ffi/load.rs), so no PATH order decides which copy runs.
 test *args: _qt
-    cargo test --workspace --locked --timings {{ args }}
+    cargo test --workspace --locked --timings --features pg-driver/fault {{ args }}
 
 # The eval tools' Python tests (stdlib unittest). The viewer imports Pillow. CI runs it in the Windows job.
 test-eval:

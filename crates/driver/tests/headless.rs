@@ -121,6 +121,7 @@ fn a_removal_left_unfinished_is_finished_when_the_job_next_starts() {
     let catalog = Catalog::open(&Layout::in_home(&home).catalog_path(), PATH_RULES).unwrap();
     let root = catalog.roots().unwrap().remove(0);
     catalog.begin_removal(root.id, &root.path).unwrap();
+    assert!(!headless.quiescent(), "an unfinished removal is work the job owes");
     drop(catalog);
     drop(headless);
 
@@ -263,8 +264,31 @@ fn a_folder_whose_walk_another_process_holds_keeps_the_job_busy_until_it_is_rele
     let lease = catalog.begin_scan(&root).unwrap();
     let held = headless.run(PassMask::ALL, Duration::from_secs(3));
     assert!(matches!(held, Err(Error::Timeout { .. })), "a busy folder keeps the job busy: {held:?}");
+    assert!(!headless.quiescent(), "a walk another process holds keeps the job busy");
     drop(lease);
     headless.wait_quiet(WAIT).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_write_run_returns_with_its_catalog_and_cache_closed() {
+    // A run's own handles on the catalog and the thumbnail cache are closed when its write returns and the run is dropped.
+    // On Windows an open SQLite file cannot be renamed, so renaming each file and back is the check that nothing holds it.
+    let (dir, home, images) = library("dev-write-closed", &["a.png"]).unwrap();
+    let mut writing = setup(&home);
+    writing.writer = true;
+    let headless = Headless::open(&writing).unwrap();
+    headless.add_folder(&images).unwrap();
+    headless.run(PassMask::ALL, WAIT).unwrap();
+    headless.write_pending(WAIT).unwrap();
+    drop(headless);
+
+    let layout = Layout::in_home(&home);
+    for file in [layout.catalog_path(), layout.thumbs_path()] {
+        let moved = file.with_extension("moved");
+        std::fs::rename(&file, &moved).unwrap();
+        std::fs::rename(&moved, &file).unwrap();
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -44,7 +44,6 @@ const MAX_RESTARTS: u32 = 3;
 const RESTART_WAIT: Duration = Duration::from_secs(5);
 const RESTART_RESET: Duration = Duration::from_secs(60);
 
-/// The job and the writer, and the bus they announce on.
 /// How a library starts: the job's settings (`RunnerConfig`), and whether the writer runs. The app runs the writer. A headless
 /// run on a real catalog does not, so the ratings and turns queued in the catalog are written into the files only when a run
 /// asks for it.
@@ -54,12 +53,37 @@ pub struct StartConfig {
     pub runner: RunnerConfig,
     /// Whether the writer runs.
     pub writer: bool,
+    /// Where the writer fails, for the tests of what a failing writer does to a run (`pg-driver`'s `fault` feature). `None`
+    /// is the writer as the app runs it.
+    #[cfg(feature = "fault")]
+    pub writer_fault: Option<pg_writeback::fault::Fault>,
 }
 
 impl Default for StartConfig {
     fn default() -> StartConfig {
-        StartConfig { runner: RunnerConfig::default(), writer: true }
+        StartConfig {
+            runner: RunnerConfig::default(),
+            writer: true,
+            #[cfg(feature = "fault")]
+            writer_fault: None,
+        }
     }
+}
+
+/// The writer as `start` asks for it: with the test fault it names, when there is one.
+fn spawn_writer(
+    catalog_path: PathBuf,
+    thumbs: Arc<ThumbCache>,
+    changes: Arc<Bus<Change>>,
+    notices: Arc<dyn NoticeSink>,
+    start: &StartConfig,
+) -> pg_writeback::Result<Writer> {
+    #[cfg(feature = "fault")]
+    if let Some(fault) = start.writer_fault {
+        return Writer::start_with_fault(catalog_path, thumbs, changes, fault, notices);
+    }
+    let _ = start;
+    Writer::start(catalog_path, thumbs, changes, notices)
 }
 
 /// The started job, and its writer when there is one.
@@ -115,6 +139,9 @@ pub struct LibraryActivity {
     /// The writer died too often (a panic outside its jobs, at every start) and is no longer started: the changes stay
     /// queued in the catalog, and are written when the app starts again.
     pub writer_stopped: bool,
+    /// The writer's thread is not running now: it ended, and until the app starts it again (after a wait) nothing is written.
+    /// Set at once, where `writer_stopped` is set only once the app gives up restarting it.
+    pub writer_down: bool,
     /// The generation of the library's state, which changes when its contents do.
     pub generation: Generation,
     /// Rounds of the job so far (for measuring).
@@ -147,7 +174,7 @@ impl Library {
         )
         .map_err(failed)?;
         let writer = if start.writer {
-            let writer = Writer::start(catalog_path.clone(), thumbs.clone(), changes.clone(), notices.clone())
+            let writer = spawn_writer(catalog_path.clone(), thumbs.clone(), changes.clone(), notices.clone(), &start)
                 .map_err(failed)?;
             Some(Mutex::new(WriterSlot {
                 writer,
@@ -314,12 +341,12 @@ impl Library {
     /// The job's and the writer's state now.
     pub fn status(&self) -> LibraryActivity {
         // Without a writer, nothing is written and nothing has turned: the writer's part is its idle state.
-        let (writes, turned, writer_stopped) = match self.writer() {
+        let (writes, turned, writer_stopped, writer_down) = match self.writer() {
             Some(mut slot) => {
                 self.tend(&mut slot);
-                (slot.writer.status(), slot.writer.turned(), slot.given_up)
+                (slot.writer.status(), slot.writer.turned(), slot.given_up, !slot.writer.is_running())
             }
-            None => (WriteStatus::default(), Default::default(), false),
+            None => (WriteStatus::default(), Default::default(), false, false),
         };
         LibraryActivity {
             progress: self.runner.progress(),
@@ -327,6 +354,7 @@ impl Library {
             writes,
             turned,
             writer_stopped,
+            writer_down,
             generation: self.runner.generation(),
             rounds: self.runner.rounds(),
         }

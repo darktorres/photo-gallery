@@ -122,7 +122,7 @@ fn counted(hooks: &TestHooks) -> Arc<AtomicUsize> {
 #[test]
 #[ignore = "a measurement: 100,000 files, run with --ignored --nocapture"]
 fn hide_window_for_100k_files() -> Result<()> {
-    let base = match std::env::var_os("PG_TEST_OTHER_VOLUME") {
+    let base = match std::env::var_os(pg_testkit::inputs::OTHER_VOLUME) {
         Some(other) => PathBuf::from(other),
         None => pg_testkit::run_folder("scratch_library", "hide_100k")?,
     };
@@ -458,6 +458,23 @@ fn a_crop_park_and_a_removal_park_on_one_volume_both_hold_the_lane() -> Result<(
 /// the lane starts while the removal is held imports none of them (section 1, P1). The pictures are catalogued after the
 /// first round, so nothing is waiting to be imported then.
 #[test]
+fn a_lane_in_a_round_is_not_quiescent_until_the_round_ends() -> Result<()> {
+    let (dir, catalog_path, _a) = folder_with_pictures("quiescent_round", 3, false)?;
+    let hooks = Arc::new(TestHooks::default());
+    let held = Arc::new(Gate::default());
+    hold_first_round(&hooks, &held);
+    let (runner, _quiet) = start(&dir, &catalog_path, Fake(vec![("a", disk(1))]), hooks)?;
+    let _release = Release(held.clone());
+    pg_testkit::wait_until(WAIT, || "the lane's first round is held", || held.entered());
+    assert!(!runner.quiescent(), "a lane in a round is not quiet");
+    held.open();
+    pg_testkit::wait_until(WAIT, || "the round ends and the job is quiet", || runner.quiescent());
+    assert!(runner.stop(WAIT));
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
 fn a_round_held_when_its_folder_is_removed_imports_none_of_it() -> Result<()> {
     let (dir, catalog_path, a) = folder_with_pictures("p1_import", 20, false)?;
     // A second folder on `a`'s drive keeps the lane alive through the removal.
@@ -524,7 +541,7 @@ fn a_removal_begun_during_a_scan_leaves_no_file_of_the_folder() -> Result<()> {
 /// without it the test is skipped, which its output says.
 #[test]
 fn a_park_on_one_volume_leaves_a_lane_on_another_running() -> Result<()> {
-    let Some(other) = std::env::var_os("PG_TEST_OTHER_VOLUME").map(PathBuf::from) else {
+    let Some(other) = std::env::var_os(pg_testkit::inputs::OTHER_VOLUME).map(PathBuf::from) else {
         eprintln!("skipped: PG_TEST_OTHER_VOLUME names no directory on a second real volume");
         return Ok(());
     };

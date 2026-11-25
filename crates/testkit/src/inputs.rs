@@ -63,6 +63,9 @@ pub const JOIN_DUMP: &str = "PG_JOIN_DUMP";
 /// A benchmark's output label: the name printed on the benchmark's result line.
 pub const LABEL: &str = "PG_LABEL";
 
+/// An input a test reads: a folder on a second real volume, for the park test that needs two volumes. Without it that test is
+/// skipped, and its output says so.
+pub const OTHER_VOLUME: &str = "PG_TEST_OTHER_VOLUME";
 /// An input a test or a rehearsal reads: a real catalog the ignored catalog tests open read-only.
 pub const TEST_CATALOG: &str = "PG_TEST_CATALOG";
 /// An input a test or a rehearsal reads: the real catalog a rehearsal copies and runs on; the original is never opened

@@ -753,10 +753,10 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 - Locations:
   - `crates/cli/src/borders.rs:136` std::fs::write(csv, out).with\1context(\1\1 format!("writing {}", csv.display()))?;
 
-### SEC-043 [low/data-integrity] --buffer-mb shift silently wraps to 0 for multiples of 2^44 — CONFIRMED
+### SEC-043 [low/data-integrity] --buffer-mb shift silently wraps to 0 for multiples of 2^44 — CONFIRMED, CLOSED (phase A2)
 
 - Verdict: CONFIRMED. mb.max(1) \<\< 20 wraps to 0 for large values (args.rs:54).
-- Status: the wrap is fixed. The megabyte shift saturates (`crates/cli/src/args.rs:58`, from `9d167729`), so the value no longer wraps to zero. Two silent behaviours remain: a value past `u64` saturates to an unlimited budget, and `--readers`, `--workers` and `--slots` clamp zero to one. Both flags are removed with the command line (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2), and the typed options refuse zero and overflow (`docs/plans/STORAGE_AND_CLEANUPS_PLAN.md` section 5, phase B3). **Open until phase A2 lands.**
+- Status: the wrap is fixed. The megabyte shift saturates (`crates/cli/src/args.rs:58`, from `9d167729`), so the value no longer wraps to zero. Two silent behaviours remain: a value past `u64` saturates to an unlimited budget, and `--readers`, `--workers` and `--slots` clamp zero to one. Both flags are removed with the command line (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2), and the typed options refuse zero and overflow (`docs/plans/STORAGE_AND_CLEANUPS_PLAN.md` section 5, phase B3). **Closed.** Phase A2 removed the command line and with it `--buffer-mb` (commit `dce78ba0`), so no user can pass a megabyte budget any more. The typed options that refuse zero and overflow are phase B3 (`docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`).
 
 - Confidence: high
 - Kind: overflow

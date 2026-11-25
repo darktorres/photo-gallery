@@ -21,6 +21,8 @@ STEPS = [
     # The features the workspace step does not turn on (tools/check_feature_coverage.py checks that every feature has one).
     ["cargo", "clippy", "-p", "pg-gallery", "--features", "dhat-heap", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "clippy", "-p", "pg-model", "--features", "specta", "--all-targets", "--locked", "--", "-D", "warnings"],
+    ["cargo", "clippy", "-p", "pg-app", "--features", "fault", "--all-targets", "--locked", "--", "-D", "warnings"],
+    ["cargo", "clippy", "-p", "pg-driver", "--features", "fault", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "check", "-p", "pg-model", "-p", "pg-client", "--locked", "--target", "wasm32-unknown-unknown"],
     # The workspaces outside the root (fuzz and eval/*-decoders have their own lockfiles): their lock must not be stale.
     ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],

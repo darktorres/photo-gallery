@@ -26,6 +26,10 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
+[features]
+# The writer's test faults (`StartConfig::writer_fault`): a driver's tests make the writer fail where they say.
+fault = ["pg-writeback/fault"]
+
 [dev-dependencies]
 pg-catalog = { path = "../catalog", features = ["fixture"] }
 # A test decodes the JPEG the Yandex search sends, and the image files the tests write (`pg_codec::fixtures`).

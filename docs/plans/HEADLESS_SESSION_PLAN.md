@@ -85,7 +85,7 @@ Each condition gets a test. `idle()` stays for its current caller.
 
 Commands:
 
-- `run --catalog-dir D [--add F...] [--height N]... [--passes ...] [--pin-readers N] [--pin-workers N] --until-idle --timeout S`
+- `run --home H [--create] [--add F...] [--height N]... [--passes ...] [--pin-readers N] [--pin-workers N] [--timeout S] [--perf FILE]`. As built (`pg-driver`): a run always waits until the job is quiet, so the plan's `--until-idle` is not a flag. `--catalog-dir` is `--home`, and a missing home is refused unless `--create` is given.
 - `status`
 - `remove [--discard-pending]`
 - `write`
@@ -171,7 +171,7 @@ It does not become one full round, so the catalogs match what it built before. T
 - `cargo test -p pg-library --locked` for the runner and `lanes`.
 - `just check`, `just lint`, `just modgraph` (no cycle from `crates/dev`), `cargo doc -D warnings`, `cargo machete`, and `tools/test_ci_files.py`.
 - Catalog diff: `compare_shots.py` builds from `pg-dev` runs produce the same per-table row counts as the old `gallery` sequence. Record those counts once, from the old binary, before phase A2.
-- `pg-dev run --until-idle` on a scratch library returns a JSON summary. `write` on a copy leaves the original files unchanged.
+- `pg-driver run` on a scratch library returns a JSON summary once the job is quiet (no `--until-idle`: a run always waits). `write` on a copy leaves the original files unchanged.
 
 ## Risks and unverified
 

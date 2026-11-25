@@ -14,6 +14,10 @@ workspace = true
 name = "pg-driver"
 path = "src/main.rs"
 
+[features]
+# The writer's test faults (`Setup::writer_fault`): the tests of a run whose writer fails, `cargo test -p pg-driver --features fault`.
+fault = ["pg-app/fault", "pg-writeback/fault"]
+
 [dependencies]
 pg-app = { path = "../app" }
 pg-catalog = { path = "../catalog" }

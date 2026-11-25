@@ -43,7 +43,7 @@ def main() -> None:
     print("\n== Tests (the whole workspace)", flush=True)
     # --show-output keeps the printed lines of passing tests too (libtest captures them otherwise), so the skip lines reach
     # the check below.
-    command = ["cargo", "test", "--workspace", "--locked", "--", "--show-output"]
+    command = ["cargo", "test", "--workspace", "--locked", "--features", "pg-driver/fault", "--", "--show-output"]
     print("+ " + " ".join(command), flush=True)
     process = subprocess.Popen(
         command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace"

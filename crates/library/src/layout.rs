@@ -1,13 +1,13 @@
 //! Where the app keeps its data: the catalog folder (`catalog.sqlite`, and the thumbnail cache `thumbs.sqlite` beside
 //! it), the preferences (`gallery.json`), the log (`gallery.log`), and the folder of SQLite's aliases (`sqlite-aliases`,
-//! `pg_platform::sqlite`). All of it is resolved and named here, from the environment and the `--catalog-dir` flag, so
+//! `pg_platform::sqlite`). All of it is resolved and named here, from the environment, so
 //! the layout lives in one place, and nothing of the app's is written outside the home.
 //!
 //! For now they share one home folder. The preferences, the log and the thumbnail cache belong in a config, state and
 //! cache folder of their own; moving each is a change to this module and its tests only.
 //!
-//! The home is, in order: `PG_HOME`; the parent of the catalog folder when one is given (`--catalog-dir` or
-//! `PG_CATALOG_DIR`), so an existing setup keeps its preferences beside it; the platform's default
+//! The home is, in order: `PG_HOME`; the parent of the catalog folder when `PG_CATALOG_DIR` gives one, so an existing
+//! setup keeps its preferences beside it; the platform's default
 //! ([`pg_platform::dirs::default_home`]).
 
 use std::ffi::OsString;
@@ -26,10 +26,9 @@ pub struct Layout {
 
 impl Layout {
     /// The layout under the environment `var` gives (`PG_HOME`, `PG_CATALOG_DIR`, `PG_PREFS`, and the platform's
-    /// default), and `catalog_dir` when the caller was given one (the `--catalog-dir` flag, which wins over
-    /// `PG_CATALOG_DIR`). An error when no home can be found; it is never the temporary folder.
-    pub fn resolve(var: impl Fn(&str) -> Option<OsString>, catalog_dir: Option<PathBuf>) -> Result<Layout, String> {
-        let catalog_dir = catalog_dir.or_else(|| pg_platform::env::path(&var, Var::CatalogDir));
+    /// default). An error when no home can be found; it is never the temporary folder.
+    pub fn resolve(var: impl Fn(&str) -> Option<OsString>) -> Result<Layout, String> {
+        let catalog_dir = pg_platform::env::path(&var, Var::CatalogDir);
         let home = match pg_platform::env::value(&var, Var::Home) {
             Some(home) => PathBuf::from(home),
             None => match &catalog_dir {
@@ -127,7 +126,7 @@ mod tests {
 
     #[test]
     fn pg_home_wins_over_everything_else() {
-        let layout = Layout::resolve(env(&[("PG_HOME", "/data/h"), ("PG_CATALOG_DIR", "/x/cat")]), None).unwrap();
+        let layout = Layout::resolve(env(&[("PG_HOME", "/data/h"), ("PG_CATALOG_DIR", "/x/cat")])).unwrap();
         assert_eq!(layout.home(), Path::new("/data/h"));
         assert_eq!(layout.catalog_dir(), Path::new("/x/cat"));
         assert_eq!(layout.prefs(), Path::new("/data/h/gallery.json"));
@@ -137,23 +136,15 @@ mod tests {
     #[test]
     fn the_parent_of_the_catalog_folder_is_the_home_as_before() {
         // `PG_CATALOG_DIR=D:/path/to/catalog` keeps its preferences and log beside the catalog, where they always were.
-        let layout = Layout::resolve(env(&[("PG_CATALOG_DIR", "/x/run/catalog")]), None).unwrap();
+        let layout = Layout::resolve(env(&[("PG_CATALOG_DIR", "/x/run/catalog")])).unwrap();
         assert_eq!(layout.home(), Path::new("/x/run"));
         assert_eq!(layout.prefs(), Path::new("/x/run/gallery.json"));
         assert_eq!(layout.log(), Path::new("/x/run/gallery.log"));
     }
 
     #[test]
-    fn the_flag_wins_over_the_variable_and_moves_the_home_too() {
-        let layout =
-            Layout::resolve(env(&[("PG_CATALOG_DIR", "/x/a/catalog")]), Some(PathBuf::from("/y/b/catalog"))).unwrap();
-        assert_eq!(layout.catalog_dir(), Path::new("/y/b/catalog"));
-        assert_eq!(layout.home(), Path::new("/y/b"));
-    }
-
-    #[test]
     fn prefs_path_overrides_only_the_preferences() {
-        let layout = Layout::resolve(env(&[("PG_HOME", "/h"), ("PG_PREFS", "/p/prefs.json")]), None).unwrap();
+        let layout = Layout::resolve(env(&[("PG_HOME", "/h"), ("PG_PREFS", "/p/prefs.json")])).unwrap();
         assert_eq!(layout.prefs(), Path::new("/p/prefs.json"));
         assert_eq!(layout.log(), Path::new("/h/gallery.log"));
     }
@@ -162,10 +153,10 @@ mod tests {
     fn with_nothing_set_the_platform_default_is_the_home() {
         // The default is per OS (`pg_platform::dirs`); on Windows the lookup's HOME is not used at all.
         if cfg!(windows) {
-            let layout = Layout::resolve(env(&[("LOCALAPPDATA", r"C:\L")]), None).unwrap();
+            let layout = Layout::resolve(env(&[("LOCALAPPDATA", r"C:\L")])).unwrap();
             assert_eq!(layout.home(), Path::new(r"C:\L").join("PhotoGallery"));
         } else {
-            let layout = Layout::resolve(env(&[("HOME", "/home/a")]), None).unwrap();
+            let layout = Layout::resolve(env(&[("HOME", "/home/a")])).unwrap();
             assert_eq!(layout.home(), Path::new("/home/a/.local/share/photo-gallery"));
             assert_eq!(
                 layout.catalog_path(),
@@ -176,7 +167,7 @@ mod tests {
 
     #[test]
     fn no_home_at_all_is_an_error_not_the_temporary_folder() {
-        assert!(Layout::resolve(env(&[]), None).is_err());
+        assert!(Layout::resolve(env(&[])).is_err());
     }
 
     #[test]
@@ -190,8 +181,6 @@ mod tests {
         assert_eq!(layout.sqlite_aliases(), Path::new("/scratch/run/sqlite-aliases"));
     }
 
-    /// A catalog folder SQLite can't name (Windows: no UTF-8 form) is opened through an alias in the home: with the
-    /// home a scratch folder, opening a catalog there writes nothing outside it.
     #[cfg(windows)]
     /// The catalog folder is made where the rule allows: the default one under the home, or any with `create`. Another
     /// missing folder is refused as `NotFound`, with nothing made (most likely its drive isn't connected).
@@ -202,7 +191,9 @@ mod tests {
         default.ensure_catalog_dir(false).unwrap();
         assert!(default.catalog_dir().is_dir(), "the default folder is made");
 
-        let other = Layout::resolve(|_| None, Some(dir.join("elsewhere").join("archive"))).unwrap();
+        let archive = dir.join("elsewhere").join("archive");
+        let other =
+            Layout::resolve(|name| (name == "PG_CATALOG_DIR").then(|| archive.clone().into_os_string())).unwrap();
         let err = other.ensure_catalog_dir(false).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
         assert!(err.to_string().contains("is the drive connected?"), "{err}");
@@ -221,9 +212,12 @@ mod tests {
         let home = pg_testkit::run_folder("scratch_library", "layout").unwrap();
         // "cat" with an unpaired surrogate.
         let odd = pg_platform::testing::odd_name("cat");
-        let layout =
-            Layout::resolve(|name| (name == "PG_HOME").then(|| home.clone().into_os_string()), Some(home.join(&odd)))
-                .unwrap();
+        let layout = Layout::resolve(|name| match name {
+            "PG_HOME" => Some(home.clone().into_os_string()),
+            "PG_CATALOG_DIR" => Some(home.join(&odd).into_os_string()),
+            _ => None,
+        })
+        .unwrap();
         std::fs::create_dir_all(layout.catalog_dir()).unwrap();
         let sqlite = layout.for_sqlite().unwrap();
         assert!(sqlite.catalog_dir().starts_with(layout.sqlite_aliases()), "{}", sqlite.catalog_dir().display());

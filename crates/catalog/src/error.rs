@@ -53,7 +53,7 @@ fn refusal_message(refusal: &CatalogRefusal, path: &str) -> String {
         ),
         CatalogRefusal::PathTooLong => format!(
             "catalog {path}: the path is too long for the files the catalog keeps beside it (Windows' limit is 259 \
-             characters): use a shorter folder, such as one set by PG_HOME or --catalog-dir"
+             characters): use a shorter folder, such as one set by PG_HOME or PG_CATALOG_DIR"
         ),
         CatalogRefusal::PathRules { detail, wanted } => format!(
             "catalog {path}: {detail}, this build uses the {wanted} path rules: open it on the platform that made it, or \

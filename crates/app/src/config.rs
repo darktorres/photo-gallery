@@ -28,7 +28,7 @@ impl Config {
     /// The configuration of the environment (`PG_HOME`, `PG_CATALOG_DIR`, `PG_PREFS`, and the platform's default folder).
     /// An error when no folder can be found for the data.
     pub fn from_env() -> Result<Config, String> {
-        Ok(Config::from_layout(Layout::resolve(pg_platform::env::process, None)?))
+        Ok(Config::from_layout(Layout::resolve(pg_platform::env::process)?))
     }
 
     /// The configuration of a resolved layout, with the thumbnail cache's cap unset and the live Yandex search.

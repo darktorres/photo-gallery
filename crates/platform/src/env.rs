@@ -110,7 +110,7 @@ pub const VARS: &[Spec] = &[
         name: "PG_CATALOG_DIR",
         kind: Kind::Path,
         reader: Reader::App,
-        doc: "The catalog folder, instead of the data folder's `catalog`. The command line's `--catalog-dir` wins over it.",
+        doc: "The catalog folder, instead of the data folder's `catalog`.",
     },
     Spec {
         name: "PG_PREFS",

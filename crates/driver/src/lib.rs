@@ -21,6 +21,7 @@ use pg_model::features::Features;
 use pg_model::ids::RootId;
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
+use pg_model::write::WriteError;
 use pg_platform::native::PATH_RULES;
 
 /// How often a wait looks at the job again.
@@ -255,14 +256,11 @@ impl Headless {
             if left == 0 {
                 return Ok(queued);
             }
-            // A writer that failed or stopped says so, with the changes still queued: the run ends with that, not at the timeout.
+            // A writer that failed or stopped ends the run now, with the changes still queued, not at the timeout.
             if let Some(library) = self.app.library().running() {
                 let activity = library.status();
-                if let Some(error) = activity.writes.error {
-                    return Err(Error::WriteFailed { left, error: pg_writeback::write_error_words(&error) });
-                }
-                if activity.writer_stopped {
-                    return Err(Error::WriterStopped { left });
+                if let Some(error) = writer_failure(left, activity.writes.error.as_ref(), activity.writer_stopped) {
+                    return Err(error);
                 }
             }
             if Instant::now() >= deadline {
@@ -337,5 +335,45 @@ impl Headless {
             .find(|root| root.id == id)
             .map(|root| root.path)
             .ok_or_else(|| Error::NotAFolder { path: format!("root {}", id.get()) })
+    }
+}
+
+/// The error that ends a write run with `left` changes still queued, given the writer's latest error and whether it stopped:
+/// the writer's own words for an error, else `WriterStopped`. None while the writer is working.
+fn writer_failure(left: u64, error: Option<&WriteError>, stopped: bool) -> Option<Error> {
+    match error {
+        Some(error) => Some(Error::WriteFailed { left, error: pg_writeback::write_error_words(error) }),
+        None => stopped.then_some(Error::WriterStopped { left }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pg_model::job::Cause;
+
+    #[test]
+    fn a_writer_error_ends_the_run_with_its_words_and_the_queue() {
+        let error = WriteError::Failed(Cause::Error("the disk is full".to_owned()));
+        assert!(matches!(
+            writer_failure(3, Some(&error), false),
+            Some(Error::WriteFailed { left: 3, error }) if error.contains("the disk is full")
+        ));
+    }
+
+    #[test]
+    fn an_error_is_reported_before_a_stop() {
+        let error = WriteError::Failed(Cause::Error("the disk is full".to_owned()));
+        assert!(matches!(writer_failure(1, Some(&error), true), Some(Error::WriteFailed { left: 1, .. })));
+    }
+
+    #[test]
+    fn a_stopped_writer_with_no_error_ends_the_run_with_the_queue() {
+        assert!(matches!(writer_failure(2, None, true), Some(Error::WriterStopped { left: 2 })));
+    }
+
+    #[test]
+    fn a_working_writer_does_not_end_the_run() {
+        assert!(writer_failure(2, None, false).is_none());
     }
 }

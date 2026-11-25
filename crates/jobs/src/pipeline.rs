@@ -5,11 +5,11 @@
 //! the drive reorder them and reach sequential speed even in path order, and sparse reads only speed up with
 //! queue depth.
 //!
-//! What bounds the files in flight (read, waiting, or being processed) is their count (`Options::slots`) and their
-//! bytes (`Options::buffer_bytes`). Every file is read into a buffer from a pool of at most that many buffers and
-//! bytes, and handed back once processed. Readers wait while either is taken, so they stay a bounded way ahead of
-//! the workers, a folder of large files holds no more than one of small files, and the buffers are reused from file
-//! to file: a pass makes about `slots` of them, whatever its length.
+//! What bounds the files in flight (read, waiting, or being processed) is their count (`Options::slots`), never their
+//! bytes: the app is for heavy users, and a pass holds whatever its files in flight take (no memory cap, by decision).
+//! Every file is read into a buffer from a pool of at most that many buffers, and handed back once processed. Readers
+//! wait while every slot is taken, so they stay a bounded number of files ahead of the workers, and the buffers are
+//! reused from file to file: a pass makes about `slots` of them, whatever its length.
 //!
 //! The readers are started up to their most (`Readers::max`, no more than the pass has items), and a gate lets a number
 //! of them claim items (`crate::gate`): all of them for a fixed count, and for a tuned one (`Readers::Auto`) the
@@ -26,7 +26,6 @@ use std::time::{Duration, Instant};
 // crossbeam-channel rather than std::sync::mpsc: the readers and workers share one receiver each (`raw_rx.clone()`), and
 // std's `Receiver` cannot be cloned. Every one-to-one handoff elsewhere in the workspace uses std::sync::mpsc.
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
-use pg_model::buffer::BufferBytes;
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 use serde_json::json;
@@ -34,7 +33,6 @@ use serde_json::json;
 use crate::control::Control;
 use crate::failure::{Class, Failed};
 use crate::gate::ReaderGate;
-use crate::governor::Budget;
 use crate::panics;
 use crate::source::{Access, FileSource, OsFiles, ReadSeek};
 use crate::tuner::{Decision, Reason, Sample, Tuner};
@@ -49,7 +47,7 @@ pub enum Readers {
 }
 
 impl Readers {
-    /// The most readers the pass starts: what its slots and its budget are sized by.
+    /// The most readers the pass starts: what its slots are sized by.
     pub fn max(&self) -> NonZeroUsize {
         match self {
             Readers::Fixed(n) => *n,
@@ -81,21 +79,12 @@ pub struct Options {
     /// The files in flight at most: being read, read and waiting for a worker, or being processed. A file a worker
     /// opens itself (a video) counts only while it waits. [`Options::slots`] by default.
     pub slots: Slots,
-    /// The bytes of file buffers the pass holds at most (read, waiting, being processed, or idle in the pool). A
-    /// target, not a strict bound: a file larger than all of it is read alone. [`Options::budget`] by default.
-    pub buffer_bytes: BufferBytes,
-    /// The budget a governor shares among a run's lanes ([`crate::governor::Governor`]): when set, the pool reads it as it
-    /// changes, in place of `buffer_bytes`.
-    pub budget: Option<Arc<Budget>>,
     /// Thread priority of the readers and workers (a `Priority`). Below normal keeps the app's own threads
     /// (the UI, thumbnails on screen) ahead of a background pass.
     pub priority: Priority,
     /// Where the files are opened and read: the system's files ([`OsFiles`]), or a test's source.
     pub source: Arc<dyn FileSource>,
 }
-
-/// The budget per read in flight and per worker: a large camera JPEG (24 MP at high quality).
-const BUFFER_PER_SLOT: u64 = 12 << 20;
 
 /// The reads in flight of a pipeline (`Options::new`), and the default the other pools are sized by.
 pub const READERS: NonZeroUsize = NonZeroUsize::MIN.saturating_add(7);
@@ -124,15 +113,12 @@ pub fn default_workers() -> NonZeroUsize {
 pub enum SizeRefused {
     /// The files in flight they make (`readers + 2 × workers`) are more than [`MAX_SLOTS`].
     TooManySlots,
-    /// The buffer budget they make (`(readers + workers) × 12 MiB`) overflows `u64`.
-    BudgetOverflows,
 }
 
 impl std::fmt::Display for SizeRefused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SizeRefused::TooManySlots => write!(f, "more than {MAX_SLOTS} files in flight"),
-            SizeRefused::BudgetOverflows => f.write_str("a buffer budget past 2^64 bytes"),
         }
     }
 }
@@ -159,27 +145,20 @@ impl Slots {
 }
 
 impl Options {
-    /// [`READERS`] reads in flight, a worker per logical CPU (at most 4096), and their [`Options::slots`] and
-    /// [`Options::budget`].
-    #[expect(
-        clippy::expect_used,
-        reason = "8 readers and at most 4096 workers make 8200 slots (under MAX_SLOTS) and 4104 × 12 MiB"
-    )]
+    /// [`READERS`] reads in flight, a worker per logical CPU (at most 4096), and their [`Options::slots`].
+    #[expect(clippy::expect_used, reason = "8 readers and at most 4096 workers make 8200 slots, under MAX_SLOTS")]
     pub fn new(priority: Priority) -> Options {
         Options::sized(Readers::Fixed(READERS), default_workers(), priority).expect("the default counts fit")
     }
 
-    /// `readers` and `workers`, with the [`Options::slots`] and the [`Options::budget`] that follow from them (from the
-    /// readers' most, for a tuned count), reading the system's files, or why they are refused: more slots than
-    /// [`MAX_SLOTS`], or a budget past `u64`. Nothing is clamped.
+    /// `readers` and `workers`, with the [`Options::slots`] that follow from them (from the readers' most, for a tuned
+    /// count), reading the system's files, or why they are refused: more slots than [`MAX_SLOTS`]. Nothing is clamped.
     pub fn sized(readers: Readers, workers: NonZeroUsize, priority: Priority) -> Result<Options, SizeRefused> {
         let most = readers.max();
         Ok(Options {
             readers,
             workers,
             slots: Options::slots(most, workers).ok_or(SizeRefused::TooManySlots)?,
-            buffer_bytes: Options::budget(most, workers).ok_or(SizeRefused::BudgetOverflows)?,
-            budget: None,
             priority,
             source: Arc::new(OsFiles),
         })
@@ -190,14 +169,6 @@ impl Options {
     /// 8 readers and 12 workers: 273 MB/s with 32 slots, or 56, or unbounded; 271 with 20). `None` past [`MAX_SLOTS`].
     pub fn slots(readers: NonZeroUsize, workers: NonZeroUsize) -> Option<Slots> {
         Slots::new(workers.get().checked_mul(2)?.checked_add(readers.get())?)
-    }
-
-    /// The default budget: a large camera file for each read in flight and each worker, since a worker holds its
-    /// file while it processes it. Less starves the readers (24 MP JPEGs on the HDD, 8 readers and
-    /// 12 workers, read 4% slower with 128 MB at the default slots, and no faster with 512 MB than with this,
-    /// 240 MB). `None` when the sum or the bytes overflow.
-    pub fn budget(readers: NonZeroUsize, workers: NonZeroUsize) -> Option<BufferBytes> {
-        BufferBytes::per(readers.get().checked_add(workers.get())?, BUFFER_PER_SLOT)
     }
 }
 
@@ -213,11 +184,9 @@ pub enum Read {
         bytes: u64,
     },
     /// What `gather` makes of the file, read by it (it seeks where it needs to, and returns the bytes `process` gets: a
-    /// JPEG's header, a PNG's chunks without its image data). `hint` is how many bytes it is expected to need: the
-    /// admission a file takes before `gather` runs. A file no longer than `hint` is read whole, and so is one `gather`
-    /// gives nothing for (`None`, or a panic); that whole read is one file at a time, after the pass's other reads in
-    /// flight have their buffers (the budget is for the gathers; a whole file is one past it, as an oversize file is).
-    /// An error of `gather` is the file's read error.
+    /// JPEG's header, a PNG's chunks without its image data). `hint` is how many bytes it is expected to need: the room
+    /// its buffer is given before `gather` runs. A file no longer than `hint` is read whole, and so is one `gather` gives
+    /// nothing for (`None`, or a panic). An error of `gather` is the file's read error.
     Gather {
         /// How many bytes `gather` is expected to need.
         hint: usize,
@@ -635,8 +604,7 @@ where
     // The items a stopped pass dropped unrun: each was sent, and has no result.
     let dropped = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let budget = opts.budget.clone().unwrap_or_else(|| Arc::new(Budget::new(opts.buffer_bytes.get())));
-    let pool = Pool::with_budget(budget, opts.slots);
+    let pool = Pool::new(opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
     let (raw_tx, raw_rx) = bounded::<(usize, Result<Lease, Failed>, usize)>(pool.slots);
     let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers.get().saturating_mul(4));
@@ -1064,12 +1032,12 @@ impl<'p> Reader<'p> {
         Some(self.read_rest(opened.file.as_mut(), &mut lease).map(|()| lease))
     }
 
-    /// [`Read::Gather`] of the file at `path`: what `gather` makes of it, read from the reader's thread in its turn. The
-    /// admission is the hint's: the item's turn in the pool comes before the read, so the reads in flight stay in list
+    /// [`Read::Gather`] of the file at `path`: what `gather` makes of it, read from the reader's thread in its turn. Its
+    /// buffer is taken in the item's turn, with room for the hint, before the read, so the reads in flight stay in list
     /// order. A file no longer than `hint` is read whole. Whatever `gather` doesn't give (`None`, or a panic) is the whole
-    /// file, read from its start ([`Reader::rest_alone`]). The file is opened for reads here and there: the system reads
-    /// no further ahead than each read asks (measured on an NVMe disk, its read-ahead after each end of a PNG cost a fifth
-    /// of the rate). `None` once the pass stops.
+    /// file, read from its start. The file is opened for reads here and there: the system reads no further ahead than
+    /// each read asks (measured on an NVMe disk, its read-ahead after each end of a PNG cost a fifth of the rate). `None`
+    /// once the pass stops.
     fn gather(
         &self,
         path: &NativePath,
@@ -1106,26 +1074,10 @@ impl<'p> Reader<'p> {
             return Some(Err(e));
         }
         lease.bytes.clear();
-        self.rest_alone(lease, file.as_mut(), size)
-    }
-
-    /// The rest of a file read whole, after `lease` holds the first bytes of it (`file` is at their end, or at the start
-    /// of the file when `lease` is empty): one oversize read at a time, so the others wait here holding their gathers'
-    /// admissions. `None` once the pass stops.
-    fn rest_alone(
-        &self,
-        mut lease: Lease<'p>,
-        file: &mut dyn ReadSeek,
-        size: usize,
-    ) -> Option<std::io::Result<Lease<'p>>> {
-        let _one = self.pool.oversize.lock().unwrap_or_else(PoisonError::into_inner);
-        if self.pool.is_stopped() {
-            return None;
-        }
         if let Err(e) = lease.grow_to(size) {
             return Some(Err(e));
         }
-        Some(self.read_rest(file, &mut lease).map(|()| lease))
+        Some(self.read_rest(file.as_mut(), &mut lease).map(|()| lease))
     }
 }
 
@@ -1162,30 +1114,22 @@ impl Drop for StopOnDrop<'_> {
     }
 }
 
-/// How long a pool waiting for room waits before it looks at its budget again.
-const BUDGET_WAIT: Duration = Duration::from_millis(50);
-
-/// File buffers within a count (`slots`) and a byte budget. Reservations are granted in list order (item `i` after
-/// every item before it), so the disk is read in order and a large file is never passed over by the smaller ones
-/// behind it.
+/// File buffers within a count (`slots`), and no byte bound: a pass holds whatever its files in flight take. Grants are
+/// in list order (item `i` after every item before it), so the disk is read in order and a large file is never passed
+/// over by the smaller ones behind it.
 struct Pool {
-    budget: Arc<Budget>,
     slots: usize,
     state: Mutex<PoolState>,
     changed: Condvar,
-    /// Held by the one gather that reads its file whole ([`Reader::rest_alone`]).
-    oversize: Mutex<()>,
     /// The readers' wait for their item's turn in the in-order grants.
     order_wait: Clock,
-    /// The readers' wait, in their turn, for a slot or for room in the budget: the workers are behind.
+    /// The readers' wait, in their turn, for a slot: the workers are behind.
     capacity_wait: Clock,
 }
 
 struct PoolState {
     /// The next item to be granted.
     serving: usize,
-    /// The capacity of every buffer there is: lent out, or idle.
-    held: usize,
     /// The buffers lent out.
     lent: usize,
     /// Never more than `slots` (lent and idle together), so made once with room for that many.
@@ -1197,137 +1141,85 @@ struct PoolState {
 struct Lease<'a> {
     pool: Option<&'a Pool>,
     bytes: Vec<u8>,
-    /// Its capacity as the pool counts it.
-    counted: usize,
 }
 
 impl Lease<'_> {
     /// No buffer (a file not read whole).
     fn empty() -> Self {
-        Lease { pool: None, bytes: Vec::new(), counted: 0 }
+        Lease { pool: None, bytes: Vec::new() }
     }
 
-    /// Makes room for `size` bytes in the buffer (a gather's bytes, or the whole file). The pool counts the growth as it counts the
-    /// buffer (`counted` moves with `held`), so the buffer's capacity is accounted once, whenever it grew.
+    /// Makes room for `size` bytes in the buffer (a gather's bytes, or the whole file). An allocation that fails is the
+    /// item's error, not a panic.
     fn grow_to(&mut self, size: usize) -> std::io::Result<()> {
         let additional = size.saturating_sub(self.bytes.len());
-        self.bytes
-            .try_reserve_exact(additional)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::OutOfMemory, e))?;
-        if let Some(pool) = self.pool {
-            let capacity = self.bytes.capacity();
-            pool.grew(capacity - self.counted);
-            self.counted = capacity;
-        }
-        Ok(())
+        self.bytes.try_reserve_exact(additional).map_err(|e| std::io::Error::new(std::io::ErrorKind::OutOfMemory, e))
     }
 }
 
 impl Drop for Lease<'_> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool {
-            pool.give(std::mem::take(&mut self.bytes), self.counted);
+            pool.give(std::mem::take(&mut self.bytes));
         }
     }
 }
 
 impl Pool {
-    #[cfg(test)]
-    fn new(budget: u64, slots: usize) -> Pool {
-        Pool::with_budget(Arc::new(Budget::new(budget)), Slots::new(slots).unwrap())
-    }
-
-    /// A pool of `slots` buffers within `budget`. The slots are at most [`MAX_SLOTS`], so the room made up front is bounded.
-    fn with_budget(budget: Arc<Budget>, slots: Slots) -> Pool {
+    /// A pool of `slots` buffers. The slots are at most [`MAX_SLOTS`], so the room made up front is bounded.
+    fn new(slots: Slots) -> Pool {
         let slots = slots.get();
-        let state = PoolState { serving: 0, held: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
+        let state = PoolState { serving: 0, lent: 0, idle: Vec::with_capacity(slots), stopped: false };
         Pool {
-            budget,
             slots,
             state: Mutex::new(state),
             changed: Condvar::new(),
-            oversize: Mutex::new(()),
             order_wait: Clock::default(),
             capacity_wait: Clock::default(),
         }
     }
 
-    /// The buffers' bytes went from `before` to `after`: the budget's count of what its pools hold follows (the
-    /// governor's soft cap reads it).
-    fn held_moved(&self, before: usize, after: usize) {
-        let bytes = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
-        if after >= before {
-            self.budget.hold(bytes(after - before));
-        } else {
-            self.budget.release(bytes(before - after));
-        }
-    }
-
-    /// A buffer that holds `size` bytes for item `i`, once the items before it have theirs, a slot is free, and the
-    /// budget has room (or nothing else is held, for a file larger than the budget). `None` once the pass stops.
+    /// A buffer with room for `size` bytes for item `i`, once the items before it have theirs and a slot is free. `None`
+    /// once the pass stops.
     ///
-    /// The smallest idle buffer that is large enough is reused. If none is, the smallest idle one grows to `size`
-    /// (the larger ones stay for the files that need them), and a new buffer is made only when none is idle. So
-    /// there are never more buffers than slots, and a pass allocates once per slot, plus once per file larger than
-    /// the buffer it is given.
+    /// The smallest idle buffer that is large enough is reused. If none is, the smallest idle one grows to `size` (the
+    /// larger ones stay for the files that need them), and a new buffer is made only when none is idle. So there are
+    /// never more buffers than slots, and a pass allocates once per slot, plus once per file larger than the buffer it
+    /// is given.
     fn take(&self, i: usize, size: usize) -> Option<Lease<'_>> {
         let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if st.stopped {
                 return None;
             }
-            // The budget is bytes the platform sets (a u64); the buffers are counted in usize. A budget past the address
-            // space holds every buffer there is.
-            let budget = usize::try_from(self.budget.get()).unwrap_or(usize::MAX);
             if st.serving == i && st.lent < self.slots {
                 // Largest first, so the smallest is last.
                 st.idle.sort_unstable_by_key(|b| std::cmp::Reverse(b.capacity()));
-                if let Some(k) = st.idle.iter().rposition(|b| b.capacity() >= size) {
-                    let mut bytes = st.idle.remove(k);
-                    bytes.clear();
-                    return Some(self.grant(&mut st, bytes));
-                }
-                // None is large enough: the smallest grows, and the other idle ones are freed, largest first, while
-                // it wouldn't fit the budget.
-                let before = st.held;
-                let smallest = st.idle.last().map_or(0, Vec::capacity);
-                let others = st.idle.len().saturating_sub(1);
-                let mut freed = 0;
-                let state = &mut *st;
-                for buffer in state.idle.iter().take(others) {
-                    if state.held - smallest + size <= budget {
-                        break;
+                let bytes = match st.idle.iter().rposition(|b| b.capacity() >= size) {
+                    Some(k) => st.idle.remove(k),
+                    None => {
+                        let mut bytes = st.idle.pop().unwrap_or_default();
+                        bytes.clear();
+                        bytes.reserve_exact(size);
+                        bytes
                     }
-                    state.held -= buffer.capacity();
-                    freed += 1;
-                }
-                st.idle.drain(..freed);
-                if st.held - smallest + size <= budget || st.held == smallest {
-                    let mut bytes = st.idle.pop().unwrap_or_default();
-                    bytes.clear();
-                    bytes.reserve_exact(size);
-                    st.held = st.held - smallest + bytes.capacity();
-                    self.held_moved(before, st.held);
-                    return Some(self.grant(&mut st, bytes));
-                }
-                self.held_moved(before, st.held);
+                };
+                return Some(self.grant(&mut st, bytes));
             }
-            // Its turn not come is the order's wait; its turn come, and no slot or room, the capacity's.
+            // Its turn not come is the order's wait; its turn come, and no slot free, the capacity's.
             let meter = if st.serving == i { &self.capacity_wait } else { &self.order_wait };
             let waiting = Instant::now();
-            // Timed, so a budget the governor changes is seen without a grant to wake this.
-            let (guard, _) = self.changed.wait_timeout(st, BUDGET_WAIT).unwrap_or_else(PoisonError::into_inner);
+            st = self.changed.wait(st).unwrap_or_else(PoisonError::into_inner);
             meter.add(waiting);
-            st = guard;
         }
     }
 
-    fn grant(&self, st: &mut PoolState, bytes: Vec<u8>) -> Lease<'_> {
+    fn grant(&self, st: &mut PoolState, mut bytes: Vec<u8>) -> Lease<'_> {
+        bytes.clear();
         st.serving += 1;
         st.lent += 1;
         self.changed.notify_all();
-        let counted = bytes.capacity();
-        Lease { pool: Some(self), bytes, counted }
+        Lease { pool: Some(self), bytes }
     }
 
     /// Item `i` takes no buffer (not read whole, or not readable): the next one is served once it is its turn.
@@ -1344,41 +1236,17 @@ impl Pool {
         }
     }
 
-    /// A buffer back from a worker, kept for the next file. `counted` is its capacity when lent: a file that grew
-    /// while it was read grew it.
-    fn give(&self, bytes: Vec<u8>, counted: usize) {
+    /// A buffer back from a worker, kept for the next file.
+    fn give(&self, bytes: Vec<u8>) {
         let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let before = st.held;
-        st.held = st.held + bytes.capacity() - counted;
-        self.held_moved(before, st.held);
         st.lent -= 1;
         st.idle.push(bytes);
         self.changed.notify_all();
     }
 
-    /// A lease's buffer grew by `bytes` ([`Lease::grow_to`]): held, as the lease counts it.
-    fn grew(&self, bytes: usize) {
-        let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let before = st.held;
-        st.held += bytes;
-        self.held_moved(before, st.held);
-    }
-
-    fn is_stopped(&self) -> bool {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner).stopped
-    }
-
     fn stop(&self) {
         self.state.lock().unwrap_or_else(PoisonError::into_inner).stopped = true;
         self.changed.notify_all();
-    }
-}
-
-/// A pool that ends frees its buffers: its budget no longer counts them.
-impl Drop for Pool {
-    fn drop(&mut self) {
-        let held = self.state.get_mut().unwrap_or_else(PoisonError::into_inner).held;
-        self.held_moved(held, 0);
     }
 }
 
@@ -1401,22 +1269,25 @@ mod tests {
         s.as_bytes().to_vec()
     }
 
-    /// Options of `readers`, `workers` and `slots`, with a 1 MiB budget, at normal priority.
+    /// Options of `readers`, `workers` and `slots`, at normal priority.
     fn sized(readers: usize, workers: usize, slots: usize) -> Options {
         Options {
             readers: Readers::Fixed(NonZeroUsize::new(readers).unwrap()),
             workers: NonZeroUsize::new(workers).unwrap(),
             slots: Slots::new(slots).unwrap(),
-            buffer_bytes: BufferBytes::new(1 << 20).unwrap(),
-            budget: None,
             priority: Priority::Normal,
             source: Arc::new(OsFiles),
         }
     }
 
+    /// A pool of `slots` buffers.
+    fn pool(slots: usize) -> Pool {
+        Pool::new(Slots::new(slots).unwrap())
+    }
+
     // A count of slots is at least one and at most the maximum; the defaults' arithmetic refuses what overflows.
     #[test]
-    fn slots_and_budgets_out_of_range_are_refused() {
+    fn slots_out_of_range_are_refused() {
         assert_eq!(Slots::new(0), None);
         assert_eq!(Slots::new(MAX_SLOTS + 1), None);
         assert_eq!(Slots::new(MAX_SLOTS).map(Slots::get), Some(MAX_SLOTS));
@@ -1424,9 +1295,6 @@ mod tests {
         assert_eq!(Options::slots(n(8), n(12)).map(Slots::get), Some(32));
         assert_eq!(Options::slots(n(8), n(MAX_SLOTS)), None, "past the maximum");
         assert_eq!(Options::slots(n(1), n(usize::MAX)), None, "2 × workers overflows");
-        assert_eq!(Options::budget(n(8), n(12)).map(BufferBytes::get), Some(240 << 20));
-        assert_eq!(Options::budget(n(usize::MAX), n(1)), None, "the sum overflows");
-        assert_eq!(Options::budget(n(usize::MAX / 2), n(1)), None, "the bytes overflow");
         let refused = Options::sized(Readers::Fixed(n(8)), n(MAX_SLOTS), Priority::Normal).err();
         assert_eq!(refused, Some(SizeRefused::TooManySlots));
         let default = Options::new(Priority::Normal);
@@ -1434,51 +1302,35 @@ mod tests {
         assert_eq!(Some(default.slots), Options::slots(default.readers.max(), default.workers));
     }
 
-    /// What the pool holds: its bytes are the sum of its buffers' capacities, and there are no more buffers than
-    /// slots.
+    /// What the pool holds: the leases lent, and no more buffers than slots.
     fn check(pool: &Pool, lent: &[&Lease]) {
         let st = pool.state.lock().unwrap();
-        let capacities: usize =
-            st.idle.iter().map(Vec::capacity).sum::<usize>() + lent.iter().map(|l| l.bytes.capacity()).sum::<usize>();
-        assert_eq!(st.held, capacities);
         assert_eq!(st.lent, lent.len());
         assert!(st.idle.len() + st.lent <= pool.slots);
     }
 
-    // Grants come in list order, within the budget, and a file larger than it alone.
+    // Grants come in list order: an item waits for every item before it, whatever its size, and a large file is
+    // granted as a small one is (no byte bound).
     #[test]
-    fn pool_grants_in_order_within_the_budget() {
-        let pool = Pool::new(100, 4);
+    fn pool_grants_in_list_order() {
+        let pool = pool(4);
         let a = pool.take(0, 60).unwrap();
-        pool.pass(1);
-        // 60 + 50 is over: item 2 waits until `a` is back, then grows it.
         std::thread::scope(|s| {
             let waiter = s.spawn(|| pool.take(2, 50).map(|l| l.bytes.capacity()));
             std::thread::sleep(std::time::Duration::from_millis(50));
-            assert!(!waiter.is_finished());
-            drop(a);
+            assert!(!waiter.is_finished(), "item 2 waits for item 1's turn");
+            pool.pass(1);
             assert!(waiter.join().unwrap().unwrap() >= 50);
         });
-        // Over the budget: granted, alone, by growing the one buffer there is.
-        let big = pool.take(3, 500).unwrap();
-        assert!(big.bytes.capacity() >= 500);
-        check(&pool, &[&big]);
-        // While it is lent, nothing else fits.
-        std::thread::scope(|s| {
-            let waiter = s.spawn(|| pool.take(4, 10).map(|l| l.bytes.capacity()));
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            assert!(!waiter.is_finished());
-            drop(big);
-            // Back, it is the only buffer, and large enough: reused.
-            assert!(waiter.join().unwrap().unwrap() >= 500);
-        });
-        check(&pool, &[]);
+        let big = pool.take(3, 50 << 20).unwrap();
+        assert!(big.bytes.capacity() >= 50 << 20, "a large file is granted beside the others");
+        check(&pool, &[&a, &big]);
     }
 
     // Files of growing and shrinking sizes read one after another: one buffer, grown when a file needs more.
     #[test]
     fn a_pool_reuses_its_buffers_whatever_the_sizes() {
-        let pool = Pool::new(1 << 20, 8);
+        let pool = pool(8);
         for (i, size) in [100, 300, 200, 1000, 50, 4000, 4000, 10].into_iter().enumerate() {
             let lease = pool.take(i, size).unwrap();
             assert!(lease.bytes.capacity() >= size);
@@ -1500,7 +1352,7 @@ mod tests {
     // However far ahead the readers are, there are never more buffers than slots: a reader waits for a slot.
     #[test]
     fn a_pool_lends_no_more_buffers_than_slots() {
-        let pool = Pool::new(1 << 30, 3);
+        let pool = pool(3);
         let leases: Vec<Lease> = (0..3).map(|i| pool.take(i, 16 << 10).unwrap()).collect();
         check(&pool, &leases.iter().collect::<Vec<_>>());
         std::thread::scope(|s| {
@@ -1514,23 +1366,9 @@ mod tests {
         assert_eq!(pool.state.lock().unwrap().idle.len(), 3);
     }
 
-    // A growth that doesn't fit the budget frees the larger idle buffers first, and only as many as it needs.
-    #[test]
-    fn a_pool_frees_idle_buffers_to_fit_a_growth() {
-        let pool = Pool::new(1000, 4);
-        let leases: Vec<Lease> = [400, 300, 200].iter().enumerate().map(|(i, &n)| pool.take(i, n).unwrap()).collect();
-        drop(leases);
-        // 900 held. 500 doesn't fit any: the smallest (200) grows to 500, and 900 - 200 + 500 is over by 200, so the
-        // largest (400) goes; 300 stays.
-        let lease = pool.take(3, 500).unwrap();
-        check(&pool, &[&lease]);
-        let st = pool.state.lock().unwrap();
-        assert_eq!(st.idle.iter().map(Vec::capacity).collect::<Vec<_>>(), [300]);
-    }
-
     #[test]
     fn a_stopped_pool_wakes_its_waiters() {
-        let pool = Pool::new(100, 1);
+        let pool = pool(1);
         let held = pool.take(0, 10).unwrap();
         std::thread::scope(|s| {
             // One waits for its turn, one for a slot.
@@ -1999,16 +1837,19 @@ mod tests {
         assert_eq!(sunk, 200);
     }
 
-    // A lease grown past its admission is counted by the pool as it grew, and given back as one buffer.
+    // A lease grown past its first room is given back as one buffer, kept at its grown size for the next file.
     #[test]
-    fn a_grown_lease_is_counted_once() {
-        let pool = Pool::new(1 << 20, 4);
+    fn a_grown_lease_is_given_back_as_one_buffer() {
+        let pool = pool(4);
         let mut lease = pool.take(0, 100).unwrap();
         lease.grow_to(5000).unwrap();
         assert!(lease.bytes.capacity() >= 5000);
         check(&pool, &[&lease]);
         drop(lease);
         check(&pool, &[]);
+        let st = pool.state.lock().unwrap();
+        assert_eq!(st.idle.len(), 1);
+        assert!(st.idle.iter().all(|b| b.capacity() >= 5000));
     }
 
     /// `pool.take(i, size)` on a thread of its own: the capacity granted (`None` once the pool stops), sent to the
@@ -2022,96 +1863,31 @@ mod tests {
         rx
     }
 
-    // A shrink under buffers in use holds grants back: nothing in use is freed, and a take waits until enough buffers
-    // come back, then is granted.
+    // A take that waits for a slot is granted when a buffer comes back, and a stop ends one that waits: it returns
+    // `None`.
     #[test]
-    fn a_shrink_with_buffers_held_waits_for_them_to_come_back() {
+    fn a_take_waiting_for_a_slot_is_granted_when_one_is_back_or_ended_by_a_stop() {
         within_timeout(|| {
-            let budget = Arc::new(Budget::new(100));
-            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), Slots::new(4).unwrap()));
-            let a = pool.take(0, 60).unwrap();
-            budget.set(40);
-            check(&pool, &[&a]);
-            let waiting = take_on_thread(&pool, 1, 30);
-            assert!(
-                matches!(waiting.recv_timeout(BUDGET_WAIT * 4), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
-                "a take is granted while 60 bytes of a 40-byte budget are held"
-            );
-            check(&pool, &[&a]);
-            drop(a);
-            let granted =
-                waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("granted once a buffer is back");
-            assert!(granted.is_some_and(|capacity| capacity >= 30));
-        });
-    }
-
-    // A grow is seen by a take already waiting on the budget, with no grant or give to wake it: the timed wait
-    // picks the new budget up within a few of its periods.
-    #[test]
-    fn a_grow_is_seen_by_a_waiting_take_within_a_few_periods() {
-        within_timeout(|| {
-            let budget = Arc::new(Budget::new(100));
-            let pool = Arc::new(Pool::with_budget(Arc::clone(&budget), Slots::new(4).unwrap()));
+            let pool = Arc::new(pool(1));
             let a = pool.take(0, 60).unwrap();
             let waiting = take_on_thread(&pool, 1, 50);
-            // 60 + 50 is over 100: the take is still waiting after a couple of periods.
             assert!(
-                matches!(waiting.recv_timeout(BUDGET_WAIT * 2), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
-                "a take is granted over the budget"
+                matches!(
+                    waiting.recv_timeout(std::time::Duration::from_millis(100)),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                ),
+                "a second buffer while the one slot is lent"
             );
-            budget.set(200);
-            // From here nothing is granted or given back: only the timed wait can admit the take.
+            drop(a);
             let granted =
-                waiting.recv_timeout(BUDGET_WAIT * 5).expect("admitted within a few BUDGET_WAIT periods of the grow");
+                waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("granted once a slot is back");
             assert!(granted.is_some_and(|capacity| capacity >= 50));
-            drop(a);
-        });
-    }
-
-    // A stop ends a take that waits on the budget: it returns `None`.
-    #[test]
-    fn a_stop_ends_a_take_waiting_on_the_budget() {
-        within_timeout(|| {
-            let pool = Arc::new(Pool::new(100, 4));
-            let a = pool.take(0, 60).unwrap();
-            let waiting = take_on_thread(&pool, 1, 50);
-            assert!(
-                matches!(waiting.recv_timeout(BUDGET_WAIT * 2), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
-                "a take is granted over the budget"
-            );
+            let b = pool.take(2, 10).unwrap();
+            let waiting = take_on_thread(&pool, 3, 10);
             pool.stop();
-            let granted = waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("the stop ends the take");
-            assert_eq!(granted, None);
-            drop(a);
-        });
-    }
-
-    // A budget of one byte (the least it can be) still grants a file larger than it, alone, and the files after it
-    // are granted in turn: the pool never deadlocks at the minimum.
-    #[test]
-    fn a_budget_of_one_byte_grants_an_oversize_file_alone() {
-        within_timeout(|| {
-            let budget = Arc::new(Budget::new(0));
-            assert_eq!(budget.get(), 1, "at least one byte");
-            let pool = Arc::new(Pool::with_budget(budget, Slots::new(4).unwrap()));
-            let big = pool.take(0, 500).unwrap();
-            assert!(big.bytes.capacity() >= 500);
-            check(&pool, &[&big]);
-            // Held alone, the next file waits for it, though it is small.
-            let waiting = take_on_thread(&pool, 1, 10);
-            assert!(
-                matches!(waiting.recv_timeout(BUDGET_WAIT * 4), Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
-                "a file is granted beside an oversize one"
-            );
-            drop(big);
-            let granted =
-                waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("granted once the big one is back");
-            assert!(granted.is_some_and(|capacity| capacity >= 10));
-            // Then each file in turn, each larger than the last, taken and given back before the next: none waits.
-            for i in 2..10 {
-                let lease = pool.take(i, 1000 * i).unwrap();
-                assert!(lease.bytes.capacity() >= 1000 * i);
-            }
+            let ended = waiting.recv_timeout(std::time::Duration::from_secs(10)).expect("the stop ends the take");
+            assert_eq!(ended, None);
+            drop(b);
         });
     }
 }

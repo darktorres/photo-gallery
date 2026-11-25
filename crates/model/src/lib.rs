@@ -13,7 +13,7 @@
 //!   Yandex search's and save's (`yandex`), and the notices (`notice`).
 //! - The plain data the catalog and the jobs hand out: the inbox's entries and counts (`inbox`), the folder and file
 //!   failures of a ledger (`ledger`), the filter bar's counts (`facets`), a removal's outcome (`removal`), a job's
-//!   events and causes (`job`), a write's error (`write`), the thumbnail cache's size limit (`cache`), a pass's buffer budget (`buffer`), and
+//!   events and causes (`job`), a write's error (`write`), the thumbnail cache's size limit (`cache`), and
 //!   the reader counts the lanes learned per disk (`profile`).
 
 // no_std: the model reads no clock, thread, file, socket, process or environment, by construction. The `specta` feature
@@ -26,7 +26,6 @@ extern crate alloc;
 extern crate std;
 
 pub mod analysis;
-pub mod buffer;
 pub mod cache;
 pub mod date;
 pub mod details;

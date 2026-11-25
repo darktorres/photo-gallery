@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use pg_catalog::VolumeSet;
 use pg_jobs::control::Control;
-use pg_jobs::governor::Budget;
 use pg_jobs::pipeline::{self, Options, Readers, SizeRefused, Tuning};
 use pg_jobs::tuner::{Decision, MAX_READERS, TunerConfig};
 use pg_model::notice::{FilePass, Notice};
@@ -31,8 +30,6 @@ pub(crate) struct Inner {
     pub(crate) number: usize,
     /// This lane's control: a child of the run's root (`Control::lane`), with its own stop, pause and holds.
     pub(crate) ctl: Arc<Control>,
-    /// The lane's share of the run's file-buffer budget (the governor sets it: `pg_jobs::governor`).
-    budget: Arc<Budget>,
     /// The lane's drive for people (`E:`), empty when it can't be told (see [`Inner::label`]).
     label: Mutex<String>,
     /// The volumes this lane's passes read.
@@ -54,7 +51,7 @@ pub(crate) struct Inner {
 }
 
 /// The pass options a run's lanes give their passes, below normal (the one background priority): the defaults, or the
-/// counts a run pinned (`Pins`), with the slots and the budget that follow from them as they do by default. Unpinned, the
+/// counts a run pinned (`Pins`), with the slots that follow from them as they do by default. Unpinned, the
 /// readers are sized for the most a tuned pass takes ([`MAX_READERS`]); each lane hands its passes its tuners
 /// ([`Inner::options`]). Refused when the pinned counts are out of range (`Options::sized`): the runner does not start
 /// with them.
@@ -65,12 +62,11 @@ pub(crate) fn pinned_options(pins: Pins) -> Result<Options, SizeRefused> {
 }
 
 impl Inner {
-    pub(crate) fn new(shared: Arc<Shared>, number: usize, ctl: Arc<Control>, budget: Arc<Budget>) -> Inner {
+    pub(crate) fn new(shared: Arc<Shared>, number: usize, ctl: Arc<Control>) -> Inner {
         Inner {
             shared,
             number,
             ctl,
-            budget,
             label: Mutex::new(String::new()),
             volumes: Mutex::new(VolumeSet::All),
             scans: Mutex::new(VecDeque::new()),
@@ -83,10 +79,9 @@ impl Inner {
         }
     }
 
-    /// The run's pass options with the lane's budget as the pass's, so the governor's share holds, and no tuner: for a
-    /// pass that reads no file through the readers (the pairing).
+    /// The run's pass options, with no tuner: for a pass that reads no file through the readers (the pairing).
     pub(crate) fn base_options(&self) -> Options {
-        Options { budget: Some(self.budget.clone()), ..self.shared.options.clone() }
+        self.shared.options.clone()
     }
 
     /// Pass options for this lane's `pass`, below normal: [`Inner::base_options`], with the lane's tuner for the pass
@@ -275,32 +270,20 @@ mod pin_tests {
         let workers = pipeline::default_workers();
         assert_eq!((opts.readers.max(), opts.workers), (MAX_READERS, workers));
         assert_eq!(Some(opts.slots), Options::slots(MAX_READERS, workers));
-        assert_eq!(Some(opts.buffer_bytes), Options::budget(MAX_READERS, workers));
         assert_eq!(opts.priority, Priority::BelowNormal);
-        assert!(opts.budget.is_none());
     }
 
     #[test]
-    fn pinned_counts_replace_the_defaults_and_the_slots_and_budget_follow() {
+    fn pinned_counts_replace_the_defaults_and_the_slots_follow() {
         let pins = Pins { readers: Some(n(3)), workers: Some(n(2)) };
         let opts = pinned_options(pins).unwrap();
         assert_eq!((opts.readers.max(), opts.workers), (n(3), n(2)));
         assert_eq!(Some(opts.slots), Options::slots(n(3), n(2)));
-        assert_eq!(Some(opts.buffer_bytes), Options::budget(n(3), n(2)));
     }
 
     #[test]
     fn pinned_counts_out_of_range_are_refused() {
         let pins = Pins { readers: None, workers: Some(n(pg_jobs::pipeline::MAX_SLOTS)) };
         assert_eq!(pinned_options(pins).err(), Some(SizeRefused::TooManySlots));
-    }
-
-    #[test]
-    fn a_lanes_options_are_the_runs_with_the_lanes_budget() {
-        let budget = Arc::new(Budget::new(1 << 20));
-        let run = pinned_options(Pins { readers: Some(n(3)), workers: Some(n(2)) }).unwrap();
-        let lane = Options { budget: Some(budget.clone()), ..run.clone() };
-        assert_eq!((lane.readers.max(), lane.workers, lane.slots), (run.readers.max(), run.workers, run.slots));
-        assert!(lane.budget.as_ref().is_some_and(|shared| Arc::ptr_eq(shared, &budget)), "the lane's budget is kept");
     }
 }

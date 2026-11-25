@@ -6,7 +6,7 @@ Part B of one plan that was split in phase 0. The combined text is in commit `a8
 
 ## Status (2026-11-25)
 
-Phases B3 and B4 are implemented. The `BelowNormal` against `Idle` measurement was not taken, by the user's decision: `Idle` is removed without it. Still open: the Windows CI run of the scan tests under the real storage check, the Intel RST ("RAID On") check on such a machine, and the confirmation that "SCSI" means iSCSI (ordinary SCSI and SAS are taken).
+Phases B3 and B4 are implemented. Later, every memory cap was removed (user decision; `docs/plans/ADAPTIVE_READERS_PLAN.md`, status): `BufferBytes` and the byte budget of section 5 are gone, and a pass is bounded by its count of files in flight alone. The `BelowNormal` against `Idle` measurement was not taken, by the user's decision: `Idle` is removed without it. Still open: the Windows CI run of the scan tests under the real storage check, the Intel RST ("RAID On") check on such a machine, and the confirmation that "SCSI" means iSCSI (ordinary SCSI and SAS are taken).
 
 ## Context
 

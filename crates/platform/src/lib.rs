@@ -10,7 +10,6 @@ pub mod dll;
 pub mod drive;
 pub mod env;
 pub mod file;
-pub mod memory;
 pub mod message;
 pub mod names;
 pub mod native;

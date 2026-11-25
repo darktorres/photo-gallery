@@ -6,7 +6,9 @@ Part C of one plan that was split in phase 0. The combined text is in commit `a8
 
 ## Status (2026-11-25)
 
-Phases C5 to C10 are implemented, without the manual measurements: the tuner's thresholds are the provisional constants of `TunerConfig` (`crates/jobs/src/tuner.rs`), not yet locked by the C5 measurements, and the memory headroom (`MEMORY_HEADROOM`, 1 GiB, `crates/library/src/coordinator.rs`) is unmeasured. No standby-cache purge was run.
+Phases C5 to C10 are implemented, without the manual measurements: the tuner's thresholds are the provisional constants of `TunerConfig` (`crates/jobs/src/tuner.rs`), not yet locked by the C5 measurements. No standby-cache purge was run.
+
+**Memory caps removed (user decision, after C8 was built).** The app is for heavy users, so no memory is capped: there is no byte budget per pass, no governor splitting one among the lanes, no quarter-of-RAM cap and no cap from free memory. What C8 built (`Budget`, `Governor`, `soft_cap`, `memory::available_bytes`, the coordinator's timed `govern`) is gone, and so is `pg_model::buffer::BufferBytes` from Part B. A pass is bounded by its count of files in flight alone (`Options::slots`), which is backpressure, not a memory cap: the readers stop when they are that many files ahead of the workers. The "Memory governance" section below is historical, and so is type-mismatch item 3 (the lanes' slots and memory cap; its third problem, a gather that grows past the budget, no longer exists).
 
 What was built, and where it differs from the text below:
 
@@ -14,11 +16,10 @@ What was built, and where it differs from the text below:
 - **Read seam** (`crates/jobs/src/source.rs`): `FileSource::open` returns the reader and the size, because the pool admits a file by its size between the open and the read; the pipeline does the read itself, through `ReadSeek`. The container's gathers are unchanged: the import passes them `&mut &mut dyn ReadSeek`, which is `Read + Seek` itself.
 - **Gate** (`crates/jobs/src/gate.rs`) and **sampler** (`pipeline::sample`), as designed. `Readers::{Fixed, Auto(Tuning)}`; `Tuning` holds the lane's tuner and a change hook.
 - **Tuner** (`crates/jobs/src/tuner.rs`): the hill climb explores by halving, doubling, then one step down and up; fewer readers win a tie (`keep_lower`, 0.95), more must gain 12%. Unit tests that feed it windows of measured curves (the Exos's, a flash disk's), and laws (`crates/jobs/tests/tuner_laws.rs`). **No simulated disk** (decided after it was built): a test that sleeps real threads and asserts where the tuner converged depends on the OS's short sleeps and the runner's load, and flaked here (one run in three). The pure tests cover the algorithm, the gate's and the pipeline's real-thread tests assert only that parked readers are released and a bound holds, and convergence on real disks is the manual validation below. The read seam stays, for tests of sources that fail or stall.
-- **Memory governance**: `memory::available_bytes`, `Budget` counts what its pools hold, `Governor::set_cap` with a 5% hysteresis, `governor::soft_cap`, and the coordinator's timed `govern` every 5 s. The knee is the budget of 16 readers.
 - **Wiring** (`crates/library/src/tuning.rs`, `inner.rs`): `LaneTuner` per lane, one tuner per `TunedPass`; the binding is set beside the label. `LaneProgress::readers`, `Headless::lane_readers`, the perf record's tuner fields, and one log line per change through `RunnerConfig::on_tuning` (the app logs it under `readers`).
 - **Persistence**: `Drive::identity` (FNV-1a of vendor, product and serial; Windows' device descriptor, Linux's sysfs `serial` or `wwid`), `pg_model::profile`, `ProfileStore` (`load` and `merge`, so two lanes writing at once lose nothing), the app's `JsonProfiles` in `drive-profiles.json`. The OS is stored by name, not by build.
 
-Still open: the manual validation runs, and the threshold and headroom measurements.
+Still open: the manual validation runs, and the threshold measurements.
 
 ## Context
 

@@ -274,7 +274,7 @@ pub(crate) struct Shared {
     pub(crate) passes: PassCell,
     /// The pass options of the run's lanes (`inner::pinned_options`): the defaults, or the counts a developer pinned
     /// (`RunnerConfig`), checked when the run starts. Sized for the most readers a tuned pass takes. Each lane adds its
-    /// share of the budget and its tuner (`Inner::options`).
+    /// tuner (`Inner::options`).
     pub(crate) options: Options,
     /// Whether the run pinned its readers: its lanes then read with that count, tune nothing and write no profile.
     pub(crate) pinned: bool,

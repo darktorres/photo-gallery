@@ -537,8 +537,7 @@ mod tests {
             sink,
             Arc::new(Bus::new(16)),
         );
-        let budget = Arc::new(pg_jobs::governor::Budget::new(48 << 20));
-        Inner::new(Arc::new(shared), 0, Arc::new(Control::new()), budget)
+        Inner::new(Arc::new(shared), 0, Arc::new(Control::new()))
     }
 
     /// Run `pass` once on a connection of its own, as a round does.

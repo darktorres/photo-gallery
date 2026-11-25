@@ -354,7 +354,7 @@ fn put_ones(
 
 /// Store `thumbs` in one IMMEDIATE transaction: drop the entries they replace, read the total and the cap, evict
 /// what's needed, then write. Reading and writing in one write transaction is what keeps two writers (the app and
-/// `gallery thumbs`) from both seeing room for their batch, and from failing with SQLITE_BUSY_SNAPSHOT. Dropping
+/// `pg-driver run`) from both seeing room for their batch, and from failing with SQLITE_BUSY_SNAPSHOT. Dropping
 /// the replaced entries first keeps eviction from counting them twice (replaced, then evicted).
 fn put(
     conn: &mut Connection,

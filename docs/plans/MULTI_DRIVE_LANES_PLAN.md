@@ -1,5 +1,9 @@
 # Process library folders on different physical drives in parallel (lane per drive)
 
+> **Note (plan phase A2).** The `gallery` command line is removed, and with it `--serial` (plan phase B3 removes `serial_drives`
+> too). The per-drive groups the CLI had are gone; the app's lanes are the only lanes. The `gallery <pass>` names below are
+> historical. See `docs/plans/HEADLESS_SESSION_PLAN.md` and `docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`.
+>
 > **Status (2026-11-18).** Phases 0–6 are built in the tree, with the gaps listed below; nothing is committed.
 > The measurements the plan asks for (Phase 0 items 1–3 and 5, the keep-rule A/B, the two-drive run on E: and D:) are not
 > done, so the tuning constants are the ones the repo already had: 8 readers, 4 listing workers, a 240 MB buffer knee per

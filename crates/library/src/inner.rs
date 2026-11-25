@@ -3,20 +3,21 @@
 //! layers: it names nothing above it, so the passes can take `&Inner` without the thread that calls them.
 
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use pg_catalog::VolumeSet;
 use pg_jobs::control::Control;
 use pg_jobs::governor::Budget;
-use pg_jobs::pipeline::Options;
+use pg_jobs::pipeline::{self, Options};
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::Path as RulePath;
 use pg_model::size::ThumbHeight;
 use pg_platform::priority::Priority;
 use pg_thumbs::LedgerOutcome;
 
-use crate::shared::Shared;
+use crate::shared::{Pins, Shared};
 
 /// A lane's state, shared by its thread and by whoever routes to it (the coordinator, the runner's requests).
 pub(crate) struct Inner {
@@ -43,6 +44,21 @@ pub(crate) struct Inner {
     idle: Condvar,
 }
 
+/// The pass options a lane gives its passes: the defaults, or the counts a run pinned (`Pins`), with the slots and the budget
+/// that follow from them as they do by default. `budget` is the lane's share of the governor's (`None`: the pass's own).
+pub(crate) fn pinned_options(pins: Pins, budget: Option<Arc<Budget>>, priority: Priority, cpus: usize) -> Options {
+    let readers = pins.readers.map_or(pipeline::READERS, NonZeroUsize::get);
+    let workers = pins.workers.map_or(cpus, NonZeroUsize::get);
+    Options {
+        readers,
+        workers,
+        slots: Options::slots(readers, workers),
+        buffer_bytes: Options::budget(readers, workers),
+        budget,
+        priority,
+    }
+}
+
 impl Inner {
     pub(crate) fn new(shared: Arc<Shared>, number: usize, ctl: Arc<Control>, budget: Arc<Budget>) -> Inner {
         Inner {
@@ -60,9 +76,10 @@ impl Inner {
         }
     }
 
-    /// Pass options for this lane at `priority`: the lane's budget is the pass's, so the governor's share holds.
+    /// Pass options for this lane at `priority`: the lane's budget is the pass's, so the governor's share holds. A pinned run
+    /// (`RunnerConfig`) takes its counts in place of the defaults, and the slots and the budget follow them as they do by default.
     pub(crate) fn options(&self, priority: Priority) -> Options {
-        Options { budget: Some(self.budget.clone()), ..Options::new(priority) }
+        pinned_options(self.shared.pins, Some(self.budget.clone()), priority, pipeline::cpus())
     }
 
     /// Whether a round is running now.
@@ -180,5 +197,35 @@ impl Inner {
 
     pub(crate) fn imported(&self) {
         self.shared.imported();
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::*;
+
+    #[test]
+    fn unpinned_options_are_the_defaults_with_the_lanes_budget() {
+        let cpus = 6;
+        let opts = pinned_options(Pins::default(), None, Priority::BelowNormal, cpus);
+        let default = Options::new(Priority::BelowNormal);
+        assert_eq!(opts.readers, default.readers);
+        assert_eq!(opts.workers, cpus);
+        assert_eq!(opts.slots, Options::slots(default.readers, cpus));
+        assert_eq!(opts.buffer_bytes, Options::budget(default.readers, cpus));
+        assert!(opts.budget.is_none());
+    }
+
+    #[test]
+    fn pinned_counts_replace_the_defaults_and_the_slots_and_budget_follow() {
+        let (readers, workers) = (NonZeroUsize::new(3), NonZeroUsize::new(2));
+        let pins = Pins { readers, workers };
+        let budget = Arc::new(Budget::new(1 << 20));
+        let opts = pinned_options(pins, Some(budget.clone()), Priority::BelowNormal, 12);
+        assert_eq!(opts.readers, 3);
+        assert_eq!(opts.workers, 2);
+        assert_eq!(opts.slots, Options::slots(3, 2));
+        assert_eq!(opts.buffer_bytes, Options::budget(3, 2));
+        assert!(opts.budget.as_ref().is_some_and(|shared| Arc::ptr_eq(shared, &budget)), "the lane's budget is kept");
     }
 }

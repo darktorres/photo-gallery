@@ -1122,7 +1122,7 @@ Import is already BelowNormal, and Scans is Normal. Moving Scans is not part of 
 
 ### 5.11 The CLI and the import options
 
-`gallery import` takes `--no-borders` and `--no-dups` (they set the features, 2.1 and 3.9; `--no-dups` is shipped as `no_dups`, `cli/src/args.rs:107`, so the sketch below does not add it again) and `--thumbs-height N` (it sets the grid height for the ingest thumbnails and turns that stage on; without it the thumbnail stage is off, since the cache has no height). `gallery borders` and `gallery thumbs` stay explicit commands and ignore the toggles (`cli/src/args.rs:86, :102`).
+[Moot after phase A2: the command line is removed, so `import --no-dups` no longer exists; the features still set the duplicates and borders.] `gallery import` takes `--no-borders` and `--no-dups` (they set the features, 2.1 and 3.9; `--no-dups` is shipped as `no_dups`, `cli/src/args.rs:107`, so the sketch below does not add it again) and `--thumbs-height N` (it sets the grid height for the ingest thumbnails and turns that stage on; without it the thumbnail stage is off, since the cache has no height). `gallery borders` and `gallery thumbs` stay explicit commands and ignore the toggles (`cli/src/args.rs:86, :102`).
 
 `Command::Import` (`cli/src/args.rs:74-84`) gains three fields after `again`. Clap derives the long names from the field names:
 

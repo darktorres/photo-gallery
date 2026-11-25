@@ -3,7 +3,7 @@
 //! (file, height), so changing it only means new entries, and old heights age out.
 //!
 //! The cache is a separate SQLite file (one packed file instead of millions of loose ones), capped in bytes. The
-//! cap is kept in the file, so every process that writes it (the app, `gallery thumbs`) keeps it to the same one;
+//! cap is kept in the file, so every process that writes it (the app, `pg-driver run`) keeps it to the same one;
 //! `open` changes it when asked. The background task fills it up to the cap and may evict other heights to make
 //! room for the current one; on-demand requests evict the least recently used entries of any height.
 //!
@@ -12,7 +12,7 @@
 //! are one row kept by triggers, so nothing ever sums the entries. Opening reads the totals, not the entries: they
 //! are checked against the entries at most once a day (`HEAL_INTERVAL`, a scan of the entries' sizes), so opening
 //! costs the same at any size except on that day's first open. The totals are right for every connection and
-//! process that writes the file (the app, `gallery thumbs`).
+//! process that writes the file (the app, `pg-driver run`).
 //!
 //! Reads take no lock: each thread reads through its own connection (WAL readers never wait for the writer).
 //! Writes go through one writer per cache (a `Service`), in IMMEDIATE transactions: an on-demand thumbnail is handed

@@ -1,5 +1,6 @@
 # The crates allowed to depend on anyhow, one per line: the library crates that still use it. Each crate's migration removes
-# its line in the same commit point, so the file ends empty (Phase 7 of the consistency program). cli and desktop keep
+# its line in the same commit point, so the file ends empty (Phase 7 of the consistency program). driver and desktop keep
 # anyhow for good (the binaries' top-level errors, the reason in test_ci_files.py's ANYHOW_PERMANENT) and are not listed.
+# (`cli` was one of them until the command line was removed; `driver`, the developer's driver, is one now.)
 # test_ci_files.py's AnyhowAllowlist checks both ways: a crate that depends on anyhow must be listed here or be one of
 # those two, and a listed crate, or a permanent one, must still depend on it.

@@ -1,5 +1,9 @@
 # The start, to `ready`, after the optimizations
 
+> Some runs here used the `gallery` command line, which is gone (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2). Read
+> `gallery thumbs --height N` as `pg-dev run --height N --passes thumbs,placeholders`, and `gallery --catalog-dir X` as the
+> driver's `--home H`, where `X` is `H\catalog`.
+
 A snapshot. Re-measure before acting on any of these numbers.
 
 Where every instruction of the app's start goes, thread by thread, after the order key, the grid model, tracked

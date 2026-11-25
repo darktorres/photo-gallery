@@ -9,12 +9,14 @@
 //! resumable from the catalog, so stopping costs nothing but the batch in flight. The notices the lanes share are told
 //! through `tally`, which says what all the lanes say together.
 
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::Result;
+use pg_catalog::Catalog;
 use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
 use pg_jobs::events::Bus;
@@ -23,11 +25,26 @@ use pg_model::job::Change;
 use pg_model::progress::{Phase, Progress};
 use pg_model::rules::Path as RulePath;
 use pg_platform::drive::{Drives, SystemDrives};
+use pg_platform::native::PATH_RULES;
 use pg_thumbcache::ThumbCache;
 
 use crate::coordinator::Lanes;
-use crate::shared::{FeatureCell, Generation, HeightCell, Shared};
+use crate::mask::{PassKind, PassMask};
+use crate::shared::{FeatureCell, Generation, HeightCell, Pins, Shared};
 use pg_model::progress::LaneProgress;
+
+/// The settings a job starts with: the counts a developer pins for the run, and the passes a round runs. The handles the job
+/// shares (the cells, the change bus, the notices, the drives) are arguments of [`Runner::start`], not settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunnerConfig {
+    /// The reads in flight, pinned for the run (a developer's sweep). `None` keeps the default; a pinned run writes no
+    /// learned profile.
+    pub pin_readers: Option<NonZeroUsize>,
+    /// The decode threads, pinned for the run. `None` keeps the default (one per logical CPU).
+    pub pin_workers: Option<NonZeroUsize>,
+    /// The passes each round runs. Every pass by default; a pass left out is skipped in the real round.
+    pub passes: PassMask,
+}
 
 /// The background job the module comment describes. It holds the lanes, one per drive the library's folders are on.
 pub struct Runner {
@@ -39,7 +56,8 @@ impl Runner {
     /// begins by importing whatever is pending on its drive, and makes the thumbnails still missing at the height `heights`
     /// holds (none until one is set). `features` says which background work is on (the borders, the duplicates). What it
     /// changes is published on `changes` (`Change`), and what it tells the user goes to `notices`, which is poked whenever a
-    /// pass changes the failure ledger (`Control::ledger_changed`). An error if the job's threads can't be started.
+    /// pass changes the failure ledger (`Control::ledger_changed`). `config` holds the run's settings (`RunnerConfig`). An
+    /// error if the job's threads can't be started.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: Arc<ThumbCache>,
@@ -47,11 +65,22 @@ impl Runner {
         features: FeatureCell,
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
+        config: RunnerConfig,
     ) -> Result<Runner> {
-        Runner::start_with_drives(catalog_path, thumbs, heights, features, changes, notices, Arc::new(SystemDrives))
+        Runner::start_with_drives(
+            catalog_path,
+            thumbs,
+            heights,
+            features,
+            changes,
+            notices,
+            Arc::new(SystemDrives),
+            config,
+        )
     }
 
     /// [`Runner::start`] with the drives the library's roots are on asked of `drives` (the system's, or a test's).
+    #[expect(clippy::too_many_arguments, reason = "the job's handles, and its settings: each is a distinct argument")]
     pub fn start_with_drives(
         catalog_path: PathBuf,
         thumbs: Arc<ThumbCache>,
@@ -60,9 +89,10 @@ impl Runner {
         changes: Arc<Bus<Change>>,
         notices: Arc<dyn NoticeSink>,
         drives: Arc<dyn Drives + Send + Sync>,
+        config: RunnerConfig,
     ) -> Result<Runner> {
         let shared = Shared::new(catalog_path, thumbs, heights.clone(), features.clone(), notices, changes);
-        Runner::start_built(shared, heights, features, drives)
+        Runner::start_built(shared, heights, features, drives, config)
     }
 
     /// A runner over the test's hooks (`hooks`), in place before the job starts, so a hook holds even the removal the
@@ -85,16 +115,21 @@ impl Runner {
             Arc::new(Bus::new(64)),
         );
         shared.hooks = hooks;
-        Runner::start_built(shared, heights, features, drives)
+        Runner::start_built(shared, heights, features, drives, RunnerConfig::default())
     }
 
-    /// The job over `shared`, started: its lanes, its coordinator and its removals thread.
+    /// The job over `shared`, started: its lanes, its coordinator and its removals thread. The settings are in place before
+    /// the lanes start, so the first round already runs with them.
     fn start_built(
         shared: Shared,
         heights: HeightCell,
         features: FeatureCell,
         drives: Arc<dyn Drives + Send + Sync>,
+        config: RunnerConfig,
     ) -> Result<Runner> {
+        shared.passes.set(config.passes);
+        let mut shared = shared;
+        shared.pins = Pins { readers: config.pin_readers, workers: config.pin_workers };
         let shared = Arc::new(shared);
         let root = Arc::new(Control::new());
         let announce = shared.changes.clone();
@@ -184,6 +219,44 @@ impl Runner {
     /// Whether no lane is in a round now (for the measuring harness: it waits for the job to be idle).
     pub fn idle(&self) -> bool {
         self.lanes.all().iter().all(|lane| !lane.inner.is_active())
+    }
+
+    /// Whether the job has nothing left to do, and nothing that is owed is still running: no lane is in a round, no crop or cut
+    /// is queued or running, no write is left, and no removal is unfinished. The folder walks count only while the scan pass
+    /// runs (`set_passes`): a walk asked for while it is left out waits for the next run that includes it, as the work of any
+    /// pass left out does, and is not a reason to wait here. A root with no lane (its drive is not there) keeps the job busy
+    /// while its walk is asked for, so a run waiting for it times out rather than finishing early. `false` when the catalog
+    /// can't be read.
+    pub fn quiescent(&self) -> bool {
+        let scans = self.passes().contains(PassKind::Scans);
+        let lanes_quiet = self.lanes.all().iter().all(|lane| {
+            !lane.inner.is_active() && (!scans || (lane.inner.scans().is_empty() && lane.inner.busy().is_empty()))
+        });
+        if !lanes_quiet || !self.lanes.unrouted(scans) {
+            return false;
+        }
+        let (crop, _) = self.lanes.crop_snapshot();
+        if crop.phase != Phase::Idle {
+            return false;
+        }
+        match Catalog::open(&self.lanes.shared.catalog_path, PATH_RULES) {
+            Ok(catalog) => {
+                catalog.left_to_write().is_ok_and(|left| left == 0)
+                    && catalog.removal_markers().is_ok_and(|markers| markers.is_empty())
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// The passes each round runs (`RunnerConfig::passes`, or the last `set_passes`).
+    pub fn passes(&self) -> PassMask {
+        self.lanes.shared.passes.get()
+    }
+
+    /// Sets the passes each round runs. A round in progress keeps the set it began with; the next round uses this one. The
+    /// passes left out are not run, and what they owe stays owed.
+    pub fn set_passes(&self, passes: PassMask) {
+        self.lanes.shared.passes.set(passes);
     }
 
     /// Pauses or resumes the whole run (every lane).
@@ -509,6 +582,7 @@ mod tests {
             FeatureCell::new(Features::ALL),
             Arc::new(Bus::new(16)),
             sink.clone(),
+            RunnerConfig::default(),
         )
         .unwrap();
         pg_testkit::wait_until(
@@ -617,6 +691,7 @@ mod tests {
             FeatureCell::new(Features::ALL),
             Arc::new(Bus::new(16)),
             sink.clone(),
+            RunnerConfig::default(),
         )
         .unwrap();
         let before = sink.pokes();
@@ -639,6 +714,7 @@ mod tests {
             FeatureCell::new(Features::ALL),
             Arc::new(Bus::new(16)),
             sink.clone(),
+            RunnerConfig::default(),
         )
         .unwrap();
         let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();

@@ -1158,37 +1158,38 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     quiet.check();
 }
 
-/// A folder whose removal was begun, with nothing waiting to be written, and added again: the add finishes the removal
-/// first, and then adds the folder.
+/// A folder whose removal was begun, with nothing waiting to be written: an add over it is refused while the removal is pending,
+/// and once the removal has finished the add goes through (`pg-driver` finishes the removal and adds the folder, in that order).
 #[test]
-fn an_add_over_a_pending_removal_finishes_it_and_adds_the_folder() {
+fn an_add_over_a_pending_removal_is_refused_until_the_removal_finishes() {
     let (dir, _files, catalog_path, c) = imported("addfinish").unwrap();
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let mut finishes = 0;
-    let added = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
-        finishes += 1;
-        pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
-    })
-    .unwrap();
-    assert_eq!(finishes, 1, "the removal was finished once");
-    let finished = added.finished.expect("the removal finished first");
-    assert!(finished.driven.files > 0, "its files were deleted");
-    assert!(added.new, "the folder is added again");
+    assert!(
+        matches!(
+            pg_library::folders::add_folder(&c, &images),
+            Err(pg_library::folders::AddError::Catalog(pg_catalog::Error::RemovalPending { .. }))
+        ),
+        "the add is refused while the removal is pending"
+    );
+    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert!(driven.files > 0, "its files were deleted");
     assert!(c.removal_markers().unwrap().is_empty());
+    let (added, new) = pg_library::folders::add_folder(&c, &images).unwrap();
+    assert!(new, "the folder is added again");
     let roots = c.roots().unwrap();
     assert_eq!(roots.len(), 1);
-    assert!(c.rules().same(&roots[0].path, &added.root));
+    assert!(c.rules().same(&roots[0].path, &added));
     drop(c);
     quiet.check();
 }
 
-/// A folder whose removal is kept for a change still waiting to be written (here the folder is still there, and the
-/// writer is not running): the add finishes what it can, and adds nothing.
+/// A folder whose removal is kept for a change still waiting to be written (here the folder is still there, and the writer is not
+/// running): the finish does what it can, the removal stays pending, and an add over it is still refused and adds nothing.
 #[test]
-fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
+fn a_removal_kept_for_a_write_still_refuses_an_add() {
     let (dir, _files, catalog_path, c) = imported("addkept").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
@@ -1198,16 +1199,16 @@ fn an_add_over_a_removal_kept_for_a_write_adds_nothing() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let refused = pg_library::folders::add_folder_finishing(&c, &images, &mut || {
-        pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true)
-    });
-    match refused {
-        Err(pg_library::folders::AddFinishError::StillPending(finished)) => {
-            assert_eq!(finished.driven.deferred, 1, "the file with the change is kept");
-        }
-        other => panic!("expected the removal still pending, got {other:?}"),
-    }
+    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    assert_eq!(driven.deferred, 1, "the file with the change is kept");
     assert_eq!(c.removal_markers().unwrap().len(), 1, "the removal is still pending");
+    assert!(
+        matches!(
+            pg_library::folders::add_folder(&c, &images),
+            Err(pg_library::folders::AddError::Catalog(pg_catalog::Error::RemovalPending { .. }))
+        ),
+        "the add is still refused"
+    );
     assert!(c.roots().unwrap().is_empty(), "nothing was added");
     drop(c);
     quiet.check();

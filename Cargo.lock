@@ -1554,33 +1554,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pg-cli"
-version = "0.1.0-dev"
-dependencies = [
- "anyhow",
- "clap",
- "pg-analysis",
- "pg-borders",
- "pg-catalog",
- "pg-codec",
- "pg-dedup",
- "pg-import",
- "pg-jobs",
- "pg-jobs-testkit",
- "pg-library",
- "pg-model",
- "pg-perf",
- "pg-platform",
- "pg-scan",
- "pg-testkit",
- "pg-thumbcache",
- "pg-thumbs",
- "pg-wording",
- "pg-writeback",
- "serde_json",
-]
-
-[[package]]
 name = "pg-client"
 version = "0.1.0-dev"
 dependencies = [
@@ -1682,6 +1655,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-driver"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "clap",
+ "pg-app",
+ "pg-catalog",
+ "pg-codec",
+ "pg-library",
+ "pg-model",
+ "pg-perf",
+ "pg-platform",
+ "pg-testkit",
+ "pg-writeback",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "pg-edit"
 version = "0.1.0-dev"
 dependencies = [
@@ -1711,10 +1703,8 @@ name = "pg-gallery"
 version = "0.1.0-dev"
 dependencies = [
  "dhat",
- "pg-cli",
  "pg-desktop",
  "pg-platform",
- "pg-wording",
  "winres",
 ]
 

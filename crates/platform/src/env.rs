@@ -21,7 +21,7 @@ pub enum Var {
     Prefs,
     /// The ExifTool program (`pg_exiftool::Program`).
     Exiftool,
-    /// The perf log (`gallery` and the desktop's trace).
+    /// The perf log (the desktop's trace, and `pg-driver`).
     PerfLog,
     /// The thumbnail cache's cap in GiB (the desktop's start).
     ThumbCapGib,

@@ -1,15 +1,12 @@
-//! `gallery`: the photo gallery. Without arguments it opens the app (crates/desktop), which imports the library
-//! in the background; with a command (`gallery scan`, `gallery import`, … see `pg_cli`) it runs that pass on
-//! the command line instead. Without the `desktop` feature only the commands run.
+//! `gallery`: the photo gallery. It opens the app's window (crates/desktop), which imports the library in the background. The
+//! library's command line is gone; its developer uses are `pg-driver` (crates/driver), which runs the same job without a window.
 
 #![forbid(unsafe_code)]
-// A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
+// A GUI program: no console window when started from Explorer.
 #![windows_subsystem = "windows"]
 
 use std::ffi::OsString;
 use std::process::ExitCode;
-
-use pg_wording::cli::{Line, line};
 
 // The heap profiler's build. It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
@@ -26,30 +23,7 @@ fn main() -> ExitCode {
         dhat::Profiler::builder().trim_backtraces(frames).build()
     };
     let args: Vec<OsString> = std::env::args_os().collect();
-    if pg_cli::wants_cli(args.get(1..).unwrap_or_default()) {
-        pg_platform::console::attach_to_parent();
-        if let Err(e) = pg_cli::main(args) {
-            // The exit status is the failure whether or not the message reaches the console.
-            let _ = pg_cli::stderr_line(line(&Line::Error { error: format!("{e:#}") }));
-            return ExitCode::FAILURE;
-        }
-        return ExitCode::SUCCESS;
-    }
-    open_window(&args)
-}
-
-/// Opens the app's window; returns when it closes. The app's exit status is the process's (a `--screenshot` run that
-/// found no window fails); a status that doesn't fit an exit code (below 0 or above 255) is a failure.
-#[cfg(feature = "desktop")]
-fn open_window(args: &[OsString]) -> ExitCode {
-    u8::try_from(pg_desktop::run(args)).map_or(ExitCode::FAILURE, ExitCode::from)
-}
-
-/// A build without the window: only the commands run.
-#[cfg(not(feature = "desktop"))]
-fn open_window(_args: &[OsString]) -> ExitCode {
-    pg_platform::console::attach_to_parent();
-    // The exit status is the failure whether or not the message reaches the console.
-    let _ = pg_cli::stderr_line(pg_cli::no_window_line());
-    ExitCode::FAILURE
+    // The app's exit status is the process's (a `--screenshot` run that found no window fails); a status that doesn't fit
+    // an exit code (below 0 or above 255) is a failure.
+    u8::try_from(pg_desktop::run(&args)).map_or(ExitCode::FAILURE, ExitCode::from)
 }

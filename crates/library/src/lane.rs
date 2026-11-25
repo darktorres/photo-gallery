@@ -12,12 +12,13 @@ use std::time::Duration;
 use crate::Result;
 use pg_catalog::Catalog;
 use pg_jobs::panics;
-use pg_jobs::schedule::{self, Step};
+use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Waker, Woke};
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
 use pg_platform::native::PATH_RULES;
 
 use crate::inner::Inner;
+use crate::mask::PassKind;
 use crate::passes::{self, Cx};
 
 /// How long a walk refused by another walk's lease (an overlapping folder, in this process or another) waits before it
@@ -106,19 +107,35 @@ impl Inner {
         self.shared.hooks.at_round(&self.volume_set());
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
-            schedule::round(
-                &mut [
-                    &mut passes::Scans,
-                    &mut passes::Import,
-                    &mut passes::Thumbs,
-                    &mut passes::Placeholders,
-                    &mut passes::Hashes,
-                    &mut passes::Pairing,
-                    &mut passes::Borders,
-                ],
-                &mut cx,
-                |cx| cx.inner.ctl.stop_requested(),
-            )
+            // The passes this round runs: the set the job holds now (`Runner::set_passes`), in round order. A pass left out is
+            // not run, and what it owes stays owed for the next round that runs it.
+            let mask = self.shared.passes.get();
+            let (mut scans, mut import, mut thumbs, mut placeholders) =
+                (passes::Scans, passes::Import, passes::Thumbs, passes::Placeholders);
+            let (mut hashes, mut pairing, mut borders) = (passes::Hashes, passes::Pairing, passes::Borders);
+            let mut list: Vec<&mut dyn Pass<Cx<'_>>> = Vec::with_capacity(PassKind::ALL.len());
+            if mask.contains(PassKind::Scans) {
+                list.push(&mut scans);
+            }
+            if mask.contains(PassKind::Import) {
+                list.push(&mut import);
+            }
+            if mask.contains(PassKind::Thumbs) {
+                list.push(&mut thumbs);
+            }
+            if mask.contains(PassKind::Placeholders) {
+                list.push(&mut placeholders);
+            }
+            if mask.contains(PassKind::Hashes) {
+                list.push(&mut hashes);
+            }
+            if mask.contains(PassKind::Pairing) {
+                list.push(&mut pairing);
+            }
+            if mask.contains(PassKind::Borders) {
+                list.push(&mut borders);
+            }
+            schedule::round(&mut list, &mut cx, |cx| cx.inner.ctl.stop_requested())
         };
         // The round's writes are in the WAL: this thread moves them into the file at the end of its work, so no writer's
         // commit pays for the checkpoint. A round that failed is checkpointed too.

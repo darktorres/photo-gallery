@@ -701,6 +701,7 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 
 - Confidence: high
 - Kind: missing-check
+- Status: closed by the removal of the command line's `borders` with paths (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2).
 - Trigger: gallery borders D:/photos --csv C:/reports/out.csv where C:/reports does not exist, or out.csv is open in Excel (sharing violation on the write), so the write at the end fails after every file has been analyzed.
 - Consequence: The whole analysis (possibly hours on a large folder) is discarded and the command ends with a 'writing ...' error. Nothing is saved, and the work is repeated on each retry. The error comes after the pass, not before it, so the user learns about the wrong path only after the cost is spent.
 - Suggested fix: Before the pass, create or open the CSV's temp sibling (and check its parent exists) so an unwritable target fails up front. Write the report to that temp file and rename it over the target at the end.
@@ -715,6 +716,7 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 
 - Confidence: high
 - Kind: missing-check
+- Status: closed by the removal of the command line's `borders` with paths (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2).
 - Trigger: gallery borders D:/ (or any folder containing a folder the process cannot read, e.g. 'System Volume Information' on a drive root for a non-elevated user): read\1dir or file\1type fails inside the walk.
 - Consequence: The error propagates with ? out of image\1files and report, so no CSV is written and no per-file rows are produced for the readable folders. Readable images elsewhere are never reported. The skip-and-report behaviour the per-file pipeline has for unreadable files is not applied to folders.
 - Suggested fix: Treat a subfolder that cannot be read as a skipped entry: record it (with its error) and continue the walk, as the pipeline does for unreadable files, rather than returning the error with ?.
@@ -729,6 +731,7 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 
 - Confidence: high
 - Kind: unbounded-alloc
+- Status: closed by the removal of the command line's `borders` with paths (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2).
 - Trigger: gallery borders D:/downloads/movie.mkv (an explicit file path, which skips the is\1image test at line 58), or a folder holding a multi-GB file with an image extension and garbage content. The pipeline reads the whole file into memory before Format::sniff can refuse it.
 - Consequence: Memory use grows to the file's size for that one read. Allocation failure becomes an I/O error for that file (try\1reserve), but on a machine with less memory the process can be pushed into memory pressure. A file that is still growing during the read can exceed the pool's counted size, since read\1to\1end grows the buffer past the size taken from metadata.
 - Suggested fix: Apply the same is\1image test to explicit file arguments (or reject non-image explicit files with a per-file error row). Check the file size against a cap before the whole read, or read only the header first, as the library's Gather mode does.

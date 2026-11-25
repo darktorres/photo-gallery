@@ -85,7 +85,7 @@
 //!
 //! **Retry** (the thumbnails' entry) is `Catalog::retry_failures`: the rows go, and the files are listed again by the next
 //! pass, which the job is woken for. The import's rows mirror its analyses and are never deleted by a Retry; its failures
-//! are retried by `gallery import --retry`, and its entry has "Show the failed files", which lists every file whose analysis
+//! are retried by the import's own retry (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4), and its entry has "Show the failed files", which lists every file whose analysis
 //! failed (the `failed` status, in every folder).
 
 use std::collections::BTreeSet;
@@ -187,7 +187,7 @@ impl Catalog {
 
     /// Try every failed file of `pass` again: the pass's next run lists them (their `seq` moves on), and the rows go, so
     /// what still fails is recorded anew. The user's Retry, for the thumbnails and the borders. The import's rows mirror
-    /// its analyses, so they are never deleted here: its failures are retried by `gallery import --retry`, and this
+    /// its analyses, so they are never deleted here: its failures are retried by the import's own retry (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4), and this
     /// does nothing for it.
     pub fn retry_failures(&self, pass: FilePass) -> Result<()> {
         if pass == FilePass::Import {
@@ -688,7 +688,7 @@ mod tests {
         assert_eq!(serials(&c, "import").len(), 1);
         c.conn.execute("DELETE FROM analysis WHERE file_id = 2", []).unwrap();
         assert!(serials(&c, "import").is_empty());
-        // Its Retry is the import's own (`gallery import --retry`): the catalog's leaves the rows.
+        // Its Retry is the import's own (docs/plans/STORAGE_AND_CLEANUPS_PLAN.md, section 4): the catalog's leaves the rows.
         analysis(&c, 3, 10, 100, Some("no"));
         c.retry_failures(FilePass::Import).unwrap();
         assert_eq!(serials(&c, "import").len(), 1);

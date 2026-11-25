@@ -508,7 +508,7 @@ pub(crate) fn set_pairing_version(conn: &Connection, current: i64) -> Result<Mar
 
 /// Every eligible analysis (orientation hashes and a reliable quality) owes its pairs again, and the pairs go, with the
 /// change stamped so the views read them again. Returns how many analyses owe their pairs now. The pairing version's
-/// change makes it (`set_pairing_version`), and `gallery pair --again` does too.
+/// change makes it (`set_pairing_version`), and `Catalog::pairs_again` does too.
 pub(crate) fn owe_pairs_again(tx: &Transaction) -> Result<u64> {
     // Only the rows not owed already are written: an analysis that owes its pairs keeps its row.
     tx.execute(

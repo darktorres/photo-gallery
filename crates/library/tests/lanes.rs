@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use pg_catalog::Catalog;
 use pg_jobs::events::Bus;
 use pg_jobs_testkit::{Quiet, RecordingSink};
-use pg_library::runner::Runner;
+use pg_library::runner::{Runner, RunnerConfig};
 use pg_library::shared::{FeatureCell, HeightCell};
 use pg_model::features::Features;
 use pg_model::progress::Phase;
@@ -88,6 +88,7 @@ fn start(
         Arc::new(Bus::new(64)),
         RecordingSink::new(),
         Arc::new(drives),
+        RunnerConfig::default(),
     )?;
     Ok((runner, quiet))
 }

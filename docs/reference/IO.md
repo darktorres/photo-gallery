@@ -1,5 +1,9 @@
 # I/O
 
+> The sweeps below were run with the `gallery` command line's `--readers`, `--slots` and `--buffer-mb` flags, which are gone
+> (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2). The pass runs as `pg-dev run --passes <names>`, and a pinned reader count
+> as `--pin-readers N` (`docs/plans/ADAPTIVE_READERS_PLAN.md`); the budget and the slots are the library's own now.
+
 Measured results moved here from the former `FINDINGS.md` log. Each entry says where and when it was measured. Newest entries first within each section. The test set and the quick-test subset are defined in [../eval/TEST_SET.md](../eval/TEST_SET.md).
 
 - **HDD read order (`eval/bench_hdd.py`, 2026-10-29): read in MFT order, or keep ≥ 8 reads in

@@ -48,7 +48,7 @@ read at once, and folders on one drive stay one stream.
   a spindle with another such disk, so all of them are one opaque drive, in one lane, apart from the physical drives.
 - **If any library folder's drive can't be told**, every folder goes into one lane, as before the lanes. An unplugged
   folder has no lane, and its files wait under the offline notice until the drive returns.
-- **The escape hatch**: `serial_drives` in the preferences (or `--serial` on `gallery scan`, `import` and `thumbs`)
+- **The escape hatch** (removed: `serial_drives` and `--serial` go with the plan's phase B3; `docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`)
   runs every folder in one lane. Use it for a setup the probe can't see through: two disk images on one spindle, or a
   pool the system spreads over disks.
 

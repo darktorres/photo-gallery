@@ -9,11 +9,8 @@
 
 use std::collections::BTreeMap;
 
-use pg_catalog::Catalog;
-use pg_jobs::failure::Failed;
 use pg_model::rules::{Path as RulePath, PathRules};
-use pg_platform::drive::{Drive, DriveKey, Drives, SystemDrives, same_drive, unplugged};
-use pg_platform::native::PATH_RULES;
+use pg_platform::drive::{Drive, DriveKey, Drives, same_drive, unplugged};
 
 /// A root's drive, when it could be told. `None` is an unknown drive.
 pub type RootDrive = Option<Drive>;
@@ -67,44 +64,6 @@ pub fn plan(roots: &[(RulePath, Option<Place>)], serial: bool) -> Vec<Vec<RulePa
     lanes
 }
 
-/// One lane's work for a command that runs the lanes itself (the CLI's): its roots, the volumes they are on (`All` when the
-/// lane is the only one, as in the job), and its drive's label for people (`E:`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Group {
-    /// The roots of the group, in the order the library has them.
-    pub roots: Vec<RulePath>,
-    /// The volumes the group's files are on.
-    pub volumes: pg_catalog::VolumeSet,
-    /// The drive's label for people, as the group shows it.
-    pub label: String,
-}
-
-/// The groups of `roots`, as the job would make its lanes (`plan`), probed now with the system's drives on the calling
-/// thread. A root that is unplugged, or whose drive can't be told, is in no group (a command that is about to fail says
-/// so). With `serial`, every root is in one group.
-pub fn groups(rules: PathRules, roots: &[RulePath], serial: bool) -> Vec<Group> {
-    let probes: Vec<(RulePath, Option<Place>)> =
-        roots.iter().map(|root| (root.clone(), Some(probe_place(rules, root, &SystemDrives)))).collect();
-    let planned = plan(&probes, serial);
-    let single = planned.len() == 1;
-    planned
-        .into_iter()
-        .map(|members| {
-            let place_of =
-                |root: &RulePath| probes.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone());
-            let label = drive_label(&members, place_of);
-            let volumes = lane_volumes(
-                single,
-                members.iter().filter_map(|root| match place_of(root) {
-                    Some(Place::Mounted { volume, .. }) => Some(volume),
-                    _ => None,
-                }),
-            );
-            Group { roots: members, volumes, label }
-        })
-        .collect()
-}
-
 /// The volume set of a lane: every volume when it is the only lane, else the volumes its roots are on. The one rule the
 /// planner and the coordinator both apply.
 pub(crate) fn lane_volumes(single: bool, volumes: impl Iterator<Item = u64>) -> pg_catalog::VolumeSet {
@@ -124,54 +83,6 @@ pub(crate) fn drive_label<'a>(
             _ => None,
         })
         .unwrap_or_default()
-}
-
-/// The lanes a command runs over a catalog: [`groups`] of its roots, or, when it has no roots, one lane over every volume
-/// (what a command with no folders has always run). `serial` is the escape hatch (one lane).
-pub fn command_groups(catalog: &Catalog, serial: bool) -> crate::Result<Vec<Group>> {
-    let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let groups = groups(catalog.rules(), &roots, serial);
-    if groups.is_empty() {
-        return Ok(vec![Group { roots: Vec::new(), volumes: pg_catalog::VolumeSet::All, label: String::new() }]);
-    }
-    Ok(groups)
-}
-
-/// Runs `pass` once per group, each on a connection of its own (opened at `catalog_path`) and a child of `ctl`
-/// (`Control::lane`), one thread per group, so the drives are worked at once. The results are in the groups' order. A lane
-/// that panics fails the run. The run's cores are shared among the lanes, as the job shares them (`Control::share_cpu`).
-pub fn run_each<T: Send, E: Into<Failed> + Send>(
-    catalog_path: &std::path::Path,
-    groups: &[Group],
-    ctl: &pg_jobs::control::Control,
-    pass: impl Fn(&mut Catalog, &Group, &pg_jobs::control::Control) -> std::result::Result<T, E> + Sync,
-) -> std::result::Result<Vec<T>, Failed> {
-    ctl.share_cpu(pg_jobs::pipeline::cpus());
-    let lanes: Vec<(&Group, std::sync::Arc<pg_jobs::control::Control>)> =
-        groups.iter().map(|group| (group, ctl.lane())).collect();
-    std::thread::scope(|scope| {
-        let pass = &pass;
-        let handles: Vec<_> = lanes
-            .iter()
-            .map(|(group, lane)| {
-                scope.spawn(move || -> std::result::Result<T, Failed> {
-                    let mut catalog =
-                        Catalog::open(catalog_path, PATH_RULES).map_err(|e| Failed::from(crate::Error::from(e)))?;
-                    pass(&mut catalog, group, lane).map_err(Into::into)
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| {
-                // The panic's own message, as a panic failure (`Failed::is_panic` recognises it).
-                handle.join().unwrap_or_else(|payload| {
-                    let message = pg_jobs::panics::message(&*payload).to_string();
-                    Err(Failed::panic(message))
-                })
-            })
-            .collect()
-    })
 }
 
 /// The lane of each root, by index: roots on the same drive share a number, and the numbers run from 0 in the order the

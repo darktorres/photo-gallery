@@ -1,6 +1,9 @@
 # Heap profile: scan, import and the passes (dhat, 2026-11-01 and 2026-11-02)
 
-Every Rust heap allocation of `gallery scan`, `gallery import` and the borders and thumbnail passes, measured with dhat
+> The runs below were made with the `gallery` command line, which is gone (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2).
+> The same passes run as `pg-dev run --passes <names>`; the recipe under "Workload and runs" uses that.
+
+Every Rust heap allocation of the scan, import, borders and thumbnail passes, measured with dhat
 before the fixes and after three rounds of them. The method is in [PROFILING.md](PROFILING.md) ("Tool: dhat heap
 profiles"). Qt's, FFmpeg's and libjpeg-turbo's allocations are not in these numbers.
 
@@ -12,10 +15,10 @@ open is in [OPEN_ITEMS.md](../plans/OPEN_ITEMS.md).
 ## Workload and runs
 
 - **Scan and import:** 305 JPEGs of 5.3 MB in all, none with EXIF or XMP, into a catalog with no earlier analyses.
-  `gallery scan` into a new catalog, then `gallery import --workers 1` (one worker gives the same counts on every run)
-  and the default 12 workers for the peak.
-- **Borders and thumbnails:** `gallery borders --readers 1 --workers 1` and `gallery thumbs --height 256 --readers 1
-  --workers 1 --foreground` on an 898-file corpus (474 MB: camera JPEGs of 6000 × 4000, PNG, WebP, GIF, TIFF, videos,
+  `pg-dev run --home <scratch> --add <folder> --passes scans` into a new catalog, then `pg-dev run --home <scratch>
+  --passes import --pin-workers 1` (one worker gives the same counts on every run) and the default workers for the peak.
+- **Borders and thumbnails:** `pg-dev run --home <scratch> --passes borders --pin-readers 1 --pin-workers 1` and
+  `pg-dev run --home <scratch> --height 256 --passes thumbs,placeholders --pin-readers 1 --pin-workers 1` on an 898-file corpus (474 MB: camera JPEGs of 6000 × 4000, PNG, WebP, GIF, TIFF, videos,
   and one 142 MB PNG). The corpus is not kept with the repo.
 
 The samples do not contain EXIF-bearing files at scale, large files in an import, or a catalog with existing hashes.

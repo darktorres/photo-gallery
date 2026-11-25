@@ -4,6 +4,7 @@
 //! the coordinator name them without naming the runner, which names the coordinator.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -18,6 +19,7 @@ use pg_model::removal::Volumes;
 use pg_model::size::ThumbHeight;
 use pg_thumbcache::ThumbCache;
 
+use crate::mask::{PassCell, PassMask};
 use crate::pair_gate::PairGate;
 use crate::tally::Tally;
 
@@ -242,6 +244,16 @@ impl TestHooks {
     }
 }
 
+/// The counts a developer pinned for a run (`RunnerConfig`): a lane's options take them in place of the defaults, and a pinned
+/// lane writes no learned profile. Nothing else reads the environment or a flag for them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Pins {
+    /// The reads in flight, when pinned.
+    pub(crate) readers: Option<NonZeroUsize>,
+    /// The decode threads, when pinned.
+    pub(crate) workers: Option<NonZeroUsize>,
+}
+
 /// What the lanes share: the catalog's path, the thumbnail cache, the cells, the notices and the change bus, the tally of
 /// the lanes' notices, the pairing gate, and the job's counts (what the app reads to refresh its views).
 pub(crate) struct Shared {
@@ -255,6 +267,10 @@ pub(crate) struct Shared {
     pub(crate) pairing: PairGate,
     /// The volumes the removals have parked: the lanes on them wait at the start of their rounds.
     pub(crate) parks: Parks,
+    /// The passes a round runs (`Runner::set_passes`): read at the start of each round.
+    pub(crate) passes: PassCell,
+    /// The counts a developer pinned for the run (`RunnerConfig`), in place of the defaults.
+    pub(crate) pins: Pins,
     /// The test hooks (none in a build that is not a test).
     #[cfg(test)]
     pub(crate) hooks: Arc<TestHooks>,
@@ -282,6 +298,8 @@ impl Shared {
             changes,
             tally,
             parks: Parks::default(),
+            passes: PassCell::new(PassMask::ALL),
+            pins: Pins::default(),
             #[cfg(test)]
             hooks: Arc::default(),
             pairing: PairGate::default(),

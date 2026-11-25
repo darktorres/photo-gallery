@@ -36,7 +36,7 @@ pub use edit::Edit;
 pub use error::{Error, Result};
 pub use images::{Images, Keep, Thumbnail};
 pub use inbox::{Inbox, InboxEvent, InboxListing};
-pub use library::{LaneLines, Library, LibraryActivity, LibraryService};
+pub use library::{LaneLines, Library, LibraryActivity, LibraryService, StartConfig};
 pub use prefs::{PrefStore, Prefs};
 pub use reader::{Failed, FailedItems, Kind, Reading, Session};
 pub use views::{Views, query_from_json, sort_from_json};

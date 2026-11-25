@@ -6,6 +6,7 @@ use std::path::Path;
 
 use pg_library::layout::Layout;
 
+use crate::library::StartConfig;
 use crate::yandex::YandexSource;
 
 /// The app's settings as the app starts with them: the layout of its data folders and the choices the user has made.
@@ -18,6 +19,9 @@ pub struct Config {
     pub thumb_cap: Option<pg_model::cache::ThumbCap>,
     /// Where the Yandex search gets its calls: Yandex, unless the front end was given a recorded session.
     pub yandex: YandexSource,
+    /// How the library's job starts: its settings (the pinned counts, the passes a round runs) and whether its writer runs.
+    /// The app's default runs the writer; a headless run turns it off (`StartConfig::writer`).
+    pub start: StartConfig,
 }
 
 impl Config {
@@ -29,7 +33,7 @@ impl Config {
 
     /// The configuration of a resolved layout, with the thumbnail cache's cap unset and the live Yandex search.
     pub fn from_layout(layout: Layout) -> Config {
-        Config { layout, thumb_cap: None, yandex: YandexSource::Live }
+        Config { layout, thumb_cap: None, yandex: YandexSource::Live, start: StartConfig::default() }
     }
 
     /// The configuration of everything under one `home` folder, as the defaults give it (for tests and scratch runs).

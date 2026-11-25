@@ -1,5 +1,4 @@
-//! The desktop app: the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
-//! given no command; everything below the QML lives in `pg-client` and `pg-library`.
+//! The desktop app: the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it; everything below the QML lives in `pg-client` and `pg-library`.
 
 mod alert;
 mod animation;
@@ -111,7 +110,7 @@ pub fn run(args: &[OsString]) -> i32 {
     for bad in command_line::bad_options() {
         pg_log::warn("args", &bad.to_string());
     }
-    // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gib` too); unset, it stays.
+    // Sets the thumbnail cache's cap, kept in the cache (the app's Library panel sets it too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap = pg_platform::env::read(pg_platform::env::Var::ThumbCapGib).and_then(|text| {
         let text = text.to_string_lossy().into_owned();

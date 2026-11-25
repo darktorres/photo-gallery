@@ -11,8 +11,8 @@ be running.
     linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
     linux.py eval SCRIPT [ARGS...] an eval script (a path under eval/), on the working tree, with the pg-eval volume
     linux.py ann-worker JOB        eval/ann/cpu_worker.py on one job file (eval/ann/methods.py runs it)
-    linux.py gallery OUT           a headless Linux `gallery` (release, no desktop) of the working tree, copied into OUT,
-                                   to run elsewhere (WSL runs binaries, and builds nothing)
+    linux.py driver OUT            a headless Linux `pg-driver` (release, the developer's driver: no Qt) of the working tree, copied
+                                   into OUT, to run elsewhere (WSL runs binaries, and builds nothing)
     linux.py shell                 a shell in the checks image, on the working tree
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs and nothing is
@@ -426,19 +426,16 @@ def ann_worker(job_file):
     sys.exit(run(EVAL, command, ["-v", f"{posix(REPO)}:/work:ro", *mounts_list], env=ANN_ENV))
 
 
-def gallery(out):
-    """Builds the command-line `gallery` (release, `--no-default-features`: no Qt) of the working tree in the checks image,
-    and copies it into the host folder `out`, which is made if it is missing."""
+def driver(out):
+    """Builds the developer's driver (`pg-driver`, release) of the working tree in the checks image, and copies it into the host
+    folder `out`, which is made if it is missing. The driver has no Qt, so it runs wherever Linux binaries run (WSL)."""
     ensure_image(CHECKS, "base")
     folder = Path(out).resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    script = (
-        "cargo build --release --locked -p pg-gallery --no-default-features --bin gallery && cp "
-        "/cargo-target/release/gallery /out/gallery"
-    )
+    script = "cargo build --release --locked -p pg-driver && cp /cargo-target/release/pg-driver /out/pg-driver"
     code = run(CHECKS, ["bash", "-c", script], [*mounts(), "-v", f"{posix(folder)}:/out"])
     if code == 0:
-        print(f"gallery: {folder / 'gallery'}")
+        print(f"pg-driver: {folder / 'pg-driver'}")
     sys.exit(code)
 
 
@@ -465,8 +462,8 @@ def main():
     eval_parser.add_argument("script", help="the script, a path under eval/")
     ann_parser = commands.add_parser("ann-worker", help="eval/ann/cpu_worker.py on one job file")
     ann_parser.add_argument("job", help="the job file (job.json), with this machine's paths")
-    gallery_parser = commands.add_parser("gallery", help="a headless Linux gallery binary, copied into a host folder")
-    gallery_parser.add_argument("out", help="the host folder to copy it into")
+    driver_parser = commands.add_parser("driver", help="a headless Linux pg-driver (the developer's driver), copied into a host folder")
+    driver_parser.add_argument("out", help="the host folder to copy it into")
     commands.add_parser("shell", help="a shell in the checks image")
     options, rest = parser.parse_known_args()
     if rest and options.command not in ("perf", "bench", "eval"):
@@ -488,8 +485,8 @@ def main():
         eval_script(options.script, rest)
     elif options.command == "ann-worker":
         ann_worker(options.job)
-    elif options.command == "gallery":
-        gallery(options.out)
+    elif options.command == "driver":
+        driver(options.out)
     elif options.command == "shell":
         shell()
 

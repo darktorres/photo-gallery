@@ -28,7 +28,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/reference/PROFILING.md`).
 - `perf` (`pg-perf`): the perf log, `PG_PERF_LOG`: timed spans of the background job's rounds, its passes and their sub-steps (time, self time, items, bytes, the pipeline's stage shares, the catalog's write-lock waits), written as JSON lines and read back by `gallery perf` (`docs/reference/PROFILING.md`, "Reading the perf log"). Unset, a span costs one flag test.
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
-  memory for the window's log view (`crates/log/src/lib.rs`). Only the window writes it; the command line prints to stderr.
+  memory for the window's log view (`crates/log/src/lib.rs`). Only the window writes it; the driver prints to stdout and stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges; and what the edit and the metadata read of them, written once (a
   PNG's or WebP's animation and frames, a lossless WebP, a GIF's image descriptors, a PNG chunk's CRC put right).
@@ -105,23 +105,24 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   line is a `Message`, one table of variants and their entries, worded by `render` from the Fluent entries of
   `wording/locales/en/`. It is std-based (`fluent-bundle` needs std), so it keeps the workspace's one crate-level
   `clippy.toml`; it depends on `client` and `model`.
-- `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
-  `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
+- `app` (`pg-app`): the application layer the window uses (the developer's driver, `pg-driver`, runs the same passes through
+  it). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what
   the window shows, read off the UI thread), `views()` (the place the grid shows, saved views), `edit()` (ratings and
   marks), `library()` (the folders, the scan, the write-back) and `yandex()` (the reverse image search and its saves;
   `Config::yandex` says whether a recorded session that `--yandex-fixture` names answers in Yandex's place); `App`
   orders their shutdown. Beside them: the preferences file (`gallery.json`). What the user should hear is a notice posted
   to its inbox, which logs it.
-- `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
-  borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
+- `driver` (`pg-driver`, a library and the binary `pg-driver`; not shipped): the developer's driver of the library job without a
+  window. `Headless` starts the app's service over a home folder, adds folders, runs its passes until it is quiet, and reads the
+  catalog back; it holds no pass logic. The binary prints JSON for scripts and measurements, and `pg-driver perf` prints a perf
+  log's table. The command line of the program is gone: its developer uses are this.
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
   flat folder), the image providers and the GPU device. The only crate that links Qt. Each cxx-qt bridge is a file in
   `src/bridges/` (cxx-qt needs one directory for a QML module's Rust sources), declared by `src/bridges.rs`, so the two
   allows its generated code needs (`unsafe_code`, `unreachable_pub`) cover that one module and nothing written by hand.
-- `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
-  command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
-  the program runs commands only, and builds without Qt.
+- `gallery` (`pg-gallery`, binary `gallery`): the program. It opens the desktop app (`pg-desktop`), a GUI program with no
+  console window from Explorer. With the `dhat-heap` feature it is the heap profiler's build.
 - `testkit` (`pg-testkit`): helpers for the crates' tests: the scratch folders (`run_folder`, under `PG_TEST_DIR`, else
   the temp folder, each owned by a lock from the moment it has its name; the protocol is in `pg-platform`'s `testing`
   module), and the raw RGB pictures the image files are written from. A test names `odd_name`, `held`, `skip` and
@@ -161,8 +162,8 @@ These are the rules the crate layout is kept to. `tools/boundaries.py` and `just
 
 - **`pg-model` stays one crate.** Its modules are consumed by one to fifteen crates each; its fan-in is expected.
 - **`cargo-modules` is a tool, not a dependency.** It is pinned in `docker/Dockerfile` and the Justfile (`cargo_modules_version`, which `just modgraph` checks and installs at the pin). The Linux graph runs in `pg-dev`; the Windows graph runs on the host through `just modgraph`.
-- **The command line does not depend on `pg-app`.** It opens catalogs and thumbnail caches through `pg-library`'s shared open functions (`open_catalog`, `open_thumbs`).
-- **Errors are typed.** A library crate returns its own `thiserror` enum. `anyhow` belongs to `pg-cli`, `pg-desktop` and `pg-gallery` only: `tools/anyhow-allow.txt` lists the library crates still on it (the file is empty), and `AnyhowAllowlist` in `tools/test_ci_files.py` fails when another crate depends on it. A crate's main error is named `Error`; a second enum in the same crate takes a `<What>Error` name (`ReadError`, `MakeError`). A pipeline's failure converts into `pg_jobs::failure::Failed` once, at the crate's boundary, and keeps its class.
+- **The driver steers the app's service.** `pg-driver` depends on `pg-app` and holds no pass logic: it starts the service, adds folders, waits until it is quiet, and reads the catalog back.
+- **Errors are typed.** A library crate returns its own `thiserror` enum. `anyhow` belongs to `pg-driver` and `pg-desktop` only: `tools/anyhow-allow.txt` lists the library crates still on it (the file is empty), and `AnyhowAllowlist` in `tools/test_ci_files.py` fails when another crate depends on it. A crate's main error is named `Error`; a second enum in the same crate takes a `<What>Error` name (`ReadError`, `MakeError`). A pipeline's failure converts into `pg_jobs::failure::Failed` once, at the crate's boundary, and keeps its class.
 
 ### Naming
 
@@ -198,8 +199,8 @@ module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI run
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
   `client`, `log`, `model`, `platform`, `render`, `trace` and `wording`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods, and through
-  `pg-model` for the plain data they hand out (the moved types live there), and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
-  `cli` and `desktop` (the latter behind its `desktop` feature).
+  `pg-model` for the plain data they hand out (the moved types live there), and `app` does not depend on it. `dev` is the developer's driver beside it, and `gallery` depends on
+  `desktop` only.
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
   `catalog`, `query`, `dbfile`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
   `codec` (the test fixtures included, and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
@@ -275,7 +276,7 @@ just doctor  # what is missing on this machine, and how to fix it
 just setup   # fetch the pinned FFmpeg into .deps/ffmpeg
 just deploy  # release build, then the Qt DLLs and QML modules next to gallery.exe (once, and after Qt updates)
 just build   # rebuild
-just run     # the app; `just run status`, `just run scan <folder>`… for the command line
+just run     # the app; the developer's driver: `cargo run -p pg-driver -- status --home <folder>`
 just test    # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
 just lint    # rustfmt, clippy, cargo-machete, ruff, markdownlint, then the QML's (just lint-qml); cargo-deny is `just deny`
 ```
@@ -304,13 +305,12 @@ viewer gets the shown item's values as properties. Text and numbers come typed f
 ## Run
 
 The data folder (its home) is `PG_HOME` when set. Otherwise it is the parent of the catalog folder, when one is given:
-`PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows) or `--catalog-dir` on the command line.
+`PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows). The developer's driver takes a `--home` instead and reads no environment.
 Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows, and `$XDG_DATA_HOME/photo-gallery`
 (`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and
 `thumbs.sqlite` (the thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
 can't open is reached by an alias): nothing of the app's is written outside it. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
-is the session's, with the build and the data folder (the log's format is in `crates/log/src/lib.rs`), and
-`gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last
+is the session's, with the build and the data folder (the log's format is in `crates/log/src/lib.rs`). The app's preferences (write-back, Real Size, borders, row height, the last
 file selected, dev mode) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
 where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,
 `crates/library/src/layout.rs`; for now they share the home folder.
@@ -338,25 +338,21 @@ below normal priority (thumbnails at idle), so the window and the thumbnails on 
 any point is safe: the next start finishes what's pending. An internal error (a Rust panic) shows a message and
 appends its details and backtrace to `gallery.log` in the data folder (see Run above).
 
-The same passes on the command line, without the window (for scripts, profiling and checking results):
+The same job without the window, for scripts, profiling and checking results: the developer's driver, `pg-driver`, over a home
+folder of its own (a separate catalog, so it never touches the app's library):
 
 ```powershell
-$g = '.\target\release\gallery.exe'
-& $g scan 'D:\PhotoGallery\datasets\pinterest' | Out-Host  # add to the library and record its media files
-& $g scan | Out-Host                                       # rescan the whole library
-& $g import | Out-Host                                     # analyze new/changed files; resumable
-& $g borders | Out-Host                                    # find the borders of what was imported; resumable
-& $g thumbs --height 256 | Out-Host                        # thumbnails at one grid height
-& $g write | Out-Host                                      # write queued ratings and turns into the files
-& $g status | Out-Host                                     # library folders, counts, pending and failing writes
-& $g dups --show 5 | Out-Host                              # what tiers 0-1 found, and the groups they form
-& $g borders --csv 'D:\x\report.csv' 'D:\x\images' | Out-Host # borders of any files, in the prototype's columns
-& $g borders --import-review 'D:\x\review.json'            # the eval viewer's "not a border" marks, into the catalog
-& $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out for good (its files, ratings and thumbnails are deleted; the files on disk are not)
+$d = '.\target\release\pg-driver.exe'
+$devHome = 'D:\PhotoGallery\dev-home'
+& $d run --home $devHome --add 'D:\PhotoGallery\datasets\pinterest' | Out-Host   # add a folder, run the passes until quiet
+& $d run --home $devHome --height 256 --passes thumbs,placeholders | Out-Host     # thumbnails at one grid height
+& $d run --home $devHome --passes borders | Out-Host                              # the borders of what was imported
+& $d status --home $devHome | Out-Host                                            # folders, counts, pending and failing writes
+& $d remove --home $devHome 'D:\PhotoGallery\datasets\pinterest' | Out-Host       # take a folder out (its files on disk are not touched)
 ```
 
-`gallery.exe` is a GUI program, so no console window opens when it starts from Explorer. Its commands print to
-the console they were typed in. PowerShell doesn't wait for a GUI program unless its output is piped, hence
+`pg-driver` prints one JSON object per result on stdout, and its progress on stderr. `gallery.exe` is a GUI program, so no
+console window opens when it starts from Explorer. PowerShell doesn't wait for a program unless its output is piped, hence
 `| Out-Host`.
 
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
@@ -370,7 +366,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   header is not as those reads expect. Both open the file for random access (no read-ahead). The import owes the duplicate hashes: a row of `hashes_owed` for each picture. The Hashes pass makes them,
   from a DCT-scaled decode (libjpeg-turbo, to ≥ 512 × 320), with each PDQ hash stored with its 8 orientations; a
   picture of reliable quality then owes its tier-1 pairs (a row of `pairs_owed`), and the pairing pass finds them
-  (d ≤ 31). With duplicates detection off (the Library panel, or `gallery import --no-dups`) the hashes stay owed until a
+  (d ≤ 31). With duplicates detection off (the Library panel) the hashes stay owed until a
   later Hashes pass makes them. A video (`crates/video/src/lib.rs`) is probed by its container at import, and hashed by
   streaming in the Hashes pass, never read whole. Its upright size, duration, codec and creation date come from the
   container: the rotation matrix, and Apple's local creation date before the UTC `creation_time`. Videos get no pixel
@@ -379,8 +375,8 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   fails in the first pass that decodes it (the Thumbs or Placeholders pass, or the Hashes pass).
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
-  in the cache, so the app and `gallery thumbs` keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
-  `gallery thumbs --cap-gib` or the app's `PG_THUMB_CAP_GIB`, and shown by `gallery status`. The background job (or `gallery thumbs`) fills it at idle CPU
+  in the cache, so the app and the driver keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
+  the app's `PG_THUMB_CAP_GIB` (the Library panel sets it too), and shown in the Library panel. The background job (or `pg-driver run --passes thumbs`) fills it at idle CPU
   priority for the grid's current height, evicting only other heights, and starts over when the size changes.
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
   A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so
@@ -388,7 +384,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   - Layout (`crates/thumbcache/src/lib.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
     are one row that triggers keep, so opening the cache and listing what's missing never read the JPEGs
     (docs/reference/START_PROFILE.md "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
-    the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
+    the app and `pg-driver` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
   - Its layout version is 1. Before the first release a layout change edits the schema in place, and the cache is
@@ -407,19 +403,18 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 - **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; BORDERS.md
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.
-  A pass of its own after the import (`gallery borders`, or the background job after the thumbnails, the hashes and the
+  A pass of its own after the import (`pg-driver run --passes borders`, or the background job after the thumbnails, the hashes and the
   pairs; with border detection off in the Library panel the pass does not run and the files stay due) reads and
   decodes each still image the import analyzed at full size: the import's decode is reduced, and the detector
   is calibrated on every pixel. The import marks the file due (`analysis.borders_due`); a re-analysis drops its
   old borders. Every side found is kept (`border_sides`), the rejected candidates too with why; the cut is in
   `analysis.cut_*`. The detector has its own version (`BORDERS_VERSION`): a new one makes every file due again,
-  without importing the files again. `gallery borders --csv` reports on any files, outside the catalog.
-- **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
+  without importing the files again.- **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
   its children, and adding a subfolder only rescans it. Removing one deletes it for good: its files, their analysis,
   ratings and thumbnails, and its folders (`Catalog::begin_removal`, then `removals::finish` in `pg-library`). The files
   on disk are not touched. A removal can't be added back while it is pending. A change still waiting to be written into
   one of its files keeps that row (and the temp file beside the file) until the app finishes the write or
-  `gallery remove --discard-pending` gives it up. A folder that is only missing (an offline drive) is not removed: its
+  `pg-driver remove --discard-pending` gives it up. A folder that is only missing (an offline drive) is not removed: its
   files stay missing, as before. Folders removed before this version (their files hidden, with no marker and no library
   folder covering them) are adopted when the removals thread first runs after the start: each gets a marker, and its
   removal deletes its rows and thumbnails like any other. A folder that a library folder still covers is not adopted.
@@ -460,7 +455,7 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   when the file changes or the definition does. It doesn't depend on the grid's height. It follows the thumbnail cache's
   setting: with the cache disabled it makes none (the stored ones still show), and it resumes when the cache is back on.
   A file whose original doesn't decode is recorded in the Thumbs ledger (`retry = false`), and tried again when
-  it changes or the user retries it. `gallery thumbs` runs this pass after the thumbnails.
+  it changes or the user retries it. `pg-driver run` runs this pass after the thumbnails.
 - **Grid**: justified rows. The **size slider**, Ctrl+wheel or Ctrl +/− change the row height at runtime; the
   layout follows at once, thumbnails at the new size follow a moment later (the old ones are scaled meanwhile,
   and the ThumbHash placeholder, where one has been made, shows until the first one arrives). Arrows move, 0–5 rates, **R** / **Shift+R**

@@ -16,17 +16,14 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-pg-cli = { path = "../cli" }
+# The app window: the program is the app.
+pg-desktop = { path = "../desktop" }
+# The dhat build's profiler settings (`PG_DHAT_UNTRIMMED`).
 pg-platform = { path = "../platform" }
-pg-wording = { path = "../wording" }
-# The app window. Without it `gallery` runs only its commands, and builds without Qt.
-pg-desktop = { path = "../desktop", optional = true }
 # The heap profiler: a patched dhat-rs that takes whole backtraces quickly
 dhat = { workspace = true, optional = true }
 
 [features]
-default = ["desktop"]
-desktop = ["dep:pg-desktop"]
 # `gallery` with dhat as its allocator, writing dhat-heap.json when it ends. Built with the `dhat` profile.
 dhat-heap = ["dep:dhat"]
 

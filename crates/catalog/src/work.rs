@@ -552,7 +552,7 @@ impl Catalog {
         pairing_work_on(&self.conn, None, 1, &|| {})
     }
 
-    /// Owe every eligible picture its pairs again, and drop the pairs (`gallery pair --again`): what the pairing pass
+    /// Owe every eligible picture its pairs again, and drop the pairs (`Catalog::pairs_again`): what the pairing pass
     /// then makes is all of them again. Returns how many are owed. The WAL this write leaves is merged into the file
     /// before returning: otherwise the pass's first commits merge it, which took about a second on the 187,804-picture
     /// library (the pass alone takes 0.8 s after a merge).

@@ -112,7 +112,7 @@ impl App {
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let features = prefs.get().features();
         let library =
-            Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs.clone(), inbox.clone(), features));
+            Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs.clone(), inbox.clone(), features, config.start));
         let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone());
         let images = Images::new(catalogs.clone(), makers, thumbs.clone(), inbox.clone());
         Ok(App {

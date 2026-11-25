@@ -45,7 +45,7 @@
 //!   renews it with each batch and every 20 s while it is held up; one with no heartbeat for `SCAN_LEASE_SECS` (60 s) is a
 //!   crashed process's, and expires. It is given back in `mark_missing`'s last transaction, or when the `ScanLease` is
 //!   dropped (a stop, an error, a panic). A refused walk is `ScanError::Busy`: the job puts it back on its queue and tries
-//!   again after 5 s (`BUSY_RETRY`); `gallery scan` says another process is scanning and fails, or waits with `--wait`.
+//!   again after 5 s (`BUSY_RETRY`); a scan that finds another process scanning fails, or is retried (`BUSY_RETRY`).
 //! - Workers list folders ahead of the walk (`worker`), each with a read-only connection of its own that reads a folder's
 //!   rows and nothing else: they hold no lock, and their listings are consumed by the walk in walk order.
 //! - **Every write transaction of a walk holds the lease first**: the batches', the pairing's and the missing marks'.

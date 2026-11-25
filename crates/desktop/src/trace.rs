@@ -39,14 +39,13 @@ pub(crate) fn install() -> Option<String> {
         pg_platform::env::Parsed::Off | pg_platform::env::Parsed::Unset => {}
     }
     // The perf log, when `PG_PERF_LOG` names a file: the background job's rounds and their passes are appended to it as
-    // they end (the app writes the file; `gallery perf` reads it). Its `-` is the command line's, not the app's.
-    let perf =
-        pg_platform::env::read(pg_platform::env::Var::PerfLog).filter(|v| v.to_str() != Some("-")).and_then(|file| {
-            let meta = serde_json::json!({ "program": pg_perf::PROGRAM, "version": env!("CARGO_PKG_VERSION") });
-            let path = std::path::Path::new(&file);
-            pg_perf::open(path, meta)
-                .err()
-                .map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
-        });
+    // they end (the app writes the file; `pg-driver perf` reads it).
+    let perf = pg_platform::env::read(pg_platform::env::Var::PerfLog).and_then(|file| {
+        let meta = serde_json::json!({ "program": pg_perf::PROGRAM, "version": env!("CARGO_PKG_VERSION") });
+        let path = std::path::Path::new(&file);
+        pg_perf::open(path, meta)
+            .err()
+            .map(|e| format!("perf log: can't open {}: {e}; not recording", path.display()))
+    });
     problem.or(perf)
 }

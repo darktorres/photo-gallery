@@ -4,7 +4,6 @@
 pub mod args;
 pub mod audio;
 pub mod clock;
-pub mod console;
 pub mod dir;
 pub mod dirs;
 pub mod dll;

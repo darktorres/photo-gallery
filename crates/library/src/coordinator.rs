@@ -288,6 +288,14 @@ impl Lanes {
         self.wake_coordinator();
     }
 
+    /// Whether every request has been given to a lane: no crop or cut is waiting for one, no turned file is waiting for its lane to
+    /// start again, and, when `scans` (the scan pass runs), no scan is waiting either (`Runner::quiescent`). A scan waiting for a
+    /// root with no lane is waiting too.
+    pub(crate) fn unrouted(&self, scans: bool) -> bool {
+        let reg = self.registry();
+        (!scans || reg.scans.is_empty()) && reg.crops.is_empty() && reg.cuts.is_empty() && reg.turned.is_empty()
+    }
+
     /// A library folder was removed: the scans asked for under `root` are dropped, and a walk of a folder under it stops.
     /// That walk writes nothing more: the removal took its lease (`Catalog::remove_root`).
     pub(crate) fn stop_scans_under(&self, root: &RulePath) {

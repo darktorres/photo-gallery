@@ -8,7 +8,6 @@
 
 #![forbid(unsafe_code)]
 
-pub mod cli;
 mod message;
 mod notice;
 #[cfg(test)]

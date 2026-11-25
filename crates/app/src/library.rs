@@ -14,7 +14,8 @@ use pg_catalog::Root;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::Bus;
 use pg_library::folders::AddError;
-use pg_library::runner::Runner;
+use pg_library::mask::PassMask;
+use pg_library::runner::{Runner, RunnerConfig};
 use pg_library::shared::{FeatureCell, Generation, HeightCell};
 use pg_model::features::Features;
 use pg_model::ids::{FileId, RootId};
@@ -44,10 +45,29 @@ const RESTART_WAIT: Duration = Duration::from_secs(5);
 const RESTART_RESET: Duration = Duration::from_secs(60);
 
 /// The job and the writer, and the bus they announce on.
+/// How a library starts: the job's settings (`RunnerConfig`), and whether the writer runs. The app runs the writer. A headless
+/// run on a real catalog does not, so the ratings and turns queued in the catalog are written into the files only when a run
+/// asks for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StartConfig {
+    /// The job's settings.
+    pub runner: RunnerConfig,
+    /// Whether the writer runs.
+    pub writer: bool,
+}
+
+impl Default for StartConfig {
+    fn default() -> StartConfig {
+        StartConfig { runner: RunnerConfig::default(), writer: true }
+    }
+}
+
+/// The started job, and its writer when there is one.
 pub struct Library {
     runner: Runner,
-    /// The writer, restarted by [`Library::tend`] when its thread has ended.
-    writer: Mutex<WriterSlot>,
+    /// The writer, restarted by [`Library::tend`] when its thread has ended. `None` when the library starts without one
+    /// (`StartConfig::writer`): then nothing queued in the catalog is written into the files by this run.
+    writer: Option<Mutex<WriterSlot>>,
     /// What a restart needs to start the writer again.
     catalog_path: PathBuf,
     thumbs: Arc<ThumbCache>,
@@ -112,27 +132,55 @@ impl Library {
         heights: HeightCell,
         features: FeatureCell,
         notices: Arc<dyn NoticeSink>,
+        start: StartConfig,
     ) -> Result<Library> {
         notices.resolve(Trigger::Status);
         let changes = Arc::new(Bus::new(256));
-        let runner =
-            Runner::start(catalog_path.clone(), thumbs.clone(), heights, features, changes.clone(), notices.clone())
+        let runner = Runner::start(
+            catalog_path.clone(),
+            thumbs.clone(),
+            heights,
+            features,
+            changes.clone(),
+            notices.clone(),
+            start.runner,
+        )
+        .map_err(failed)?;
+        let writer = if start.writer {
+            let writer = Writer::start(catalog_path.clone(), thumbs.clone(), changes.clone(), notices.clone())
                 .map_err(failed)?;
-        let writer =
-            Writer::start(catalog_path.clone(), thumbs.clone(), changes.clone(), notices.clone()).map_err(failed)?;
-        let slot = WriterSlot {
-            writer,
-            restarts: 0,
-            started: Instant::now(),
-            retry_at: None,
-            given_up: false,
-            stopping: false,
+            Some(Mutex::new(WriterSlot {
+                writer,
+                restarts: 0,
+                started: Instant::now(),
+                retry_at: None,
+                given_up: false,
+                stopping: false,
+            }))
+        } else {
+            None
         };
-        Ok(Library { runner, writer: Mutex::new(slot), catalog_path, thumbs, changes, notices })
+        Ok(Library { runner, writer, catalog_path, thumbs, changes, notices })
     }
 
-    fn writer(&self) -> MutexGuard<'_, WriterSlot> {
-        self.writer.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Whether the job has nothing left to do (`Runner::quiescent`), and every write queued in the catalog is written.
+    pub fn quiescent(&self) -> bool {
+        self.runner.quiescent()
+    }
+
+    /// The passes each round runs (`Runner::passes`).
+    pub fn passes(&self) -> PassMask {
+        self.runner.passes()
+    }
+
+    /// Sets the passes each round runs (`Runner::set_passes`).
+    pub fn set_passes(&self, passes: PassMask) {
+        self.runner.set_passes(passes);
+    }
+
+    /// The writer's slot, or `None` when this library runs without a writer.
+    fn writer(&self) -> Option<MutexGuard<'_, WriterSlot>> {
+        self.writer.as_ref().map(|slot| slot.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// Starts the writer again when its thread has ended (`Writer::is_running`), once its wait is over (see
@@ -184,8 +232,7 @@ impl Library {
     /// Stop the writer, then the job, which stops after the file (or batch) it has. Returns false when the job was still
     /// running after the wait.
     pub(crate) fn stop(&self) -> bool {
-        {
-            let mut slot = self.writer();
+        if let Some(mut slot) = self.writer() {
             slot.stopping = true;
             // A writer still in a copy is finished from its temp at the next start: its wait isn't in the result.
             slot.writer.stop(JOB_STOP_WAIT);
@@ -193,16 +240,17 @@ impl Library {
         self.runner.stop(JOB_STOP_WAIT)
     }
 
-    /// Ratings and turns were queued for the files.
+    /// Ratings and turns were queued for the files. Nothing is written when the library runs without a writer.
     pub fn wake_writer(&self) {
-        let mut slot = self.writer();
-        self.tend(&mut slot);
-        slot.writer.wake();
+        if let Some(mut slot) = self.writer() {
+            self.tend(&mut slot);
+            slot.writer.wake();
+        }
     }
 
     /// Wake the job for the files the writer turned since it was last asked: the lanes of their volumes re-analyze them.
     pub fn wake_turned(&self) {
-        let turned = self.writer().writer.take_turned();
+        let turned = self.writer().map(|slot| slot.writer.take_turned()).unwrap_or_default();
         self.runner.wake_files(turned);
     }
 
@@ -265,14 +313,20 @@ impl Library {
 
     /// The job's and the writer's state now.
     pub fn status(&self) -> LibraryActivity {
-        let mut slot = self.writer();
-        self.tend(&mut slot);
+        // Without a writer, nothing is written and nothing has turned: the writer's part is its idle state.
+        let (writes, turned, writer_stopped) = match self.writer() {
+            Some(mut slot) => {
+                self.tend(&mut slot);
+                (slot.writer.status(), slot.writer.turned(), slot.given_up)
+            }
+            None => (WriteStatus::default(), Default::default(), false),
+        };
         LibraryActivity {
             progress: self.runner.progress(),
             paused: self.runner.is_paused(),
-            writes: slot.writer.status(),
-            turned: slot.writer.turned(),
-            writer_stopped: slot.given_up,
+            writes,
+            turned,
+            writer_stopped,
             generation: self.runner.generation(),
             rounds: self.runner.rounds(),
         }
@@ -292,6 +346,9 @@ pub struct LibraryService {
     /// Which background work is on (the borders, the duplicates), from the preferences. Held from the start, as the
     /// height is.
     features: FeatureCell,
+    /// How the job starts: its settings and whether the writer runs. Held until the job starts; the lock is held across the
+    /// start, so a `set_passes` cannot slip between reading it and the job's start.
+    start: Mutex<StartConfig>,
     /// The started job and writer; set once, by the first [`LibraryService::start`].
     cell: OnceLock<Library>,
 }
@@ -303,6 +360,7 @@ impl LibraryService {
         thumbs: Arc<ThumbCache>,
         inbox: Arc<dyn NoticeSink>,
         features: Features,
+        start: StartConfig,
     ) -> LibraryService {
         LibraryService {
             catalog_path,
@@ -311,8 +369,23 @@ impl LibraryService {
             inbox,
             heights: HeightCell::default(),
             features: FeatureCell::new(features),
+            start: Mutex::new(start),
             cell: OnceLock::new(),
         }
+    }
+
+    /// Sets the passes each round runs. Before the job starts it is the job's first setting; after, the next round uses it.
+    pub fn set_passes(&self, passes: PassMask) {
+        let mut start = self.start.lock().unwrap_or_else(PoisonError::into_inner);
+        start.runner.passes = passes;
+        if let Some(library) = self.cell.get() {
+            library.set_passes(passes);
+        }
+    }
+
+    /// Whether the job has nothing left to do (`Library::quiescent`). A job that has not started has nothing to do.
+    pub fn quiescent(&self) -> bool {
+        self.cell.get().is_none_or(Library::quiescent)
     }
 
     /// The grid's thumbnail height: the thumbnails are made at it. Set before or after the job starts; a change ends the
@@ -332,12 +405,17 @@ impl LibraryService {
         if let Some(library) = self.cell.get() {
             return Ok(library);
         }
+        let start = self.start.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(library) = self.cell.get() {
+            return Ok(library);
+        }
         let library = Library::start(
             self.catalog_path.clone(),
             self.thumbs.clone(),
             self.heights.clone(),
             self.features.clone(),
             self.inbox.clone(),
+            *start,
         )?;
         Ok(self.cell.get_or_init(|| library))
     }
@@ -508,9 +586,15 @@ mod tests {
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));
-        let library =
-            Library::start(layout.catalog_path(), thumbs, heights, FeatureCell::new(Features::ALL), sink.clone())
-                .unwrap();
+        let library = Library::start(
+            layout.catalog_path(),
+            thumbs,
+            heights,
+            FeatureCell::new(Features::ALL),
+            sink.clone(),
+            StartConfig::default(),
+        )
+        .unwrap();
         (library, sink, dir)
     }
 
@@ -528,7 +612,7 @@ mod tests {
     fn write_stopped_is_posted_once_where_the_writer_is_given_up() {
         let (library, sink, dir) = library("library-given-up");
         {
-            let mut slot = library.writer();
+            let mut slot = library.writer().expect("the library has a writer");
             slot.writer.stop(JOB_STOP_WAIT);
             slot.restarts = MAX_RESTARTS;
             library.tend(&mut slot);
@@ -552,7 +636,7 @@ mod tests {
         let posts = |sink: &Recording| sink.calls().iter().filter(|c| c.starts_with("post")).count();
         let before = posts(&sink);
         {
-            let mut slot = library.writer();
+            let mut slot = library.writer().expect("the library has a writer");
             slot.writer.stop(JOB_STOP_WAIT);
             // Its wait is over: the restart is due now.
             slot.retry_at = Some(Instant::now());
@@ -573,7 +657,7 @@ mod tests {
         let (library, sink, dir) = library("library-healthy");
         let before = sink.calls().len();
         {
-            let mut slot = library.writer();
+            let mut slot = library.writer().expect("the library has a writer");
             slot.restarts = MAX_RESTARTS - 1;
             slot.started = Instant::now();
             library.tend(&mut slot);
@@ -595,7 +679,7 @@ mod tests {
     fn a_restart_after_a_given_up_writer_resolves_the_status_before_its_writer_posts() {
         let (first, first_sink, dir) = library("library-restart-given-up");
         {
-            let mut slot = first.writer();
+            let mut slot = first.writer().expect("the library has a writer");
             slot.writer.stop(JOB_STOP_WAIT);
             slot.restarts = MAX_RESTARTS;
             first.tend(&mut slot);
@@ -610,9 +694,15 @@ mod tests {
         let sink = Arc::new(Recording::default());
         let heights = HeightCell::default();
         heights.set(ThumbHeight::new(100).expect("a height in range"));
-        let second =
-            Library::start(layout.catalog_path(), thumbs, heights, FeatureCell::new(Features::ALL), sink.clone())
-                .unwrap();
+        let second = Library::start(
+            layout.catalog_path(),
+            thumbs,
+            heights,
+            FeatureCell::new(Features::ALL),
+            sink.clone(),
+            StartConfig::default(),
+        )
+        .unwrap();
         assert_eq!(sink.calls()[..1], ["resolve Status"]);
         assert!(!second.status().writer_stopped, "the new run's writer is not given up");
         assert!(!sink.calls().iter().any(|c| c == "post write-stopped"), "{:?}", sink.calls());

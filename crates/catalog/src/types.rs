@@ -534,7 +534,7 @@ pub struct PairingWork {
     pub quality: Vec<u8>,
     /// Analyses of a reliable quality with no stored hashes (`pdq_dihedral IS NULL`: made by a build before the
     /// orientation hashes, or whose hashes failed their check), of present, non-pending files: not
-    /// paired, and reported. Re-importing them (`gallery import --again`) makes them pictures; it reaches only those
+    /// paired, and reported. Re-importing them (a new IMPORT_VERSION) makes them pictures; it reaches only those
     /// files, so only they are counted.
     pub legacy: u64,
     /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).

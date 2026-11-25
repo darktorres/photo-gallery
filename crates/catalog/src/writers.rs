@@ -2106,7 +2106,7 @@ mod tests {
         c.conn
             .execute("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = 7", [])
             .unwrap();
-        // Legacy rows of a missing and a pending file: not counted, as `gallery import --again` does not reach them.
+        // Legacy rows of a missing and a pending file: not counted, as a re-import does not reach them.
         for id in [8, 9] {
             store_for(&mut c, id, &picture([8; 32], 100));
             c.conn.execute("UPDATE analysis SET pdq_dihedral = NULL WHERE file_id = ?1", [id]).unwrap();

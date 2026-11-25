@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use pg_catalog::{Catalog, Driven};
+use pg_catalog::Catalog;
 use pg_model::refusal::RefusedReason;
 use pg_model::rules::Path as RulePath;
 use pg_platform::names::NormalizeError;
@@ -39,65 +39,4 @@ pub fn add_folder(catalog: &Catalog, path: &Path) -> Result<(RulePath, bool), Ad
     }
     let added = catalog.add_root(&root)?;
     Ok((root, added))
-}
-
-/// A removal over the folder that adding it finished first: the removal's folder as the catalog names it, and what the
-/// finish did.
-#[derive(Debug)]
-pub struct Finished {
-    /// The removed folder, as the catalog's path text.
-    pub folder: String,
-    /// What the finish did: the files and folders it removed.
-    pub driven: Driven,
-}
-
-/// A folder added over a removal: the folder as the catalog has it, whether it was new, and the removal finished before
-/// it (when one was pending).
-#[derive(Debug)]
-pub struct Added {
-    /// The folder, as the catalog has it.
-    pub root: RulePath,
-    /// Whether the folder was not in the library before.
-    pub new: bool,
-    /// The removal that was finished first, if one was pending.
-    pub finished: Option<Finished>,
-}
-
-/// Why a folder was not added over a removal. The removal finished before the add is kept in each variant that follows it,
-/// so what the finish did is still reported.
-#[derive(Debug)]
-pub enum AddFinishError {
-    /// The add itself failed, as [`add_folder`] says.
-    Add {
-        /// Why the add failed.
-        error: AddError,
-        /// The removal that was finished before the add, if one was pending.
-        finished: Option<Box<Finished>>,
-    },
-    /// The finish failed.
-    Finish(crate::Error),
-    /// The removal is still pending after its finish: files are kept for an unfinished write. Nothing was added.
-    StillPending(Finished),
-}
-
-/// [`add_folder`], finishing a removal over the folder first: an add over a folder whose removal is not finished is
-/// refused, so when there is one, `finish` finishes it (the caller opens the thumbnails the finish needs, which only a
-/// pending removal does), and the add is tried again. A removal that is still pending after its finish is not added over.
-pub fn add_folder_finishing(
-    catalog: &Catalog,
-    path: &Path,
-    finish: &mut dyn FnMut() -> crate::Result<Driven>,
-) -> Result<Added, AddFinishError> {
-    let folder = match add_folder(catalog, path) {
-        Ok((root, new)) => return Ok(Added { root, new, finished: None }),
-        Err(AddError::Catalog(pg_catalog::Error::RemovalPending { path: folder })) => folder,
-        Err(error) => return Err(AddFinishError::Add { error, finished: None }),
-    };
-    let driven = finish().map_err(AddFinishError::Finish)?;
-    let finished = Finished { folder, driven };
-    match add_folder(catalog, path) {
-        Ok((root, new)) => Ok(Added { root, new, finished: Some(finished) }),
-        Err(AddError::Catalog(pg_catalog::Error::RemovalPending { .. })) => Err(AddFinishError::StillPending(finished)),
-        Err(error) => Err(AddFinishError::Add { error, finished: Some(Box::new(finished)) }),
-    }
 }

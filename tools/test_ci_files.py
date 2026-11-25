@@ -458,7 +458,7 @@ class EnvironmentRegistry(unittest.TestCase):
 # an exit code, with context added on the way up, so a typed error there would only be matched to choose a message.
 # (`desktop` also matches one typed error by downcast, `pg_app::Error`, and says so where it does.) Every library crate is
 # listed in anyhow-allow.txt until its migration removes it (Phase 7). `gallery` has no anyhow dependency and is not here.
-ANYHOW_PERMANENT = {"cli", "desktop"}
+ANYHOW_PERMANENT = {"desktop", "driver"}
 ANYHOW_ALLOW = REPO / "tools" / "anyhow-allow.txt"
 
 

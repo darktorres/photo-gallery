@@ -62,7 +62,7 @@ pub struct FailedFile {
     /// The error the pass recorded for the file.
     pub error: String,
     /// The pass tries it again by itself; else not until it changes, or the user retries it (the import's: by
-    /// `gallery import --retry`).
+    /// the import's own retry, docs/plans/STORAGE_AND_CLEANUPS_PLAN.md section 4).
     pub retry: bool,
     /// When it was first recorded (Unix seconds).
     pub first_seen: i64,

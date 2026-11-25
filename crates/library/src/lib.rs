@@ -1,4 +1,4 @@
-//! The job (`runner`) that runs the passes over the originals in order, for the app and for the command line (`pg_cli`),
+//! The job (`runner`) that runs the passes over the originals in order, for the app and for the developer's driver (`pg_driver`),
 //! where the data folders are (`layout`), and how a catalog folder is opened for them (`open_catalog`, `open_thumbs`,
 //! `versions`). What both front ends do around the passes is here too, once: adding a folder (`folders`) and what
 //! follows a scan (`scans`). The passes are their own crates, which the caller depends on directly: `pg-scan`, `pg-import`,
@@ -15,6 +15,7 @@ mod inner;
 mod lane;
 pub mod lanes;
 pub mod layout;
+pub mod mask;
 mod pair_gate;
 mod passes;
 pub mod removals;

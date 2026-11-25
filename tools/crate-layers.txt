@@ -49,6 +49,8 @@ crop: catalog edit exiftool jobs model perf platform writeback
 # The runner, the application layer, the front ends and the one program.
 library: analysis borders catalog crop import jobs model perf platform render scan thumbcache thumbs writeback
 app: catalog jobs library log model platform query render thumbcache writeback yandex
-cli: analysis borders catalog codec dedup import jobs library model perf platform scan thumbcache thumbs wording writeback
 desktop: app client log model perf platform render trace wording
-gallery: cli desktop platform wording
+gallery: desktop platform
+
+# The developer's headless driver over the app's service (not shipped): a leaf, nothing depends on it.
+driver: app catalog library model perf platform writeback

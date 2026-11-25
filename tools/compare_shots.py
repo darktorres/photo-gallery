@@ -183,12 +183,19 @@ def gallery_exe(target: Path) -> Path:
     return target / "debug" / ("gallery.exe" if WINDOWS else "gallery")
 
 
-def build_gallery(tree: Path, target: Path | None) -> Path:
-    command = ["cargo", "build", "-p", "pg-gallery"]
+def driver_exe(target: Path) -> Path:
+    """The developer's driver (`pg-driver`), which makes each side's template catalogs: the same library job the app runs."""
+    return target / "debug" / ("pg-driver.exe" if WINDOWS else "pg-driver")
+
+
+def build_binaries(tree: Path, target: Path | None) -> tuple[Path, Path]:
+    """Builds the app and the driver of `tree`. Returns (the app, the driver)."""
+    command = ["cargo", "build", "-p", "pg-gallery", "-p", "pg-driver"]
     if target is not None:
         command += ["--target-dir", str(target)]
     run(command, cwd=tree)
-    return gallery_exe(target or tree / "target")
+    folder = target or tree / "target"
+    return gallery_exe(folder), driver_exe(folder)
 
 
 def update_base_worktree(commit: str) -> tuple[Path, str]:
@@ -304,9 +311,9 @@ def pin_failure_times(catalog: Path) -> None:
         conn.close()
 
 
-def new_template(exe: Path, folder: Path, template: str) -> Path:
-    """One side's template catalog, made by the side's own binary, with everything the app would do in the background done:
-    a run starts with nothing left to process. The borders pass runs last, since the app runs it after the import, and it
+def new_template(driver: Path, folder: Path, template: str) -> Path:
+    """One side's template catalog, made by the side's own driver (`pg-driver`), with everything the app would do in the
+    background done: a run starts with nothing left to process. The borders pass runs last, since the app runs it after the import, and it
     races the screenshot's wait while any file is still due.
 
     `default` is made from nothing over the library. `broken` is made incrementally from the side's default template (the
@@ -330,11 +337,20 @@ def new_template(exe: Path, folder: Path, template: str) -> Path:
         root = BROKEN
     else:
         sys.exit(f"no template {template}")
-    steps = [["scan", str(root)], ["import"], ["thumbs", "--height", "120"], ["thumbs", "--height", "220"], ["borders"]]
+    # The passes the app's rounds run, in their order, as the driver runs them: the scan and the import with the duplicates
+    # (the import's own pass does not chain them any more), then the thumbnails and their placeholders at each height, then
+    # the borders. The home folder is the template's folder, so its catalog is `folder / "catalog"`, as before.
+    home = str(folder)
+    steps = [
+        ["run", "--home", home, "--add", str(root), "--passes", "scans,import,hashes,pairing"],
+        ["run", "--home", home, "--height", "120", "--passes", "thumbs,placeholders"],
+        ["run", "--home", home, "--height", "220", "--passes", "thumbs,placeholders"],
+        ["run", "--home", home, "--passes", "borders"],
+    ]
     for step in steps:
-        result = subprocess.run([str(exe), "--catalog-dir", str(catalog), *step], check=False)
+        result = subprocess.run([str(driver), *step], check=False)
         if result.returncode != 0:
-            sys.exit(f"gallery {' '.join(step)} failed ({result.returncode})")
+            sys.exit(f"pg-driver {' '.join(step)} failed ({result.returncode})")
     if template == DEFAULT:
         fixture_step("views", str(catalog / "catalog.sqlite"))
     else:
@@ -385,15 +401,15 @@ def invoke_shot(exe: Path, side: str, name: str, hooks: tuple[str, ...], templat
     return Shot(name, png, crops, "", settle)
 
 
-def run_side(exe: Path, side: str, scenarios: dict[str, Scenario], wait: float) -> list[Shot]:
-    """One side of the matrix: its template catalogs from its own binary (SHOTS/sides/<side>/<template>), then each
-    scenario. Both templates are built, in order (broken is made from default), unless no scenario of the run uses
-    broken (--only, or the pseudo-locale runs)."""
+def run_side(exe: Path, side: str, scenarios: dict[str, Scenario], wait: float, driver: Path) -> list[Shot]:
+    """One side of the matrix: its template catalogs from its own driver (SHOTS/sides/<side>/<template>), then each
+    scenario with its own app. Both templates are built, in order (broken is made from default), unless no scenario of the run
+    uses broken (--only, or the pseudo-locale runs)."""
     needed = {entry.template for entry in scenarios.values()}
     templates = {}
     for template in TEMPLATES:
         if template == DEFAULT or template in needed:
-            templates[template] = new_template(exe, SHOTS / "sides" / side / template, template)
+            templates[template] = new_template(driver, SHOTS / "sides" / side / template, template)
     results = []
     for name, entry in scenarios.items():
         print(f"[{side}] {name}", flush=True)
@@ -541,9 +557,9 @@ def reference_results(manifest: dict, reference: Path, scenarios: dict[str, Scen
 
 def record(args: argparse.Namespace, qmake: Path, scenarios: dict[str, Scenario]) -> None:
     worktree, sha = update_base_worktree(args.record)
-    base_exe = build_gallery(worktree, SHOTS / "base-target")
+    base_exe, base_driver = build_binaries(worktree, SHOTS / "base-target")
     ensure_library()
-    results = run_side(base_exe, "base", scenarios, args.wait)
+    results = run_side(base_exe, "base", scenarios, args.wait, base_driver)
     folder = save_reference(sha, results, args.wait, qmake)
     print(f"recorded {len(results)} scenarios of {sha[:10]} in {folder}")
 
@@ -555,7 +571,7 @@ def compare(
     pseudo: dict[str, Scenario],
     expect: list[str],
 ) -> None:
-    current_exe = build_gallery(REPO, None)
+    current_exe, current_driver = build_binaries(REPO, None)
     manifest = None
     reference = None
     if not args.self:
@@ -575,13 +591,13 @@ def compare(
     # The sides to compare: the base is the reference, or the working tree itself with --self.
     if reference is None or manifest is None:
         base_label = "working tree (--self)"
-        base_results = run_side(current_exe, "base", scenarios, args.wait)
+        base_results = run_side(current_exe, "base", scenarios, args.wait, current_driver)
     else:
         base_label = f"{manifest['commit'][:10]} (recorded {manifest['recorded']})"
         base_results = reference_results(manifest, reference, scenarios)
-    current_results = run_side(current_exe, "current", scenarios, args.wait)
+    current_results = run_side(current_exe, "current", scenarios, args.wait, current_driver)
     pseudo_folder = SHOTS / "pseudo"
-    pseudo_results = run_side(current_exe, "pseudo", pseudo, args.wait) if pseudo else []
+    pseudo_results = run_side(current_exe, "pseudo", pseudo, args.wait, current_driver) if pseudo else []
     if pseudo_results:
         pseudo_folder.mkdir(parents=True, exist_ok=True)
         for shot in pseudo_results:

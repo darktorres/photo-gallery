@@ -12,9 +12,6 @@ pub(super) const ENGLISH: &str = include_str!("../locales/en/text.ftl");
 /// The English words of the front end's own literals, by id (`ui`): the labels, tooltips and prompts the QML shows.
 const ENGLISH_UI: &str = include_str!("../locales/en/ui.ftl");
 
-/// The English words of the command line's own lines (`cli::Line`).
-pub(super) const ENGLISH_CLI: &str = include_str!("../locales/en/cli.ftl");
-
 thread_local! {
     // Fluent's bundle is not thread-safe, so each thread that words a line builds its own from the files once.
     static BUNDLE: FluentBundle<FluentResource> = english();
@@ -37,7 +34,7 @@ fn english() -> FluentBundle<FluentResource> {
     // NUMBER() and DATETIME(), for an entry that formats its number (a range's ends are passed as numbers).
     let builtins = bundle.add_builtins();
     debug_assert!(builtins.is_ok(), "the Fluent built-ins didn't add: {builtins:?}");
-    for source in [ENGLISH, ENGLISH_UI, ENGLISH_CLI] {
+    for source in [ENGLISH, ENGLISH_UI] {
         // The English resources are compiled in, so a syntax error or a repeated id is a bug in them: debug builds and the
         // tests stop on it. A release build keeps what parsed (the parser's partial resource), and the first of a repeated
         // id, so the rest of the file still shows.

@@ -66,7 +66,7 @@ check: _qt
 deploy profile="release" pdb="": (build profile)
     {{ qt }}/bin/windeployqt.exe --release {{ if pdb == "pdb" { "--pdb" } else { "" } }} --qmldir crates/desktop/qml --no-translations --no-ffmpeg --include-plugins qoffscreen target/{{ profile }}/gallery.exe
 
-# Run the release build: the app, or a command (`just run scan D:\Photos`, `just run status`).
+# Run the release build: the app. (The command line is gone; `cargo run -p pg-driver -- status --home <folder>` is the driver.)
 run *args: _qt
     cargo run --locked --release -- {{ args }}
 
@@ -224,10 +224,10 @@ linux-bench *args:
 linux-eval *args:
     {{ py }} tools/linux.py eval {{ args }}
 
-# A headless Linux `gallery` (release, no Qt) of the working tree, built in the container and copied into OUT: a binary
-# to run elsewhere, e.g. in WSL, which only runs binaries.
-linux-gallery out:
-    {{ py }} tools/linux.py gallery {{ out }}
+# A headless Linux `pg-driver` (release, the developer's driver: no Qt) of the working tree, built in the container and copied
+# into OUT: a binary to run elsewhere, e.g. in WSL, which only runs binaries.
+linux-driver out:
+    {{ py }} tools/linux.py driver {{ out }}
 
 # A shell in the container, on the working tree.
 linux-shell:

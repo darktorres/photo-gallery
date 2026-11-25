@@ -17,12 +17,11 @@ layout name ending in `-large` (`v1-windows-rules-large`), from `synthetic_libra
 (200,000 files, 50,000 of them broken, so the import records 50,000 analysis failures):
 
     python tools/profiling/synthetic_library.py $PG_ROOT\\synthetic\\library-large --profile large
-    gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large --create scan $PG_ROOT\\synthetic\\library-large
-    gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large import
-    gallery --catalog-dir $PG_ROOT\\synthetic\\catalog-large thumbs --height 256
+    cargo run -p pg-driver -- run --home $PG_ROOT\\synthetic\\home-large --add $PG_ROOT\\synthetic\\library-large --passes scans,import,hashes,pairing
+    cargo run -p pg-driver -- run --home $PG_ROOT\\synthetic\\home-large --height 256 --passes thumbs,placeholders
     mkdir $PG_ROOT\\bench-data
     python tools/profiling/bench_data.py v1-windows-rules-large \\
-        $PG_ROOT\\synthetic\\catalog-large $PG_ROOT\\bench-data
+        $PG_ROOT\\synthetic\\home-large\\catalog $PG_ROOT\\bench-data
 
 A `-large` layout also gets the failure ledger seeded (`seed_ledger`) to --ledger-rows rows (100,000 by default; 0 for
 none; other layouts default to 0), counting the import's failures, on either side of the notifications migration:

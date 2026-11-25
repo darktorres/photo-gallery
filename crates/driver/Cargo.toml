@@ -1,0 +1,33 @@
+[package]
+name = "pg-driver"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The developer's driver over the app's library, without a window: `Headless` starts the job, steers it and reads it back, and
+# `pg-driver` is its command line, for scripts and measurements. Not shipped. Qt-free, as the app's service is.
+[[bin]]
+name = "pg-driver"
+path = "src/main.rs"
+
+[dependencies]
+pg-app = { path = "../app" }
+pg-catalog = { path = "../catalog" }
+pg-library = { path = "../library" }
+pg-model = { path = "../model" }
+pg-perf = { path = "../perf" }
+pg-platform = { path = "../platform" }
+pg-writeback = { path = "../writeback" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# The test helpers: scratch folders, and the synthetic pictures the tests import.
+pg-codec = { path = "../codec", features = ["fixture"] }
+pg-testkit = { path = "../testkit" }

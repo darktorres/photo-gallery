@@ -1,5 +1,10 @@
 # Bounded-memory catalog at 1B files: implementation plan
 
+> **Note (plan phase A2, `docs/plans/HEADLESS_SESSION_PLAN.md`).** The `gallery` command line is removed. Its `borders --csv`,
+> `borders --import-review` and `dups` commands are gone with it, so the work on them below (table rows 73 and 74, section 4.8,
+> the `dups` waits, and the test rows for them) is moot, along with the 450-850 GB worst case recorded for `borders --csv`. The
+> `gallery <pass>` names elsewhere here are `pg-dev run --passes <name>` now.
+
 This plan makes every library-wide pass in the catalog run in a fixed RAM budget that does not depend on library size. Results stay identical (pairs, groups, grid order, filters, counts, CLI output) except where a deviation is stated. It covers the schema, scanning and pairing, work lists, write-back, thumbnails, borders, PDQ near-duplicate detection, duplicate groups, the grid and the Qt edge, and the verification harness.
 
 Phase 0 is the user's. The in-flight S-17 Unit E work lands before Phase 1 starts.

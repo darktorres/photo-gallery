@@ -1,5 +1,5 @@
 //! The perf log: the time each step of the background job and the import takes, with what it processed, written as JSON
-//! lines to the file `PG_PERF_LOG` names (or echoed to stderr with `-`). Off until a sink is opened: then a span costs
+//! lines to the file `PG_PERF_LOG` names. Off until a sink is opened: then a span costs
 //! one flag test and reads no clock.
 //!
 //! - [`span`]: a timed step, nested under the span open on its thread (`parent`). A span is `!Send`: it closes on the
@@ -7,12 +7,12 @@
 //! - [`Tally`]: a step repeated many times, possibly on several threads. Its totals are thread time, not wall time, and
 //!   [`Span::attach`] puts them on the span that owns it.
 //! - [`record`]: a duration the code has already measured, so the log and the code share one clock.
-//! - [`summarize`]: the table `gallery perf` prints, read back from a file.
+//! - [`summarize`]: the table `pg-driver perf` prints, read back from a file.
 //!
 //! The file is rotated like the app's log (`pg_log::LogFile`); one line is one `write`, so two processes appending to the
 //! same file don't split each other's lines. A line that can't be written is counted ([`dropped`]), not retried.
 //!
-//! The library writes to no console: the echo is the command line's or the app's, through the sink it opens.
+//! The library writes to no console: its records go to the file the sink opens.
 
 #![forbid(unsafe_code)]
 
@@ -34,14 +34,8 @@ pub const PERF_FILE_CAP: u64 = 16 * 1024 * 1024;
 /// name (the CLI and the app's trace used to differ).
 pub const PROGRAM: &str = "gallery";
 
-/// Where the records go. A file, or an echo: each top-level span (one with no parent) is handed to the echo as its line.
-enum Sink {
-    File(pg_log::LogFile),
-    Echo(fn(&str)),
-}
-
-/// The sink of this process, set once by [`open`] or [`open_echo`].
-static SINK: OnceLock<Sink> = OnceLock::new();
+/// The file the records go to, set once by [`open`].
+static SINK: OnceLock<pg_log::LogFile> = OnceLock::new();
 /// Whether a span records anything: a sink is open, or a capture is running.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// The records a capture took, in the order they closed.
@@ -87,17 +81,11 @@ pub fn open(path: &Path, meta: Value) -> io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let file = pg_log::LogFile::new(path.to_path_buf(), PERF_FILE_CAP);
-    install(Sink::File(file), meta)
+    install(file, meta)
 }
 
-/// Echoes this process's top-level spans through `echo` (one line each, the JSON of the record), with `meta` as the
-/// session's. Once per process, like [`open`].
-pub fn open_echo(echo: fn(&str), meta: Value) -> io::Result<()> {
-    install(Sink::Echo(echo), meta)
-}
-
-fn install(sink: Sink, meta: Value) -> io::Result<()> {
-    if SINK.set(sink).is_err() {
+fn install(file: pg_log::LogFile, meta: Value) -> io::Result<()> {
+    if SINK.set(file).is_err() {
         return Err(io::Error::other("the perf log is already open in this process"));
     }
     let epoch =
@@ -119,8 +107,8 @@ fn install(sink: Sink, meta: Value) -> io::Result<()> {
         "failed": 0,
         "fields": meta,
     });
-    // Not a step: the echo leaves the session record out (a file keeps it, as the first line of the run).
-    emit(line, false);
+    // Not a step: the session record is the file's first line of the run.
+    emit(line);
     Ok(())
 }
 
@@ -130,21 +118,17 @@ pub fn dropped() -> u64 {
 }
 
 /// Gives a record to the sink, or to the capture. Never panics; a failed write is counted.
-fn emit(record: Value, top: bool) {
+fn emit(record: Value) {
     if CAPTURE_HERE.with(Cell::get) {
         lock(&CAPTURED).push(record);
         return;
     }
-    match SINK.get() {
-        Some(Sink::File(file)) => {
-            let mut line = record.to_string();
-            line.push('\n');
-            if file.append(&line).is_err() {
-                DROPPED.fetch_add(1, Ordering::Relaxed);
-            }
+    if let Some(file) = SINK.get() {
+        let mut line = record.to_string();
+        line.push('\n');
+        if file.append(&line).is_err() {
+            DROPPED.fetch_add(1, Ordering::Relaxed);
         }
-        Some(Sink::Echo(echo)) if top => echo(&record.to_string()),
-        _ => {}
     }
 }
 
@@ -313,7 +297,7 @@ fn close(live: &Live, dur_ns: u64, child_ns: u64) {
     if let (Some(paused), Value::Object(map)) = (live.paused_ms, &mut record) {
         map.insert("paused_ms".to_string(), json!(paused));
     }
-    emit(record, live.parent.is_none());
+    emit(record);
 }
 
 /// A duration the code has already measured, recorded under `name` inside the span open on this thread. It counts as a

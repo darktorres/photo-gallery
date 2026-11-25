@@ -8,8 +8,9 @@
 Not gated: perf-compare.py reads callgrind outputs only. The numbers go into the profiling reference, with the commit, the binary,
 the drive the library is on and whether the caches were dropped.
 
-    python3 tools/profiling/scan_timing.py GALLERY LIBRARY WORK [--drop-caches]
-      GALLERY         a built gallery binary; time a release build (what users run)
+    python3 tools/profiling/scan_timing.py DEV LIBRARY WORK [--drop-caches]
+      DEV             a built pg-driver binary (the developer's driver of the library job); time a release build. Each timed
+                      run includes the driver's start and its quiet wait (a fraction of a second)
       LIBRARY         the library folder. If it does not exist, it is made with synthetic_library.py: 100 folders of 100
                       files, 10,000 in all (about 15 GB; not timed)
       WORK            a scratch folder: catalog/ is made fresh by every run, and each scan's output is kept beside it
@@ -84,9 +85,9 @@ def main() -> None:
     args = [a for a in args if a != "--drop-caches"]
     if len(args) != 3:
         usage()
-    gallery, library, work = Path(args[0]), Path(args[1]), Path(args[2])
-    if not os.access(gallery, os.X_OK):
-        sys.exit(f"scan_timing.py: {gallery} is not an executable")
+    dev, library, work = Path(args[0]), Path(args[1]), Path(args[2])
+    if not os.access(dev, os.X_OK):
+        sys.exit(f"scan_timing.py: {dev} is not an executable")
     if not library.is_dir():
         maker = [sys.executable, str(REPO / "tools" / "profiling" / "synthetic_library.py"), str(library)]
         subprocess.run([*maker, "--folders", "100", "--per-folder", "100"], check=True)
@@ -102,13 +103,14 @@ def main() -> None:
     if head.returncode == 0:
         status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"], capture_output=True, text=True, check=False)
         changed = len(status.stdout.splitlines())
-        print(f"gallery {gallery}, built from the tree at {head.stdout.strip()} with {changed} changed paths")
+        print(f"pg-driver {dev}, built from the tree at {head.stdout.strip()} with {changed} changed paths")
     else:
-        print(f"gallery {gallery} (not a git checkout: the commit it was built from is for the caller to record)")
+        print(f"pg-driver {dev} (not a git checkout: the commit it was built from is for the caller to record)")
     print(f"caches: {'dropped before each scan' if drop else 'as they are'}")
 
-    scan = [str(gallery), "--catalog-dir", str(catalog), "scan"]
-    timed("first", [*scan, str(library)], work, drop)
+    # The first run adds the library and scans it; the later ones rescan every folder in the catalog (`run` does that).
+    scan = [str(dev), "run", "--home", str(work), "--passes", "scans"]
+    timed("first", [*scan, "--add", str(library)], work, drop)
     timed("unchanged", scan, work, drop)
     # Every file's number moves to the other range. Not timed.
     print(f"renumbered {renumber(library)} files")

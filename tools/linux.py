@@ -52,6 +52,7 @@ PINS = {
     "CARGO_MACHETE_VERSION": "cargo_machete_version",
     "CARGO_MODULES_VERSION": "cargo_modules_version",
     "CARGO_FUZZ_VERSION": "cargo_fuzz_version",
+    "SCCACHE_VERSION": "sccache_version",
     "AQTINSTALL_COMMIT": "aqtinstall_commit",
     "QT_VERSION": "qt_version",
     "EXIFTOOL_SOURCE_VERSION": "exiftool_source_version",
@@ -142,16 +143,23 @@ def ensure_image(tag, target):
 
 
 def cache_mounts():
-    """The Cargo target, registry and git checkouts, and the bench folder: volumes, or folders under PG_LINUX_CACHE."""
+    """The Cargo target, registry and git checkouts, the bench folder and sccache's cache: volumes, or folders under
+    PG_LINUX_CACHE."""
     cache = os.environ.get("PG_LINUX_CACHE")
     if cache:
         root = Path(cache)
-        names = {"target": "cargo-target", "registry": "registry", "git": "git", "bench": "bench"}
+        names = {"target": "cargo-target", "registry": "registry", "git": "git", "bench": "bench", "sccache": "sccache"}
         for name in names.values():
             (root / name).mkdir(parents=True, exist_ok=True)
         sources = {name: posix(root / folder) for name, folder in names.items()}
     else:
-        sources = {"target": "pg-cargo-target", "registry": "pg-cargo-registry", "git": "pg-cargo-git", "bench": "pg-bench"}
+        sources = {
+            "target": "pg-cargo-target",
+            "registry": "pg-cargo-registry",
+            "git": "pg-cargo-git",
+            "bench": "pg-bench",
+            "sccache": "pg-sccache",
+        }
     return [
         "-v",
         f"{sources['target']}:/cargo-target",
@@ -161,6 +169,8 @@ def cache_mounts():
         f"{sources['git']}:/home/pg/.cargo/git",
         "-v",
         f"{sources['bench']}:/bench",
+        "-v",
+        f"{sources['sccache']}:/sccache",
     ]
 
 

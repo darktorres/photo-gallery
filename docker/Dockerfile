@@ -10,6 +10,7 @@ ARG JUST_VERSION
 ARG CARGO_DENY_VERSION
 ARG CARGO_MACHETE_VERSION
 ARG CARGO_MODULES_VERSION
+ARG SCCACHE_VERSION
 ARG AQTINSTALL_COMMIT
 ARG QT_VERSION
 ARG EXIFTOOL_SOURCE_VERSION
@@ -71,7 +72,7 @@ RUN python3 -m venv /opt/lint \
  && npm ci --prefix /opt/lint-src --no-audit --no-fund
 
 # The directories the volumes are mounted on, owned by `pg`: a new named volume starts with its directory's owner.
-RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registry /home/pg/.cargo/git /bench
+RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registry /home/pg/.cargo/git /bench /sccache
 
 # The toolchain file, and the rustup step that installs what it names (the pinned nightly, its components and target).
 COPY rust-toolchain.toml /opt/pg/rust-toolchain.toml
@@ -89,12 +90,20 @@ RUN curl -sSf -o /tmp/rustup-init "${RUSTUP_INIT_URL}" \
  && . "$HOME/.cargo/env" \
  && cd /opt/pg && rustup show
 
-# The tools the Justfile pins (just, cargo-deny, cargo-machete) and the module-graph tool of the cycle check (tools/modgraph).
-# Installed with the default toolchain, as CI's install step does for just.
+# The tools the Justfile pins (just, cargo-deny, cargo-machete, sccache) and the module-graph tool of the cycle check
+# (tools/modgraph). Installed with the default toolchain, as CI's install step does for just. sccache without its default
+# features: only its local disk cache is used, not the remote storage backends.
 RUN cargo install --locked just --version ${JUST_VERSION} \
  && cargo install --locked cargo-deny --version ${CARGO_DENY_VERSION} \
  && cargo install --locked cargo-machete --version ${CARGO_MACHETE_VERSION} \
- && cargo install --locked cargo-modules --version ${CARGO_MODULES_VERSION}
+ && cargo install --locked cargo-modules --version ${CARGO_MODULES_VERSION} \
+ && cargo install --locked sccache --version ${SCCACHE_VERSION} --no-default-features
+
+# Every rustc the checks run goes through sccache, whose cache is the pg-sccache volume at /sccache (tools/linux.py). Set after
+# the installs above, which run before sccache exists. A container's sccache server ends with the container; its cache stays.
+ENV RUSTC_WRAPPER=sccache \
+    SCCACHE_DIR=/sccache \
+    SCCACHE_CACHE_SIZE=30G
 
 # The `.env` in /work describes the Windows machine, so the scripts do not load it here (tools/pgtools.py).
 ENV PG_CONTAINER=1
@@ -119,8 +128,9 @@ USER pg
 
 # The runner must be the exact version of the gungraun library in Cargo.lock. No --locked: gungraun-runner 0.20.0's
 # published lock pins yoke-derive 0.8.3, which was yanked, so cargo picks the non-yanked release.
-RUN cargo install gungraun-runner --version ${GUNGRAUN_VERSION} \
- && cargo install --locked cargo-fuzz --version ${CARGO_FUZZ_VERSION}
+# RUSTC_WRAPPER is cleared for these installs: through sccache they would leave its cache in the image layer.
+RUN RUSTC_WRAPPER= cargo install gungraun-runner --version ${GUNGRAUN_VERSION} \
+ && RUSTC_WRAPPER= cargo install --locked cargo-fuzz --version ${CARGO_FUZZ_VERSION}
 
 # The eval's Linux parts: the packages the
 # JPEG builds and runs need (apt-packages-eval.txt), and a venv with the Python packages the scripts import, at the versions

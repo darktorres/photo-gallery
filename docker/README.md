@@ -48,6 +48,8 @@ device, so masked paths under `/proc` are correct, not a failure.
 - Build output (`/cargo-target`) and the registry (`/home/pg/.cargo/registry`) are Docker named volumes: `pg-cargo-target`
   and `pg-cargo-registry`. The repository's own `target` folder is not touched. The first run compiles everything; later
   runs reuse it. To start from nothing: `docker volume rm pg-cargo-target`.
+- sccache's cache is the `pg-sccache` volume at `/sccache`. Every rustc in the container goes through it (`RUSTC_WRAPPER`),
+  so a run after `docker volume rm pg-cargo-target` gets the compiled crates back from it. `SCCACHE_CACHE_SIZE` caps it at 30 GB.
 - The benches keep their target and their data in `pg-bench`. `just perf` reads the bench data from the folder
   `PG_BENCH_DATA_SOURCE` names in `.env`, mounted read-only (`docs/reference/PROFILING.md`).
 - A volume made by another user cannot be written by `pg`. The fix is to hand it to `pg` once:

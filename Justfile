@@ -101,6 +101,8 @@ cargo_machete_version := "0.10.1"
 # qt_version is the Qt kit for the Linux container and for CI's Windows job (PG_QT_DIR is derived from it).
 just_version := "1.59.0"
 cargo_fuzz_version := "0.13.2"
+# sccache, the container's compiler cache (RUSTC_WRAPPER in docker/Dockerfile; its cache is the pg-sccache volume).
+sccache_version := "0.20.1"
 # Python for CI's jobs (setup-python, which runs before the pins step, so ci.yml holds the literal; the tools test asserts it
 # is this value). The local tools' Python is the same patch (tools/pgtools.py needs 3.12 or later).
 python_version := "3.12.10"

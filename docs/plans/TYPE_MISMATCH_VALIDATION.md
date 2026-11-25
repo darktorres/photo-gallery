@@ -143,15 +143,15 @@ Six findings from the type-mismatch review are still open. The findings were fir
 
 **Reproduced behaviour.** Synthetic packets built from the rating packet, read through the test helper `meta_of` in temporary tests that were reverted:
 
-| Container and encoding                           | Rating    | Frames (animated GIF, 3 frames) |
-|--------------------------------------------------|-----------|---------------------------------|
-| PNG iTXt, UTF-8 (control)                        | `Some(3)` | n/a                             |
-| PNG iTXt, UTF-16LE with BOM                      | `None`    | n/a                             |
-| PNG iTXt, UTF-16BE with BOM                      | `None`    | n/a                             |
-| PNG iTXt, UTF-32LE with BOM                      | `None`    | n/a                             |
-| PNG iTXt, UTF-16LE without BOM                   | `None`    | n/a                             |
-| GIF XMP application extension, UTF-16LE with BOM | `None`    | **1** (a wide packet is refused; see the decisions)              |
-| GIF XMP application extension, UTF-8 (control)   | `Some(3)` | 3                               |
+| Container and encoding                           | Rating    | Frames (animated GIF, 3 frames)                     |
+|--------------------------------------------------|-----------|-----------------------------------------------------|
+| PNG iTXt, UTF-8 (control)                        | `Some(3)` | n/a                                                 |
+| PNG iTXt, UTF-16LE with BOM                      | `None`    | n/a                                                 |
+| PNG iTXt, UTF-16BE with BOM                      | `None`    | n/a                                                 |
+| PNG iTXt, UTF-32LE with BOM                      | `None`    | n/a                                                 |
+| PNG iTXt, UTF-16LE without BOM                   | `None`    | n/a                                                 |
+| GIF XMP application extension, UTF-16LE with BOM | `None`    | **1** (a wide packet is refused; see the decisions) |
+| GIF XMP application extension, UTF-8 (control)   | `Some(3)` | 3                                                   |
 
 A wrapper-less animated UTF-8 GIF reads `rating=None, frames=1`, and the same packet with its wrapper reads `Some(3)` and `3`. A UTF-8 packet with a leading BOM reads `Some(3)`, whether the BOM bytes come before `<?xpacket` or U+FEFF is in the `begin` attribute. The GIF failure has this cause: `gif_xmp` returns `None` when the marker is missing; `block()` returns `None` through `?` at `crates/container/src/lib.rs:983`; `next()` then sets `walk = Broken`, so `complete()` is false, the frame count stays 1, and the rating is dropped.
 

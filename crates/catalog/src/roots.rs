@@ -149,6 +149,14 @@ impl Catalog {
         self.conn.execute("UPDATE scans SET finished = unixepoch() WHERE id = ?1", [scan.get()])?;
         Ok(())
     }
+
+    /// The scans begun and not finished: a walk that was cut short (a stop, a failure) and never finished. A run that was not
+    /// interrupted owes none.
+    pub fn unfinished_scans(&self) -> Result<u64> {
+        let count: i64 =
+            self.conn.query_row("SELECT count(*) FROM scans WHERE finished IS NULL", [], |row| row.get(0))?;
+        Ok(u64::try_from(count).unwrap_or(0))
+    }
 }
 
 impl ScanLease<'_> {

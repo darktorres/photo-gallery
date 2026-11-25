@@ -267,3 +267,48 @@ fn a_folder_whose_walk_another_process_holds_keeps_the_job_busy_until_it_is_rele
     headless.wait_quiet(WAIT).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_write_the_files_refuse_ends_the_write_with_the_writers_words() {
+    // A read-only original cannot take its rotation: the writer's job fails, and the write ends with that error, not at the timeout.
+    let (dir, home, images) = library("dev-write-refused", &["a.png"]).unwrap();
+    let mut writing = setup(&home);
+    writing.writer = true;
+    let headless = Headless::open(&writing).unwrap();
+    headless.add_folder(&images).unwrap();
+    headless.run(PassMask::ALL, WAIT).unwrap();
+
+    let original = images.join("a.png");
+    set_readonly(&original, true).unwrap();
+    let catalog = Catalog::open(&Layout::in_home(&home).catalog_path(), PATH_RULES).unwrap();
+    let folder = PATH_RULES.parse(&images.to_string_lossy()).unwrap();
+    let file = catalog.files_under(&folder).unwrap()[0];
+    catalog.queue_rotation(file, Turns::new(1)).unwrap();
+
+    let result = headless.write_pending(WAIT);
+    set_readonly(&original, false).unwrap();
+    assert!(matches!(result, Err(Error::WriteFailed { .. })), "{result:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_run_that_was_not_interrupted_finishes_every_scan_it_began() {
+    // The scans a run begins are each finished by their walk. A walk cut short leaves its row unfinished; an uninterrupted run leaves none.
+    let (dir, home, images) = library("dev-scans-finished", &["a.png", "b.png"]).unwrap();
+    let headless = Headless::open(&setup(&home)).unwrap();
+    headless.add_folder(&images).unwrap();
+    headless.run(PassMask::ALL, WAIT).unwrap();
+    std::fs::write(images.join("c.png"), pg_codec::fixtures::png_rgb(8, 8, &[0; 192]).unwrap()).unwrap();
+    headless.run(PassMask::ALL, WAIT).unwrap();
+
+    let catalog = Catalog::open(&Layout::in_home(&home).catalog_path(), PATH_RULES).unwrap();
+    assert_eq!(catalog.unfinished_scans().unwrap(), 0, "every scan the runs began is finished");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Makes the file read-only, or writable again.
+fn set_readonly(path: &Path, readonly: bool) -> std::io::Result<()> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_readonly(readonly);
+    std::fs::set_permissions(path, permissions)
+}

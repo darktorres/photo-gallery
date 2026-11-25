@@ -114,8 +114,9 @@ pub enum Error {
         /// The folder that is missing.
         path: String,
     },
-    /// The writer failed, and changes are still queued. `error` is the writer's own words.
-    #[error("writing into the files has failed with {left} changes still to write: {error}")]
+    /// A write failed, and the writer's latest error is the cause. `left` counts the changes still queued (zero when the failed
+    /// write was the last). `error` is the writer's own words.
+    #[error("writing into the files has failed ({left} still to write): {error}")]
     WriteFailed {
         /// The changes still queued.
         left: u64,
@@ -253,15 +254,17 @@ impl Headless {
         loop {
             self.app.library().wake_writer();
             let left = self.catalog()?.left_to_write()?;
-            if left == 0 {
-                return Ok(queued);
-            }
-            // A writer that failed or stopped ends the run now, with the changes still queued, not at the timeout.
+            // A write that fails leaves the queue too, so the writer's error is read even when nothing is left: the run
+            // fails with it. A writer that stopped with changes still queued ends the run now, not at the timeout.
             if let Some(library) = self.app.library().running() {
                 let activity = library.status();
-                if let Some(error) = writer_failure(left, activity.writes.error.as_ref(), activity.writer_stopped) {
+                let stopped = activity.writer_stopped && left > 0;
+                if let Some(error) = writer_failure(left, activity.writes.error.as_ref(), stopped) {
                     return Err(error);
                 }
+            }
+            if left == 0 {
+                return Ok(queued);
             }
             if Instant::now() >= deadline {
                 return Err(Error::Timeout { seconds: timeout.as_secs() });

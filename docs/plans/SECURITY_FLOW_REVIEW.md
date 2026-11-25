@@ -753,11 +753,11 @@ Coverage gap: 106 of the 199 files that the mapping step listed for the flows we
 ### SEC-043 [low/data-integrity] --buffer-mb shift silently wraps to 0 for multiples of 2^44 — CONFIRMED
 
 - Verdict: CONFIRMED. mb.max(1) \<\< 20 wraps to 0 for large values (args.rs:54).
-- Status: the wrap is fixed. The megabyte shift now saturates (`crates/cli/src/args.rs:58`, from `9d167729`), so the value no longer wraps to zero. Two silent behaviours remain: a value past `u64` saturates to an unlimited budget, and `--readers`, `--workers` and `--slots` clamp zero to one. Item 2 of `docs/plans/TYPE_MISMATCH_VALIDATION.md` replaces both with refusals.
+- Status: the wrap is fixed. The megabyte shift saturates (`crates/cli/src/args.rs:58`, from `9d167729`), so the value no longer wraps to zero. Two silent behaviours remain: a value past `u64` saturates to an unlimited budget, and `--readers`, `--workers` and `--slots` clamp zero to one. Both flags are removed with the command line (`docs/plans/HEADLESS_SESSION_PLAN.md`, phase A2), and the typed options refuse zero and overflow (`docs/plans/STORAGE_AND_CLEANUPS_PLAN.md` section 5, phase B3). **Open until phase A2 lands.**
 
 - Confidence: high
 - Kind: overflow
-- Trigger: import --buffer-mb 17592186044416 (the flag is also on hash, pair and thumbs; `borders` takes no pipeline flags) (2^44 MB). mb.max(1) \1\1 20 drops the high bits, so buffer\1bytes is 0.
+- Trigger: import --buffer-mb 17592186044416 (the flag is on import, hash, pair, thumbs and borders, `crates/cli/src/args.rs:92, 115, 121, 137, 165`; an earlier note that `borders` takes none was wrong) (2^44 MB). mb.max(1) \1\1 20 drops the high bits, so buffer\1bytes is 0.
 - Consequence: Every file counts as larger than the budget, so the pass reads and processes one file at a time. There is no error, only a silent loss of parallelism, and the user's stated budget is not what runs.
 - Suggested fix: Use checked\1mul (or saturating\1mul) for the megabyte-to-byte conversion, and reject or clamp values that do not fit.
 - Locations:

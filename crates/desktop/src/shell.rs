@@ -528,12 +528,16 @@ impl qobject::Shell {
                     }
                 });
             }
-            // The session's last file, selected in the list just shown if the list has it.
+            // The session's last file, selected in the list just shown if the list has it, and the window scrolls to it.
+            // The selection is set on the model's lane, which runs after the window has placed the list (`listShown`
+            // comes first): so the list is put at its top, and the scroll to the selection follows, as a Reveal's does.
             Command::RestoreSelection(file) => {
+                let shell = self.qt_thread();
                 gallery::post(move |mut model| {
                     let item = model.index_of(file.get());
                     if model.is_item(item) {
                         model.as_mut().set_current_item(item);
+                        let _ = shell.queue(move |s| s.select_requested(item));
                     }
                 });
             }

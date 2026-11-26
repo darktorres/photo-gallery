@@ -1,6 +1,6 @@
 # Video player: options (2026-11-14, not decided)
 
-The viewer plays videos with Qt Multimedia today. That is a stopgap. The section "Videos and animations (M2)" at the end of this page has the measurements and the web research behind it. In short:
+The viewer plays videos with Qt Multimedia today. That is a stopgap. The section "Videos and animations (M2)" below has the measurements and the web research behind it, and "Research (2026-11-25)" has the detail behind the corrections. In short:
 
 - On this RTX 2060, Qt's FFmpeg backend plays AV1 as 0 frames. Qt picks the decoder by device type and pixel
   format, with no check of the GPU, and opens FFmpeg's native `av1` decoder. That decoder can only use the
@@ -14,7 +14,7 @@ The viewer plays videos with Qt Multimedia today. That is a stopgap. The section
 
 Two replacements are on the table. Both keep the integration in our hands, with no third-party wrapper
 libraries (Option A uses the raw `ffmpeg-sys-next` bindings); they differ in who owns the playback core. Both were checked against the sources
-(see "Validation"); this page includes the corrections.
+(see "Validation" and "Research (2026-11-25)"); this page includes the corrections.
 
 ## What the player has to do
 
@@ -33,8 +33,9 @@ libraries (Option A uses the raw `ffmpeg-sys-next` bindings); they differ in who
 - Correct colours: BT.601/709/2020 matrices, limited and full range, 8- and 10-bit. HDR tone-mapped to
   SDR. The output stays SDR in v1: an HDR swapchain is per window, so it would change the whole gallery UI.
 - Open fast when stepping through a folder. Ideally the neighbouring videos are opened ahead of time.
-- Licence: the FFmpeg we ship and test is BtbN's GPL shared build (`gpl-shared`, see `.github/workflows/ci.yml`),
-  linked dynamically. The licence texts and source offer must ship with the DLLs (none are shipped yet, for FFmpeg
+- Licence: the FFmpeg we test is BtbN's GPL shared build (`gpl-shared`, see `.github/workflows/ci.yml`),
+  linked dynamically. The pinned build must not be distributed (zvbi, see "Research → Licences"); re-pin before
+  shipping. The licence texts and the source must ship with the DLLs (none are shipped yet, for FFmpeg
   or Qt). Nothing of ours on C:.
 
 ## Shared groundwork (needed by both)
@@ -57,7 +58,10 @@ libraries (Option A uses the raw `ffmpeg-sys-next` bindings); they differ in who
     Multithread protection isn't on yet: nothing but Qt's render thread uses the device so far.
   - Device loss: with the device left set, Qt would keep retrying with the dead one. So the hand-over is
     forgotten once the scene graph is up (`sceneGraphInitialized`, on the render thread), and after a loss Qt
-    makes a device of its own. The decoder will need the same: follow Qt's device, or get a new one of ours.
+    makes a device of its own. Recovery for the player: in `sceneGraphInvalidated`, if the old device is
+    removed (`GetDeviceRemovedReason`), make a new device of ours (with `VIDEO_SUPPORT` and protection),
+    `setGraphicsDevice` it, and rebuild the decoders on it. Following Qt's own device is not an option: it
+    lacks `VIDEO_SUPPORT`.
   - Qt's own FFmpeg backend works differently: a device of its own per file, and three copies per frame
     one from FFmpeg's pool to a same-device texture, then two through a shared texture with a keyed mutex. That design is the fallback if one shared device stalls.
 - **A `QQuickRhiItem` (public since Qt 6.7)** that draws the video into the scene.
@@ -78,7 +82,8 @@ libraries (Option A uses the raw `ffmpeg-sys-next` bindings); they differ in who
 - **The transport bar and keys stay in QML** and drive the item through properties and invokables. The seek
   bar sends a seek on every drag move, so the player coalesces seeks.
 - **Licences (not built yet):** the deploy step will write a licences folder (LGPL and GPL texts, a notice per bundled library,
-  the FFmpeg configure line and a source offer) and the app will get an About entry.
+  the FFmpeg configure line, and the corresponding source (FFmpeg and BtbN's pinned libraries) published beside
+  each release) and the app will get an About entry.
 
 ## Option A: our own playback engine on our FFmpeg 9
 
@@ -88,7 +93,8 @@ References, for design ideas only:
 
 - Qt Multimedia's FFmpeg backend: the playback engine, demuxer, stream decoder, video and audio renderers,
   time controller, and its D3D11 hardware-acceleration code;
-- ffplay.c, a complete FFmpeg player in about 4.7k lines of C (with no software fallback);
+- ffplay.c, a complete FFmpeg player in about 4.0k lines of C (3,983 at release/9.0, 3.4k non-blank
+  non-comment; its Vulkan renderer adds 0.9k in `ffplay_renderer.c`), with no software fallback;
 - mpv's hardware-decoding fallback logic.
 
 ### A: pieces
@@ -109,7 +115,8 @@ References, for design ideas only:
     cheap.
 - **Clock.** Audio is the master clock when there is audio. 1,080 of the 1,712 dataset videos have no
   audio, so the steady-clock path is the common case, not an edge case.
-  - The heard position is frames written minus `IAudioClock::GetPosition` (the sample now at the speakers),
+  - The heard position is the media time of the sample `IAudioClock::GetPosition` reports (the sample now at
+    the speakers): the PTS after the last frame written, minus (frames written − position) / rate,
     extrapolated with the QPC time `GetPosition` returns, as mpv and Chromium do (Firefox's cubeb takes the
     same difference without the extrapolation). Microsoft defines the position as the sample now playing
     through the speakers, so the engine's and endpoint's buffering are already in it; padding and
@@ -120,7 +127,8 @@ References, for design ideas only:
     acceptance criterion (see "Research 2026-11-25 → Audio clock").
   - The clock starts when the first video frame and first audio buffer are ready (Qt starts it on the first
     packet, so its first frames come late and render back to back).
-  - At each render tick the newest frame due is shown and older ones are dropped. Qt has no late-frame drop.
+  - At each render tick the newest frame due at the predicted scan-out time is shown and older ones are
+    dropped. Qt has no late-frame drop.
 - **Hardware decoding:**
   - **Choose the decoder by name.** `av1` with the hardware device when the GPU decodes AV1, `libdav1d`
     otherwise; never by codec id, whose order isn't guaranteed.
@@ -140,7 +148,8 @@ References, for design ideas only:
     are the real limits). A failed `CreateVideoDecoder` for a neighbour means software or later, not an error.
 - **Rendering.**
   - **Hardware frames:** at receive time, copy the decoder's slice (one `CopySubresourceRegion` moves both
-    planes, as Qt's shipped code does) into a ring of 2–3 NV12 or P010 textures of ours, created once. A ring
+    planes, as Qt's shipped code does) into a ring of 3 NV12 or P010 textures of ours (displayed, pending,
+    one being written), created once. A ring
     slot is rewritten only when it is neither the displayed nor the pending slot and a `frameSwapped` has come
     after the last frame that drew it (QRhi replays its recorded commands at `endFrame` or `beginExternal`, so a
     copy before that would land ahead of the draw and show the newer frame early). No GPU fence is needed: the
@@ -158,7 +167,9 @@ References, for design ideas only:
   1. Matrix and range from the tags, with one rule for untagged video shared with the importer (Qt
      assumes BT.709 above 576 lines on its GPU path, our importer at 720 and up). Adopt mpv's rule,
      `width >= 1280 || height > 576` → BT.709, in both: the importer's rule treats 1280×544 or 1920×536 as
-     BT.601. Also Chromium's quirk: a GBR matrix tag on non-4:4:4 H.264/HEVC means BT.709.
+     BT.601. Also Chromium's quirk: a GBR matrix tag on non-4:4:4 H.264/HEVC means BT.709. Untagged range is
+     limited; untagged primaries and transfer are BT.709 and SDR (BT.601-625 primaries when the matrix rule
+     picks BT.601, approximated as BT.709 per the chain's step 2).
   2. BT.2020 to BT.709 primaries for every BT.2020 source, not only HDR.
   3. Transfer decode chosen by the transfer function, not the bit depth. The dataset has three 8-bit HLG
      files; Qt sends those through its plain SDR shader.
@@ -174,17 +185,20 @@ References, for design ideas only:
   - HLG gets the BT.2100 OOTF at Lw = 1000 (gamma 1.2) to display light, then the same EETF to 203 nits: one
     path for PQ and HLG, as mpv and libplacebo do. Lw = 203 directly would put reference white near 58 nits (32 at
     Lw = 100).
-    The source peak comes from the mastering metadata, then MaxCLL (libplacebo's order), then 1000 nits
+  - For PQ, the source peak comes from the mastering metadata, then MaxCLL (libplacebo's order), then 1000 nits
     (Chromium's and Kodi's default, though both read MaxCLL before the mastering peak; mpv and libplacebo assume
     10000 for PQ, which dims typical masters), with a sanity range of 100–10000; when the source peak is at or
-    below 203 the EETF is skipped. Dynamic peak detection is v2 (sources at 4000–10000 nits put white at
-    0.78–0.82 signal, so it is worth having).
-  - Dolby Vision: profiles 8.1, 8.4 and 7.6 play correctly as their base layer (HDR10 or HLG), keyed on the base
-    layer's own colour tags. The configuration record (`AV_PKT_DATA_DOVI_CONF`) is used only to detect profile 5
-    (compatibility id 0), which shows wrong colours without reshaping. Ids: 0 = profile 5, 1 = HDR10, 2 = SDR,
-    4 = HLG, 6 = UHD Blu-ray (profile 7.6, PQ base; per MediaInfo, Dolby's spec not checked). Profile 5 needs
+    below 203 the EETF is skipped. HLG always uses 1000. Dynamic peak detection is v2 (sources at 4000 and
+    10000 nits put white at 0.83 and 0.78 signal, 0.63 and 0.55 linear, so it is worth having).
+  - Dolby Vision: profiles 8.1, 8.2, 8.4, 10.1, 10.4 and 7.6 play as their base layer (HDR10, SDR or HLG; 7.6's
+    enhancement layer is ignored), keyed on the base layer's own colour tags. The configuration record
+    (`AV_PKT_DATA_DOVI_CONF`) is used only to detect compatibility id 0 (profile 5, or AV1 profile 10.0), which
+    shows wrong colours without reshaping. Ids: 0 = profile 5, 1 = HDR10, 2 = SDR,
+    4 = HLG, 6 = UHD Blu-ray ("Ultra HD Blu-ray Disc HDR", profile 7's PQ base; Dolby's
+    "Dolby Vision bitstream profiles" v1.5, 2024-12-12). Profile 5 needs
     reshaping plus the RPU's matrices (FFmpeg already attaches
-    `AV_FRAME_DATA_DOVI_METADATA` per frame): about 300–500 lines of ours. Porting libplacebo's code makes that
+    `AV_FRAME_DATA_DOVI_METADATA` per frame): about 300–500 lines of ours (an estimate from the steps in
+    "Research → HDR and colour"). Porting libplacebo's code makes that
     module LGPL-2.1+, so write it from FFmpeg's `dovi_meta.h`; Dolby patents are a separate question (Dolby
     holds reshaping patents; libplacebo, FFmpeg's RPU parser and mpv gpu-next ship reshaping openly, and no Dolby
     statement on them was found). Samples now
@@ -212,8 +226,14 @@ References, for design ideas only:
 
 ### A: size and risk
 
-- An estimate, not measured: roughly 6–8k lines of Rust plus the C++ item and its shaders. For scale, Qt's playback engine
-  (`qtmultimedia/src/plugins/multimedia/ffmpeg/playbackengine`) is about 4.1k lines of C++.
+- An estimate from yardsticks, not measured (non-blank, non-comment lines, without tests): bindings 0.8–1.2k,
+  threads and queues 0.8–1.2k, clock 0.3–0.5k, hardware decoding with fallback 0.9–1.4k, rendering and ring
+  0.5–0.8k, colour and HDR setup 0.3–0.5k, orientation 0.1k, WASAPI audio 1.0–1.6k, transport 0.3–0.5k,
+  preloading 0.3–0.5k, glue 0.5–0.8k: about 6–9k lines of Rust, plus a 0.6–1k line C++ item and 250–400 lines
+  of shaders (Dolby Vision profile 5 is 300–500 more). For scale (same count), Qt's `playbackengine` directory
+  is 2.8k (4.1k physical), and Qt's whole Windows playback stack (engine 3.5k, D3D11 hardware acceleration and
+  textures 2.2k, shaders 0.24k, WASAPI sink 2.5k) is about 8.4k of C++, without a software fallback, late-frame
+  drop or correct HDR.
 - **Main risks:**
   - One shared device: decoding and Qt's rendering on one immediate context. From the sources, multithread
     protection plus one FFmpeg device context is enough for correctness (mpv works this way), provided only
@@ -227,7 +247,7 @@ References, for design ideas only:
   - Audio devices changing or disappearing mid-play.
   - HDR quality relative to libplacebo, and Dolby Vision profile 5.
   - Bugs only show on files we haven't seen. The dataset has only H.264, VP9 and VP8, 8-bit, unrotated, and
-    stereo or mono AAC; the rest has to be generated or found.
+    stereo or mono AAC; the rest is generated by `tools/gen_player_media.sh` (see "Research → Test media").
 
 ### What A gives over B
 
@@ -241,11 +261,11 @@ References, for design ideas only:
 
 ## Option B: libmpv, integrated by us
 
-We embed mpv's player core through libmpv. We pin an mpv master commit for the D3D11 render API (mpv
-PR #17764, merged on 2026-10-15 into the 0.42.0 milestone, which shipped on 2026-11-05). The pin must be after
-PR #18845 (merged 2026-11-22; client API 2.7, listed under 0.43.0 in `client-api-changes.rst`, the PR has no
+We embed mpv's player core through libmpv. The D3D11 render API (mpv PR #17764, merged 2026-10-15) shipped
+in 0.42.0 (2026-11-05). We pin an mpv master commit after PR #18845 (merged 2026-11-22; client API 2.7, listed under 0.43.0 in `client-api-changes.rst`, the PR has no
 milestone), which brings gpu-next into the render API (`MPV_RENDER_PARAM_RENDERER`; gpu-next is then the
-default) and needs libplacebo built with D3D11. Without it mpv silently falls back to `gpu`, so we pass
+default) and needs libplacebo built with D3D11. If gpu-next can't start (for example, libplacebo built
+without D3D11), the default silently falls back to `gpu`, so we pass
 `MPV_RENDER_PARAM_RENDERER = "gpu-next"` explicitly and get `MPV_ERROR_UNSUPPORTED` instead.
 
 ### B: pieces
@@ -264,8 +284,10 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
     `beginExternal()`, then `mpv_render_context_render` into the item's colour texture (RGBA8 or RGB10A2,
     one sample), then `endExternal()` and end the pass. mpv renders on the immediate context and restores no
     state; `endExternal()` makes Qt rebind its own.
-  - `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME` = 0, pacing from the frame's target time. The bridge must then wait for the target time itself, or A/V sync drifts (`render.h:308-318`). Otherwise each frame
-    blocks Qt's render thread for up to `video-timing-offset` (50 ms by default).
+  - `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME` = 0; with the default (1) each render blocks Qt's render thread
+    for up to `video-timing-offset` (50 ms by default). With 0 the bridge must pace frames itself, or A/V sync
+    drifts (`render.h:308-318`): read the target time with `MPV_RENDER_PARAM_NEXT_FRAME_INFO` and render the
+    frame on the first Qt frame whose predicted present time reaches it, without blocking.
   - mpv's update callback only posts a queued call to the GUI thread, which calls `update()`. Every
     `mpv_render_*` call stays on the render thread; control calls use the async API.
   - `mpv_render_context_report_swap` from `QQuickWindow::frameSwapped`.
@@ -273,7 +295,7 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
   multithread protection itself (so our device must not be created single-threaded). By default that is one copy per
   frame on the same device; zero-copy is an option with documented driver caveats.
   - `hwdec=d3d11va` (`auto` and `auto-safe` are the same, and pick the decoder themselves), with `hwdec-codecs` set
-    per file from our AV1 check on the shared adapter. The manual lists d3d11va for `vo=gpu` and `gpu-next` only. The code needs just a D3D11 render context, which the render API provides, and it does: on this machine (0.41 build, `hwdec-current` = `d3d11va`, frames rendered), H.264 and VP9 decode through d3d11va, and 8-bit 4:2:0 HEVC Main does too (tested on a synthetic clip only). AV1 does not on this Turing GPU: the first frame fails, and mpv falls back to software for the rest of the clip, so playback works without hardware decode. That was the `gpu` renderer; with gpu-next, d3d11va uses the same `hwdec_d3d11va` interop with its textures wrapped by `pl_d3d11_wrap`, but nobody has tested that through the render API on Windows, so the spike retests it.
+    per file from our AV1 check on the shared adapter. The manual lists d3d11va for `vo=gpu` and `gpu-next` only. The code needs just a D3D11 render context, which the render API provides, and it does: on this machine (the daily build `20261030-git-8e5a96fc45`, a pre-0.42.0 master build, `gpu` renderer, `hwdec-current` = `d3d11va`, frames rendered), H.264 and VP9 decode through d3d11va, and 8-bit 4:2:0 HEVC Main does too (tested on a synthetic clip only). AV1 does not on this Turing GPU: the first frame fails, and mpv falls back to software for the rest of the clip, so playback works without hardware decode. That was the `gpu` renderer; with gpu-next, d3d11va uses the same `hwdec_d3d11va` interop with its textures wrapped by `pl_d3d11_wrap`, but nobody has tested that through the render API on Windows, so the spike retests it.
   - mpv falls back to software after 3 consecutive decode errors (`hwdec-software-fallback`). A watchdog of ours
     reopens with `hwdec=no` when the decoder produces no frames.
 - **Control.** Commands and properties go through the client API:
@@ -287,7 +309,7 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
     `mpv_observe_property` and map to Qt properties.
 - **Options:** `vo=libmpv`, `config=no` (no user config or scripts), `load-scripts=no`, `osd-level=0` and
   `osd-on-seek=no` (mpv draws its OSD into the video by default), `audio-display=no`, `keep-open=always`,
-  `resume-playback=no`, `audio-device=auto`, `tone-mapping` (works on this renderer), and
+  `resume-playback=no`, `audio-device=auto`, `tone-mapping` (set for gpu-next; `gpu` reads it too), and
   `gpu-shader-cache-dir` on D: (by default the system cache directory).
   - The render API gives mpv no output colour space, so mpv assumes BT.709 output. `target-prim`, `target-trc`
     and `target-peak` are ours to set and override that. `target-colorspace-hint` has no effect: the gpu-next
@@ -300,9 +322,11 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
 - **Building libmpv.** Two ways:
   1. **We build it** (the shipping route). Pinned mpv commit, meson with MSYS2 clang64 under D:, against our
      FFmpeg 9 DLLs (BtbN ships the MinGW `.dll.a` import libraries): one FFmpeg.
-     - Dependencies beyond libplacebo and libass (freetype, fribidi, harfbuzz): shaderc and spirv-cross (the
-       D3D11 renderer needs both at configure time), Vulkan headers and lcms2 are optional: configure passes with `-Dvulkan=disabled` and with `-Dlcms2=disabled`
-       (tested on MSYS2). With `-Dvulkan=disabled`, `vulkan-1.dll` stays in the closure, since libplacebo still imports it (measured). mpv also needs FFmpeg's avfilter DLL
+     - Dependencies beyond libplacebo and libass (freetype, fribidi, harfbuzz): shaderc and spirv-cross are
+       required (the D3D11 renderer needs both at configure time). Vulkan headers and lcms2 are optional
+       (configure passes with `-Dvulkan=disabled` or `-Dlcms2=disabled`, tested on MSYS2); the shipping line
+       below enables both. Even with `-Dvulkan=disabled`, `vulkan-1.dll` stays in the closure, since libplacebo
+       imports it (measured). mpv also needs FFmpeg's avfilter DLL
        (required; avfilter-12.dll, 37.7 MB, is not deployed today). avdevice is optional: it is linked only if its
        feature is on.
      - Configure (tested on MSYS2 clang64, meson 1.12.1, mpv 0.42.0):
@@ -317,7 +341,7 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
        libplacebo ≥ 7.387.0; MSYS2 ships 7.387.0 with `-Dd3d11=enabled` (and libdovi), but upstream will raise
        the minimum before 0.43.0, and the configure line above was tested on 0.42.0 only. Re-check the closure
        for `libdovi`.
-     - The runtime, measured on the MSYS2 build: 23 MSYS2 DLLs (26.1 MB: libc++, libplacebo, shaderc, spirv-cross,
+     - The runtime, measured on the MSYS2 0.42.0 build: 23 MSYS2 DLLs (26.1 MB: libc++, libplacebo, shaderc, spirv-cross,
        libass and its font stack), `vulkan-1.dll` (0.76 MB, imported by libplacebo and by libmpv itself), and six of our
        FFmpeg DLLs (183.7 MB: avcodec, avfilter, avformat, avutil, swresample, swscale). The deploy copies an explicit
        list, checked against the built DLL's imports. The clang64 `vulkan-1.dll` must be copied, not the System32 one.
@@ -366,24 +390,24 @@ default) and needs libplacebo built with D3D11. Without it mpv silently falls ba
 
 ### What B gives over A
 
-- **The most battle-tested playback core,** for less code of ours: sync, seeking, frame stepping, looping,
+- **A widely used playback core,** for less code of ours: sync, seeking, frame stepping, looping,
   per-file fallback and audio device changes.
-- **The widest tolerance for odd files.**
+- **Handles more odd files** (from its user base, not measured here).
 - **HDR from libplacebo, with a newer pin.** At 0.42.0 the render API runs mpv's older renderer (vo_gpu's
   `gl_video`: BT.2390, Dolby Vision as base layer only). PR #18845 (2026-11-22) closed issue #10810 and
   puts gpu-next in the render API, so a master pin gets libplacebo's tone mapping, gamut mapping and Dolby
   Vision reshaping (profile 5 shown working by a tester, on macOS/OpenGL; not tested on D3D11). The output colour space is still fixed,
-  so `target-*` stays ours.
+  so `target-*` stays ours. The Dolby patent question in Option A applies equally to shipping it.
 
 ## Comparison
 
 |                             | A: own engine                                       | B: libmpv                                                               |
 |-----------------------------|-----------------------------------------------------|-------------------------------------------------------------------------|
-| Our code                    | ~6–8k lines + C++ item and shaders                  | ~2.3–3.6k lines: item, bridge, bindings, watchdogs, mpv build           |
+| Our code                    | ~6–9k lines + C++ item and shaders (est.)           | ~2.3–3.6k lines: item, bridge, bindings, watchdogs, mpv build           |
 | FFmpeg copies               | one (ours)                                          | one (way 1) or two (way 2)                                              |
-| Toolchain and runtime added | qsb (Creator's, or built once)                      | MSYS2 + meson, 23 MSYS2 DLLs + vulkan-1 + 6 FFmpeg DLLs, 210 MB (way 1) |
+| Toolchain and runtime added | qsb 6.12 (Shader Tools addon) + SDK fxc, build only | MSYS2 + meson; 23 MSYS2 DLLs + vulkan-1 + avfilter, ~65 MB (way 1)      |
 | Hardware fallback           | ours: table, decoder by name, 3 errors, watchdog    | mpv's, plus our AV1 check and a watchdog                                |
-| HDR                         | our BT.2390 + HLG OOTF; DV 8.x base; P5 +300–500    | gpu-next (master pin): libplacebo, DV reshaping; 0.42.0: gl_video       |
+| HDR                         | our BT.2390 + HLG; DV 8.x base; P5 +300–500 (est.)  | gpu-next (master pin): libplacebo, DV reshaping; 0.42.0: gl_video       |
 | Audio device changes        | ours                                                | mpv's, plus a re-select when reopening fails                            |
 | Odd files                   | depends on us                                       | mature                                                                  |
 | Gallery-specific control    | full                                                | through mpv options                                                     |
@@ -400,39 +424,53 @@ the ones that moved the comparison:
 
 - **A:** the AV1 root cause (the decoder choice, not a missing check), thread safety on one shared device,
   the ring of copied frames, the missing orientation and audio-gain designs, no `qsb` in the kit, Qt's HDR
-  bugs, and the size (6–8k lines, not 4–6k).
-- **B:** the HDR advantage is gone (the render API doesn't use libplacebo's renderer), `gpu-next` isn't an
-  option there, the render step needs the external-content bracket, way 1 needs shaderc, spirv-cross and a
-  23-MSYS2-DLL runtime (plus our FFmpeg DLLs), and way 2 is a spike artifact only.
-- **Both:** the device must be handed to Qt before the window is shown, Qt can't recover a lost imported
-  device, the item is hand-written C++, and nothing ships licence texts yet.
+  bugs, and the size estimate (6–9k lines, not 4–6k; not measured).
+- **B:** at 0.42.0 the render API ran only `gl_video` (no libplacebo renderer); PR #18845 (2026-11-22) brought
+  gpu-next into it, so the HDR advantage returns with a master pin, untested on D3D11. Also: the render step
+  needs the external-content bracket, way 1 needs shaderc, spirv-cross and a 23-MSYS2-DLL runtime (plus our
+  FFmpeg DLLs), and way 2 is a spike artifact only.
+- **Both:** the device must be handed to Qt before the window is shown; with an imported device left set, Qt
+  retries the lost one forever (reset after init, and a new device handed over in `sceneGraphInvalidated`, see
+  "Research → Shared device"); the item is hand-written C++; and nothing ships licence texts yet.
 
 ## Spikes
 
 Run the chosen option in this order, hardest part first, and stop at the first step that fails badly. The
-first step of each option is the decision test. Neither spike yet covers device loss, so add a driver-reset check to step 1 of both.
+first step of each option is the decision test.
 
 **Option A:**
 
 0. Bake one NV12 shader with qsb and load it in the 6.12 runtime. Mostly settled by the research (same
    format, byte-identical output, qsb 6.12 reads it); what remains is drawing with it in the app. Bake with
    `--hlsl 50 -c` and check that `qsb -d` shows DXBC.
-1. The shared device (attached before the window shows), the `QQuickRhiItem`, decoding with the capability
-   table and the decoder chosen by name: H.264 on the GPU and AV1 through libdav1d in the same session,
-   video only. Measure decode speed with the render loop running, with and without a frame-long lock. Force
-   a hardware failure mid-file to test the fallback. Check the rotated and mirrored fixtures.
-2. WASAPI audio and the clock, then seek, step, loop, mute and a device change.
+1. The shared device (attached before the window shows, protection on, one `AVHWDeviceContext` with
+   `lock`/`unlock` = `Enter`/`Leave`), the `QQuickRhiItem`, decoding with the capability table and the decoder
+   chosen by name: H.264 on the GPU and AV1 through libdav1d in the same session, video only, debug layer on.
+   Ring slots are reused only when neither displayed nor pending and a `frameSwapped` has come after their last
+   draw; check while paused and during `--screenshot`. Measure decode speed with the render loop running, with
+   and without the frame lock (`afterRendering` → `frameSwapped`, released at the next `beforeRendering` if a
+   grab left it held). Force a hardware failure mid-file to test the fallback. Force a driver reset
+   (`dxcap -forcetdr`) and check the `sceneGraphInvalidated` recovery. Check the rotated and mirrored fixtures.
+2. WASAPI audio and the clock, then seek, step, loop, mute and a device change. Measure the A/V offset against
+   the acceptance criterion in "Research → Audio clock", and 44.1 kHz content on a 48 kHz mix.
 3. Animations on the same item, Qt Multimedia removed. Run the dataset videos plus the edge cases: MKV,
    AVI, WMV, MPG, M4V, 3GP, a truncated file, 10-bit HEVC, HDR10, HLG, 5.1 audio.
 
 **Option B:**
 
-1. Way 2: an MSVC build loads libmpv and renders through D3D11 into the `QQuickRhiItem` on our device, with
-   the external-content bracket and the debug layer on. H.264 on the GPU and AV1 in software, with
-   `hwdec=d3d11va` and `hwdec-codecs` from our check. Resize while playing.
+1. Way 2, from a zhongfly build dated 2026-11-22 or later (pinned by sha256; the 20261030 copy on D: predates
+   #18845): an MSVC build loads libmpv, checks `mpv_client_api_version()` ≥ 2.7, creates the render context
+   with `MPV_RENDER_PARAM_RENDERER = "gpu-next"` (fail on `MPV_ERROR_UNSUPPORTED`) and
+   `BLOCK_FOR_TARGET_TIME` = 0, and renders through D3D11 into the `QQuickRhiItem` on our device, with the
+   external-content bracket and the debug layer on. H.264 on the GPU through d3d11va under gpu-next (confirm
+   `hwdec-current`), AV1 in software, with `hwdec=d3d11va` and `hwdec-codecs` from our check. One HDR10 and one
+   Dolby Vision profile 5 file through gpu-next, compared with mpv's own player. Resize while playing. Force a
+   driver reset (`dxcap -forcetdr`) and check recovery: new device, new render context, reload at the current
+   position.
 2. Seek, step and loop through the client API, with the QML transport. Measure opening time, the loop gap
-   and the render-thread time per frame. Switch and unplug the audio device.
-3. Way 1, built against our FFmpeg, with its runtime closure checked. Animations on the item, Qt
+   and the render-thread time per frame. Switch and unplug the audio device, and test re-selecting the audio
+   track (#18823). Measure the A/V offset against the acceptance criterion in "Research → Audio clock".
+3. Way 1 at the master pin, built against our FFmpeg, with its runtime closure checked (also for libdovi). Animations on the item, Qt
    Multimedia removed, the same files as A.
 
 **Decisions before shipping either:** the app's own licence (it has none yet; way 1 links the GPL FFmpeg, so its libmpv is GPL whatever mpv's `gpl` option says), and for B whether way 1's
@@ -459,8 +497,9 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
   - 1,080 have no audio. The other 632 are AAC: 625 stereo and 7 mono, mostly 44.1 kHz.
   - One has a variable frame rate; two video streams start more than 0.1 s late (an edit list or a delay).
   - Median length 6.3 s, longest 9.1 min.
-  - So a player test bed also needs generated or sourced HEVC, AV1, 10-bit, PQ, Dolby Vision, rotated and
-    mirrored, and surround files.
+  - The rest of the test bed (HEVC, AV1, 10-bit, PQ, HLG, Dolby Vision 8.x and 10, rotated and mirrored,
+    surround, edge cases) is generated by `tools/gen_player_media.sh`; Dolby Vision profile 5 comes from the
+    Jellyfin samples.
 - **A display matrix's mirror comes after its rotation** (`av_display_matrix_flip` negates the first column
   for a horizontal flip, the second for a vertical one). EXIF mirrors before rotating, so a mirrored matrix's
   turn is reversed. `matrix_orientation` in `crates/video/src/lib.rs` handles that, and the unit test
@@ -489,7 +528,7 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
   CLI gives 8 frames in 3 s with `-stream_loop -1` and 30 with `-ignore_loop 0`, which loops inside the demuxer.
   The app does not send animated WebP to Qt's player: it plays through `AnimationPlayer`.
   - Qt's `AnimatedImage` has no APNG. Its WebP support comes from the `qwebp` image plugin, which the Qt 6.12
-    kit ships; whether the app deploys it is a separate question.
+    kit ships (the qtimageformats addon). `just deploy` deploys it locally; the CI kit lacks it.
   - So animations play through our own player (`crates/desktop/src/animation.rs`, on `pg_codec`'s decoders, which
     are built on the `image` crate). Frames are pushed into the `QVideoSink`. The player's loop is tested for GIF (`crates/render/src/player.rs`), and the codec test decodes WebP, GIF and
     APNG, checking the total duration and the first and last frame colours (`crates/library/tests/video.rs`). Per-frame durations and pause are not tested.
@@ -510,18 +549,20 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
   - Its manual says that when hardware decoding isn't possible, "mpv will fall back on software decoding";
     it goes down the list of hardware decoders, then software, for each file.
   - It has `loop-file`, `frame-step` and HDR tone mapping.
-  - Qt Quick integrations of libmpv use the OpenGL render API. KDE MpvQt expects Qt Quick on OpenGL
+  - Older Qt Quick integrations of libmpv use the OpenGL render API; Memento has a D3D11 `QQuickRhiItem`
+    renderer on the new D3D11 render API. KDE MpvQt expects Qt Quick on OpenGL
     (`QQuickWindow::setGraphicsApi(OpenGL)`) before its first window (it logs an error otherwise).
   - mpv PR #17764, "libmpv: add D3D11 render API backend", is merged (milestone 0.42.0, released 2026-11-05). mpv renders into an
     application-owned `ID3D11Texture2D` on the application's device. The latest release is 0.42.0 (2026-11-05).
   - Daily LGPL builds of libmpv from mpv's git exist (zhongfly/mpv-winbuild, `mpv-dev-lgpl-x86_64-…`; the
-    2026-10-30 build). They link their own FFmpeg statically.
+    spike needs one dated 2026-11-22 or later, latest `20261125-git-d32c910be6`). They link their own FFmpeg
+    statically.
 - **GStreamer:**
   - Its D3D11 decoders register only if the device passes a profile probe for that codec (AV1:
     `sys/d3d11/plugin.cpp:206`, `gstd3d11av1dec.cpp:321-324`). Where a decoder is absent, decodebin falls back to
     the software decoder by rank, so per-codec fallback is built in.
-  - The Qt 6 sink in gst-plugins-good is `qml6glsink`, which takes GL textures (`qt6glrenderer.cc:589`). No D3D11
-    Qt sink is `qml6glsink`, and it takes only GL memory (`ext/qt6/gstqml6glsink.cc:111`). GStreamer's GL upload
+  - The Qt 6 sink in gst-plugins-good is `qml6glsink`, which takes GL textures (`qt6glrenderer.cc:589`). There is no
+    D3D11 Qt sink: `qml6glsink` takes only GL memory (`ext/qt6/gstqml6glsink.cc:111`). GStreamer's GL upload
     has no D3D11 input, so a D3D11-decoded frame is copied to system memory and then uploaded to a GL texture. It is
     not zero-copy (source reading, 1.24 and main).
   - Costs: a third media stack and a large runtime. The Qt plugin requires Qt 6 with no minimum minor version
@@ -541,7 +582,7 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
     use FFmpeg directly (`egui-video`).
 - **Options (not decided):** third-party wrappers (QtAVPlayer, MpvQt, `libmpv2`) are out: the integration
   stays ours. The two candidates are our own engine on our FFmpeg 9, or libmpv on a pinned master commit
-  with the D3D11 render API. Both are written up below, with spikes.
+  with the D3D11 render API. Both are written up above, with spikes.
   Animations stay on our own decoders either way.
 
 ## Research (2026-11-25)
@@ -550,13 +591,16 @@ The open questions above, researched from sources: Qt 6.12.0 (`C:\Qt\6.12.0\Src`
 mpv master `04b1afc4`, libplacebo master, Chromium, VLC, Firefox's cubeb, SDL, Kodi, the Microsoft and NVIDIA
 docs and the ITU texts. Nothing was built or measured in the app; where a number is an estimate, it says so.
 The corrections are folded into the sections above; this is the detail behind them. A second pass
-(2026-11-26) re-checked every claim adversarially against the same sources and corrected the ones that failed.
+(2026-11-26) re-checked every claim adversarially against the same sources and corrected the ones that failed;
+a third checked the second's additions, sized Option A against ffplay and Qt, and removed contradictions left
+between sections.
 
 ### Shaders (qsb)
 
 - The kit's `bin\` has no qsb; Qt Creator's is 6.11.2. The 6.12.0 qsb is the addon
   `qt.qt6.6120.addons.qtshadertools.win64_msvc2022_64` (3.3 MB: `qsb.exe` + `Qt6ShaderTools.dll`), via
-  MaintenanceTool, `aqt … -m qtshadertools` (in CI: `modules: qtmultimedia qtimageformats qtshadertools`;
+  MaintenanceTool, `aqt … -m qtshadertools` (CI would need `modules: qtmultimedia qtimageformats qtshadertools`; it
+  has only `qtmultimedia` today;
   the aqt names were confirmed with `aqt list-qt windows desktop --modules 6.12.0 win64_msvc2022_64` at the pinned
   commit), or the
   PySide6-Addons 6.12.0 wheel. Unpacked beside the kit's DLLs it reports `qsb 6.12.0`.
@@ -591,8 +635,8 @@ The corrections are folded into the sections above; this is the detail behind th
   sleeps), around `CreateVideoDecoder` and `av_hwframe_transfer_data`. The last has an early return without
   unlocking when the staging texture fails (`hwcontext_d3d11va.c:452` lock, `:455-457` return; the same in master;
   no upstream fix or report found). It is most likely on device removal, exactly when recovery is needed. With a
-  lock shared with the render thread that deadlocks Qt, so we never call it with a shared lock; our ring copy is
-  our own single call.
+  lock shared with the render thread that deadlocks Qt, so we never call `av_hwframe_transfer_data` on that
+  device context; hardware frames are copied on the GPU with our own single `CopySubresourceRegion`.
 - Precedent: mpv turns on protection and copies on the render thread with no lock (`hwdec_d3d11va.c:128-137`,
   `:240-268`); VLC uses one app mutex around its display's prepare and display, passed to FFmpeg, plus protection.
 - Qt has no lock hook, but `afterRendering` (before `endFrame`) and `frameSwapped` bracket the final replay and
@@ -601,7 +645,8 @@ The corrections are folded into the sections above; this is the detail behind th
   `qsgthreadedrenderloop.cpp:399-417`) emits `afterRendering` and ends with `SkipPresent`, with no `frameSwapped`:
   `crates/desktop/cpp/screenshot.cpp` grabs, so the lock must also be released at the next `beforeRendering`.
 - The displayed slot is re-sampled by every repaint (paused, too), hence "neither displayed nor pending" in the
-  ring rule. A grab's replay finishes before it returns, so the next real `frameSwapped` still covers it.
+  ring rule. A grab's replay finishes before it returns, so the next real `frameSwapped` still covers it. A grab
+  also runs `beforeRendering` and a full sync, so our item's sync can latch a new pending slot during a grab.
 - Recommendation for the spike: protection on; one `AVHWDeviceContext` for every decoder (current and
   neighbours) with `lock`/`unlock` = `ID3D10Multithread::Enter`/`Leave`; pipeline state only on the render thread;
   slot reuse after `frameSwapped`; the frame lock as a switch to measure; the debug layer on.
@@ -624,8 +669,10 @@ The corrections are folded into the sections above; this is the detail behind th
 - Heard position: see "Clock" above. Per fill, publish (media time of frame `GetPosition`, its QPC time, playing)
   atomically; the render tick extrapolates to the predicted present time, clamped to the last frame written.
   Smooth over 0.5–1 s (USB and Bluetooth positions step), slew video toward audio, hard-resync past about 100 ms,
-  and keep a per-endpoint user offset (Bluetooth A2DP delay is not in `GetPosition`: no Microsoft statement, but
-  third-party measurements on Windows show about 150 ms unreported; a TV's or receiver's processing delay over
+  and keep a per-endpoint user offset (whether Bluetooth A2DP delay is in `GetPosition` is undocumented and
+  depends on the driver: Firefox fixed Bluetooth A/V sync by deriving the delay from `IAudioClock` (bug 1136360),
+  but a Chrome patch (gurux13/chrome-audio-delay) still adds a user-measured offset to `GetPosition` on Windows,
+  so the spike measures it; a TV's or receiver's processing delay over
   HDMI isn't known to Windows either). PTS segments start at each seek,
   loop or gap.
 - Choose frames against the predicted scan-out time, not now: the compositor's delay (about 16–50 ms) otherwise
@@ -706,7 +753,8 @@ Shader-ready chain (SDR BT.709 out, 1.0 = 203 nits):
    yuv420p10 is low-aligned, so ×64 first.
 2. Linearise by the transfer tag: SDR with 709/601 primaries skips 2-6 (601 primaries: an approximation;
    mpv converts them); else L=203·E^2.4 (BT.2020 SDR).
-   PQ: L=10000·(max(E^(1/m2)-c1,0)/(c2-c3·E^(1/m2)))^(1/m1).
+   PQ EOTF: L=10000·(max(E^(1/m2)-c1,0)/(c2-c3·E^(1/m2)))^(1/m1). In step 3, PQ(L) is its inverse
+   (nits → signal) and PQinv(E) is this EOTF.
    HLG: inverse OETF, then Fd=1000·Ys^0.2·Es (Lw=1000, γ=1.2; Lw is also the EETF source peak).
 3. Tone map (PQ, HLG; only if Lw > 203; m=0 → 0): m=max(R,G,B); E1=PQ(min(m,Lw))/PQ(Lw);
    maxLum=PQ(203)/PQ(Lw); KS=1.5·maxLum-0.5; Hermite above KS; b=0 (no black lift);
@@ -724,7 +772,9 @@ All generated with our FFmpeg 9.0.2 by one POSIX sh generator with 123 ffprobe c
 
 - Colour: output `-colorspace` and `-color_range` work (negotiated through the filter graph, they convert and
   tag), but `-color_primaries` and `-color_trc` are ignored in any position, because `fftools/ffmpeg_enc.c:268-270`
-  copies them from the frame. Recipe: `-vf setparams=color_primaries=P:color_trc=T -pix_fmt F -colorspace S
+  copies them from the frame (a regression since 7.1, from commit `9a7686e545`, which stopped re-applying the
+  options at `avcodec_open2`; FFmpeg issue #20736, fixed in master by `201bb8737d` on 2026-11-23, not on
+  release/9.0). Recipe: `-vf setparams=color_primaries=P:color_trc=T -pix_fmt F -colorspace S
   -color_range R` (pixels identical to an explicit `scale=out_color_matrix` chain). `-bsf:v hevc_metadata` /
   `h264_metadata` also work. Setting `colorspace` through `setparams` before the conversion gives different
   pixels. 601-625: primaries and matrix `bt470bg`, transfer `smpte170m` (`bt470bg` as a transfer is gamma 2.8).
@@ -758,10 +808,18 @@ Facts, not legal advice; a legal review comes before the first public binary.
   licences. The ExifTool-port crates are "Artistic 1.0 or GPL-1+" (D14), which fits a GPL app directly.
 - The pinned BtbN build is `--enable-gpl --enable-version3` (GPLv3): x264, x265, xvid, xavs2, davs2, vidstab,
   frei0r, rubberband, avisynth and the dvd libraries are GPL-only, plus FFmpeg's own GPL filters.
-- **The pinned build must not be distributed.** Its tag enables libzvbi in every variant, and zvbi's
-  `packet-830.c` is GPL-2.0-only, which BtbN calls incompatible with its GPLv3 builds (commit `162691525a`,
-  2026-11-07, made zvbi nonfree-only; issue #694). Re-pin to a build from 2026-11-07 or later (the 2026-11-30
-  month-end build) before any public binary.
+- **The pinned build must not be distributed.** Its configure line has `--enable-libzvbi` (every variant built
+  zvbi then). zvbi's `src/packet-830.c` is GPL-2.0-only (its header has no "or later"; COPYING.md: "GPL-2"), and
+  it is linked: FFmpeg's teletext decoder calls `vbi_decode`, which reaches `packet.c:parse_8_30`, which calls
+  into packet-830.c. BtbN commit `162691525a` (2026-11-07, issue #694) made zvbi nonfree-only, and the 9.0
+  `gpl-shared` builds from `autobuild-2026-11-12-15-40` on have `--disable-libzvbi`. Re-pin to the 2026-11-30
+  month-end build before any public binary. That build is about 920 FFmpeg commits past ours (release/9.0's
+  9.0.3 backports), so re-run `tools/gen_player_media.sh` and the tests after it. BtbN's repository moved to
+  `FFmpeg-Builds/FFmpeg-Builds` (old URLs redirect).
+- Re-pin steps: wait for the month-end tag (`tools/check_ffmpeg_pin.py`, run by `just lint`, refuses others);
+  update `ffmpeg_url` and `ffmpeg_sha256` in the Justfile; set `FFMPEG_COMMIT` in `tools/build_static_ffmpeg.py`
+  to the asset's commit (the pin check requires it); update `docs/reference/STATIC_BUILD.md` and this page's
+  build string; run `just lint` and `just setup`. CI's cache key follows the SHA-256 by itself.
 - Dynamic linking
   and run-time loading don't change that (GPL FAQ): the shipped bundle is GPLv3, our files may be any
   GPLv3-compatible licence. GPLv3 §6 source: FFmpeg at `7adfbe40dc`, about 80 static external libraries at the

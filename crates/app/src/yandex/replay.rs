@@ -111,14 +111,15 @@ impl Fetch for Replay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::yandex::images::Images;
-    use crate::yandex::{Hit, find_similar, number, save_all};
+    use crate::yandex::images::{Images, Picture};
+    use crate::yandex::{Hit, Label, find_similar, number, save_all};
     use pg_jobs::events::Bus;
     use pg_model::yandex::{RequestError, Saved, SimilarNote};
     use std::sync::Mutex;
 
-    fn accept(_: &[u8]) -> Result<Vec<u8>, &'static str> {
-        Ok(Vec::new())
+    /// Every file decodes, to this size: not the 714×320 the recorded page states.
+    fn accept(_: &[u8]) -> Result<Picture, &'static str> {
+        Ok(Picture { grid: Vec::new(), size: (120, 90) })
     }
 
     /// A source that records the order of its calls, to check the search's.
@@ -150,13 +151,14 @@ mod tests {
             "b":{"pos":1,"url":"/images/search?img_url=https%3A%2F%2Fb.example%2Ftwo.png","origWidth":300,"origHeight":200}
         }},"navi":{"next":"/images/search?p=1"}}}}}]}"#;
         let upload = r#"{"cbir_id":"CBIR1","sizes":{"orig":{"path":"https://avatars.example/orig"}}}"#;
-        let files: [(&str, &[u8]); 6] = [
+        let files: [(&str, &[u8]); 7] = [
             ("upload.json", upload.as_bytes()),
             ("other_sizes.html", other_sizes.as_bytes()),
             ("similar-0.json", similar_0.as_bytes()),
             ("similar-1.json", b"<html>showcaptcha</html>"),
             ("one.png", b"\x89PNG\r\n\x1a\nresult one"),
-            ("downloads.tsv", b"https://a.example/one.png\tone.png\n"),
+            ("a.jpg", b"\xFF\xD8\xFF other size a"),
+            ("downloads.tsv", b"https://a.example/one.png\tone.png\nhttps://i.example/a.jpg\ta.jpg\n"),
         ];
         for (name, bytes) in files {
             std::fs::write(dir.join(name), bytes).unwrap();
@@ -179,21 +181,26 @@ mod tests {
         number(&mut found, 1);
 
         assert_eq!(source.calls, ["upload", "other_sizes", "similar"]);
+        // No result has a size until its file is in: the 714×320 the page states is not read.
         assert_eq!(found.other.len(), 1);
-        assert_eq!(found.other[0].suffix, "yandex 714x320");
+        assert_eq!((found.other[0].label, found.other[0].size), (Label::OtherSize, None));
         let urls: Vec<&str> = found.similar.iter().map(|h| h.url.as_str()).collect();
         assert_eq!(urls, ["https://a.example/one.png", "https://b.example/two.png"]);
+        assert_eq!(found.similar[0].label, Label::Similar(1));
         assert!(matches!(note, Some(SimilarNote::Stopped { shown: 2, error: RequestError::Captcha })));
 
-        // The save path writes the recorded bytes of the first result, from the search's images.
+        // The save path writes the recorded bytes of the results, from the search's images. The other size's name says
+        // the size its file decodes to.
         let pictures = Images::new(Arc::new(Replay::new(recording)), Arc::new(accept), changes.clone());
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
-        let hits: Vec<Hit> = found.similar.into_iter().take(1).collect();
+        let hits: Vec<Hit> = found.other.into_iter().chain(found.similar.into_iter().take(1)).collect();
         let saved: Saved = save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &pictures, &shared, &changes);
-        assert_eq!((saved.written, saved.failed), (1, 0));
+        assert_eq!((saved.written, saved.failed), (2, 0));
         let written = std::fs::read(folder.join("IMG_1234 (yandex similar 1).png")).unwrap();
         assert_eq!(written, b"\x89PNG\r\n\x1a\nresult one");
+        let written = std::fs::read(folder.join("IMG_1234 (yandex 120x90).jpg")).unwrap();
+        assert_eq!(written, b"\xFF\xD8\xFF other size a");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

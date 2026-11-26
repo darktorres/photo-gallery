@@ -14,8 +14,8 @@ Item {
 
     // The result's index in the search (its row): the other sizes first, then the similar images.
     required property int index
-    // The roles: whether it is picked, its picture's URL (`""` until the search has it), and its size in pixels
-    // (0 when Yandex gives none).
+    // The roles: whether it is picked, its picture's URL (`""` until the search has it), and its size in pixels: its
+    // file's, as it decodes (0 until the file is in; Yandex's stated size is never shown).
     required property bool picked
     required property string thumb
     required property int imageWidth

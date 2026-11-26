@@ -494,13 +494,15 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
     APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
     pauses.
   - **≈** (the rating bar) finds similar images on Yandex (`crates/yandex`, `crates/app/src/yandex.rs`, `YandexPanel.qml`): the photo is uploaded
-    (a TIFF as a JPEG; a video is refused), and a panel shows its other sizes and the similar images. A click
+    (a TIFF as a JPEG; a video is refused), and a panel shows its other sizes and the similar images, in Yandex's
+    order. Each result's size is its file's, once downloaded: the sizes Yandex states can be far off (a 4860×6480
+    listed for an 810×1080 file), so they are not used. A click
     picks a result, Shift-click picks or unpicks a range (to the state of the result clicked last), and each group
     has Select all. A double-click shows a
     result at full size, fitted or 1:1 (a click or the button); ←/→ step through the results, Space picks,
     Escape goes back. **Save N images…** saves the picks into a folder; the dialog opens at the folder saved into
     last (in `gallery.json`), or else the photo's. Files are named after the photo, `IMG_1234 (yandex
-    1920x1080).jpg` and `IMG_1234 (yandex similar 3).jpg`, with " (2)" on a clash.
+    1920x1080).jpg` (the file's own size) and `IMG_1234 (yandex similar 3).jpg`, with " (2)" on a clash.
 - **Ratings**: the catalog (`ratings` table) is the source of truth for every format. With "Write ratings and
   turns into the files too" (Library…, on by default) they also go into the file as `XMP:Rating` wherever the
   format holds XMP (JPEG, PNG, WebP, TIFF, GIF), by a background writer (ExifTool), 2 s after the last change so

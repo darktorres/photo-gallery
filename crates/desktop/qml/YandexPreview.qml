@@ -25,7 +25,8 @@ Rectangle {
     required property real dpr
     required property int otherCount
     required property int similarCount
-    // The item shown: its picture's URL (`""` while hidden), its size as text (`""` when unknown), and whether it is picked.
+    // The item shown: its picture's URL (`""` while hidden), its file's size as text (`""` until the file is in), and
+    // whether it is picked.
     required property string imageUrl
     required property string sizeText
     required property bool picked
@@ -120,10 +121,11 @@ Rectangle {
             text: preview.item < 0 ? "" : preview.item < preview.otherCount ? words.phrase("ui-other-size", 0, ("" + (preview.item + 1)), ("" + (preview.otherCount))) : words.phrase("ui-similar-image", 0, ("" + (preview.item - preview.otherCount + 1)), ("" + (preview.similarCount)))
             font.bold: true
         }
-        // The file's own size once it is loaded; Yandex's until then.
+        // The file's own size, upright, as the search decoded it (the tiles' size); Qt's of the loaded picture in the
+        // moment before the search has it. Yandex's stated size is never shown.
         Label {
             textFormat: Text.PlainText
-            text: full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height : preview.sizeText
+            text: preview.sizeText !== "" ? preview.sizeText : full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height : ""
             color: Theme.bodyText
         }
         Label {

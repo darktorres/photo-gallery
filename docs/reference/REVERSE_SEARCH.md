@@ -73,6 +73,12 @@ the Sites list above was the wrong target for group 1:
 - **The app's first version failed on it.** Its client reported the page-1 captcha as an error of the whole
   search, so the other sizes and page 0 were dropped and the panel said "captcha". It now does what the script
   does: a failure on a page after the first ends the list.
+- **The other sizes' stated sizes are not the files'** (measured 2026-11-26, one photo, 18 other sizes, each
+  downloaded with the app's client and its size read from the file). 15 matched. One listed as 4860×6480 was an
+  810×1080 WebP of 28 KB (exactly a sixth), served with no redirect. One listed as 1360×1642 was a 240×240 JPEG
+  (an `i0.wp.com` proxy of imagevenue: likely a placeholder). One answered 403. Sorted by the stated sizes, the
+  4860×6480 one came first. So the app reads no size from Yandex: a result's size is its file's, once downloaded,
+  and the results stay in Yandex's order.
 - **Not measured:** whether the browser shows all 18 other sizes or about 5 (the user's "5 or so shown").
 - The script's known failures (`files_not_working.md`): upload 400s, SSL EOF and remote disconnects.
   `tasks.md`: CDN 403s that load in a browser, and no captcha validation for HTML responses.

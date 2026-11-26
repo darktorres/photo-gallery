@@ -4,6 +4,9 @@
 //! comes back ([`Poll::busy`] says whether one is still running). Results and outcomes are typed values
 //! (`pg_model::yandex`): nothing here formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
+//!
+//! A result's size is its file's, as it decodes once fetched ([`Poll::sized`]): never the one Yandex states, which can
+//! be far off (`pg_yandex::OtherSize`). The results come in Yandex's order, which no size reorders.
 
 use std::ffi::OsStr;
 use std::fs::File;
@@ -26,7 +29,7 @@ use crate::makers::Makers;
 use crate::prefs::PrefStore;
 
 pub mod images;
-pub use images::Fetch;
+pub use images::{Fetch, Measured};
 use images::{Check, Fetched, Images};
 pub mod source;
 pub use source::{Source, SourceError};
@@ -169,12 +172,30 @@ pub struct Hit {
     pub id: u64,
     /// The file the result is, at its host.
     pub url: String,
-    /// Its size as Yandex gives it, in pixels; 0 when it gives none.
-    pub width: u32,
-    /// Its height, as Yandex gives it, in pixels; 0 when it gives none.
-    pub height: u32,
-    /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
-    pub suffix: String,
+    /// The image's size, upright (width, height), in pixels, as its file decodes: `None` until the file is in
+    /// ([`Poll::sized`]). The front end sets it.
+    pub size: Option<(u32, u32)>,
+    /// Which list it is from, and its place in it: what its saved file's name says.
+    pub label: Label,
+}
+
+/// What a result's saved file's name says after the photo's, inside the brackets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Label {
+    /// One of the other sizes: `yandex 1920x1080`, its file's size as it decodes.
+    OtherSize,
+    /// The similar image at this place in Yandex's list, from 1: `yandex similar 3`.
+    Similar(u32),
+}
+
+impl Label {
+    /// The words inside the brackets, for a result whose file decodes to `size` (width, height).
+    fn suffix(self, (width, height): (u32, u32)) -> String {
+        match self {
+            Label::OtherSize => format!("yandex {width}x{height}"),
+            Label::Similar(n) => format!("yandex similar {n}"),
+        }
+    }
 }
 
 /// What a finished search found: the other sizes, then the similar images.
@@ -203,6 +224,9 @@ pub struct Poll {
     pub found: Option<Found>,
     /// The results whose files could not be fetched or decoded since the last poll, once: take them off the grid.
     pub dead: Vec<u64>,
+    /// The results whose files came in since the last poll, once, with the sizes they decode to: what the grid shows of
+    /// them, and lays them out by.
+    pub sized: Vec<Measured>,
 }
 
 /// What the background threads share with [`Search::poll`].
@@ -307,25 +331,10 @@ fn find_similar<S: Source + ?Sized>(
     };
     // The ids are numbered when the search's results are known (`number`).
     let found = Found {
-        other: other
-            .into_iter()
-            .map(|s| Hit {
-                id: 0,
-                url: s.url,
-                width: s.width,
-                height: s.height,
-                suffix: format!("yandex {}x{}", s.width, s.height),
-            })
-            .collect(),
+        other: other.into_iter().map(|s| Hit { id: 0, url: s.url, size: None, label: Label::OtherSize }).collect(),
         similar: similar
             .into_iter()
-            .map(|s| Hit {
-                id: 0,
-                url: s.image_url,
-                width: s.width,
-                height: s.height,
-                suffix: format!("yandex similar {}", s.pos + 1),
-            })
+            .map(|s| Hit { id: 0, url: s.image_url, size: None, label: Label::Similar(s.pos.saturating_add(1)) })
             .collect(),
     };
     Ok((found, note))
@@ -339,13 +348,14 @@ fn number(found: &mut Found, generation: u64) {
     }
 }
 
-/// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<suffix>)` so it sorts
-/// next to the photo ([`write_new`]).
+/// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<label>)` so it sorts
+/// next to the photo ([`write_new`]). An other size's label is the size the file decodes to.
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let kept = images
         .get(hit.id, &hit.url)
         .map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
-    write_new(folder, &saved_stem(stem, &hit.suffix), kept.format.extension(), &kept.file.bytes).map(drop).map_err(
+    let suffix = hit.label.suffix(kept.size);
+    write_new(folder, &saved_stem(stem, &suffix), kept.format.extension(), &kept.file.bytes).map(drop).map_err(
         |(path, error)| SaveFailure::Write { url: hit.url.clone(), path: shown(&path), error: error.to_string() },
     )
 }
@@ -493,8 +503,10 @@ impl Search {
     /// poll. Each result and status is returned once.
     pub fn poll(&self) -> Poll {
         let mut s = lock(&self.shared);
-        let dead = self.pictures().map(|pictures| pictures.take_dead()).unwrap_or_default();
-        Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead }
+        let pictures = self.pictures();
+        let dead = pictures.as_ref().map(|pictures| pictures.take_dead()).unwrap_or_default();
+        let sized = pictures.as_ref().map(|pictures| pictures.take_sized()).unwrap_or_default();
+        Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead, sized }
     }
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
@@ -613,7 +625,7 @@ mod tests {
     fn a_stopped_search_starts_nothing() {
         let search = Search::default();
         assert!(search.stop(Duration::ZERO), "nothing ran");
-        let check: Check = Arc::new(|_| Ok(Vec::new()));
+        let check: Check = Arc::new(|_| Ok(images::Picture { grid: Vec::new(), size: (1, 1) }));
         let make: Factory =
             Arc::new(|| Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NotCalled).into()));
         assert!(matches!(search.start(Path::new("photo.jpg"), make, check), Ok(false)));

@@ -3,7 +3,10 @@
 //! The results are the model's rows, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
 //! then the similar images (`similarCount`). A row's `picked` role follows the picks to save. Each result's frame (its
 //! `frameX`, `frameY`, `frameWidth` and `frameHeight` roles) places it in the panel's justified layout: the panel sets
-//! `layoutWidth` and the gallery's `gap`; each group's block is `otherHeight` or `similarHeight` high.
+//! `layoutWidth` and the gallery's `gap`; each group's block is `otherHeight` or `similarHeight` high. A result's size
+//! (its `imageWidth` and `imageHeight` roles, 0 until known) is its file's, as it decodes once fetched (`Poll::sized`):
+//! until then its frame is square, and the results are laid out again as their sizes come in. Yandex's stated sizes are
+//! never shown.
 //! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
 //! pick changes. The words the panel shows are `pg_wording`'s (and the QML's own), from the outcomes the app
 //! returns as data (`pg_model::yandex`).
@@ -17,7 +20,7 @@ use std::pin::Pin;
 use crate::rows::{file_id_of, qt_int};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use pg_app::yandex::Hit;
+use pg_app::yandex::{Hit, Measured};
 use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
@@ -69,9 +72,27 @@ fn original_url(id: u64) -> String {
     ImageRequest::Yandex { id, original: true }.url()
 }
 
-/// A result's aspect ratio, for its frame: its size as Yandex gives it, or square when it gives none.
+/// A result's aspect ratio, for its frame: its file's, or square until the file is in.
 fn hit_aspect(hit: &Hit) -> f64 {
-    if hit.width > 0 && hit.height > 0 { f64::from(hit.width) / f64::from(hit.height) } else { 1.0 }
+    match hit.size {
+        Some((width, height)) if width > 0 && height > 0 => f64::from(width) / f64::from(height),
+        _ => 1.0,
+    }
+}
+
+/// A result's size for the roles and the preview: (width, height), or 0×0 until its file is in.
+fn hit_size(hit: &Hit) -> (i32, i32) {
+    hit.size.map_or((0, 0), |(width, height)| (qt_int(width), qt_int(height)))
+}
+
+/// The rows of `items` that `sized` names, with their sizes, in row order. A size for a result that is not shown (an
+/// older search's, or one taken off) names none.
+fn sized_rows(items: &[Hit], sized: &[Measured]) -> Vec<(usize, (u32, u32))> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(row, hit)| sized.iter().find(|m| m.id == hit.id).map(|m| (row, m.size)))
+        .collect()
 }
 
 /// The runs of consecutive results whose ids are in `dead`, as row ranges, in order.
@@ -257,6 +278,28 @@ impl qobject::YandexSearch {
         self.groups_changed();
     }
 
+    /// The results whose files came in take their sizes: each row's size roles change, the results are laid out again
+    /// by their aspects (once for all of them), and the preview's size follows.
+    fn apply_sizes(mut self: Pin<&mut Self>, sized: &[Measured]) {
+        let rows = sized_rows(self.results.items(), sized);
+        let (Some(&(first, _)), Some(&(last, _))) = (rows.first(), rows.last()) else {
+            return;
+        };
+        {
+            let mut state = self.as_mut().rust_mut();
+            for &(row, size) in &rows {
+                if let Some(hit) = state.results.get_mut(row) {
+                    hit.size = Some(size);
+                }
+            }
+        }
+        let root = QModelIndex::default();
+        let (top, bottom) = (self.index(qt_int(first), 0, &root), self.index(qt_int(last), 0, &root));
+        self.as_mut().data_changed(&top, &bottom, &QList::from(&[ROLE_IMAGE_WIDTH, ROLE_IMAGE_HEIGHT][..]));
+        self.as_mut().relayout();
+        self.refresh_preview();
+    }
+
     /// The id of the result the preview shows, if it shows one.
     fn shown_id(&self) -> Option<u64> {
         let i = crate::rows::row_of(self.preview_item)?;
@@ -348,10 +391,11 @@ impl qobject::YandexSearch {
                         self.results.get(k % len).map_or_else(String::new, |h| original_url(h.id))
                     }
                 };
+                let (width, height) = hit_size(hit);
                 (
                     QString::from(&original_url(hit.id)),
-                    qt_int(hit.width),
-                    qt_int(hit.height),
+                    width,
+                    height,
                     self.results.picks().is_picked(i),
                     QString::from(&around(i + len - 1)),
                     QString::from(&around(i + 1)),
@@ -377,6 +421,10 @@ impl qobject::YandexSearch {
         if !poll.dead.is_empty() {
             self.as_mut().drop_dead(&poll.dead);
         }
+        // The results whose files came in show their sizes, and are laid out by them.
+        if !poll.sized.is_empty() {
+            self.as_mut().apply_sizes(&poll.sized);
+        }
         if let Some(status) = poll.status {
             self.as_mut().set_status(QString::from(&status_text(&status)));
         }
@@ -393,8 +441,8 @@ impl qobject::YandexSearch {
         let frame = self.frames.get(i).copied().unwrap_or_default();
         match role {
             ROLE_THUMB => QVariant::from(&QString::from(&picture_url(hit.id))),
-            ROLE_IMAGE_WIDTH => QVariant::from(&qt_int(hit.width)),
-            ROLE_IMAGE_HEIGHT => QVariant::from(&qt_int(hit.height)),
+            ROLE_IMAGE_WIDTH => QVariant::from(&hit_size(hit).0),
+            ROLE_IMAGE_HEIGHT => QVariant::from(&hit_size(hit).1),
             ROLE_PICKED => QVariant::from(&self.results.picks().is_picked(i)),
             ROLE_FRAME_X => QVariant::from(&frame.x),
             ROLE_FRAME_Y => QVariant::from(&frame.y),
@@ -499,6 +547,22 @@ mod tests {
         assert_eq!(turn_after_removal(5, &[1..3, 0..0]), 3);
         assert_eq!(turn_after_removal(5, &[4..7, 0..0]), 4, "the run from the turn's row on moves nothing before it");
         assert_eq!(turn_after_removal(2, &[4..6, 0..0]), 2);
+    }
+
+    #[test]
+    fn sizes_go_to_the_rows_of_their_results() {
+        let hit = |id: u64| Hit { id, url: String::new(), size: None, label: pg_app::yandex::Label::OtherSize };
+        let items = [hit(10), hit(20), hit(30)];
+        let sized = [Measured { id: 30, size: (810, 1080) }, Measured { id: 99, size: (1, 1) }, Measured {
+            id: 10,
+            size: (4, 3),
+        }];
+        assert_eq!(sized_rows(&items, &sized), [(0, (4, 3)), (2, (810, 1080))], "in row order; an unknown id is no row");
+        assert!(sized_rows(&items, &[]).is_empty());
+        // Until its file is in, a result is square and shows no size; then it has its file's.
+        assert_eq!((hit_aspect(&items[0]), hit_size(&items[0])), (1.0, (0, 0)));
+        let known = Hit { size: Some((810, 1080)), ..hit(1) };
+        assert_eq!((hit_aspect(&known), hit_size(&known)), (0.75, (810, 1080)));
     }
 
     #[test]

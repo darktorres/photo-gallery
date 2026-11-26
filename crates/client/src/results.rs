@@ -41,6 +41,11 @@ impl<T> Results<T> {
         self.items.get(i)
     }
 
+    /// The result at `i`, to change, if there is one: its place, its group and its pick stay as they are.
+    pub fn get_mut(&mut self, i: usize) -> Option<&mut T> {
+        self.items.get_mut(i)
+    }
+
     /// How many results there are.
     pub fn len(&self) -> usize {
         self.items.len()
@@ -178,6 +183,16 @@ mod tests {
         let (from, to) = (9, 4);
         results.remove_range(from..to);
         assert_eq!(results.items(), [1, 2, 5]);
+    }
+
+    #[test]
+    fn a_result_changed_in_place_keeps_its_place_and_pick() {
+        let mut results = Results::new(vec![1, 2], vec![3]);
+        results.picks_mut().set(1..2, true);
+        *results.get_mut(1).unwrap() = 20;
+        assert!(results.get_mut(3).is_none());
+        assert_eq!(results.first(), [1, 20]);
+        assert_eq!(results.picked().copied().collect::<Vec<_>>(), [20]);
     }
 
     #[test]

@@ -51,7 +51,7 @@ impl Client {
         parse_upload(&read_response(req.send(image))?)
     }
 
-    /// The same image at other resolutions, largest first. One request.
+    /// The same image at other resolutions, in the page's order ([`parse_other_sizes`]). One request.
     pub fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, YandexError> {
         let req = self
             .agent

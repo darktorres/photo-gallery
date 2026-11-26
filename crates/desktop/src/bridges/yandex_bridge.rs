@@ -46,8 +46,8 @@ pub mod qobject {
         #[qproperty(f64, similar_height, cxx_name = "similarHeight", READ, WRITE, NOTIFY, FINAL)]
         /// The result the preview shows (-1: none). Setting it refreshes the four properties below.
         #[qproperty(i32, preview_item, cxx_name = "previewItem", READ, WRITE = set_preview_item, NOTIFY, FINAL)]
-        /// What the preview shows of its item: its picture's URL (`""` for none), its size in pixels as Yandex gives
-        /// it (0 when it doesn't), and whether it is picked.
+        /// What the preview shows of its item: its picture's URL (`""` for none), its file's size in pixels as it
+        /// decodes (0 until the file is in), and whether it is picked.
         #[qproperty(QString, preview_url, cxx_name = "previewUrl", READ, WRITE, NOTIFY, FINAL)]
         /// The pictures of the previous and the next result (`""` when there is no other one): the preview loads them
         /// hidden, so a step shows its picture at once.

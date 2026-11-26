@@ -41,28 +41,23 @@ pub struct Upload {
     pub orig_url: String,
 }
 
-/// One image at another resolution. `url` is the full-size file.
+/// One image at another resolution. `url` is the full-size file. Yandex's answer gives a size for it too, which is not
+/// read: it can be far from the file's (a 4860×6480 listed for an 810×1080 file), so a file's size is what its bytes
+/// decode to, once fetched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtherSize {
     /// The size group Yandex files the image under (its label for the resolution).
     pub group: String,
-    /// Its width, in pixels.
-    pub width: u32,
-    /// Its height, in pixels.
-    pub height: u32,
     /// The address of the full-size file.
     pub url: String,
 }
 
-/// One visually similar image. `image_url` is the full-size file.
+/// One visually similar image. `image_url` is the full-size file. Its size in Yandex's answer is not read, as an
+/// [`OtherSize`]'s is not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimilarItem {
     /// Its place in the similar list.
     pub pos: u32,
-    /// Its width, in pixels.
-    pub width: u32,
-    /// Its height, in pixels.
-    pub height: u32,
     /// The address of the full-size file.
     pub image_url: String,
 }

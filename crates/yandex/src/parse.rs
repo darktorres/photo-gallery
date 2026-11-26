@@ -100,7 +100,9 @@ fn decode_entity(name: &str) -> Option<char> {
     }
 }
 
-/// Every group in `cbirOtherSizes`, largest first. Items without a readable size or URL are skipped.
+/// Every group in `cbirOtherSizes`, in the order of their names (`large_dups`, `medium_dups`, `small_dups`), and each
+/// group's items in the page's order. Items without a URL are skipped. Their sizes (`text`, `714×320`) are not read
+/// ([`OtherSize`] says why), so nothing is sorted by them.
 pub fn parse_other_sizes(html: &str) -> Result<Vec<OtherSize>, YandexError> {
     let raw = extract_data_state(html)
         .ok_or(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::ResultsPageNoState))?;
@@ -112,23 +114,13 @@ pub fn parse_other_sizes(html: &str) -> Result<Vec<OtherSize>, YandexError> {
     let mut out = Vec::new();
     for (group, list) in groups {
         for item in list.as_array().into_iter().flatten() {
-            let (Some(text), Some(url)) = (item["text"].as_str(), item["url"].as_str()) else {
+            let Some(url) = item["url"].as_str() else {
                 continue;
             };
-            let Some((width, height)) = parse_size(text) else {
-                continue;
-            };
-            out.push(OtherSize { group: group.clone(), width, height, url: url.to_string() });
+            out.push(OtherSize { group: group.clone(), url: url.to_string() });
         }
     }
-    out.sort_by_key(|s| std::cmp::Reverse(u64::from(s.width) * u64::from(s.height)));
     Ok(out)
-}
-
-/// `"714×320"` → (714, 320).
-fn parse_size(text: &str) -> Option<(u32, u32)> {
-    let (w, h) = text.split_once('×')?;
-    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
 
 /// One page of the similar endpoint. Errors with `Unexpected` when the JSON has no result list.
@@ -151,14 +143,7 @@ pub fn parse_similar_page(body: &str) -> Result<SimilarPage, YandexError> {
 fn similar_item(entity: &Value) -> Option<SimilarItem> {
     let pos = u32::try_from(entity["pos"].as_u64()?).ok()?;
     let image_url = query_param(entity["url"].as_str()?, "img_url")?;
-    let width = entity["origWidth"].as_u64().or_else(|| entity["width"].as_u64()).unwrap_or(0);
-    let height = entity["origHeight"].as_u64().or_else(|| entity["height"].as_u64()).unwrap_or(0);
-    Some(SimilarItem {
-        pos,
-        width: u32::try_from(width).unwrap_or(0),
-        height: u32::try_from(height).unwrap_or(0),
-        image_url,
-    })
+    Some(SimilarItem { pos, image_url })
 }
 
 /// The decoded value of `key` in a URL's query string.
@@ -192,23 +177,32 @@ fn percent_decode(s: &str) -> String {
 mod tests {
     use super::*;
 
-    /// A results page with the state attribute as Yandex writes it: JSON, HTML-escaped inside the attribute.
-    fn results_html(items: &str) -> String {
-        let state = format!(r#"{{"initialState":{{"cbirOtherSizes":{{"items":{{"small_dups":{items}}}}}}}}}"#);
+    /// A results page with the state attribute as Yandex writes it: JSON, HTML-escaped inside the attribute. `groups`
+    /// is the inside of `cbirOtherSizes.items`.
+    fn results_html(groups: &str) -> String {
+        let state = format!(r#"{{"initialState":{{"cbirOtherSizes":{{"items":{{{groups}}}}}}}}}"#);
         let escaped = state.replace('&', "&amp;").replace('"', "&quot;");
         format!(r#"<html><body><div class="Root" id="ImagesApp-Q1" data-state="{escaped}"></div></body></html>"#)
     }
 
+    // The items come in the groups' name order and each group's own order, whatever sizes Yandex states: those are not
+    // read, so a listed size that is no size, or a huge one, changes nothing. An item without a URL is skipped.
     #[test]
-    fn other_sizes_are_read_largest_first_and_entities_decoded() {
+    fn other_sizes_are_read_in_the_pages_order_and_entities_decoded() {
         let html = results_html(
-            r#"[{"text":"714×320","url":"https://i.example/a.jpg?w=714&h=320"},{"text":"2560×1150","url":"https://i.example/b.jpg"},{"text":"bad","url":"https://i.example/c.jpg"}]"#,
+            r#""small_dups":[{"text":"714×320","url":"https://i.example/a.jpg?w=714&h=320"},{"text":"bad","url":"https://i.example/c.jpg"}],
+               "large_dups":[{"text":"4860×6480","url":"https://i.example/b.webp"},{"text":"2560×1150"}]"#,
         );
         let sizes = parse_other_sizes(&html).unwrap();
-        assert_eq!(sizes.len(), 2, "the item with an unreadable size is skipped");
-        assert_eq!((sizes[0].width, sizes[0].height), (2560, 1150));
-        assert_eq!(sizes[1].url, "https://i.example/a.jpg?w=714&h=320");
-        assert_eq!(sizes[1].group, "small_dups");
+        let read: Vec<(&str, &str)> = sizes.iter().map(|s| (s.group.as_str(), s.url.as_str())).collect();
+        assert_eq!(
+            read,
+            [
+                ("large_dups", "https://i.example/b.webp"),
+                ("small_dups", "https://i.example/a.jpg?w=714&h=320"),
+                ("small_dups", "https://i.example/c.jpg"),
+            ]
+        );
     }
 
     #[test]
@@ -235,7 +229,6 @@ mod tests {
         assert_eq!(page.items.len(), 2);
         assert_eq!(page.items[0].pos, 0, "sorted by position");
         assert_eq!(page.items[0].image_url, "https://b.example/two.png?q=1");
-        assert_eq!((page.items[0].width, page.items[0].height), (300, 200));
         assert_eq!(page.items[1].image_url, "https://a.example/one.jpg");
     }
 
@@ -266,14 +259,8 @@ mod tests {
     }
 
     #[test]
-    fn size_text_parses_with_the_multiplication_sign() {
-        assert_eq!(parse_size("714×320"), Some((714, 320)));
-        assert_eq!(parse_size("714x320"), None);
-    }
-
-    #[test]
     fn a_later_page_that_fails_stops_the_list_with_its_reason() {
-        let item = |pos: u32| SimilarItem { pos, width: 1, height: 1, image_url: format!("u{pos}") };
+        let item = |pos: u32| SimilarItem { pos, image_url: format!("u{pos}") };
         let page = |n: u32, has_next: bool| -> Result<SimilarPage, YandexError> {
             Ok(SimilarPage { items: vec![item(n)], has_next })
         };

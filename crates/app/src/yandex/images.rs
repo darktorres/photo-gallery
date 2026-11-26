@@ -1,7 +1,9 @@
 //! The pictures of a search's results. Each result's file is fetched once, from the host it is on, and kept for as long as
 //! the search is shown: the grid shows it, and a save writes the same bytes. A file that can't be fetched, or that isn't
 //! an image this app decodes, is dead: the result is taken off the grid (`Poll::dead`), and it is never saved. The
-//! files are fetched as the results come in, a few at a time, so dead links are known before they are shown.
+//! files are fetched as the results come in, a few at a time, so dead links are known before they are shown. A result's
+//! size is its file's, as it decodes: one that is kept is reported with its size once (`Poll::sized`), as a dead one is.
+//! Yandex's own figures for the sizes are not used (`pg_yandex::OtherSize` says why).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::panic::AssertUnwindSafe;
@@ -32,12 +34,21 @@ impl Fetch for Fetcher {
     }
 }
 
-/// Makes the grid picture of bytes that are an image this app decodes; the reason when they are not.
-/// The app's is `grid_picture`, with its makers and the panel's row height.
-pub type Check = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>, &'static str> + Send + Sync>;
+/// Makes the grid picture of bytes that are an image this app decodes, with the image's size; the reason when they are
+/// not. The app's is `grid_picture`, with its makers and the panel's row height.
+pub type Check = Arc<dyn Fn(&[u8]) -> Result<Picture, &'static str> + Send + Sync>;
 
-/// A result's file, kept: the file as Yandex's host gave it (what a save writes), its format (a save's extension), and
-/// its grid picture (a JPEG as high as the panel's rows, which the grid shows).
+/// What [`Check`] makes of a file: its grid picture, and the size of the image the file is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Picture {
+    /// The picture made for the grid.
+    pub grid: Vec<u8>,
+    /// The image's size, upright, as its bytes decode (width, height), in pixels.
+    pub size: (u32, u32),
+}
+
+/// A result's file, kept: the file as Yandex's host gave it (what a save writes), its format (a save's extension), its
+/// grid picture (a JPEG as high as the panel's rows, which the grid shows) and its size.
 #[derive(Debug)]
 pub struct Fetched {
     /// The downloaded file.
@@ -46,6 +57,17 @@ pub struct Fetched {
     pub format: Format,
     /// The picture made for the grid.
     pub grid: Vec<u8>,
+    /// The image's size, upright, as the file decodes (width, height), in pixels.
+    pub size: (u32, u32),
+}
+
+/// A result whose file came in: its id, and its image's size, upright (width, height), in pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Measured {
+    /// The result's id (`Hit::id`).
+    pub id: u64,
+    /// The size of the image its file is.
+    pub size: (u32, u32),
 }
 
 /// Where a result's file is.
@@ -70,6 +92,8 @@ struct Table {
     queue: VecDeque<u64>,
     /// The dead results, until `take_dead` reports them.
     dead: Vec<u64>,
+    /// The results kept, with their sizes, until `take_sized` reports them.
+    sized: Vec<Measured>,
     /// The fetchers running.
     fetchers: usize,
     /// Set by [`Images::stop`]: the fetchers take no more results.
@@ -91,7 +115,8 @@ fn lock(table: &Mutex<Table>) -> MutexGuard<'_, Table> {
 }
 
 impl Images {
-    /// The files of a search, fetched with `fetch` and checked with `check`. Each dead result is announced on `changes`.
+    /// The files of a search, fetched with `fetch` and checked with `check`. Each dead result, and each kept one (with
+    /// its size), is announced on `changes`.
     pub fn new(fetch: Arc<dyn Fetch>, check: Check, changes: Arc<Bus<()>>) -> Arc<Images> {
         Arc::new(Images { table: Mutex::default(), settled: Condvar::new(), fetch, check, changes })
     }
@@ -160,8 +185,8 @@ impl Images {
     fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, SourceError> {
         let file = self.fetch.fetch(url)?;
         let format = file.format.ok_or(SourceError::Undecodable("not a format this app knows"))?;
-        let grid = (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
-        Ok(Arc::new(Fetched { file, format, grid }))
+        let Picture { grid, size } = (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
+        Ok(Arc::new(Fetched { file, format, grid, size }))
     }
 
     /// [`Images::fetch_checked`], where a panic (the decoder's, on a malformed file) ends the result as dead: a result
@@ -173,13 +198,16 @@ impl Images {
         }
     }
 
-    /// Keeps the outcome of a fetch: its file, or the death of the result (announced on `changes`).
+    /// Keeps the outcome of a fetch: its file and its size, or the death of the result. Either is announced on
+    /// `changes`.
     fn settle(&self, id: u64, outcome: Result<Arc<Fetched>, SourceError>) {
-        let dead = outcome.is_err();
         {
             let mut t = lock(&self.table);
             let state = match outcome {
-                Ok(download) => State::Ready(download),
+                Ok(fetched) => {
+                    t.sized.push(Measured { id, size: fetched.size });
+                    State::Ready(fetched)
+                }
                 Err(error) => {
                     t.dead.push(id);
                     State::Dead(error)
@@ -190,9 +218,7 @@ impl Images {
             }
         }
         self.settled.notify_all();
-        if dead {
-            self.changes.publish(());
-        }
+        self.changes.publish(());
     }
 
     /// The file of the result `id`, which is at `url`: kept when it is in, waited for when a fetcher is on it, and
@@ -230,19 +256,26 @@ impl Images {
     pub fn take_dead(&self) -> Vec<u64> {
         std::mem::take(&mut lock(&self.table).dead)
     }
+
+    /// The results whose files came in since the last call, with their sizes, each once.
+    pub fn take_sized(&self) -> Vec<Measured> {
+        std::mem::take(&mut lock(&self.table).sized)
+    }
 }
 
 /// The grid picture of `bytes`, an image this app decodes: a JPEG `height` px high (the panel's rows), made by the
-/// gallery's thumbnail pipeline with one of the app's makers. The reason when the bytes are not such an image.
-pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> Result<Vec<u8>, &'static str> {
+/// gallery's thumbnail pipeline with one of the app's makers, and the image's upright size as the decode read it. The
+/// reason when the bytes are not such an image.
+pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> Result<Picture, &'static str> {
     if Format::sniff(bytes).is_none() {
         return Err("the file is not a picture");
     }
     // The row's height in pixels, as the maker takes it.
     let px = pg_model::num::index(height.get());
-    makers
-        .with_maker(|maker| maker.make(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode"))
-        .map_err(|_| "no maker")?
+    let made = makers
+        .with_maker(|maker| maker.make_sized(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode"))
+        .map_err(|_| "no maker")?;
+    made.map(|(grid, size)| Picture { grid, size })
 }
 
 #[cfg(test)]
@@ -270,11 +303,11 @@ mod tests {
         }
     }
 
-    fn accept(_: &[u8]) -> Result<Vec<u8>, &'static str> {
-        Ok(b"grid".to_vec())
+    fn accept(_: &[u8]) -> Result<Picture, &'static str> {
+        Ok(Picture { grid: b"grid".to_vec(), size: (810, 1080) })
     }
 
-    fn reject(_: &[u8]) -> Result<Vec<u8>, &'static str> {
+    fn reject(_: &[u8]) -> Result<Picture, &'static str> {
         Err("no")
     }
 
@@ -287,7 +320,7 @@ mod tests {
         );
     }
 
-    fn images(fetch: Arc<Counting>, check: fn(&[u8]) -> Result<Vec<u8>, &'static str>) -> Arc<Images> {
+    fn images(fetch: Arc<Counting>, check: fn(&[u8]) -> Result<Picture, &'static str>) -> Arc<Images> {
         Images::new(fetch, Arc::new(check), Arc::new(Bus::new(16)))
     }
 
@@ -304,6 +337,19 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &again));
         std::thread::sleep(Duration::from_millis(20));
         assert_eq!(fetch.calls.load(Ordering::SeqCst), 1, "one fetch for the file");
+    }
+
+    /// A kept file is reported once with the size its bytes decode to (the check's), and a dead one is not.
+    #[test]
+    fn a_kept_result_is_reported_once_with_its_files_size() {
+        let fetch = Arc::new(Counting { calls: AtomicUsize::new(0), fail: vec!["https://gone.example/2.jpg"] });
+        let images = images(fetch, accept);
+        assert_eq!(images.get(1, "https://a.example/1.jpg").unwrap().size, (810, 1080));
+        assert!(images.get(2, "https://gone.example/2.jpg").is_err());
+        assert_eq!(images.take_sized(), [Measured { id: 1, size: (810, 1080) }]);
+        assert!(images.take_sized().is_empty(), "reported once");
+        images.get(1, "https://a.example/1.jpg").unwrap();
+        assert!(images.take_sized().is_empty(), "a kept file asked for again is not reported again");
     }
 
     /// A file that can't be fetched is dead: asking for it fails, and the death is reported once.

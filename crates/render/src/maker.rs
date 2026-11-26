@@ -142,7 +142,7 @@ impl Maker {
     fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
         let file = std::mem::take(&mut self.file);
         let mut out = Vec::new();
-        let result = self.make_image(&file, height, turns, &mut out);
+        let result = self.make_image(&file, height, turns, &mut out).map(drop);
         self.file = file;
         self.trim();
         result.map(|()| out).map_err(MakeError::Undecodable)
@@ -166,20 +166,37 @@ impl Maker {
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
     /// given back by the cache's writer (`pg_thumbcache::ThumbCache::put_batch`).
     pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<(), MakeError> {
-        let result = self.make_image(bytes, height, turns, out);
+        let result = self.make_image(bytes, height, turns, out).map(drop);
         self.trim();
         result.map_err(MakeError::Undecodable)
     }
 
-    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> crate::Result<()> {
+    /// [`Maker::make`], with the size of the full image, upright as `turns` and its orientation make it (width, height),
+    /// as the decode read it from the file.
+    pub fn make_sized(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<(Vec<u8>, (u32, u32)), MakeError> {
+        let mut out = Vec::new();
+        let result = self.make_image(bytes, height, turns, &mut out);
+        self.trim();
+        result.map(|size| (out, size)).map_err(MakeError::Undecodable)
+    }
+
+    /// The thumbnail of `bytes` into `out`; returns the full image's upright size (width, height).
+    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> crate::Result<(u32, u32)> {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         // The decode is left as stored: the thumbnail's scale comes before its turn, so the turn touches the thumbnail
         // and not the decoded image, which is several times its size.
-        let orientation = {
+        let info = {
             let _decode = DECODE.timer();
-            display::decode_stored_into(&mut self.decoder, bytes, min, turns, &mut self.image)?.orientation
+            display::decode_stored_into(&mut self.decoder, bytes, min, turns, &mut self.image)?
         };
-        self.encode_turned(orientation, height, out)
+        // The decode's full size is the stored one (it is not oriented): a quarter turn swaps its sides.
+        let upright = if info.orientation.swaps_axes() {
+            (info.full_height, info.full_width)
+        } else {
+            (info.full_width, info.full_height)
+        };
+        self.encode_turned(info.orientation, height, out)?;
+        Ok(upright)
     }
 
     /// The placeholder (ThumbHash) of the image `bytes`, upright as `turns` makes it: a DCT-scaled decode keeping
@@ -366,6 +383,20 @@ mod tests {
     }
 
     // The model's longest ThumbHash is the encoder's own: the literal the model writes must be the encoder's length.
+    // The size a sized thumbnail reports is the file's full one, upright: a DCT-scaled JPEG decode and a full PNG one
+    // give their files' sizes, and a quarter turn swaps the sides. The thumbnail is the one `make` makes.
+    #[test]
+    fn a_sized_thumbnail_gives_the_files_upright_size() {
+        let mut maker = Maker::new().unwrap();
+        let big = jpeg(1200, 800, 1);
+        let (thumb, size) = maker.make_sized(&big, 64, Turns::NONE).unwrap();
+        assert_eq!(size, (1200, 800), "the full size, not the scaled decode's");
+        assert_eq!(thumb, maker.make(&big, 64, Turns::NONE).unwrap());
+        assert_eq!(maker.make_sized(&big, 64, Turns::new(1)).unwrap().1, (800, 1200));
+        assert_eq!(maker.make_sized(&png_rgba(40, 70, 2), 64, Turns::NONE).unwrap().1, (40, 70));
+        assert!(maker.make_sized(b"not an image", 64, Turns::NONE).is_err());
+    }
+
     #[test]
     fn thumbhash_max_is_the_encoders_longest() {
         assert_eq!(THUMBHASH_MAX, thumbhash::MAX_LEN);

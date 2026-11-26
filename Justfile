@@ -107,7 +107,8 @@ sccache_version := "0.20.1"
 # is this value). The local tools' Python is the same patch (tools/pgtools.py needs 3.12 or later).
 python_version := "3.12.10"
 # ExifTool for the container and CI's two jobs (tools/install_exiftool.py), as ExifTool reports it. Pinned, so a new release
-# does not change the metadata tests unasked; it is the release the port plans cite (docs/plans/EXIFTOOL_PORT_PLAN.md).
+# does not change the metadata tests unasked; it is the reference the ExifTool rewrite's design cites
+# (docs/plans/EXIFTOOL_RUST_REWRITE_DESIGN.md).
 # Each archive is checked by SHA-256 (the value exiftool.org's checksums.txt lists) before anything is unpacked. The
 # archives are SourceForge's copies: exiftool.org keeps only the newest release. Chocolatey is not used: it has approved no
 # ExifTool package after 13.59 (13.60 to 13.64 are still in moderation).

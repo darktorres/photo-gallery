@@ -11,7 +11,7 @@ so it isn't archived: an archive would replace the commit's full one with a subs
 --save-baseline=before) don't make a run partial, but an option's value must follow `=`: a bare option before a plain
 argument is refused, since that argument could be its value or a bench name.
 The catalog benches' data (tools/profiling/bench_data.py, made on the Windows side) is mounted at /bench-src and copied to
-/bench/data once per layout.
+/bench/data once per making of a layout (its stamp).
 """
 
 import os
@@ -25,6 +25,8 @@ REPO = Path(__file__).resolve().parent.parent.parent
 TREE = Path("/head")
 DATA = Path("/bench/data")
 TARGET = Path("/bench/target")
+# The file in a layout's folder that names the making of its data (tools/profiling/bench_data.py writes it).
+STAMP = "stamp.txt"
 
 
 def refuse_ambiguous(args: list[str]) -> bool:
@@ -46,19 +48,31 @@ def refuse_ambiguous(args: list[str]) -> bool:
     return filtered
 
 
+def stamp_of(layout: Path) -> str | None:
+    """The stamp bench_data.py wrote in a layout's folder (a making of its data), or None for a folder without one."""
+    try:
+        return (layout / STAMP).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+
+
 def copy_bench_data() -> None:
-    """Copies each layout of the bench data from /bench-src, under a temporary name renamed when complete (an interrupted copy
-    must not look finished)."""
+    """Copies each layout of the bench data from /bench-src that is not here with the same stamp: a layout's name stays
+    the same before the first release, so data made again under it has another stamp, and replaces the copy here. Each
+    copy is made under a temporary name renamed when complete (an interrupted copy must not look finished)."""
     source = Path("/bench-src")
     if not source.is_dir():
         return
     DATA.mkdir(parents=True, exist_ok=True)
     for layout in sorted(p for p in source.iterdir() if p.is_dir()):
         dest = DATA / layout.name
-        if not dest.is_dir():
-            partial = DATA / f"{layout.name}.{uuid.uuid4().hex}.partial"
-            shutil.copytree(layout, partial)
-            partial.rename(dest)
+        if dest.is_dir() and stamp_of(dest) == stamp_of(layout):
+            continue
+        partial = DATA / f"{layout.name}.{uuid.uuid4().hex}.partial"
+        shutil.copytree(layout, partial)
+        if dest.is_dir():
+            shutil.rmtree(dest)
+        partial.rename(dest)
 
 
 def tool_line(command: list[str]) -> str:

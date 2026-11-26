@@ -99,8 +99,10 @@ re-analysis.
   (follow whatever `pg_model::analysis` already does for `PixelHashes` and `ImageFacts`).
 - **Derived verdicts are computed from the raw measures** at read time (or in a view), with thresholds in one place.
   Changing a threshold must not need re-analysis.
-- **Version bump** through the registry in `pg_model::versions`, so existing images are re-analyzed in place. Confirm
-  how the registry is used before adding a new input.
+- **No version bump** before the first release (`crates/model/src/versions.rs`): a new measure is a change at version
+  1, and the stored columns are a baseline edit. Existing images of a development catalog are re-analyzed by asking for
+  it (`Catalog::mark_pending` over every file, or a catalog made again), not by a changed version. A version of its own,
+  if the measures get one, is registered in `pg_model::versions` at 1.
 - **Failure handling.** A measure that cannot be computed (image too small, unsupported format, degenerate content)
   stores "not measured", not zero. Images under `MIN_SIDE` (64 px, `pg_model::detection`) are skipped, as the border
   detector does.
@@ -140,7 +142,8 @@ its labels go in `docs/eval/` (see `docs/eval/TEST_SET.md` for how eval sets are
 - Port the kept measures into a new module in `crates/analysis` (or a submodule of `borders` for the shared blur
   measure).
 - Compute them in the existing pixel pass, on the already-decoded pixels. No second decode.
-- Store the raw measures in the catalog, with the version bump.
+- Store the raw measures in the catalog (a baseline edit, no version bump), and mark the development catalog's files
+  pending so they are measured.
 - Tests: synthetic images with known properties (a bicubic upscale of a known image, a nearest-neighbour downscale, a
   known JPEG quality, a sharpened copy) and the labelled set's agreed results.
 - Compare the Rust output with the Python prototype on the labelled set. Differences must be explained, not ignored.

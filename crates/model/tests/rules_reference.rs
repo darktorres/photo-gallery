@@ -1,7 +1,7 @@
-//! The keys against the reference corpus (`reference_keys.tsv`). The corpus was recorded from the keys of
-//! `KEY_ALGO_VERSION` 1 and 2: its folder and name keys are the per-character lower case of the time. The keys of
-//! version 3 are the per-unit upcase through the embedded table (`docs/plans/CATALOG_SIZE_PLAN.md`, D1), so the
-//! corpus's keys are now the old fold, kept as the record, and the tests state how the new fold may differ from it.
+//! The keys against the reference corpus (`reference_keys.tsv`). The corpus was recorded from the earlier keys: its
+//! folder and name keys are the per-character lower case of the time. Today's keys are the per-unit upcase through the
+//! embedded table (`docs/plans/CATALOG_SIZE_PLAN.md`, D1), so the corpus's keys are now the old fold, kept as the
+//! record, and the tests state how the new fold may differ from it.
 //!
 //! - **Equivalence:** two characters are one name under the new fold exactly when they were under the old one, except
 //!   the characters listed in `INTENDED`: those where NTFS's single-unit upcase (round-trip mappings only, Unicode 5.1)

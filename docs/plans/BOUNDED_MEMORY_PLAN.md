@@ -486,8 +486,8 @@ remains is the RAM of the hide and delete steps (3.4).
 **D35. Thumbnail pass state. Re-based on the checkpoints.** The state is today's `checkpoints(height, volume, seq)` plus
 the eviction count in `checked`. The 2026-11-07 per-height laps, `todo`, `lost` and walk cursor are not built: the
 checkpoint already makes an incremental round O(changes). What 4.6 adds is paging, so the first pass and a reset height
-are bounded too. A cache layout change bumps `CACHE_VERSION` and starts the cache over, as its rule says
-(`crates/model/src/versions.rs`).
+are bounded too. A cache layout change edits the schema in place at `CACHE_VERSION` 1 (no bump before the first
+release, `crates/model/src/versions.rs`); a cache whose schema differs from this build's starts over.
 
 **D36. Startup.** `prepare` is O(1) except for a rebuild. A rebuild runs on a worker behind a stoppable progress window.
 The cache's heal leaves the open (4.5).
@@ -1077,7 +1077,8 @@ volume in `crates/testkit/src/ntfs.rs`, the memory and disk figures (§2), and t
   `checkpoints`, and three totals triggers.
 - **Change:** an index `entries_height(height, file_id)` for the merge, so a round reads only its height's entries;
   `height_totals(height PK, bytes, count)` maintained by the totals triggers; `entries_height_lru(height, last_used,
-  bytes)` replacing `entries_lru`; heal cursor keys. A `CACHE_VERSION` bump starts existing caches over.
+  bytes)` replacing `entries_lru`; heal cursor keys. The schema is edited in place (no `CACHE_VERSION` bump before the
+  first release); an existing cache, whose schema then differs, starts over.
 - **Tests:** counters equal `count(*)` per height; the merge's plan uses `entries_height`; a cache of the old layout starts
   over.
 
@@ -1547,7 +1548,8 @@ Each residual is a cost that no design in this plan avoids, with the argument fo
     over and an eviction reset. Nothing records which files lack a current entry at that height.
 14. **R-TH2. The progress total is unknown while a first-pass walk is open.** A walk's owed count is a join across two
     databases.
-15. **R-UP1. A version bump writes Ω(n) flag pages, about 1-2 h sequentially.** The flag lives in every row; a
+15. **R-UP1. A changed version mark writes Ω(n) flag pages, about 1-2 h sequentially** (a catalog another build made;
+    a bump only after the first release, `crates/model/src/versions.rs`). The flag lives in every row; a
     version-relative flag would need a permanent 30-40 GB index.
 16. **R-RD. A converging read's final iteration is bounded by the rows changed during the previous iteration.**
 17. **R-QT1. Flickable contentY drifts between idle frames. The double keeps 2^-11 px up to 2^40 px.** Reaching that takes
@@ -1694,9 +1696,10 @@ Each residual is a cost that no design in this plan avoids, with the argument fo
 - **mark_missing and removal.** Remove an N-file single-folder root, with a same-named root on a second drive; delete N
   in one folder, then rescan; warm and cold timing; a scan request on another drive during a removal. RAM; WAL; STEPS-1
   per page; the other drive's lane runs on; time per row recorded (R8).
-- **Work lists.** Import with a stub analyzer, hashes, placeholders and borders after a detector bump; a stop at every
-  fetch. RAM; examined ≤ n + stops × 4096; done == total.
-- **Version bump.** Bump import, borders, zone, pairing and key version at N and 10N, stopped at every batch; a reader
+- **Work lists.** Import with a stub analyzer, hashes, placeholders and borders after the borders mark is changed; a
+  stop at every fetch. RAM; examined ≤ n + stops × 4096; done == total.
+- **Version marks.** Set the catalog's stored import, borders, zone, pairing and key marks to another build's at N and
+  10N (the constants stay 1 before the first release, `crates/model/src/versions.rs`), stopped at every batch; a reader
   during Pass A. Preparation STEPS-1; Pass A no index writes; RTX; exact reads equal the oracle.
 - **Status and writer counts.** `pg-driver status`; a writer drain of 10^5. STEPS-1.
 - **Write-back queue.** Q failed rows; 10^5 parked on an absent root. `next_ready` STEPS-1; at most one probe per 30 s.

@@ -20,6 +20,8 @@ The plan makes one full decode per new file (Phase 3 moves the import to the ful
 
 ## Phase 1: remove the "no version bumps before release" rule (docs and comments only)
 
+> Superseded 2026-11-26: the rule stays, and covers everything versioned (every constant in `crates/model/src/versions.rs`, the catalog's schema, the bench layouts' names, any format number): nothing is bumped before the first release. It is stated once, in that module's doc. Do not do this phase; 3.4's bump is superseded with it.
+
 No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERSION == 1` or `CACHE_VERSION == 1`); `.claude/worktrees/` is git-excluded stale copies (exclude from greps). In each place below, replace the rule with a pointer to the module doc of `crates/model/src/versions.rs` (lines 1-9), which states the bump rule once; do not restate it:
 
 - the `IMPORT_VERSION` doc in `crates/analysis/src/analyze.rs` (the constant is at `:27`);
@@ -436,6 +438,8 @@ END;
 - README note: an older build opening a migrated catalog moves it aside as `catalog.sqlite.replaced` and rebuilds, losing the pairing state.
 
 ### 3.4 The version bump: `DUPS_VERSION` = 2
+
+> Superseded 2026-11-26: no version is bumped before the first release (`crates/model/src/versions.rs`), so `DUPS_VERSION` is registered there at 1 and `set_dups_version` re-arms nothing on a catalog of today's definition. A development catalog made before the change is made again by hand.
 
 `pub const DUPS_VERSION: i64 = 2;` goes beside `IMPORT_VERSION` (`analyze.rs:27`). The catalog already depends on `pg-analysis` (its `pg-analysis` dev-dependency in `crates/catalog/Cargo.toml`). `set_dups_version(conn, current)` goes in `lifecycle.rs` beside `set_borders_version` (`:137`). It runs from `Catalog::prepare` after `set_borders_version` (`core.rs:117`) through `set_mark`, in one transaction:
 
@@ -1206,6 +1210,7 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 1. **Build and lint.** Build natively in PowerShell with `PG_QT_DIR` on PATH (no WSL). Then the Linux pass in the `pg-dev` container (the Linux nice mapping in `priority.rs` runs there). Fix compile errors and test failures in a closing commit. Run all new and existing tests; `just lint` (`tools/boundaries.py`: layers, dev-edge cycles, re-exports, platform cfg; and `unreachable_pub`); `just modgraph` (module cycles, now in CI). The build in this step also checks `Catalog: Send` (5.5).
 
 2. **Benches and the callgrind baseline.**
+   - Superseded 2026-11-26: the layout's name stays `v1-windows-rules` before the first release (`crates/model/src/versions.rs`); the data is made again under it with `bench_data.py --replace`.
    - Bump the bench data's `LAYOUT` (`crates/bench/benches/ir/catalog.rs:40`, `v7-windows-rules`) when the schema changes, as its comment (`:35`) and `tools/profiling/bench_data.py:7-9` require. The schema is at version 9 today (`schema.rs:35-45`: the baseline plus eight migrations); it is at 10 after TO_10 (Phase 3) and 11 after TO_11 (Phase 4). The bump is made at the commit that changes the schema.
    - Build a source catalog with the new build: a gallery `scan`, `import` and `thumbs` on a synthetic library (`make_strata.py`, 6.1). `bench_data.py` copies an existing catalog (`VACUUM INTO`, `bench_data.py:155`) and seeds `file_failures` rows (the ledger option, `bench_data.py:139-142`, default 0 except for a `-large` layout). It writes no image files, so the new layout needs a source catalog made from real images first.
    - Record the planned import-path increase in `docs/perf/budgets.json` (`--budgets`). `--update` refuses to combine with `--budgets` (`tools/perf-compare.py:92-93`; `perf_check.py` only documents it, `:12-13`). Run `just perf --update` only after the closing commit, since `bench.py` benches HEAD.

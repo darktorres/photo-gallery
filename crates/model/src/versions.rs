@@ -2,8 +2,17 @@
 //! upper-cased mark it drives in `meta` (`import_version` is `IMPORT_VERSION`, `thumb_output_version` is
 //! `THUMB_OUTPUT_VERSION`; `KEY_ALGO_VERSION` is the one exception: it drives the `key_version` mark, and its doc says why).
 //!
-//! A bump is a change to what the artifact stores, or to what its stored values mean. Its rule is written beside each
-//! constant. `tools/test_versions.py` fails on a `*VERSION` constant anywhere in the workspace that is not in this
+//! **Before the first release nothing versioned is bumped.** That covers every constant here and every other version,
+//! layout name or format mark in the repository: the catalog's schema version, the bench data's layout names
+//! (`BENCH_LAYOUT` in `crates/bench/benches/ir/catalog.rs`), a fixture's or a file's format number. Each stays at 1 (a
+//! name at `v1`), and a change to what an artifact stores, or to what its stored values mean, is made in place. An
+//! artifact an earlier build made is not told apart by its number: the catalog and the thumbnail cache notice a changed
+//! schema by themselves (a rebuild, a start over), a mark that carries its inputs' identity notices those (the
+//! `key_version` mark's table hash), and anything else a development build made (a catalog's analyses, bench data, a
+//! dataset) is deleted and made again by hand. Docs and plans write a change as an edit at version 1, never as a bump.
+//!
+//! From the first release on, a bump is a change to what the artifact stores, or to what its stored values mean. Its rule
+//! is written beside each constant. `tools/test_versions.py` fails on a `*VERSION` constant anywhere in the workspace that is not in this
 //! module, and on a constant here that no owner reads, so a new version is registered here or it is not a version.
 //! Owners name these constants as `pg_model::versions::NAME`; no crate re-exports one under its own path.
 
@@ -52,12 +61,12 @@ pub const THUMB_OUTPUT_VERSION: i64 = 1;
 
 /// The version of the key algorithm (`pg_model::rules`'s keys: `folders.path_key`, the spelling a folder is found by;
 /// `mfolders.key`, the drive-free folder key the grid orders by; and the name key of the `path_name_key` SQL function,
-/// which the `files_mn` index holds). Bump it when a key changes for the same name, or when a key's meaning does:
-/// version 2 made `path_key` the folder's identity (one row per spelling in any case under the Windows rules); version 3
-/// made the Windows fold NTFS's per-unit upcase through an embedded table (`pg_model::upcase`), the Posix keys the exact
-/// bytes, and dropped `files.order_key`. The catalog's `key_version` mark is this with the table's hash
-/// (`upcase::TABLE_HASH`): either changing recomputes the stored keys and rebuilds the name index.
-pub const KEY_ALGO_VERSION: i64 = 3;
+/// which the `files_mn` index holds). `path_key` is the folder's identity (one row per spelling in any case under the
+/// Windows rules); the Windows fold is NTFS's per-unit upcase through an embedded table (`pg_model::upcase`), and the
+/// Posix keys are the exact bytes. Bump it when a key changes for the same name, or when a key's meaning does. The
+/// catalog's `key_version` mark is this with the table's hash (`upcase::TABLE_HASH`): either changing recomputes the
+/// stored keys and rebuilds the name index.
+pub const KEY_ALGO_VERSION: i64 = 1;
 
 /// The version of the preferences file's layout (`gallery.json`, `pg_app::prefs`). Each save stamps it; a file without the
 /// key reads as 0, the layout whose row height was a float. Version 1 stores the row height as a whole number of pixels.

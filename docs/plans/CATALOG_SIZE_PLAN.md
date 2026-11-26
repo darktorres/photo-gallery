@@ -19,10 +19,15 @@ catalog (715,152 files; a read-only `VACUUM INTO` copy, carried by this build's 
 - **The rehearsal** (`crates/catalog/tests/rehearsal.rs`, strengthened: `integrity_check` with the functions, exact
   sequences) passes on the copy: every row carried, the foreign keys whole, the upgrade 32 s in a debug build.
 
-Still open: the Linux pass (Verification, step 7), the benchmarks (step 6: the bench data is to be regenerated as
-`v2-windows-rules`), and the docs of Verification step 8 other than this one. What was built differs from the text
+Still open: the Linux pass (Verification, step 7), the benchmarks (step 6: the bench data is regenerated under
+`v1-windows-rules`), and the docs of Verification step 8 other than this one. What was built differs from the text
 below in these points, each decided while building:
 
+- **No version is bumped** (the rule, which covers every versioned thing before the first release, is in
+  `crates/model/src/versions.rs`). `KEY_ALGO_VERSION` is 1 (it was 2 before this plan) and the bench layouts stay `v1`.
+  A catalog of the earlier keys still recomputes them: its `key_version` mark carried the toolchain's Unicode version,
+  this build's carries the upcase table's hash. The bench data is made again under the same name
+  (`bench_data.py --replace`), and `bench.py` replaces the container's copy when its stamp differs.
 - **No `exts` table.** An extension's code is its position in `pg_model::media::EXTENSIONS`, a table that is only ever
   appended to (`Ext::code`, pinned by a test), so a later build's code past this build's table is an extension it
   doesn't hold (`lifecycle::mark_unheld_missing`). A table of names in the catalog would cost a join on every grid read
@@ -372,7 +377,8 @@ CREATE INDEX files_seq ON files(seq);                               -- files_to_
   (`crates/catalog/src/browse/views.rs`) and the client's own sorting (`crates/client/src/tree.rs`,
   `crates/model/src/tree.rs`) use the same key, so SQL and Rust agree (test: the SQL order of every real name equals the
   Rust sort). The folder-key builder stays the single source for SQL and the client tree. Replace the per-char lowercase
-  in `Name` only where the rules say; keep it for display. `KEY_ALGO_VERSION` is bumped with the doc's new rule.
+  in `Name` only where the rules say; keep it for display. `KEY_ALGO_VERSION`'s doc states the new rule; the version is
+  not bumped before the first release (`crates/model/src/versions.rs`), and the mark's table hash recomputes the keys.
 - **Plan pins (the planner has no statistics):** the grid, count and facet SQL (`crates/catalog/src/browse/read/scope.rs`,
   `grid.rs`, `facets.rs`) read `FROM mfolders m CROSS JOIN files f ON f.mid = m.id WHERE f.missing = 0 AND m.key >= ?lo
   [AND m.key < ?hi] ORDER BY m.key {dir}, path_name_key(f.name) {dir}, f.id {dir}` (`CROSS JOIN` pins `mfolders`
@@ -453,10 +459,10 @@ phase, then compile once. Never open the live catalog with a development build: 
 4. Re-run `dbstat` (sqlite3 is installed via winget) on the carried copy; expected about 200 MiB.
 5. `EXPLAIN QUERY PLAN` of every changed statement on the carried copy; timings: full ordered read about 0.07-0.15 s,
    100,000 pinned name lookups about 0.1 s (measured on the replica), tree counts about 0.05 s.
-6. Benchmarks: bump the bench's `BENCH_LAYOUT` (`crates/bench/benches/ir/catalog.rs`, `"v1-windows-rules"` today; the
-   layout's bump is its one constant), regenerate with `tools/profiling/bench_data.py`; compare `scan_walk` and the grid
-   read with the current build; add a tier-2 pairing benchmark and a first-scan benchmark that exercises the name lookup
-   (700k lookups).
+6. Benchmarks: regenerate the bench data under the same `BENCH_LAYOUT` (`crates/bench/benches/ir/catalog.rs`,
+   `"v1-windows-rules"`; no bump before the first release) with `tools/profiling/bench_data.py --replace`; compare
+   `scan_walk` and the grid read with the current build; add a tier-2 pairing benchmark and a first-scan benchmark that
+   exercises the name lookup (700k lookups).
 7. Linux pass in the `pg-dev` container (Posix rules): reference keys, case-variant names, multi-volume pairing, the embedded
    upcase table's tests (they must not depend on the OS).
 8. Docs: `crates/README.md` (the catalog paragraphs), `docs/plans/DATABASE.md`, `SCAN_OPTIMIZATION_PLAN.md` D1 (amended to

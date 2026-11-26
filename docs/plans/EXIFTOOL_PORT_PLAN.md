@@ -419,11 +419,13 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
   - 29c4d5e's 6 files are the exception. Their stored read came from kamadak-exif, so `file_ratings` has no row that
     holds 4, and the pass above skips them. The re-analysis sync then adopts the new reader's value if it is 4
     (`set_rating`, `writers.rs:566`). That writes `ratings`, and it is the one intended change to `ratings`.
-- **Orientation and date: the re-analysis.** The switch-over changes what is read, so it bumps `IMPORT_VERSION` in the
-  registry (`crates/model/src/versions.rs:13`). `set_import_version` (`crates/catalog/src/lifecycle.rs:163`, called at
-  `crates/catalog/src/core.rs:289`) marks every file pending on the first open by a build whose version differs from
-  the catalog's, so the full re-analysis starts on that open.
-  - The `file_ratings` pass runs before that first open.
+- **Orientation and date: the re-analysis.** The switch-over changes what is read, but `IMPORT_VERSION` stays 1: no
+  version is bumped before the first release (`crates/model/src/versions.rs`). So the re-analysis is asked for, not
+  detected: after the switch-over, every file of the development catalog is marked pending
+  (`Catalog::mark_pending`, `crates/catalog/src/work.rs`, the call made for a fix to what the import reads), or the
+  catalog is made again, and the next import pass re-analyses them all. (`set_import_version` still re-marks a catalog
+  whose stored mark is another build's, as it does after the release.)
+  - The `file_ratings` pass runs before the files are marked pending.
   - 7deed676's reset to 1 already marked the library pending once. If a build at 1 has opened the catalog since, the
     pass must be checked against the ratings that the sync stored then (`sync_file_rating` has run on those files).
   - The 6 files of 29c4d5e are covered by the exception above.

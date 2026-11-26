@@ -651,8 +651,9 @@ thumbnails current forever.
   on its own evidence). `analysis` records the `content_gen` it was made from beside its size, mtime, rotation and kind,
   and `stale!` compares all five. A carried catalog keeps `content_gen` verbatim; a catalog made again starts every file
   at 1, and then an old entry matches only when size, mtime and generation all agree.
-- The thumbnail cache's `Source` becomes `(mtime, rotation, content_gen)`, with a `CACHE_VERSION` bump that starts the
-  cache over (`crates/model/src/versions.rs`; the old "edited in place, at version 1" rule is gone).
+- The thumbnail cache's `Source` becomes `(mtime, rotation, content_gen)`, an edit of its schema in place at
+  `CACHE_VERSION` 1 (no bump before the first release, `crates/model/src/versions.rs`): a cache whose schema differs
+  from this build's starts over.
 - Writeback's own writes and `borders_cut` bump it too. `borders_cut` updates size and mtime only today, so it changes; its
   analysis is redone as now. The metadata-only carry-over in `file_rewritten` moves `analysis.content_gen` to the new
   generation in the same transaction, so a rating write keeps its analysis current.

@@ -317,7 +317,8 @@ where you were (folder, subfolders, filters, sort) are in the catalog. Each of t
 `crates/library/src/layout.rs`; for now they share the home folder.
 
 The catalog's schema is `crates/catalog/src/baseline.sql`: every table, index, view and trigger, and the seeds of
-`meta`, at version 1. Before the first release that file is edited in place and the version stays 1. From the release
+`meta`, at version 1. Before the first release that file is edited in place and the version stays 1 (as every version
+does then: the rule is in `crates/model/src/versions.rs`). From the release
 on, every change is a migration (`MIGRATIONS` in `crates/catalog/src/schema.rs`) and the baseline is frozen; the
 migration machinery is kept for that, and has no migration yet. A catalog at a version after this build's is refused,
 as made by another build. Each start checks the catalog's schema against this build's for its version (`pg-dbfile`),
@@ -390,7 +391,8 @@ console window opens when it starts from Explorer. PowerShell doesn't wait for a
     the app and `pg-driver` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
-  - Its layout version is 1. Before the first release a layout change edits the schema in place, and the cache is
+  - Its layout version is 1. Before the first release a layout change edits the schema in place (no version is bumped
+    then: `crates/model/src/versions.rs`), and the cache is
     never migrated: it holds derived data only. A file of another version, layout or catalog is started over (its
     cap kept); one that is not a database, or that SQLite finds damaged (at the open, or at the day's check of the
     totals), is moved aside to `thumbs.sqlite.bad` (`pg_dbfile::move_aside`) and made anew; a database that is not

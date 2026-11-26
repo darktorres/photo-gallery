@@ -2,11 +2,14 @@
 
 Writes OUT/LAYOUT/catalog.sqlite (VACUUM INTO: compact, consistent with the WAL) and OUT/LAYOUT/thumbs.sqlite (the
 cache's schema, its application id, entries, totals, limits, meta and checked, without the JPEGs). An existing LAYOUT
-folder is never overwritten, so the data a baseline was measured on stays. The sources are opened read-only.
+folder is kept, so the data a baseline was measured on stays, unless --replace is given. The sources are opened
+read-only.
 
 The data must be made by the build the benches run against: a catalog or cache of another schema or mark is refused or
-started over by the app's start (the bench's open refuses it). Bump the BENCH_LAYOUT name in
-crates/bench/benches/ir/catalog.rs when the layout of the data changes (the reset's first layout is v1).
+started over by the app's start (the bench's open refuses it). Before the first release the BENCH_LAYOUT name in
+crates/bench/benches/ir/catalog.rs stays v1 (the rule is in crates/model/src/versions.rs): when the layout of the data
+changes, the data is made again under the same name with --replace, and `just perf` copies the new data into the
+container in place of the old (tools/profiling/bench.py compares the source's stamp).
 
     mkdir $PG_ROOT\\bench-data
     python tools/profiling/bench_data.py v1-windows-rules \\
@@ -34,24 +37,29 @@ volume before the benches run.
 """
 
 import argparse
+import shutil
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pgtools import register_catalog_functions
 
+# The file in a layout's folder that names this making of its data (tools/profiling/bench.py reads it).
+STAMP = "stamp.txt"
 # The ledger rows a `-large` layout is seeded to, with the import's own failures counted.
 LARGE_LEDGER_ROWS = 100_000
 # The seeded rows' fixed fields: the same data on every run.
 SEED_ERROR = "bench data: seeded failure"
 SEED_FIRST_SEEN = 1_767_225_600  # 2026-01-01 UTC
 # A pass's seeded rows (pass, error, first seen, pass, how many), for the files by id that have none of that pass: after
-# the notifications' migration a row's `hidden` is its file's `missing`; before it there is no `hidden`.
+# the notifications' migration a row's `hidden` is its file's `missing`, and its `rotation` the file's `turns` (as the
+# writers store it); before it there is no `hidden`, and the file's column was `rotation`.
 SEED_AFTER = (
     "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)\n"
-    "SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ?, f.missing FROM files f\n"
+    "SELECT f.id, ?, f.mtime, f.size, f.turns, ?, 1, ?, f.missing FROM files f\n"
     "WHERE NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = ?)\n"
     "ORDER BY f.id LIMIT ?"
 )
@@ -148,6 +156,11 @@ def main() -> int:
         type=int,
         help=f"seed file_failures to this many rows (default {LARGE_LEDGER_ROWS:,} for a -large layout, else 0)",
     )
+    ap.add_argument(
+        "--replace",
+        action="store_true",
+        help="make the layout again over an existing folder (its data changed; a baseline measured on it is stale)",
+    )
     args = ap.parse_args()
     ledger_rows = args.ledger_rows
     if ledger_rows is None:
@@ -155,7 +168,9 @@ def main() -> int:
 
     target = args.out / args.layout
     if target.exists():
-        sys.exit(f"bench_data: {target} exists: a baseline may have been measured on it; pick another layout name")
+        if not args.replace:
+            sys.exit(f"bench_data: {target} exists: a baseline may have been measured on it; --replace makes it again")
+        shutil.rmtree(target)
     target.mkdir(parents=True)
 
     src = read_only(args.catalog_dir / "catalog.sqlite")
@@ -166,6 +181,9 @@ def main() -> int:
     if ledger_rows > 0:
         seed_ledger(target / "catalog.sqlite", ledger_rows)
     slim_cache(args.catalog_dir / "thumbs.sqlite", target / "thumbs.sqlite")
+    # The data's identity, which the container's copy is checked against (tools/profiling/bench.py): a layout made again
+    # under the same name has another.
+    (target / STAMP).write_text(f"{uuid.uuid4().hex}\n", encoding="utf-8")
 
     for name in ("catalog.sqlite", "thumbs.sqlite"):
         print(f"{target / name}: {(target / name).stat().st_size / 1e6:.1f} MB")

@@ -5,8 +5,8 @@
 // catalog, so the measured function starts with the schema parsed and every page cold, like the app's first list.
 //
 // The bench ids stay the same across commits; the bodies follow the API. BENCH_LAYOUT names the catalog layout the code
-// expects, and is bumped with a change to the data's layout. It also names the dataset, because bench_data.py never
-// overwrites a layout's folder.
+// expects (before the first release it stays `v1`, and a layout change regenerates the data under it). It also names the
+// dataset's folder, which bench_data.py replaces only when asked.
 
 use std::path::{Path, PathBuf};
 
@@ -35,14 +35,14 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
 };
 // The layout: a catalog made on Windows by this build's CLI passes (scan, import, thumbs) from the synthetic library at
 // D:\PhotoGallery\synthetic\library. Its paths are Windows paths, as the folder literals below are. Its name carries the
-// layout's version (`v2`: the interned volumes and merged folders, the stored codes and the name index of
-// docs/plans/CATALOG_SIZE_PLAN.md; `v1` was the reset's first) and the path rules; data made by another build is
-// regenerated, never read as current (tools/profiling/bench_data.py makes it).
-const BENCH_LAYOUT: &str = "v2-windows-rules";
+// layout's version and the path rules. The version stays `v1` before the first release (the rule is in
+// crates/model/src/versions.rs): a change to the data's layout regenerates the data under the same name
+// (tools/profiling/bench_data.py makes it, `--replace` over an existing folder).
+const BENCH_LAYOUT: &str = "v1-windows-rules";
 // The large layout (tools/profiling/bench_data.py, `-large`): 200,000 files of the synthetic library's large profile,
 // 50,000 of them broken (the import's failures), and the failure ledger seeded to 100,000 rows. Made and named as
 // BENCH_LAYOUT is; the inbox's refresh is measured on it.
-const BENCH_LARGE_LAYOUT: &str = "v2-windows-rules-large";
+const BENCH_LARGE_LAYOUT: &str = "v1-windows-rules-large";
 // The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches
 // run on Linux, where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;

@@ -15,6 +15,13 @@ use std::path::{Path, PathBuf};
 
 use pg_platform::env::Var;
 
+/// The catalog folder's name under the home, as the default layout has it.
+const CATALOG_DIR: &str = "catalog";
+/// The preferences file's name under the home.
+const PREFS_FILE: &str = "gallery.json";
+/// The log file's name under the home.
+const LOG_FILE: &str = "gallery.log";
+
 /// The data folders of one run. Build it with [`Layout::resolve`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
@@ -36,11 +43,11 @@ impl Layout {
                 None => pg_platform::dirs::default_home(&var)?,
             },
         };
-        let prefs = pg_platform::env::path(&var, Var::Prefs).unwrap_or_else(|| home.join("gallery.json"));
+        let prefs = pg_platform::env::path(&var, Var::Prefs).unwrap_or_else(|| home.join(PREFS_FILE));
         Ok(Layout {
-            catalog_dir: catalog_dir.unwrap_or_else(|| home.join("catalog")),
+            catalog_dir: catalog_dir.unwrap_or_else(|| home.join(CATALOG_DIR)),
             prefs,
-            log: home.join("gallery.log"),
+            log: home.join(LOG_FILE),
             home,
         })
     }
@@ -49,9 +56,9 @@ impl Layout {
     pub fn in_home(home: impl Into<PathBuf>) -> Layout {
         let home = home.into();
         Layout {
-            catalog_dir: home.join("catalog"),
-            prefs: home.join("gallery.json"),
-            log: home.join("gallery.log"),
+            catalog_dir: home.join(CATALOG_DIR),
+            prefs: home.join(PREFS_FILE),
+            log: home.join(LOG_FILE),
             home,
         }
     }
@@ -70,7 +77,7 @@ impl Layout {
     /// home folder, or when `create` says so. Any other folder that is missing is not made, since it is most likely a
     /// drive that isn't connected (or a mistyped path): the error is `NotFound`, with the folder in its message.
     pub fn ensure_catalog_dir(&self, create: bool) -> std::io::Result<()> {
-        if create || self.catalog_dir.is_dir() || self.catalog_dir == self.home.join("catalog") {
+        if create || self.catalog_dir.is_dir() || self.catalog_dir == self.home.join(CATALOG_DIR) {
             return std::fs::create_dir_all(&self.catalog_dir);
         }
         Err(std::io::Error::new(

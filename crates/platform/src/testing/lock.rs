@@ -22,8 +22,8 @@ pub(super) fn next_number() -> u64 {
     CLAIMS.fetch_add(1, Ordering::Relaxed)
 }
 
-/// A lock on a file. It is held until it drops. A lock from [`create_for_delete`] or [`take_for_delete`] removes its name
-/// only through [`HeldLock::delete`]; dropping it leaves the name in place.
+/// A lock on a file. It is held until it drops; dropping it leaves the name in place, and only [`HeldLock::delete`]
+/// removes the name (a lock from [`create_for_delete`] or [`take_for_delete`] included).
 #[cfg(unix)]
 #[derive(Debug)]
 pub(crate) struct HeldLock {
@@ -42,7 +42,7 @@ pub(crate) struct HeldLock {
 
 /// The Win32 values the lock needs (winnt.h and winerror.h), which std does not name.
 #[cfg(windows)]
-mod win {
+mod windows {
     pub(super) const DELETE: u32 = 0x0001_0000;
     pub(super) const GENERIC_READ: u32 = 0x8000_0000;
     pub(super) const GENERIC_WRITE: u32 = 0x4000_0000;
@@ -75,9 +75,9 @@ fn open_for_delete(path: &Path, create: bool) -> io::Result<HeldLock> {
     use std::os::windows::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
     options
-        .access_mode(win::GENERIC_READ | win::GENERIC_WRITE | win::DELETE)
+        .access_mode(windows::GENERIC_READ | windows::GENERIC_WRITE | windows::DELETE)
         .share_mode(0)
-        .custom_flags(win::FILE_FLAG_DELETE_ON_CLOSE);
+        .custom_flags(windows::FILE_FLAG_DELETE_ON_CLOSE);
     if create {
         options.create_new(true);
     }
@@ -90,7 +90,7 @@ pub(crate) fn take_for_delete(path: &Path) -> io::Result<Option<HeldLock>> {
     match open_for_delete(path, false) {
         Ok(lock) => Ok(Some(lock)),
         // Another open of the file holds it (a sharing violation), or it is being deleted (access denied): not ours.
-        Err(err) if matches!(err.raw_os_error(), Some(win::ERROR_SHARING_VIOLATION | win::ERROR_ACCESS_DENIED)) => {
+        Err(err) if matches!(err.raw_os_error(), Some(windows::ERROR_SHARING_VIOLATION | windows::ERROR_ACCESS_DENIED)) => {
             Ok(None)
         }
         Err(err) => Err(err),

@@ -24,7 +24,7 @@ pub(crate) fn row_of(row: i32) -> Option<usize> {
 
 /// A row as Qt takes it: -1 for none, saturating at `i32::MAX`.
 pub(crate) fn to_row(row: Option<usize>) -> i32 {
-    row.map_or(-1, |row| i32::try_from(row).unwrap_or(i32::MAX))
+    row.map_or(-1, qt_int)
 }
 
 /// A count, a row or a side in pixels as Qt's int, saturating: a Qt model holds no more rows than an int counts.

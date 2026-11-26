@@ -57,7 +57,9 @@ foreach ($w in $Workloads) {
                 $db = Join-Path $dir 'catalog.sqlite'
                 Copy-Item -LiteralPath $catalogs[$build] $db
                 python -I (Join-Path $here 'set_owed.py') $db $k | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "set_owed.py failed (exit $LASTEXITCODE) with $k owed" }
                 python -I $dropPy $db
+                if ($LASTEXITCODE -ne 0) { throw "drop_owed_pairs.py failed (exit $LASTEXITCODE) on the $k-owed template" }
                 $templates["$build$k"] = $db
             }
         }
@@ -105,7 +107,12 @@ for ($p = 0; $p -lt $Pairs; $p++) {
                 $m = [regex]::Match($line, '(\d+) pairs in ([\d.]+) s')
                 if (-not $m.Success) { throw "probe output not understood: $line" }
                 $one = [ordered]@{ pass = [int][math]::Round([double]::Parse($m.Groups[2].Value, [Globalization.CultureInfo]::InvariantCulture) * 1000) }
-                foreach ($n in $parts) { $one[$n] = [int][regex]::Match($line, "\b$n (\d+)").Groups[1].Value }
+                foreach ($n in $parts) {
+                    # The probe prints every part; a part it does not print is a changed output, not a zero.
+                    $field = [regex]::Match($line, "\b$n (\d+)")
+                    if (-not $field.Success) { throw "probe output has no $n field: $line" }
+                    $one[$n] = [int]$field.Groups[1].Value
+                }
                 if (-not $row) {
                     $row = [ordered]@{ pair = $p; workload = $w; build = $build; cpu = $cpu; pairs = [int]$m.Groups[1].Value }
                     foreach ($n in $one.Keys) { $row[$n] = $one[$n] }

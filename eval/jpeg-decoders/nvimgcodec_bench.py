@@ -10,18 +10,13 @@ Timing as the harness: warm-up, then samples until 5 and the budget; the median,
 """
 
 import argparse
-import ctypes
-import statistics
-import time
 from functools import partial
 from pathlib import Path
 
 import env
 import numpy as np
 from reference_io import read_ppm
-from timing import BUDGET_S, MAX_BATCH_BYTES
-
-CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
+from timing import BUDGET_S, blocking_sync, max_batch, timed_s
 
 
 def backends(nv) -> dict:
@@ -36,16 +31,6 @@ def backends(nv) -> dict:
     }
 
 
-def blocking_sync() -> None:
-    """Make the primary context of device 0 block on synchronize(), so waiting for the GPU doesn't bill CPU time.
-    Must run before the first CUDA call. Done through the driver's DLL: this venv has no torch (see gpu.py)."""
-    cuda = ctypes.CDLL("nvcuda.dll")
-    if (rc := cuda.cuInit(0)) != 0:
-        raise RuntimeError(f"cuInit: CUDA error (code {rc})")
-    if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
-        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags: CUDA error (code {rc}); the context may already be active")
-
-
 def decode_one(dec, data):
     """One image, decoded and copied to the host (the timed call of a batch of one)."""
     return dec.decode(data).cpu()
@@ -54,19 +39,6 @@ def decode_one(dec, data):
 def decode_batch(dec, batch):
     """A batch, decoded and each image copied to the host."""
     return [i.cpu() for i in dec.decode(batch)]
-
-
-def timed_ms(fn, per_call, budget):
-    """Median milliseconds per item, and process CPU milliseconds per item (samples until 5 and the budget)."""
-    for _ in range(3):
-        fn()
-    samples, c0, t0 = [], time.process_time(), time.perf_counter()
-    while len(samples) < 5 or time.perf_counter() - t0 < budget:
-        t = time.perf_counter()
-        fn()
-        samples.append((time.perf_counter() - t) * 1e3 / per_call)
-    cpu = (time.process_time() - c0) * 1e3 / (len(samples) * per_call)
-    return statistics.median(samples), cpu
 
 
 def diff(a, ref):
@@ -106,7 +78,7 @@ def main():
         data = f.read_bytes()
         ref = read_ppm(args.ref_dir / (f.stem + ".ppm"))
         h, w = ref.shape[:2]
-        cap = max(1, int(MAX_BATCH_BYTES // (w * h * 3)))
+        cap = max_batch(w, h)
         for name, dec in decoders.items():
             try:
                 decoded = dec.decode(data)
@@ -122,11 +94,14 @@ def main():
                 fn = partial(decode_one, dec, data) if b == 1 else partial(decode_batch, dec, [data] * b)
 
                 try:
-                    wall, cpu = timed_ms(fn, b, args.secs)
+                    wall, cpu = timed_s(fn, b, args.secs)
                 except Exception as e:  # noqa: BLE001 (reported, and the run goes on)
                     print(f"{f.name:34} {name:15} batch {b:3}: error: {e}")
                     continue
-                print(f"{f.name:34} {name:15} batch {b:3}: {wall:9.3f} ms {cpu:9.3f} cpu ms   {quality}", flush=True)
+                print(
+                    f"{f.name:34} {name:15} batch {b:3}: {wall * 1e3:9.3f} ms {cpu * 1e3:9.3f} cpu ms   {quality}",
+                    flush=True,
+                )
 
 
 if __name__ == "__main__":

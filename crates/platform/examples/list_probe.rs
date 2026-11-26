@@ -13,7 +13,7 @@ use pg_platform::dir::{Lister, folders_in};
 use pg_platform::native::Unit;
 
 fn main() -> io::Result<()> {
-    let root = PathBuf::from(std::env::args_os().nth(1).ok_or_else(|| io::Error::other("usage: list_probe <folder>"))?);
+    let root = PathBuf::from(std::env::args_os().nth(1).ok_or_else(|| io::Error::other("usage: list_probe <library folder> [repeats] [first pass threads]"))?);
     let repeats: usize = std::env::args().nth(2).and_then(|r| r.parse().ok()).unwrap_or(7);
     let first_threads: usize = std::env::args().nth(3).and_then(|t| t.parse().ok()).unwrap_or(1);
     let folders = folders_in(&root)?;

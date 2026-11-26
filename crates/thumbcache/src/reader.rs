@@ -32,10 +32,8 @@ pub(crate) fn pending_on(cache: &Path, catalog: &Path, height: ThumbHeight, volu
 /// least of them), when each has one. With that number no later than the catalog's (a catalog restored from a copy
 /// would be behind), only the files changed since are read, through `files_seq`; otherwise every file of the volumes.
 fn pending_for(cache: &Path, catalog: &Path, height: ThumbHeight, volumes: Option<&[i64]>) -> Result<Pending> {
-    let conn = Connection::open(cache)?;
-    conn.busy_timeout(BUSY_TIMEOUT)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
-    conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
+    let conn = open_read(cache, "PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
     conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(catalog)?])?;
     let tx = conn.unchecked_transaction()?;
     let seq: i64 = tx.query_row("SELECT seq FROM cat.thumb_clock", [], |r| r.get(0))?;
@@ -226,13 +224,22 @@ impl Drop for Checkout<'_> {
     }
 }
 
-/// A read connection to the cache file at `path`: busy-timed, with the connection's pragmas, and read-only.
-fn open_reader(path: &Path) -> Result<Connection> {
+/// The setting every read connection has: a read never writes to the cache file.
+const READ_ONLY: &str = "PRAGMA query_only = ON;";
+
+/// A read connection to the cache file at `path`: busy-timed, with `pragmas` run, then the read-only setting. Every
+/// read connection is opened here, so the read-only setting has one definition.
+fn open_read(path: &Path, pragmas: &str) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
-    conn.execute_batch(CONNECTION_PRAGMAS)?;
-    conn.execute_batch("PRAGMA query_only = ON;")?;
+    conn.execute_batch(pragmas)?;
+    conn.execute_batch(READ_ONLY)?;
     Ok(conn)
+}
+
+/// A read connection to the cache file at `path`, with the connection's pragmas, and read-only.
+fn open_reader(path: &Path) -> Result<Connection> {
+    open_read(path, CONNECTION_PRAGMAS)
 }
 
 #[cfg(test)]

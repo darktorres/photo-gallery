@@ -62,7 +62,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     build without a pool read 278 MB/s here and 255 MB/s in the first session, so only rounds of one session
     compare.
   - That pool still made a buffer for nearly every file: only bytes bound the files in flight, so readers read
-    ahead until the budget was full (that buffer per file is gone: `Pool::take` reuses buffers, `crates/jobs/src/pipeline.rs:370`).
+    ahead until the budget was full (that buffer per file is gone: `Pool::take` reuses buffers, `crates/jobs/src/pipeline.rs:1305`).
   - **Again with the files in flight bounded by count too** (`Options::slots`; the pool then holds at most that
     many buffers, reused and grown in place, and the readers' channel has that many places), 2026-11-02. The
     first 400 of the same files (2.6 GB), the same method, three rounds of slots × budget, medians in MB/s:

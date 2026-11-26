@@ -16,15 +16,15 @@
 //! module, and on a constant here that no owner reads, so a new version is registered here or it is not a version.
 //! Owners name these constants as `pg_model::versions::NAME`; no crate re-exports one under its own path.
 
-/// The analysis pipeline's version (`pg_analysis::analyze::IMPORT_VERSION`): an analysis made at another is redone. Bump
+/// The analysis pipeline's version (`pg_model::versions::IMPORT_VERSION`): an analysis made at another is redone. Bump
 /// it when the import computes a different value from the same file: the pixel or file hash, the decode bounds, the PDQ
 /// hash, the EXIF date and zone semantics.
 pub const IMPORT_VERSION: i64 = 1;
 
-/// The version of the borders pass (`pg_analysis::borders::BORDERS_VERSION`): the detection of a picture's borders.
+/// The version of the borders pass (`pg_model::versions::BORDERS_VERSION`): the detection of a picture's borders.
 pub const BORDERS_VERSION: i64 = 1;
 
-/// The version of the pairs the pairing pass makes (`pg_model::pdq::PAIRING_VERSION`): what matches within
+/// The version of the pairs the pairing pass makes (`pg_model::versions::PAIRING_VERSION`): what matches within
 /// `MATCH_DISTANCE`, among the reliable hashes. A catalog at another owes every pair again. Its seed in the baseline is
 /// this value. The seed is a literal in `baseline.sql` (SQL cannot name this constant), so the catalog's `schema.rs` asserts
 /// it at compile time and its schema test checks the stored seed.
@@ -39,15 +39,15 @@ pub const THUMBS_VERSION: i64 = 1;
 // Zero is the mark of a catalog or a cache that has none: this build's thumbnails must differ from it, or a bump is missed.
 const _: () = assert!(THUMBS_VERSION > 0);
 
-/// The version of a placeholder's definition (`pg_model::analysis::PLACEHOLDER_VERSION`): a placeholder made at another
+/// The version of a placeholder's definition (`pg_model::versions::PLACEHOLDER_VERSION`): a placeholder made at another
 /// is owed again. Bump it when the ThumbHash of a picture changes for the same pixels.
 pub const PLACEHOLDER_VERSION: i64 = 1;
 
-/// The version of the thumbnail cache's layout (`pg_thumbcache::CACHE_VERSION`). A cache at another starts over; a newer
+/// The version of the thumbnail cache's layout (`pg_model::versions::CACHE_VERSION`). A cache at another starts over; a newer
 /// one is left alone.
 pub const CACHE_VERSION: i64 = 1;
 
-/// The version of the replay format (`pg_client::controller::replay::REPLAY_FORMAT_VERSION`): a dev recording's format.
+/// The version of the replay format (`pg_model::versions::REPLAY_FORMAT_VERSION`): a dev recording's format.
 pub const REPLAY_FORMAT_VERSION: i64 = 1;
 
 /// The version of the catalog's schema this build makes (`pg_catalog`'s current version): the baseline, then each
@@ -68,7 +68,7 @@ pub const THUMB_OUTPUT_VERSION: i64 = 1;
 /// stored keys and rebuilds the name index.
 pub const KEY_ALGO_VERSION: i64 = 1;
 
-/// The version of the preferences file's layout (`gallery.json`, `pg_app::prefs`). Each save stamps it; a file without the
+/// The version of the preferences file's layout (`gallery.json`, `pg_app::Prefs`). Each save stamps it; a file without the
 /// key reads as 0, the layout whose row height was a float. Version 1 stores the row height as a whole number of pixels.
 /// Bump it when a field changes meaning or its format. A new field needs no bump: a file without it reads the default.
 pub const PREFS_VERSION: i64 = 1;

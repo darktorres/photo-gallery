@@ -141,7 +141,8 @@ def _sscd(variant: str) -> Callable[[], nn.Module]:
 
 
 def _accel(runtime: str, precision: str, size: int = 320) -> Callable[[], nn.Module]:
-    """SSCD on TensorRT ("trt") or ONNX Runtime ("cuda" / "trt10" providers); see accel.py."""
+    """SSCD on TensorRT (runtime "trt") or ONNX Runtime (runtime "ort_cuda" for its CUDA provider, "ort_trt10" for its
+    TensorRT 10 provider); see accel.py."""
 
     def load() -> nn.Module:
         import accel

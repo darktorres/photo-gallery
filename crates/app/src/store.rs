@@ -23,8 +23,8 @@ pub struct Unreadable {
 pub struct JsonStore<T> {
     path: PathBuf,
     current: Mutex<Current<T>>,
-    /// The number of the last change the file holds (`Save::write`).
-    written: Arc<Mutex<u64>>,
+    /// The file's write order, shared by its saves (`Save::write`).
+    order: Arc<Mutex<WriteOrder>>,
 }
 
 /// The value, and how many changes it has had since the file was read.
@@ -33,14 +33,23 @@ struct Current<T> {
     changes: u64,
 }
 
+/// The write order of a file's saves: the number of the change the file holds, and of the newest change whose save has been
+/// attempted, whatever its outcome.
+#[derive(Default)]
+struct WriteOrder {
+    written: u64,
+    attempted: u64,
+}
+
 /// A change made to a `JsonStore`'s value, and the file's content it leaves. [`Save::write`] puts that content in the
 /// file, on any thread: the change is in memory from the moment it is made, the file follows when the save is written.
-/// A save that a later change's save has already overtaken is not written, so the file always holds the latest change.
+/// A save that a later change's save has already been attempted for is not written, so an older content never replaces
+/// the newer one on disk; its outcome is the later save's, so a failed later save is not reported as saved.
 pub struct Save<T> {
     path: PathBuf,
     value: T,
     changes: u64,
-    written: Arc<Mutex<u64>>,
+    order: Arc<Mutex<WriteOrder>>,
 }
 
 impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
@@ -56,7 +65,8 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
             Err(e) => (T::default(), Some(quarantine(&path, e.to_string()))),
         };
         let current = Current { value, changes: 0 };
-        (JsonStore { path, current: Mutex::new(current), written: Arc::new(Mutex::new(0)) }, unreadable)
+        let order = Arc::new(Mutex::new(WriteOrder::default()));
+        (JsonStore { path, current: Mutex::new(current), order }, unreadable)
     }
 
     /// A copy of the value as it is now.
@@ -79,7 +89,7 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
             current.changes += 1;
             (current.value.clone(), current.changes)
         };
-        Save { path: self.path.clone(), value, changes, written: self.written.clone() }
+        Save { path: self.path.clone(), value, changes, order: self.order.clone() }
     }
 
     /// Change the value and write the file. The change is kept in memory even when the write fails; the error says why
@@ -93,24 +103,30 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
 }
 
 impl<T: Serialize> Save<T> {
-    /// Write the file with this change, unless a later change has been written already. The file is replaced
-    /// atomically (`write_atomically`).
+    /// Write the file with this change, unless a later change's save has been attempted already. The file is replaced
+    /// atomically (`write_atomically`). An overtaken save is not written: it is `Ok` when the later save went through,
+    /// and an error when it did not, since the file then holds neither change.
     pub fn write(self) -> io::Result<()> {
-        let mut written = self.written.lock().unwrap_or_else(PoisonError::into_inner);
-        if self.changes <= *written {
-            return Ok(());
+        let mut order = self.order.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.changes < order.attempted {
+            return if order.written >= order.attempted {
+                Ok(())
+            } else {
+                Err(io::Error::other("a later change to the file was not saved, so this one was not written either"))
+            };
         }
+        order.attempted = self.changes;
         let json = serde_json::to_vec_pretty(&self.value).map_err(io::Error::other)?;
         write_atomically(&self.path, &json)?;
-        *written = self.changes;
+        order.written = self.changes;
         Ok(())
     }
 }
 
 /// Move the unreadable file aside, so a crash or a save never leaves it half-overwritten: to `<name>.bad`, or the next
-/// free `<name>.bad.N` when an earlier one is kept there (a rename never replaces it, `pg_platform::file::keep_aside`).
+/// free `<name>.bad.N` when an earlier one is kept there (a rename never replaces it, `pg_platform::file::move_aside`).
 fn quarantine(path: &Path, error: String) -> Unreadable {
-    let kept = pg_platform::file::keep_aside(path, ".bad").map_err(|e| e.to_string());
+    let kept = pg_platform::file::move_aside(path, &[""], ".bad").map_err(|e| e.to_string());
     Unreadable { error, kept }
 }
 
@@ -142,7 +158,7 @@ mod tests {
 
     #[test]
     fn round_trip_through_the_file() {
-        let dir = scratch("round_trip");
+        let dir = scratch("round-trip");
         let path = dir.join("sample.json");
         let (store, unreadable) = JsonStore::<Sample>::open(path.clone());
         assert!(unreadable.is_none());
@@ -175,6 +191,21 @@ mod tests {
         assert_eq!(reopened.get().count, 2, "the file holds the later change");
     }
 
+    /// A later save that failed is not followed by an earlier save's content: the earlier save is not written, and says so,
+    /// so the caller keeps its failure instead of reading the older save as the file being saved.
+    #[test]
+    fn an_earlier_save_after_a_failed_later_one_is_not_written() {
+        let dir = scratch("failed-later");
+        let path = dir.join("sample.json");
+        let (store, _) = JsonStore::<Sample>::open(path.clone());
+        let first = store.change(|s| s.count = 1);
+        let second = store.change(|s| s.count = 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(second.write().is_err(), "the later save cannot write into a missing folder");
+        assert!(first.write().is_err(), "the earlier save is overtaken by the failed later one");
+        assert!(!path.exists() && !dir.exists(), "neither change reached the file");
+    }
+
     #[test]
     fn a_missing_file_gives_the_default() {
         let dir = scratch("missing");
@@ -201,7 +232,7 @@ mod tests {
     /// A second unreadable file is kept beside the first, which is not overwritten: each failure's content stays.
     #[test]
     fn a_second_unreadable_file_keeps_the_first_one_kept() {
-        let dir = scratch("corrupt_twice");
+        let dir = scratch("corrupt-twice");
         let path = dir.join("sample.json");
         for (content, kept) in [("{ first", "sample.json.bad"), ("{ second", "sample.json.bad.1")] {
             std::fs::write(&path, content).unwrap();

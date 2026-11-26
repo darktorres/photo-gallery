@@ -237,9 +237,12 @@ impl Session {
                     .and_then(|read| read.map_err(ReadError::from)),
                 Err(e) => Err(ReadError::Unopened(format!("{e:#}"))),
             };
-            // A read that the next request (or `stop`) cut short is not delivered.
-            if !matches!(&result, Err(ReadError::Catalog(pg_catalog::Error::Interrupted))) {
-                deliver(result);
+            // A read that the next request (or `stop`) cut short is not delivered. A delivery that panics is logged, and
+            // the thread goes on, so the later reads are still served.
+            if !matches!(&result, Err(ReadError::Catalog(pg_catalog::Error::Interrupted)))
+                && pg_jobs::panics::catch(AssertUnwindSafe(|| deliver(result))).is_err()
+            {
+                pg_log::error("reader", "a read's delivery panicked; the reader goes on");
             }
         });
         let key = (self.id, kind);
@@ -459,6 +462,20 @@ mod tests {
         assert_eq!(got(&deliveries).unwrap(), 2, "the newer request's limit");
         settle(&session);
         assert!(deliveries.try_recv().is_err(), "the older one is not delivered");
+        reader.stop();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A delivery that panics is caught where it runs: the reader serves the requests after it.
+    #[test]
+    fn a_panicking_delivery_does_not_stop_the_reader() {
+        let (path, dir) = catalog("reader-panicking-delivery");
+        let reader = Reader::start(path).unwrap();
+        let session = Session::new(1, reader.clone());
+        session.tree(|_| panic!("the delivery panics"));
+        let (deliver, deliveries) = channel();
+        session.failed_files(THUMBS, 10, None, move |r| deliver.send(r.map(|f| f.items.len())).unwrap());
+        assert_eq!(got(&deliveries).unwrap(), 2, "the read after the panic is delivered");
         reader.stop();
         let _ = std::fs::remove_dir_all(&dir);
     }

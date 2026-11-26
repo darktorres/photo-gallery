@@ -1,6 +1,6 @@
 //! A failure ledger as QML names it: a number (a `Notices` row's `pass`, a bit of `Notices.passes`,
-//! `Library.failedPass`, `FailedFiles.show`, `--inbox-expand`). A leaf, which the inbox (`notices`), the files list it
-//! expands (`failed_files`) and the library's status (`library`) share.
+//! the lane rows' `failedPass` role (`lane_model`), `FailedFiles.show`, `--inbox-expand`). A leaf, which the inbox
+//! (`notices`), the files list it expands (`failed_files`) and the library's status (`library`) share.
 
 use pg_model::notice::LedgerKind;
 
@@ -35,5 +35,14 @@ mod tests {
         for (i, pass) in FilePass::ALL.into_iter().enumerate() {
             assert_eq!(kind_code(Some(LedgerKind::File(pass))), i32::try_from(i).unwrap());
         }
+    }
+
+    /// The inbox names the scans' folders' code as a constant, which must be this ledger's code.
+    #[test]
+    fn the_inbox_names_the_scan_folders_code() {
+        let qml = include_str!("../qml/InboxPanel.qml");
+        let code = kind_code(Some(LedgerKind::ScanFolders));
+        let line = format!("readonly property int scanFoldersCode: {code}");
+        assert!(qml.lines().any(|l| l.trim() == line), "InboxPanel.qml does not declare `{line}`");
     }
 }

@@ -1,26 +1,15 @@
 //! The listing's policy by traces: each change, applied to a listing, gives the listing it must and the commands.
 
 use pg_client::controller::listing::{Command, Event, update};
-use pg_client::controller::{Command as Do, Controller, Event as Report, Start};
+use pg_client::controller::{Command as Do, Controller, Event as Report};
 use pg_model::ids::FileId;
-use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey, Status};
 use pg_model::rules::Merged;
-use pg_model::size::RowHeight;
 use pg_model::view::{Listing, SavedView};
 
+use super::common::{controller, folder};
+
 const OPEN: [Command; 2] = [Command::OpenList, Command::SaveSession];
-const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
-
-/// A controller at the start's row height (200) and the prefs' saved one (the same).
-fn controller(listing: Listing) -> Controller {
-    Controller::new(Start::new(listing, ROW_200, ROW_200))
-}
-
-/// A folder given as its path text, one part per `\`-separated component.
-fn folder(text: &str) -> Merged {
-    Merged::from(text.split('\\').filter(|p| !p.is_empty()).map(Name::from).collect::<Vec<_>>())
-}
 
 /// The listing the traces start from: its sort is the sort box's first choice, name ascending.
 fn start() -> Listing {
@@ -219,7 +208,7 @@ fn a_newer_reveal_replaces_the_waiting_one() {
 
 /// `ListShown`'s generation reads back from a recording made before it was reported, as none.
 #[test]
-fn a_list_shown_recorded_without_its_generation_reads_as_0() {
+fn a_list_shown_recorded_without_its_generation_reads_as_none() {
     let old: Report = serde_json::from_str(r#"{"ListShown":{"count":12}}"#).unwrap();
     assert_eq!(old, Report::ListShown { count: 12, generation: None });
 }

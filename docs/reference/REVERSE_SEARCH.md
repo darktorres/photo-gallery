@@ -95,6 +95,6 @@ the Sites list above was the wrong target for group 1:
   (`crates/yandex/src/client.rs:11-15`). Every measurement above is on `yandex.com`, so the cookie and captcha
   behaviour on `.ru` is not measured. Group 1 comes from the results page's `cbirOtherSizes`, group 2 from the
   similar JSON API with `yp`, up to 5 pages. The `yp` value is fixed at `1920x1080:1920x937`
-  (`client.rs:112`), not the browser's real screen metrics. Like the script, a failure on a page after the first
+  (`client.rs:113`), not the browser's real screen metrics. Like the script, a failure on a page after the first
   (in practice the page-1 captcha) ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
   a note; one on the upload or the other sizes is the search's error. A captcha is reported, never retried.

@@ -174,6 +174,22 @@ fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
     }
 }
 
+/// The account of a file of another layout version than this build's (`CACHE_VERSION`).
+fn layout_version_text(version: i64) -> String {
+    format!("layout version {version}, this build's is {CACHE_VERSION}")
+}
+
+/// The account of a file whose thumbnail pixels are of another output version than this build's, or of none recorded.
+fn output_version_text(output: Option<i64>) -> String {
+    match output {
+        Some(output) => format!(
+            "thumbnail output version {output}, this build's is {}",
+            pg_model::versions::THUMB_OUTPUT_VERSION
+        ),
+        None => "no thumbnail output version (made before it was recorded)".to_string(),
+    }
+}
+
 /// [`judge`]'s reads, on the file's connection `conn`: its schema compared with this build's (`expected`), its header
 /// fields and its owner.
 fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlite::Result<Found> {
@@ -200,7 +216,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
     let version = pg_dbfile::user_version(conn)?;
     // A later build's cache is refused and left alone, whichever of its versions is later (plan D9).
     if version > CACHE_VERSION {
-        return Ok(Found::Newer { why: format!("layout version {version}, this build's is {CACHE_VERSION}") });
+        return Ok(Found::Newer { why: layout_version_text(version) });
     }
     // The thumbnail pixels' version: none in an earlier layout (its `meta` may be missing too, read only when there).
     let output: Option<i64> = if schema.has_table("meta") {
@@ -208,20 +224,14 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
     } else {
         None
     };
-    if output.is_some_and(|output| output > pg_model::versions::THUMB_OUTPUT_VERSION) {
-        let output = output.unwrap_or_default();
-        return Ok(Found::Newer {
-            why: format!(
-                "thumbnail output version {output}, this build's is {}",
-                pg_model::versions::THUMB_OUTPUT_VERSION
-            ),
-        });
+    if let Some(output) = output.filter(|&output| output > pg_model::versions::THUMB_OUTPUT_VERSION) {
+        return Ok(Found::Newer { why: output_version_text(Some(output)) });
     }
     let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
     // The owner is read last: an earlier layout may have no `meta` table at all.
     let other_build = |detail: String| Some(Why { reason: StartOverReason::OtherBuild, detail });
     let difference = if version != CACHE_VERSION {
-        other_build(format!("layout version {version}, this build's is {CACHE_VERSION}"))
+        other_build(layout_version_text(version))
     } else if let Some(difference) = schema.difference(expected) {
         other_build(difference.to_string())
     } else if id != APPLICATION_ID {
@@ -230,13 +240,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
         other_build("auto_vacuum is not incremental, so its free pages can't be given back".to_string())
     } else if output != Some(pg_model::versions::THUMB_OUTPUT_VERSION) {
         // A missing or earlier output version starts over: the pixels were made by another build.
-        other_build(match output {
-            Some(output) => format!(
-                "thumbnail output version {output}, this build's is {}",
-                pg_model::versions::THUMB_OUTPUT_VERSION
-            ),
-            None => "no thumbnail output version (made before it was recorded)".to_string(),
-        })
+        other_build(output_version_text(output))
     } else {
         let owner: Option<String> =
             conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0)).optional()?;
@@ -252,7 +256,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
 /// What [`open_writer`] gives the cache: the writer's connection, why the file was started over and the path of
 /// [`Event::StartedOver`](crate::Event::StartedOver) (`None`: it was kept, or it is new), what the day's check of the totals fixed
 /// (`heal_if_due`), and the shared hold on the file (`pg_dbfile::Live`), kept for as long as the connection is.
-pub(crate) struct Writing {
+pub(crate) struct OpenedWriter {
     pub(crate) conn: Connection,
     pub(crate) started_over: Option<(Why, PathBuf)>,
     pub(crate) drift: Option<Drift>,
@@ -261,11 +265,11 @@ pub(crate) struct Writing {
 
 /// One try at the file ([`open_once`]): opened, or found damaged (the reason), with nothing of it held.
 enum Attempt {
-    Opened(Writing),
+    Opened(OpenedWriter),
     Damaged(Why),
 }
 
-/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given ([`Writing`]). A file
+/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given ([`OpenedWriter`]). A file
 /// this build can't use (of another catalog or layout) is deleted with its sidecars and made anew, keeping its cap:
 /// that needs the exclusive hold, so no other program or connection has the file open (a start over is refused
 /// otherwise, and nothing is deleted). A file that is not a database, or one SQLite finds damaged when it is judged,
@@ -279,7 +283,7 @@ pub(crate) fn open_writer(
     catalog_id: &str,
     cap_bytes: Option<i64>,
     thumbs_version: i64,
-) -> Result<Writing> {
+) -> Result<OpenedWriter> {
     let _lock = pg_dbfile::Lock::take(path)
         .map_err(|e| Error::step(format!("{}: its lock file", path.display()), e))?
         .ok_or_else(|| Error::invalid(format!("{}: another process is changing it", path.display())))?;
@@ -356,7 +360,7 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
     drop(exclusive);
     let live = hold_shared(path)?;
     let started_over = why.map(|why| (why, path.to_path_buf()));
-    Ok(Attempt::Opened(Writing { conn, started_over, drift, live }))
+    Ok(Attempt::Opened(OpenedWriter { conn, started_over, drift, live }))
 }
 
 /// The writer's connection to the judged file ([`open_file`]), and what the day's check of its totals fixed. A file

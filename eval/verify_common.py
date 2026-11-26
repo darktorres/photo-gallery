@@ -20,6 +20,10 @@ FEATURES = ("disk", "aliked", "sift")  # local features (each with its own Light
 
 DISK_RUNTIMES = ("trt", "torch")
 
+# The right decision per label; labels without one (similar_folder) aren't scored. Planted copies (plant.py) are
+# edits of their source, so they must match. verify.py scores with it, and so does the viewer's verifier tables.
+EXPECTED = {"duplicate": "match", "cross_group": "unrelated", "planted": "match"}
+
 
 @dataclass
 class Params:
@@ -107,6 +111,14 @@ def params_from(args: argparse.Namespace) -> Params:
         args.max_moved,
         args.max_interior_change,
     )
+
+
+def score(row: dict, out: dict, expected: str | None) -> None:
+    """Adds a pair's result `out` to its row, and whether its decision is `expected`. An error is never the expected
+    decision; a row with no expected decision (None) gets no `correct`."""
+    row.update(out)
+    if expected is not None:
+        row["correct"] = row["decision"] == expected
 
 
 def write_outputs(prefix: str, args, params: Params, labels: tuple, results: list[dict], seconds: float) -> None:

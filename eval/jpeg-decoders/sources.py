@@ -4,6 +4,9 @@ pinned commit, with the folder's patch (patches/<folder name>.patch) applied. Th
 win-build.cmd, is removed (tools/README.md).
 """
 
+import os
+import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -27,17 +30,43 @@ def clone(folder: Path, url: str, commit: str, submodules: bool = False) -> None
     """Fetches `commit` of `url` into `folder`, once: a folder already there is kept as it is. LF line endings are kept
     (autocrlf off, as upstream). Prints the checkout's commit and date."""
     name = folder.name
-    git = ["git", "-c", "core.autocrlf=false", "-C", str(folder)]
     if not folder.is_dir():
-        folder.mkdir(parents=True)
-        subprocess.run(["git", "init", "-q", str(folder)], check=True)
-        subprocess.run([*git, "fetch", "-q", "--depth", "1", url, commit], check=True)
-        subprocess.run([*git, "checkout", "-q", "FETCH_HEAD"], check=True)
-        if submodules:
-            subprocess.run([*git, "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"], check=True)
-        patch = HERE / "patches" / f"{name}.patch"
-        if patch.is_file():
-            subprocess.run([*git, "apply", str(patch)], check=True)
+        # The checkout is made in a staging folder and renamed into place only when it is whole: a fetch or patch that
+        # fails leaves nothing at `folder`, so the next run fetches again instead of keeping a half-made checkout.
+        staging = folder.with_name(f"{name}.partial")
+        remove_tree(staging)
+        try:
+            fetch(staging, name, url, commit, submodules)
+        except BaseException:
+            remove_tree(staging)
+            raise
+        staging.rename(folder)
+    git = ["git", "-c", "core.autocrlf=false", "-C", str(folder)]
     head = subprocess.run([*git, "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     date = subprocess.run([*git, "log", "-1", "--format=%cs"], capture_output=True, text=True, check=True).stdout.strip()
     print(f"{name:<14} {head} {date}")
+
+
+def fetch(folder: Path, name: str, url: str, commit: str, submodules: bool) -> None:
+    """Makes `folder` (a new one) the checkout of `commit` of `url`, with the patch of `name` applied if there is one."""
+    git = ["git", "-c", "core.autocrlf=false", "-C", str(folder)]
+    folder.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
+    subprocess.run([*git, "fetch", "-q", "--depth", "1", url, commit], check=True)
+    subprocess.run([*git, "checkout", "-q", "FETCH_HEAD"], check=True)
+    if submodules:
+        subprocess.run([*git, "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"], check=True)
+    patch = HERE / "patches" / f"{name}.patch"
+    if patch.is_file():
+        subprocess.run([*git, "apply", str(patch)], check=True)
+
+
+def remove_tree(folder: Path) -> None:
+    """Removes `folder` and what is in it, if there is one; git's read-only object files are made writable first."""
+
+    def writable(func, path, _exc) -> None:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    if folder.exists():
+        shutil.rmtree(folder, onerror=writable)

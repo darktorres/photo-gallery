@@ -19,6 +19,11 @@ from common import NO_SIM, WORK_DIR, ground_truth, image_list
 TARGET_RECALLS = (0.80, 0.90, 0.95, 0.98)
 
 
+def index_tensor(values: list[int]) -> torch.Tensor:
+    """An int64 CUDA tensor of indices or labels: an empty list would otherwise become float32, which can't index."""
+    return torch.tensor(values, dtype=torch.long, device="cuda")
+
+
 def knn(emb: torch.Tensor, k: int, chunk: int = 2048) -> tuple[np.ndarray, np.ndarray]:
     """Exact top-k neighbors (self excluded) by cosine similarity, on the GPU."""
     n = emb.shape[0]
@@ -33,6 +38,33 @@ def knn(emb: torch.Tensor, k: int, chunk: int = 2048) -> tuple[np.ndarray, np.nd
         sims[start : start + len(q)] = values.float().cpu().numpy()
         idx[start : start + len(q)] = indices.cpu().numpy()
     return sims, idx
+
+
+def pair_sims(
+    x: torch.Tensor, groups: torch.Tensor | None = None, floor: float | None = None, chunk: int = 2048
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(i, j, similarity) of every pair i < j of the rows of x, by cosine (x holds unit vectors).
+
+    Each block of rows is multiplied on the device and only its pairs are copied to the host, so no N x N
+    matrix is built. With `groups` (one label per row), only pairs whose labels differ are kept; with `floor`, only
+    pairs whose similarity is at least floor.
+    """
+    n = x.shape[0]
+    cols = torch.arange(n, device=x.device)
+    rows_out, cols_out, sims_out = [np.empty(0, np.int64)], [np.empty(0, np.int64)], [np.empty(0, np.float32)]
+    for start in range(0, n, chunk):
+        stop = min(start + chunk, n)
+        block = x[start:stop] @ x.T
+        mask = cols[None, :] > torch.arange(start, stop, device=x.device)[:, None]
+        if groups is not None:
+            mask &= groups[start:stop, None] != groups[None, :]
+        if floor is not None:
+            mask &= block >= floor
+        ri, cj = mask.nonzero(as_tuple=True)
+        rows_out.append((ri + start).cpu().numpy())
+        cols_out.append(cj.cpu().numpy())
+        sims_out.append(block[mask].cpu().numpy())
+    return np.concatenate(rows_out), np.concatenate(cols_out), np.concatenate(sims_out)
 
 
 def unique_pairs(sims: np.ndarray, idx: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
@@ -86,32 +118,30 @@ def main() -> None:
     negative_pool = [i for i in gt.negative_pool if ok[i]]
     unpaired_pool = [i for i in gt.unpaired_pool if ok[i]]
 
-    pa = torch.tensor([a for a, _ in positives], device="cuda")
-    pb = torch.tensor([b for _, b in positives], device="cuda")
+    pa = index_tensor([a for a, _ in positives])
+    pb = index_tensor([b for _, b in positives])
     pos_sims = (emb[pa].float() * emb[pb].float()).sum(1).cpu().numpy()
 
-    pool = emb[torch.tensor(negative_pool, device="cuda")].float()
-    neg_rows, neg_cols = np.triu_indices(len(negative_pool), k=1)
-    neg_sims = (pool @ pool.T).cpu().numpy()[neg_rows, neg_cols]
+    pool = emb[index_tensor(negative_pool)].float()
+    neg_rows, neg_cols, neg_sims = pair_sims(pool)
 
     # True negatives: pairs from two different labeled groups are different pictures.
     members = [i for g in gt.groups for i in g if ok[i]]
-    member_group = torch.tensor([gi for gi, g in enumerate(gt.groups) for i in g if ok[i]], device="cuda")
-    m = emb[torch.tensor(members, device="cuda")].float()
-    different = torch.triu(member_group[:, None] != member_group[None, :], diagonal=1)
-    cross_sims = (m @ m.T)[different].cpu().numpy()
+    member_group = index_tensor([gi for gi, g in enumerate(gt.groups) for i in g if ok[i]])
+    m = emb[index_tensor(members)].float()
+    _, _, cross_sims = pair_sims(m, groups=member_group)
 
     # Each loose dups2 file's best match among the other loose files.
-    loose = emb[torch.tensor(unpaired_pool, device="cuda")].float()
+    loose = emb[index_tensor(unpaired_pool)].float()
     loose_sims = loose @ loose.T
     loose_sims.fill_diagonal_(NO_SIM)
     best_sims, best_idx = (t.cpu().numpy() for t in loose_sims.max(dim=1))
 
     sims, idx = knn(emb, args.k)
-    pair_keys, pair_sims = unique_pairs(sims, idx, n)
+    pair_keys, pair_similarities = unique_pairs(sims, idx, n)
     positive_keys = np.array([min(a, b) * n + max(a, b) for a, b in positives], dtype=np.int64)
     outside = ~np.isin(pair_keys, positive_keys)
-    flagged_keys, flagged_sims = pair_keys[outside], pair_sims[outside]
+    flagged_keys, flagged_sims = pair_keys[outside], pair_similarities[outside]
 
     ranks = directed_ranks(positives, gt.groups, idx)
 

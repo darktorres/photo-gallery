@@ -82,9 +82,15 @@ pub(crate) fn xmp_properties<const N: usize>(
         }
     };
     while let Ok((ns, event)) = reader.read_resolved_event() {
+        let is_open = matches!(event, Event::Start(_));
         match event {
             Event::Start(e) | Event::Empty(e) => {
-                inside = which(&ns, e.local_name().as_ref());
+                let element = which(&ns, e.local_name().as_ref());
+                // Only an open element takes the text that follows it: an empty one has no end event, so its name must
+                // not reach the text of a later sibling.
+                if is_open {
+                    inside = element;
+                }
                 for attr in e.attributes().flatten() {
                     let (ans, local) = reader.resolver().resolve_attribute(attr.key);
                     if let Some(i) = which(&ans, local.as_ref())
@@ -154,6 +160,15 @@ mod tests {
     #[test]
     fn stars_of_percent_are_explorers_bands() {
         assert_eq!([0, 1, 12, 13, 37, 38, 62, 63, 87, 88, 99].map(stars_of_percent), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+    }
+
+    #[test]
+    fn text_after_an_empty_element_is_not_its_value() {
+        let packet = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:Rating/>7</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let mut buffers = ReaderBuffers::default();
+        let mut values = String::new();
+        let found = xmp_properties(packet, [(NS_XMP, "Rating")], &mut buffers, &mut values);
+        assert_eq!(found, [None]);
     }
 
     #[test]

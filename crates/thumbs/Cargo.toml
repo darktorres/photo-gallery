@@ -8,7 +8,7 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The thumbnail pass: makes the cached thumbnails of the analyzed files. Depends on the render and the thumbnail cache, not on the analysis or the writes.
+# The thumbnail pass: makes the cached thumbnails of the analyzed files. Its normal dependencies are the render and the thumbnail cache, not the analysis or the writes.
 [dependencies]
 pg-catalog = { path = "../catalog" }
 pg-jobs = { path = "../jobs" }
@@ -24,6 +24,7 @@ thiserror.workspace = true
 pg-thumbcache = { path = "../thumbcache", features = ["fault"] }
 # The catalog's test fixture (files as the scanner inserts them).
 pg-catalog = { path = "../catalog", features = ["fixture"] }
+# The analysis and the import, which the tests run before the passes (the pass itself does not depend on them).
 pg-analysis = { path = "../analysis" }
 pg-import = { path = "../import" }
 pg-scan = { path = "../scan" }

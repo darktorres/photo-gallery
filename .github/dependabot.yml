@@ -5,8 +5,9 @@
 #   - the Python packages in tools/shots/requirements.txt, and the lint tools in tools/lint (ruff, with its hashes, and
 #     markdownlint-cli, with its lockfile).
 # Minor and patch updates of a workspace come as one pull request. Not covered: the git-sourced forks in the root
-# Cargo.toml's [patch] (fork-updates.yml reports them), the ExifTool version in ci.yml, the Qt, FFmpeg and tool pins in
-# the Justfile (read by CI's pins step), and eval/ (it has no manifest).
+# Cargo.toml's [patch] (fork-updates.yml reports them), the Qt, FFmpeg, ExifTool and tool pins in the Justfile (read by
+# CI's pins step), and the two pip requirements files of eval/ (eval/requirements.txt and eval/jpeg-decoders/requirements.txt,
+# with exact pins). The Cargo workspaces under eval/ are listed above.
 version: 2
 updates:
   - package-ecosystem: github-actions

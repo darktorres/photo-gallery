@@ -20,9 +20,8 @@ TestCase {
         }, (_, i) => valueOf(i));
     }
 
-    // The files of a row: `count` consecutive files from `first`. `again` is the model's signal for a row given again:
-    // a new array with the same files.
-    function filesOf(count, first, again) {
+    // The files of a row: `count` consecutive files from `first`.
+    function filesOf(count, first) {
         return Array.from({
             length: count
         }, (_, i) => first + i);
@@ -48,7 +47,11 @@ TestCase {
             delegate: GridRow {
                 first: list.rowSpan.x
                 count: list.rowSpan.y
-                ids: tc.filesOf(list.rowSpan.y, list.rowFiles, list.rowAgain)
+                // Reading rowAgain makes the binding run again when it changes: the row is given its files again.
+                ids: {
+                    list.rowAgain;
+                    return tc.filesOf(list.rowSpan.y, list.rowFiles);
+                }
                 badges: tc.perCell(() => "")
                 ratings: tc.perCell(() => 0)
                 bordersMarked: tc.perCell(() => false)

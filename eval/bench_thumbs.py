@@ -47,7 +47,18 @@ import imagecodecs
 import numpy as np
 from PIL import AvifImagePlugin, Image, ImageDraw
 
-from common import CACHE_DIR, DATA_ROOT, LIBRARY_SIZE, WORK_DIR, exe_name, image_list, load_rgb, pg_path, vips_thumbnail
+from common import (
+    CACHE_DIR,
+    DATA_ROOT,
+    LIBRARY_SIZE,
+    WORK_DIR,
+    exe_name,
+    image_list,
+    load_rgb,
+    pg_path,
+    quarter_turn,
+    vips_thumbnail,
+)
 
 TOOLS_DIR = pg_path("PG_TOOLS_DIR", "tools")
 SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / exe_name("ssimulacra2")
@@ -71,8 +82,7 @@ def thumb_size(width: int, height: int, row: int) -> tuple[int, int]:
 
 def oriented_size(data: bytes) -> tuple[int, int]:
     with Image.open(io.BytesIO(data)) as im:
-        swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)
-        return (im.height, im.width) if swap else im.size
+        return (im.height, im.width) if quarter_turn(im) else im.size
 
 
 def resize(method: str, data: bytes, size: tuple[int, int]) -> np.ndarray:
@@ -214,18 +224,18 @@ def quality(job: tuple[str, tuple[int, ...]]) -> dict | None:
 # --- Timing pass (one process) ---
 
 
-def timed_ms(fn: Callable, *args) -> tuple:
-    """(fn(*args), milliseconds)."""
+def timed(fn: Callable, *args) -> tuple:
+    """(fn(*args), seconds): seconds throughout, as the other timers in eval/ return; the report converts to ms."""
     start = time.perf_counter()
     result = fn(*args)
-    return result, (time.perf_counter() - start) * 1000
+    return result, time.perf_counter() - start
 
 
 def timing(files: list[str], heights: tuple[int, ...]) -> dict:
     out: dict = {"resize": {}, "encode": {}, "decode": {}}
     blobs = [(DATA_ROOT / rel).read_bytes() for rel in files]
     for row in heights:
-        resize_ms: dict[str, list[float]] = {m: [] for m in RESIZE_METHODS}
+        resize_s: dict[str, list[float]] = {m: [] for m in RESIZE_METHODS}
         enc: dict[str, dict] = {c: {s: [] for s in CODECS[c][0]} for c in CODECS}
         dec: dict[str, dict] = {c: {s: [] for s in CODECS[c][0]} for c in CODECS}
         for data in blobs:
@@ -236,17 +246,17 @@ def timing(files: list[str], heights: tuple[int, ...]) -> dict:
                 print(f"skipping a file at height {row}: {e}", flush=True)
                 continue
             for m in RESIZE_METHODS:
-                resize_ms[m].append(timed_ms(resize, m, data, size)[1])
+                resize_s[m].append(timed(resize, m, data, size)[1])
             for codec, (settings, encode, decode) in CODECS.items():
                 for s in settings:
-                    blob, enc_ms = timed_ms(encode, thumb, s)
+                    blob, enc_s = timed(encode, thumb, s)
                     if codec.startswith("jpegli"):  # a process per call: use the tool's own speed report
-                        enc_ms = thumb.shape[0] * thumb.shape[1] / 1e6 / _JPEGLI_MPS[0] * 1000
-                    enc[codec][s].append(enc_ms)
-                    dec[codec][s].append(timed_ms(decode, blob)[1])
-        out["resize"][row] = {m: float(np.median(v)) for m, v in resize_ms.items()}
-        out["encode"][row] = {c: {str(s): float(np.nanmedian(v)) for s, v in d.items()} for c, d in enc.items()}
-        out["decode"][row] = {c: {str(s): float(np.median(v)) for s, v in d.items()} for c, d in dec.items()}
+                        enc_s = thumb.shape[0] * thumb.shape[1] / 1e6 / _JPEGLI_MPS[0]
+                    enc[codec][s].append(enc_s)
+                    dec[codec][s].append(timed(decode, blob)[1])
+        out["resize"][row] = {m: float(np.median(v)) * 1000 for m, v in resize_s.items()}
+        out["encode"][row] = {c: {str(s): float(np.nanmedian(v)) * 1000 for s, v in d.items()} for c, d in enc.items()}
+        out["decode"][row] = {c: {str(s): float(np.median(v)) * 1000 for s, v in d.items()} for c, d in dec.items()}
     return out
 
 
@@ -307,6 +317,8 @@ def sscd_reuse(files: list[str], heights: tuple[int, ...]) -> dict:
             except Exception as e:  # noqa: BLE001 (an unreadable original is left out of the references)
                 print(f"skipping {rel}: {e}", flush=True)
                 continue
+        if not originals:  # a chunk of unreadable originals: nothing to stack
+            continue
         ref = embed(originals)
         for row in heights:
             raw = [im.resize(thumb_size(im.width, im.height, row), LANCZOS) for im in originals]

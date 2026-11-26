@@ -3,13 +3,14 @@
 //! (the producers: `set_rating`, `queue_rotation`). The writer takes the oldest settled job with `next_write`, records
 //! the temp file it made with `record_write_temp` once the original is open for the copy (a recorded temp means the copy
 //! into the original may have started), and ends the job with `write_done` (with what the write changed in the catalog, a
-//! `WriteEffect`), `write_failed`, or `drop_gone_write`. A recorded temp is never discarded: a copy that keeps failing
-//! stays recorded, and `retry_write_copies` lets each start of the writer try it again. Each call is one transaction or one
-//! statement, so no reader sees a write both done and still queued.
+//! `WriteEffect`), `write_failed`, or `drop_gone_write`. A failure never discards a recorded temp: a copy that keeps failing
+//! stays recorded, and `retry_write_copies` lets each start of the writer try it again. `drop_gone_write` is the one
+//! exception: it removes the row of a write whose original is gone under a removal, temp included, and the temp file is
+//! left in place for the writer to name to the user. Each call is one transaction or one statement, so no reader sees a
+//! write both done and still queued.
 
 use std::rc::Rc;
 
-use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::Result;
 use rusqlite::types::{Type, Value};
@@ -18,6 +19,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::media::Kind;
+use pg_model::num::count_u64;
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
@@ -331,7 +333,8 @@ impl Catalog {
         Ok(())
     }
 
-    /// The file is no longer in the library (missing, or unlisted): the write is dropped.
+    /// The write is dropped with its row, which holds the temp's path when one is recorded: the caller leaves the temp file
+    /// in place (see the module doc). Used for a file that is gone, or whose original is gone under a removal.
     pub fn drop_gone_write(&self, job: &Job) -> Result<()> {
         let conn = &self.conn;
         conn.execute(
@@ -346,7 +349,7 @@ impl Catalog {
     /// part-written, so it is never given up. The number of rows reset.
     pub fn retry_write_copies(&self) -> Result<u64> {
         let conn = &self.conn;
-        Ok(progress_count(
+        Ok(count_u64(
             conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?,
         ))
     }

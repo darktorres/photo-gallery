@@ -52,7 +52,7 @@ pub enum Phase {
         /// The height of the thumbnails being made.
         height: ThumbHeight,
     },
-    /// The ThumbHash placeholders the thumbnails left owing (the Placeholders pass, ).
+    /// The ThumbHash placeholders the thumbnails left owing (the Placeholders pass, `pg_thumbs::placeholders`).
     Placeholders,
     /// A folder's removal from the library: its files, and their thumbnails, going from the catalog
     /// (`pg_library::removals`).

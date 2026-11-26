@@ -4,7 +4,7 @@
 
 use alloc::string::String;
 
-/// Why a request to Yandex (or the recorded session standing in for it) failed. `pg_yandex`'s error, as data.
+/// Why a request to Yandex (or the recorded session standing in for it) failed. `pg-yandex`'s error, as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestError {
     /// Yandex asked for an anti-robot check.

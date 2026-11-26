@@ -5,11 +5,9 @@ use pg_client::controller::{Command, Controller, Event as Report, Start};
 use pg_client::keys::Global;
 use pg_model::query::{Query, Sort};
 use pg_model::rules::Merged;
-use pg_model::size::RowHeight;
 use pg_model::view::Listing;
 
-/// The row height the controller starts at (200), shown and saved.
-const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
+use super::common::ROW_200;
 
 #[test]
 fn toggles_and_sets_report_only_real_changes() {

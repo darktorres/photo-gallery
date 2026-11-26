@@ -16,6 +16,7 @@ which passes the pins as arguments) and by CI's two jobs (their pins step writes
 import argparse
 import hashlib
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -56,19 +57,30 @@ def install(url: str, sha256: str, version: str, prefix: Path) -> None:
         sys.exit(f"the ExifTool archive from {url} has SHA-256 {digest}; the Justfile pins {sha256}")
     with tempfile.TemporaryDirectory() as work:
         source = unpack(archive, url, Path(work))
-        prefix.mkdir(parents=True, exist_ok=True)
         if source.name == WINDOWS_PROGRAM:
-            program, modules = prefix / "exiftool.exe", "exiftool_files"
+            program_name, modules = "exiftool.exe", "exiftool_files"
         else:
-            program, modules = prefix / "exiftool", "lib"
-        shutil.copy2(source, program)
-        program.chmod(0o755)
-        shutil.rmtree(prefix / modules, ignore_errors=True)
-        shutil.copytree(source.parent / modules, prefix / modules)
-    # The program loads its modules when it starts, so this fails when the copy is incomplete.
-    reported = subprocess.run([str(program), "-ver"], capture_output=True, text=True, check=True).stdout.strip()
-    if reported != version:
-        sys.exit(f"{program} reports ExifTool {reported}; the Justfile pins {version}")
+            program_name, modules = "exiftool", "lib"
+        # The release is staged beside the prefix and checked there. Only a program that reports the pinned version
+        # replaces the installed one, so a failed check leaves the installed program as it was.
+        prefix.parent.mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=".exiftool-stage-", dir=prefix.parent))
+        try:
+            staged = stage / program_name
+            shutil.copy2(source, staged)
+            staged.chmod(0o755)
+            shutil.copytree(source.parent / modules, stage / modules)
+            # The program loads its modules when it starts, so this fails when the copy is incomplete.
+            reported = subprocess.run([str(staged), "-ver"], capture_output=True, text=True, check=True).stdout.strip()
+            if reported != version:
+                sys.exit(f"{staged} reports ExifTool {reported}; the Justfile pins {version}")
+            prefix.mkdir(parents=True, exist_ok=True)
+            if (prefix / modules).exists():
+                shutil.rmtree(prefix / modules)
+            shutil.move(str(stage / modules), str(prefix / modules))
+            os.replace(staged, prefix / program_name)
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
     print(f"ExifTool {reported} installed in {prefix}")
 
 

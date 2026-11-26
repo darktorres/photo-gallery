@@ -1,6 +1,6 @@
 //! What the app tells the user, as data: a [`Notice`] is built
 //! by the crate that has the outcome (the job, the app, the window), stored in the catalog's inbox by its code, recorded
-//! in the log, and worded by `pg_wording` for each front end. Nothing here is English, so a notice is read in the
+//! in the log, and worded by `pg-wording` for each front end. Nothing here is English, so a notice is read in the
 //! reader's language, whichever one it was posted in; a stored notice is re-worded when the words change.
 //!
 //! Each kind is one variant: its code (permanent, the stored tag and the words' ids), its level, its source (the inbox's
@@ -8,13 +8,13 @@
 //! call that posts it (the checklist is in the module docs below). Paths of the library are [`RulePath`]s, exact, and so is
 //! a [`FileFailure`]'s path; files of the app's own (the preferences, a kept catalog) are the text the system gave.
 //!
-//! Serialised internally tagged by `kind`, kebab-case. A field added later is `#[serde(default)]`, so an older row still
-//! reads. A row of a kind this build doesn't know is [`Notice::Unknown`], which the decoder in `pg-app` makes; it is never
-//! written back.
+//! Serialised internally tagged by `kind`, with the tag's values and the variants of the enums in kebab-case. A field
+//! keeps its Rust name (`keep_error`). A field added later is `#[serde(default)]`, so an older row still reads. A row of
+//! a kind this build doesn't know is [`Notice::Unknown`], which the decoder in `pg-app` makes; it is never written back.
 //!
 //! ## Notices (`pg_model::notice`)
 //!
-//! A `Notice` is a typed value, built by the crate that has the outcome and worded by `pg_wording` for each front
+//! A `Notice` is a typed value, built by the crate that has the outcome and worded by `pg-wording` for each front
 //! end. Nothing in a notice is English, so it is read in the reader's language, and a stored one is worded again when the
 //! words change. Each kind is one variant with:
 //!
@@ -36,25 +36,26 @@
 //! removing the folder clears it) and a part, which is always a code (a scan note, an operation, a pass), never a folder:
 //! per-folder facts are the catalog's folder ledger.
 //!
-//! The stored form is JSON, internally tagged by `kind`, kebab-case; a field added later is `#[serde(default)]`.
-//! `Notice::samples()` holds one notice of each kind. Each sample's stored form is pinned in `model/src/notice/golden.jsonl`
+//! The stored form is JSON, internally tagged by `kind` (kebab-case, as the variants are); a field keeps its Rust name, and
+//! a field added later is `#[serde(default)]`.
+//! `Notice::samples()` holds one notice of each kind. Each sample's stored form is pinned in `crates/model/src/notice/golden.jsonl`
 //! (the test checks that each writes its golden line and reads back as the sample, and names the kind that differs), and
 //! the code is checked against the serde tag. The `ids!` table stays the one source of the codes: the tag is pinned by
 //! `the_code_is_the_stored_kind` and the golden test, and a derive (strum) would be a third mechanism.
 //!
 //! Text a notice carries is tidied (`notice::tidy`): control characters become spaces, and past its cap (`ERROR_CAP`, 2 KiB,
 //! for an error) it is cut at a character's edge and ends in `…`, with the mark inside the cap, so the result is never
-//! more than the cap's bytes. A path in the words is bidi-isolated (U+2068 … U+2069, `client/src/text/notice.rs`), so a
+//! more than the cap's bytes. A path in the words is bidi-isolated (U+2068 … U+2069, `crates/wording/src/notice.rs`), so a
 //! folder named in Arabic or Hebrew doesn't reorder the words around it; the bundle's own isolation stays off.
 //!
 //! ### Adding a kind
 //!
-//! 1. A variant of `Notice`, with its code in the `ids!` table, and its arms in `level`, `source` and `lifecycle`
+//! 1. A variant of `Notice`, with its code in the `ids!` table, and its arms in `level`, `source`, `lifecycle` and `root`
 //!    (exhaustive matches: it doesn't compile without them). A state names its resolver there.
 //! 2. A sample in `Notice::samples()`, its line in `notice/golden.jsonl`, and an arm in the test `ordinal`. A state's row
 //!    in `notice/resolver_table.golden`.
-//! 3. Its words: the `msg-notice-<code>-title` and `-body` entries in `wording/locales/en/text.ftl`, and its values in
-//!    `client/src/text/notice.rs` (`args`). The parity test checks the file's entries against the samples' ids.
+//! 3. Its words: the `msg-notice-<code>-title` and `-body` entries in `crates/wording/locales/en/text.ftl`, and its values in
+//!    `crates/wording/src/notice.rs` (`args`). The parity test checks the file's entries against the samples' ids.
 //! 4. The call that posts it, from the crate that has the outcome, and the call that clears it, where its resolver is.
 //!
 //! A removed kind's code moves to the `retired:` list of `ids!`. A new action is a variant of `Action`, the window's
@@ -332,7 +333,8 @@ pub enum Carried {
     Rows {
         /// How many files were copied.
         files: u64,
-        /// How many library folders were copied.
+        /// How many library folders (the catalog's `roots` rows) were copied. Not the rows of the catalog's `folders`
+        /// table, which holds the folders the files are in.
         folders: u64,
     },
     /// No rows were copied (the old catalog was not one this build can read, or the copy failed), and why. The new catalog
@@ -849,8 +851,8 @@ pub enum Notice {
         counts: Option<LedgerCounts>,
     },
     /// Files a pass couldn't read (an offline drive, a file in use), `count` of them: retried by the next pass. `drives`
-    /// names the drives those files are on, as the job's lanes know them (`E:`), when the job has more than one; empty
-    /// otherwise, and not stored (a notice kept before drives were named reads as it did).
+    /// names the drives those files are on, as the job's lanes know them (`E:`), when the job has more than one. It is
+    /// stored only when it is not empty, so a notice kept before drives were named reads as it did.
     UnreadableFiles {
         /// The pass whose files couldn't be read.
         pass: FilePass,
@@ -1219,25 +1221,34 @@ pub fn error_text(error: &impl core::fmt::Display) -> String {
 const ELLIPSIS: char = '…';
 
 /// `text` as a notice keeps it: each control character (a newline, a tab) becomes a space, so it is one line, and past
-/// `cap` bytes it is cut at a character's edge and ends in `…`, the mark within the cap: the result is never more than
-/// `cap` bytes (under the mark's 3 bytes, a cut text is the characters that fit, with no mark).
+/// `cap` bytes it is cut at a character's edge and ends in `…` ([`cut_at_edge`]).
 pub fn tidy(text: &str, cap: usize) -> String {
-    let mut out = String::with_capacity(text.len().min(cap));
-    for c in text.chars() {
-        let c = if c.is_control() { ' ' } else { c };
-        if out.len() + c.len_utf8() > cap {
-            if ELLIPSIS.len_utf8() <= cap {
-                // Room for the mark: the characters it would pass the cap with go (an empty text always has it).
-                while out.len() + ELLIPSIS.len_utf8() > cap {
-                    out.pop();
-                }
-                out.push(ELLIPSIS);
-            }
-            break;
-        }
-        out.push(c);
+    let one_line: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    cut_at_edge(&one_line, cap)
+}
+
+/// `text` cut to at most `cap` bytes, at a character's edge, ending in `…` when cut: the mark is within the cap, so the
+/// result is never more than `cap` bytes (under the mark's 3 bytes, a cut text is the characters that fit, with no mark).
+pub fn cut_at_edge(text: &str, cap: usize) -> String {
+    if text.len() <= cap {
+        return text.to_string();
     }
+    let Some(room) = cap.checked_sub(ELLIPSIS.len_utf8()) else {
+        return prefix(text, cap).to_string();
+    };
+    let mut out = prefix(text, room).to_string();
+    out.push(ELLIPSIS);
     out
+}
+
+/// The longest start of `text` of at most `bytes` bytes that ends at a character's edge.
+fn prefix(text: &str, bytes: usize) -> &str {
+    let mut end = bytes.min(text.len());
+    // 0 is an edge, so this stops.
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.get(..end).unwrap_or_default()
 }
 
 impl Notice {
@@ -1624,7 +1635,7 @@ impl Notice {
                 error: error(),
                 panicked: false,
                 file: Some(r"D:\Photos\a.jpg".into()),
-                temp: Some(r"D:\Photos\a.jpg.rating.pg-write".into()),
+                temp: Some(r"D:\Photos\.a.jpg.rating.pg-write".into()),
             },
             Notice::WriteStopped,
             Notice::WriteDropped { write: WriteKind::Rating, count: 2 },
@@ -1669,7 +1680,7 @@ impl Notice {
             Notice::CutFailed { error: error() },
             Notice::FolderRemovalUnfinished {
                 folder: sample_path(&["Photos"]),
-                temp: sample_path(&["Photos", "a.jpg.pg-write"]),
+                temp: sample_path(&["Photos", ".a.jpg.rating.pg-write"]),
             },
             Notice::ChangesUnseen { error: error() },
             Notice::CacheNotSwept { error: error() },

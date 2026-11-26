@@ -10,40 +10,6 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-OUT_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "target" / "modgraph"
-GRAPH = OUT_DIR / "graph.json"
-OUT = OUT_DIR / "graph.html"
-
-graph = json.loads(GRAPH.read_text(encoding="utf-8"))
-meta = json.loads(
-    subprocess.run(
-        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-)
-
-# Crate-level graph: normal (non-dev) edges between workspace crates.
-names = {p["name"] for p in meta["packages"]}
-crate_nodes = []
-crate_edges = []
-crate_lines = {}
-for c, data in graph["crates"].items():
-    crate_lines[c] = sum(n["lines"] for n in data["nodes"])
-for p in meta["packages"]:
-    short = p["name"].removeprefix("pg-")
-    crate_nodes.append({"id": p["name"], "label": short, "lines": crate_lines.get(short, 0)})
-    crate_edges.extend(
-        {"from": p["name"], "to": d["name"], "weight": 1} for d in p["dependencies"] if d["name"] in names and d["kind"] is None
-    )
-
-views = {"crates": {"nodes": crate_nodes, "edges": crate_edges, "cycles": []}}
-for c, data in graph["crates"].items():
-    views[c] = {"nodes": data["nodes"], "edges": data["edges"], "cycles": data["cycles"]}
-
-data_json = json.dumps(views)
 
 HTML = """<!doctype html>
 <html lang="en">
@@ -279,7 +245,12 @@ function render(key) {
 }
 
 sel.addEventListener("change", () => render(sel.value));
-window.addEventListener("resize", () => render(sel.value));
+// The layout runs its full simulation, so a resize redraws once it has settled, not on every event of the drag.
+let resizeTimer = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => render(sel.value), 150);
+});
 sel.value = "crates";
 render("crates");
 </script>
@@ -287,5 +258,44 @@ render("crates");
 </html>
 """
 
-OUT.write_text(HTML.replace("__DATA__", data_json), encoding="utf-8")
-print("wrote", OUT, "views:", ", ".join(views))
+def main() -> None:
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "target" / "modgraph"
+    graph_json = out_dir / "graph.json"
+    out = out_dir / "graph.html"
+
+    graph = json.loads(graph_json.read_text(encoding="utf-8"))
+    meta = json.loads(
+        subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+
+    # Crate-level graph: normal (non-dev) edges between workspace crates.
+    names = {p["name"] for p in meta["packages"]}
+    crate_nodes = []
+    crate_edges = []
+    crate_lines = {}
+    for c, data in graph["crates"].items():
+        crate_lines[c] = sum(n["lines"] for n in data["nodes"])
+    for p in meta["packages"]:
+        short = p["name"].removeprefix("pg-")
+        crate_nodes.append({"id": p["name"], "label": short, "lines": crate_lines.get(short, 0)})
+        crate_edges.extend(
+            {"from": p["name"], "to": d["name"], "weight": 1} for d in p["dependencies"] if d["name"] in names and d["kind"] is None
+        )
+
+    views = {"crates": {"nodes": crate_nodes, "edges": crate_edges, "cycles": []}}
+    for c, data in graph["crates"].items():
+        views[c] = {"nodes": data["nodes"], "edges": data["edges"], "cycles": data["cycles"]}
+
+    data_json = json.dumps(views)
+    out.write_text(HTML.replace("__DATA__", data_json), encoding="utf-8")
+    print("wrote", out, "views:", ", ".join(views))
+
+
+if __name__ == "__main__":
+    main()

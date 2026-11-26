@@ -8,13 +8,21 @@ pub(super) fn median2(v: &View, line: usize) -> [i32; 3] {
     let mut hists = [[0u32; 256]; 3];
     for px in v.line(line) {
         for (hist, value) in hists.iter_mut().zip(px) {
-            // A channel value (0..=255) has its bin.
-            if let Some(bin) = usize::try_from(value).ok().and_then(|v| hist.get_mut(v)) {
-                *bin += 1;
-            }
+            tally(hist, value);
         }
     }
     hists.map(|hist| hist_median2(&hist, v.positions))
+}
+
+/// Counts `value` in `hist` (value = index). A value with no bin is not counted; `true` when it was.
+pub(super) fn tally(hist: &mut [u32], value: i32) -> bool {
+    match usize::try_from(value).ok().and_then(|i| hist.get_mut(i)) {
+        Some(bin) => {
+            *bin += 1;
+            true
+        }
+        None => false,
+    }
 }
 
 /// Twice the median of `n` values counted in `hist` (value = index).

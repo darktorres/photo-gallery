@@ -20,8 +20,9 @@ From the repository root, through the Justfile:
 
 `tools/linux.py` is what those recipes run. It builds an image when it is missing, passes the versions in, and mounts
 the repository. The images are built with the versions the Justfile pins (`just_version`,
-`cargo_deny_version`, `cargo_machete_version`, `cargo_modules_version`, `cargo_fuzz_version`, `qt_version`,
-`aqtinstall_commit`) and the gungraun version in `Cargo.lock`, so each version is written once. (ruff is pinned in `tools/lint`.) Build the image by hand
+`cargo_deny_version`, `cargo_machete_version`, `cargo_modules_version`, `cargo_fuzz_version`, `sccache_version`,
+`qt_version`, `aqtinstall_commit`, `exiftool_version`, `exiftool_source_url`, `exiftool_source_sha256`) and the gungraun
+version in `Cargo.lock`, so each version is written once. (ruff is pinned in `tools/lint`.) Build the image by hand
 only through `linux-build`: without the build arguments the Dockerfile fails on purpose.
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs. The compiled
@@ -45,15 +46,16 @@ device, so masked paths under `/proc` are correct, not a failure.
 
 ## Volumes and caches
 
-- Build output (`/cargo-target`) and the registry (`/home/pg/.cargo/registry`) are Docker named volumes: `pg-cargo-target`
-  and `pg-cargo-registry`. The repository's own `target` folder is not touched. The first run compiles everything; later
-  runs reuse it. To start from nothing: `docker volume rm pg-cargo-target`.
+- Build output (`/cargo-target`), the registry (`/home/pg/.cargo/registry`) and the git checkouts (`/home/pg/.cargo/git`)
+  are Docker named volumes: `pg-cargo-target`, `pg-cargo-registry` and `pg-cargo-git`. The repository's own `target`
+  folder is not touched. The first run compiles everything; later runs reuse it. To start from nothing:
+  `docker volume rm pg-cargo-target`.
 - sccache's cache is the `pg-sccache` volume at `/sccache`. Every rustc in the container goes through it (`RUSTC_WRAPPER`),
   so a run after `docker volume rm pg-cargo-target` gets the compiled crates back from it. `SCCACHE_CACHE_SIZE` caps it at 30 GB.
 - The benches keep their target and their data in `pg-bench`. `just perf` reads the bench data from the folder
   `PG_BENCH_DATA_SOURCE` names in `.env`, mounted read-only (`docs/reference/PROFILING.md`).
 - A volume made by another user cannot be written by `pg`. The fix is to hand it to `pg` once:
-  `docker run --rm --user root --entrypoint chown -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry pg-dev -R pg:pg /cargo-target /home/pg/.cargo/registry`
+  `docker run --rm --user root --entrypoint chown -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry -v pg-cargo-git:/home/pg/.cargo/git pg-dev -R pg:pg /cargo-target /home/pg/.cargo/registry /home/pg/.cargo/git`
 - The eval's sources, builds, inputs and clone are in `pg-eval`, mounted at `/eval`. Two folders from `.env` are mounted
   when set: `PG_JPEG_SRC_DIR` (the JPEG comparison's photos, read-only) and `PG_JPEG_ENC_DIR` (the encoder comparison's work
   folder, which Windows' `gpu_encoders.py` writes into too).

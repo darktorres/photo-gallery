@@ -130,19 +130,19 @@ ModalOverlay {
                         Label {
                             text: row.time
                             textFormat: Text.PlainText
-                            color: "#888888"
+                            color: Theme.hintText
                             font.family: "monospace"
                         }
                         Label {
-                            text: row.level === 2 ? "E" : (row.level === 1 ? "W" : "I")
+                            text: row.level === 2 ? words.text("ui-log-level-error") : (row.level === 1 ? words.text("ui-log-level-warning") : words.text("ui-log-level-info"))
                             textFormat: Text.PlainText
-                            color: row.level === 2 ? Theme.invalidText : (row.level === 1 ? Theme.statusWarning : "#888888")
+                            color: row.level === 2 ? Theme.invalidText : (row.level === 1 ? Theme.statusWarning : Theme.hintText)
                             font.bold: true
                         }
                         Label {
                             text: row.target
                             textFormat: Text.PlainText
-                            color: "#aaaaaa"
+                            color: Theme.statusText
                             elide: Text.ElideRight
                             Layout.preferredWidth: 90
                         }
@@ -161,7 +161,7 @@ ModalOverlay {
                     anchors.centerIn: parent
                     visible: list.count === 0
                     text: words.text("ui-log-empty")
-                    color: "#888888"
+                    color: Theme.hintText
                 }
             }
             // The row clicked, whole: its message and its detail (a backtrace), selectable to copy.

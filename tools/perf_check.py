@@ -8,8 +8,9 @@ The catalog is still gated where its data is.
 
 --budgets (`just perf --budgets`) gates one comparison whose change moves some counts on purpose: the benches named in
 docs/perf/budgets.json (or FILE) are judged by their budget instead of the tolerance; the others keep the tolerance. It
-is for that one run (the notifications' F1 against the F0 baseline; the budgets are restated in docs/perf/budgets.json:
-`scan-walk` again <= +10% and first <= +20%, `import-flush` <= +30%, `inbox-refresh` closed <= -90% and open <= -70%).
+is for that one run (the notifications' F1 against the F0 baseline). The budgets are restated in docs/perf/budgets.json,
+which has seven entries: `scan_walk.again` <= +10%, `scan_walk.first` <= +20%, `import_flush` <= +30%,
+`pending_import` <= +2%, `inbox_refresh.closed` <= -90%, `inbox_refresh.open` <= -70% and `pending_thumbs` <= +18%.
 A bench that misses its budget fails, and is not re-baselined with --update (the two are refused together).
 """
 

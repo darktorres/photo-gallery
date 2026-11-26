@@ -1,6 +1,6 @@
 # M0 model bake-off
 
-One-time evaluation (see `docs/PLAN.md` §8, M0; results go in the matching doc under `docs/`; the index is `docs/FINDINGS.md`) to pick the near-duplicate descriptor, its
+One-time evaluation (see `docs/plans/PLAN.md` §8, M0; results go in the matching doc under `docs/eval/`) to pick the near-duplicate descriptor, its
 precision/resolution, and thresholds, measured on the ~190k-image Pinterest test set.
 Python is used only here; everything that runs at library scale is Rust.
 
@@ -43,6 +43,7 @@ $py = "$env:PG_ROOT\venv-eval\Scripts\python.exe"
 & $py evaluate.py --model sscd        # recall, thresholds, flagged pairs, CSVs
 & $py synth.py --model sscd           # robustness to crops, flips, overlays...
 & $py embed.py --model sscd_fp16 --trim   # borders cut first (pg-driver borders) -> emb_sscd_fp16_trim.npy
+& $py embed.py --model sscd_trt_fp16 --trim --draft   # the ANN bake-off's base (ann/data.py): JPEGs DCT-scaled as the Rust import does
 & $py synth.py --model sscd_fp16 --trim   # ... and its synthetic robustness (edited copies trimmed too)
 & $py check_groups.py                 # audit dups2/<NNN> folders for unrelated pictures
 & $py verify.py --model sscd_fp16     # second stage: align pairs, classify match / unrelated
@@ -73,13 +74,14 @@ each TorchScript file against a pinned SHA-256 before loading it.
 
 The same SSCD weights also run outside PyTorch (`accel.py`): `sscd_trt_fp16` / `sscd_trt_int8` (TensorRT 11
 engines), `sscd_ort_cuda_fp32` / `_fp16` (ONNX Runtime's CUDA provider) and `sscd_ort_trt10_fp16` / `_int8`
-(ONNX Runtime's TensorRT provider). They plug into every script above like the torch models. The ONNX graphs,
+(ONNX Runtime's TensorRT provider). They plug into every script above like the torch models. The int8 variants are
+runnable for comparison only: the decision (`docs/eval/MODELS.md`) is fp16, and the gallery does not use int8. The ONNX graphs,
 calibration batch and engines are built on first use under `$PG_ROOT\cache\onnx` and `$PG_ROOT\cache\trt` (also the
 verifier's DISK U-Net, `disk_fp16`, and `bench_semantic.py`'s encoders); build the
 int8 graph with `PG_WORK_DIR` on the subset, so the calibration images come from outside it. Requirements beyond
 this venv:
 
-- Only to rebuild the int8 graph (int8 is not used; its built graph and engine stay in the cache):
+- Only to rebuild the int8 graph (for the comparison runs; the built graph and engine stay in the cache):
   `$PG_ROOT\venv-quant` (its python is `PG_QUANT_PYTHON`) with NVIDIA ModelOpt (`python -m venv` it, then
   `pip install "nvidia-modelopt[onnx]"`). It pins older onnx / onnxruntime versions, hence its own venv. Removed after
   the int8 evaluation.

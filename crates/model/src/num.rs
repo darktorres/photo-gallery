@@ -16,6 +16,12 @@ pub fn index(x: u32) -> usize {
     usize::try_from(x).unwrap_or(usize::MAX)
 }
 
+/// A count held as a `usize` (of items, rows, files or pixels, counted in memory) as the `u64` the notices, the progress
+/// counters and the stored counts take. It saturates: a count past `u64`'s range is `u64::MAX`.
+pub fn count_u64(x: usize) -> u64 {
+    u64::try_from(x).unwrap_or(u64::MAX)
+}
+
 /// A count (of items, pixels, rows or lines) as an `f64`.
 #[expect(
     clippy::as_conversions,
@@ -115,6 +121,12 @@ pub fn f64_to_u64(x: f64) -> u64 {
 )]
 pub fn f64_to_usize(x: f64) -> usize {
     x as usize
+}
+
+/// A float as a count of pixels or lines, its fraction dropped: clamped to `u32`'s range (no picture's side passes it),
+/// then as a `usize`. NaN and negatives are 0.
+pub fn f64_to_pixels(x: f64) -> usize {
+    f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
 /// A float as an `i32`, its fraction dropped. It saturates at `i32`'s range, and NaN is 0.

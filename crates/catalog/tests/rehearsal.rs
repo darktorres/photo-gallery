@@ -6,8 +6,9 @@
 //!     cargo test -p pg-catalog --test rehearsal --locked -- --ignored --nocapture
 //!
 //! It prints the sizes and the times it took, and fails when a row is lost, a foreign key breaks, a sequence falls behind
-//! its table's highest id, or the upgrade's copy of the old file isn't kept. A catalog the upgrade can't migrate in place
-//! is rebuilt, and the rebuild's first difference and what it carried are printed.
+//! its table's highest id, the upgrade's copy of the old file isn't kept, or the catalog has no library folder to
+//! remove. A catalog the upgrade can't migrate in place is rebuilt, and the rebuild's first difference and what it
+//! carried are printed.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -92,7 +93,7 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() -> Res
         panic!("PG_REHEARSAL_CATALOG names the catalog to rehearse on");
     };
     let source = PathBuf::from(source);
-    let dir = pg_testkit::run_folder("rehearsal", "upgrade").unwrap();
+    let dir = pg_testkit::run_folder("scratch_catalog", "upgrade").unwrap();
     let copy = dir.join("catalog.sqlite");
     std::fs::copy(&source, &copy).unwrap();
     eprintln!("rehearsal copy: {} ({} MiB)", copy.display(), mebibytes(&copy));
@@ -176,8 +177,7 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() -> Res
     let roots = catalog.roots().unwrap();
     eprintln!("library folders: {}", roots.len());
     let Some(root) = roots.first() else {
-        eprintln!("no library folder to remove: the removal is not rehearsed");
-        return Ok(());
+        panic!("the catalog has no library folder, so the removal cannot be rehearsed");
     };
     let files_before = counts(&copy)?.into_iter().find(|(t, _)| t == "files").unwrap().1;
     let started = Instant::now();

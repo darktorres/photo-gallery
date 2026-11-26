@@ -18,10 +18,9 @@ Pane {
         id: words
     }
 
-    // How many facets filter; files in the folder, unfiltered, and those the query keeps (countFacets()).
+    // How many facets filter, and how many files the folder has unfiltered (countFacets()).
     readonly property int active: filters.active
     readonly property int total: filters.total
-    readonly property int matching: filters.matching
     // What the query keeps, in one line.
     readonly property string description: filters.description
 
@@ -59,7 +58,7 @@ Pane {
     readonly property int fieldTaken: 3
     readonly property int fieldModified: 4
     // The duplicates and review boxes, in their order (Filters.duplicatesIndex, borderMarkedIndex).
-    readonly property list<string> duplicateChoices: [words.text("ui-any"), words.text("ui-has-duplicates"), words.text("ui-no-duplicates")]
+    readonly property list<string> duplicateChoices: [words.text("ui-any"), words.text("ui-with-duplicates"), words.text("ui-without-duplicates")]
     readonly property list<string> reviewChoices: [words.text("ui-any"), words.text("ui-not-marked"), words.text("ui-marked-not-a-border")]
 
     padding: 6

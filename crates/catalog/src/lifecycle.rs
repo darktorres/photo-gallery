@@ -7,8 +7,10 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use pg_model::media::Ext;
+use pg_model::num::count_u64;
 use pg_model::rules::PathRules;
 
+use crate::core::checkpoint_truncate;
 use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
 use crate::transaction::write_transaction;
@@ -123,6 +125,24 @@ pub(crate) fn newer_mark(conn: &Connection, versions: Versions) -> Option<NewerM
     })
 }
 
+/// The stored value of the `meta` row `key`, or `None` when there is no row for it.
+fn stored_mark<T: rusqlite::types::FromSql>(conn: &Connection, key: &str) -> Result<Option<T>> {
+    match conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Write the `meta` row `key` as `value`, made when there is none.
+fn write_mark<T: rusqlite::ToSql>(conn: &Connection, key: &str, value: &T) -> Result<()> {
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![value, key],
+    )?;
+    Ok(())
+}
+
 /// Set the integer mark `key` to `current` and, when it moved, make the rows follow it: `recompute` runs in the same
 /// transaction. Checked before and again inside one immediate write transaction, as [`set_mark`] is.
 fn set_mark_i64(
@@ -131,24 +151,14 @@ fn set_mark_i64(
     current: i64,
     recompute: impl FnOnce(&Transaction) -> Result<()>,
 ) -> Result<MarkChange> {
-    let stored = |c: &Connection| -> Result<Option<i64>> {
-        match c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
-            Ok(value) => Ok(Some(value)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    };
-    let first = direction(stored(conn)?, current);
+    let first = direction(stored_mark(conn, key)?, current);
     if first == MarkChange::Same {
         return Ok(first);
     }
     let tx = write_transaction(conn)?;
-    let change = direction(stored(&tx)?, current);
+    let change = direction(stored_mark(&tx, key)?, current);
     if change != MarkChange::Same {
-        tx.execute(
-            "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            rusqlite::params![current, key],
-        )?;
+        write_mark(&tx, key, &current)?;
         recompute(&tx)?;
     }
     tx.commit()?;
@@ -185,22 +195,12 @@ where
     T: rusqlite::types::FromSql + rusqlite::ToSql + PartialEq,
 {
     // A mark that is not there (a catalog from before it existed) is another value: it is set, and the rows follow.
-    let stored = |c: &Connection| -> Result<Option<T>> {
-        match c.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)) {
-            Ok(value) => Ok(Some(value)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    };
-    if stored(conn)?.as_ref() == Some(current) {
+    if stored_mark::<T>(conn, key)?.as_ref() == Some(current) {
         return Ok(());
     }
     let tx = write_transaction(conn)?;
-    if stored(&tx)?.as_ref() != Some(current) {
-        tx.execute(
-            "INSERT INTO meta(key, value) VALUES (?2, ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            rusqlite::params![current, key],
-        )?;
+    if stored_mark::<T>(&tx, key)?.as_ref() != Some(current) {
+        write_mark(&tx, key, current)?;
         recompute(&tx)?;
     }
     Ok(tx.commit()?)
@@ -321,7 +321,7 @@ pub(crate) fn merge_folder(tx: &Transaction<'_>, keep: i64, drop: i64) -> Result
         rusqlite::params![keep, drop],
     )?;
     tx.execute("DELETE FROM folders WHERE id = ?1", [drop])?;
-    Ok(u64::try_from(moved).unwrap_or(u64::MAX))
+    Ok(count_u64(moved))
 }
 
 /// The folder ledger's keys (`folder_failures.path_key`) follow the folders' paths, the same way the folders' do: one
@@ -373,10 +373,13 @@ const MIGRATION_ROOM: u64 = 2;
 /// The free space a `VACUUM` needs, in multiples of the file's size: it writes the whole new file through the WAL.
 const VACUUM_ROOM: u64 = 1;
 
-/// Whether `free` bytes leave room for `times` the catalog file's `len`; an unknown free space (`None`) goes ahead, as a
-/// write that then fails fails as any other does.
-fn has_room(len: u64, free: Option<u64>, times: u64) -> bool {
-    free.is_none_or(|free| free >= len.saturating_mul(times))
+/// Whether `free` bytes leave room for `times` the catalog file's `len`. An unknown size or free space (`None`) goes
+/// ahead, as a write that then fails fails as any other does: a size that can't be read is not a file of zero bytes.
+fn has_room(len: Option<u64>, free: Option<u64>, times: u64) -> bool {
+    match (len, free) {
+        (Some(len), Some(free)) => free >= len.saturating_mul(times),
+        _ => true,
+    }
 }
 
 /// The folder whose volume holds the catalog file at `path`.
@@ -384,36 +387,44 @@ fn folder_of(path: &Path) -> &Path {
     path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."))
 }
 
-/// The catalog file's size and the free space of its volume (`None` when it can't be read).
-fn size_and_free(path: &Path) -> (u64, Option<u64>) {
-    let len = std::fs::metadata(path).map_or(0, |m| m.len());
-    (len, pg_platform::volume::space(folder_of(path)).map(|s| s.free))
+/// The catalog file's size (`None` when its metadata can't be read).
+fn file_len(path: &Path) -> Option<u64> {
+    std::fs::metadata(path).ok().map(|m| m.len())
+}
+
+/// The free bytes of the volume holding the catalog file at `path` (`None` when they can't be read).
+fn volume_free(path: &Path) -> Option<u64> {
+    pg_platform::volume::space(folder_of(path)).map(|s| s.free)
 }
 
 /// Refuse a migration of the catalog at `path` when its volume has no room for it ([`MIGRATION_ROOM`]): before the
 /// copy aside, so the catalog is left as it is, and the error says how much is needed and where. `free_space`, when
 /// given, reports the volume's free bytes in its place (a test's room).
 pub(crate) fn ensure_room_to_migrate(path: &Path, free_space: Option<&FreeSpace<'_>>) -> Result<()> {
-    let (len, free) = match free_space {
-        None => size_and_free(path),
-        Some(space) => (size_and_free(path).0, space(folder_of(path))),
+    let len = file_len(path);
+    let free = match free_space {
+        None => volume_free(path),
+        Some(space) => space(folder_of(path)),
     };
     if has_room(len, free, MIGRATION_ROOM) {
         return Ok(());
     }
+    // Refused only with both known, so these are the values that refused it.
+    let (Some(len), Some(free)) = (len, free) else { return Ok(()) };
     let mb = |bytes: u64| bytes.div_ceil(1_000_000);
     Err(Error::MigrationRoom {
         path: path.display().to_string(),
         needed: mb(len.saturating_mul(MIGRATION_ROOM)),
-        free: mb(free.unwrap_or(0)),
+        free: mb(free),
     })
 }
 
 /// What the warnings of a `VACUUM` that didn't run say about its retry.
 const RETRY_AT_START: &str = "it is tried again at the next start";
 
-/// The `VACUUM` a migration left owed (`meta.vacuum_owed`, schema version 13's), after its commit: the WAL is merged
-/// first, the file is rewritten without the dropped columns' pages, and the WAL is merged again, then the mark is
+/// The `VACUUM` left owed (`meta.vacuum_owed`, set when a file is made without incremental auto-vacuum or a rebuild
+/// fills it), after its commit: the WAL is merged first, the file is rewritten without the dropped columns' pages, and
+/// the WAL is merged again, then the mark is
 /// cleared. Not run without room for it ([`VACUUM_ROOM`]), and a `VACUUM` that fails (busy, the disk filled) fails
 /// nothing: the catalog is whole either way, so it is logged and the mark kept, for the next start. `path` is `None`
 /// for an in-memory catalog.
@@ -427,8 +438,7 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
         return Ok(());
     }
     if let Some(path) = path {
-        let (len, free) = size_and_free(path);
-        if !has_room(len, free, VACUUM_ROOM) {
+        if !has_room(file_len(path), volume_free(path), VACUUM_ROOM) {
             pg_log::warn(
                 "catalog",
                 &format!("catalog {}: no room to compact it after its migration; {RETRY_AT_START}", path.display()),
@@ -437,9 +447,13 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
         }
     }
     // Incremental auto-vacuum: set first, a `VACUUM` is what makes it take effect on a file that has pages.
-    match conn.execute_batch(
-        "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
-    ) {
+    let compacted = (|| -> Result<()> {
+        conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+        checkpoint_truncate(conn)?;
+        conn.execute_batch("VACUUM;")?;
+        checkpoint_truncate(conn)
+    })();
+    match compacted {
         Ok(()) => {
             conn.execute("UPDATE meta SET value = 0 WHERE key = 'vacuum_owed'", [])?;
             Ok(())
@@ -456,7 +470,7 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
 }
 
 /// Mark missing the present files whose extension this build doesn't hold (`media::Ext::of`; a build that held more
-/// recorded them): the number marked. The scan records only the extensions it holds, so they never come back, and
+/// recorded them). The scan records only the extensions it holds, so they never come back, and
 /// every read of the catalog (the grid, an entry, the tree, the facets, the status) leaves them out as it leaves out
 /// any missing file, where one such row would fail the grid's list. A queued write on one is dropped as any write on
 /// a missing file is. At `Catalog::prepare`, and only when `meta.held_exts` is another build's set: like
@@ -736,11 +750,12 @@ mod room_tests {
 
     #[test]
     fn room_is_a_multiple_of_the_file_and_unknown_room_goes_ahead() {
-        assert!(has_room(100, Some(200), 2));
-        assert!(!has_room(100, Some(199), 2));
-        assert!(has_room(100, None, 2), "an unknown free space goes ahead");
-        assert!(has_room(0, Some(0), 2), "a new file needs nothing");
-        assert!(!has_room(u64::MAX, Some(u64::MAX - 1), 1));
+        assert!(has_room(Some(100), Some(200), 2));
+        assert!(!has_room(Some(100), Some(199), 2));
+        assert!(has_room(Some(100), None, 2), "an unknown free space goes ahead");
+        assert!(has_room(None, Some(0), 2), "a file whose size can't be read goes ahead, not as a file of zero bytes");
+        assert!(has_room(Some(0), Some(0), 2), "a new file needs nothing");
+        assert!(!has_room(Some(u64::MAX), Some(u64::MAX - 1), 1));
     }
 }
 
@@ -845,16 +860,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `pairs_again` merges the WAL it writes into the file, so the pass that follows does not merge it: the `-wal`
-    /// is empty once it returns.
+    /// `pairs_again` merges the WAL into the file, the writes made before it included, so the pass that follows does not
+    /// merge it: the `-wal` holds them before the call (so the check is not met by an absent or empty log) and is empty
+    /// once it returns.
     #[test]
     fn pairs_again_merges_its_wal_into_the_file() {
         let dir = run_folder(SCRATCH, "pairs-again-wal").unwrap();
         let path = dir.join("catalog.sqlite");
         let mut c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        assert!(c.wal_bytes().unwrap() > 0, "the writes are in the WAL");
         c.pairs_again().unwrap();
-        let wal = std::fs::metadata(dir.join("catalog.sqlite-wal")).map(|m| m.len()).unwrap_or(0);
-        assert_eq!(wal, 0, "the WAL `pairs_again` wrote is still in the -wal file");
+        assert_eq!(c.wal_bytes().unwrap(), 0, "the WAL is still in the -wal file after `pairs_again`");
         drop(c);
         let _ = std::fs::remove_dir_all(&dir);
     }

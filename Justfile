@@ -37,9 +37,15 @@ default:
 # The pinned FFmpeg (the two values above) is downloaded once, checked against its SHA-256, and unpacked to .deps/ffmpeg.
 # A build there at another pin (its .pin file) is replaced when the pin changes.
 
-# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup_ffmpeg.py), unless that pin is already there.
+# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup_ffmpeg.py), unless that pin is already there. Windows only.
+[windows]
 setup:
     {{ py }} tools/setup_ffmpeg.py --url {{ ffmpeg_url }} --sha256 {{ ffmpeg_sha256 }} --destination .deps/ffmpeg
+
+# Off Windows there is nothing to fetch: FFmpeg's development packages come from the system (pkg-config, crates/video/build.rs).
+[unix]
+setup:
+    @echo "Nothing to fetch on this OS: FFmpeg comes from the system's development packages."
 
 # The Python tools' own tests (tools/test_*.py, stdlib unittest).
 test-tools:
@@ -91,7 +97,7 @@ fmt:
     {{ py }} tools/format_qml.py
 
 # The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);
-# cargo-deny and cargo-machete are pinned here, and CI's install step names the same two.
+# cargo-deny, cargo-machete and cargo-modules are pinned here, and CI's install step names the same three.
 cargo_deny_version := "0.21.0"
 cargo_machete_version := "0.10.1"
 

@@ -154,7 +154,7 @@ Item {
         font.pixelSize: 12
         font.bold: true
         font.strikeout: cell.bordersMarked
-        color: cell.bordersMarked ? "#a0a0a0" : "#ff4ad8"
+        color: cell.bordersMarked ? Theme.borderMarkedTint : Theme.borderTint
         padding: 1
         leftPadding: 4
         rightPadding: 4

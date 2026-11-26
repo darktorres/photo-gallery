@@ -1,6 +1,6 @@
 //! The cache's size limit and its constants: the cap a new cache gets (the cap as a value is `pg_model::cache::ThumbCap`),
-//! the cache's path, the timing constants of the writer and of the daily check, and the cache's layout version. A leaf:
-//! the schema and the writer read these.
+//! the timing constants of the writer and of the daily check, and the cache's layout version. A leaf: the schema and the
+//! writer read these.
 
 use std::path::Path;
 use std::time::Duration;

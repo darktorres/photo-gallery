@@ -11,8 +11,9 @@ use pg_platform::file::beside;
 use rusqlite::Connection;
 
 use crate::convert::{Source, table_columns};
+use crate::core::checkpoint_truncate;
 use crate::error::{Error, Result};
-use crate::schema::{Hooks, SETTINGS, SchemaSet, Step, bring_to, version_in};
+use crate::schema::{Hooks, SchemaSet, Step, apply_settings, bring_to, version_in};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
 /// Where the replacement for the catalog at `path` is made before it takes the name ([`rebuild`]).
@@ -34,7 +35,7 @@ pub(crate) fn back_up(conn: &Connection, path: &Path, version: i64) -> Result<()
     if backup.exists() {
         return Ok(());
     }
-    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+    checkpoint_truncate(conn)?;
     let partial = beside(&backup, ".partial");
     std::fs::copy(db_file(path)?, &partial)
         .and_then(|_| std::fs::rename(&partial, &backup))
@@ -54,7 +55,7 @@ pub(crate) fn rebuild(
 ) -> Result<Rebuilt> {
     let source = if readable {
         // The changes still in the old file's `-wal` are checkpointed into it, so the copy reads all of them.
-        old.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        checkpoint_truncate(&old)?;
         // Paths stored under other rules don't read as paths under these, so none of them is carried; the reason
         // says why, for the note.
         match crate::lifecycle::rules_mismatch(&old, rules) {
@@ -110,7 +111,7 @@ fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Op
         .map_err(|e| Error::step(format!("catalog {}: making its replacement", path.display()), e))?;
     // An empty file takes incremental auto-vacuum at once; a catalog made here is then compacted in place, never as a whole.
     conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
-    conn.execute_batch(SETTINGS)?;
+    apply_settings(&conn)?;
     // The copy and the migrations are one-off work over whole tables: the small cache `Catalog::prepare` uses for them.
     conn.pragma_update(None, "cache_size", -PREPARE_CACHE_KIB)?;
     bring_to(&conn, set, rules, version_in(set)?, &Hooks::none()).map_err(|e| {
@@ -133,7 +134,7 @@ fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Op
         }
         None => (0, 0),
     };
-    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+    checkpoint_truncate(&conn)?;
     conn.close().map_err(|(_, e)| e)?;
     Ok(counts)
 }
@@ -188,8 +189,9 @@ pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
 
 /// Copies the rows of the catalog at `old` into `conn`, a new catalog made from the schema: each table of [`CARRIED`],
 /// by column name (a column the old file lacks takes its default), with its ids kept. The `meta` rows the new catalog
-/// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
-/// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
+/// seeds are overwritten with the old values, except `path_rules` (this build's), `vacuum_owed` (the new file's own, as
+/// its creation set it) and `key_version` (made again below); a key the old file has and the new one doesn't is not
+/// copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
 /// would rewrite the copied rows' `pending` and `seq`, and are made again from their own text after it. All of it is one
 /// transaction: a failure copies nothing, and the old file is not changed. `rules` are the rules the old file's paths
 /// were stored under (the caller has checked they are this build's). Then every `Rust` step of the migrations runs, in

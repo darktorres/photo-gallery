@@ -27,8 +27,9 @@
 //! the cap.
 //!
 //! Each run starts with a `session` record whose detail is the build and the data folder. A record is appended as it
-//! comes, in one write, by a file opened and closed for it, so a reader or a second instance sees every line, and a
-//! panic's write needs no lock (one `write_all` of one line on an append handle is one append). Before the log has its
+//! comes, in one write, by a file opened and closed for it, so a reader or a second instance sees every line, and the
+//! lines of this process are in the order of their numbers. A panic's write needs no lock (one `write_all` of one line on
+//! an append handle is one append), so a panic's line can come out of that order. Before the log has its
 //! file, and when the file can't take a record, the record goes to stderr too.
 //!
 //! **Rotation never sleeps.** Past 5 MiB (`FILE_CAP`) the file is rotated to `.1`, `.1` to `.2`, the oldest dropped:
@@ -72,8 +73,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use file::{FILE_CAP, FILES, LogFile};
-use pg_model::notice::Level;
+pub use file::{FILE_CAP, FILES, LogFile, read_all};
+use pg_model::notice::{Level, cut_at_edge};
 pub use record::{DETAIL_CAP, MESSAGE_CAP, Record, parse};
 
 /// The most records, and bytes of their texts, kept in memory.
@@ -166,7 +167,7 @@ impl Feed {
 /// A log: its file once set, the records in memory, and the subscribers.
 struct Logger {
     file: OnceLock<LogFile>,
-    /// Serialises the writes to the file.
+    /// Serialises the numbering and the writes to the file, so the file's lines are in the order of their numbers.
     writing: Mutex<()>,
     /// The records in memory and the subscribers: taken only through [`RingGuard`].
     ring: Mutex<Ring>,
@@ -285,8 +286,8 @@ impl Logger {
             local: local_time(),
             level,
             target: target.to_string(),
-            message: record::capped(message, MESSAGE_CAP),
-            detail: detail.map(|d| record::capped(d, DETAIL_CAP)),
+            message: cut_at_edge(message, MESSAGE_CAP),
+            detail: detail.map(|d| cut_at_edge(d, DETAIL_CAP)),
             pid: self.pid,
             session: self.session,
             seq: 0,
@@ -295,11 +296,10 @@ impl Logger {
     }
 
     fn log(&self, level: Level, target: &str, message: &str, detail: Option<&str>) {
+        // Held from the numbering to the append: the file's lines come in the order of their numbers.
+        let _writing = lock(&self.writing);
         let record = self.keep(self.make(level, target, message, detail));
-        let written = {
-            let _writing = lock(&self.writing);
-            self.file.get().map(|file| file.append(&record.line()))
-        };
+        let written = self.file.get().map(|file| file.append(&record.line()));
         if !matches!(written, Some(Ok(()))) {
             fallback(&record);
         }
@@ -363,10 +363,11 @@ impl Logger {
     }
 }
 
-/// A record the file didn't take, on stderr: a terminal still shows it.
-#[expect(clippy::print_stderr, reason = "the fallback: a record the log can't take still reaches a terminal")]
+/// A record the file didn't take, on stderr: a terminal still shows it. A stderr that can't be written to (a closed pipe) is
+/// not a reason to panic: the record is kept in memory all the same, and the write's error is dropped.
 fn fallback(record: &Record) {
-    eprint!("{}", record.plain());
+    use std::io::Write;
+    let _ = std::io::stderr().write_all(record.plain().as_bytes());
 }
 
 #[cfg(test)]
@@ -454,6 +455,9 @@ mod tests {
         assert!(records.iter().all(|r| r.t_ms.is_some()));
         let seqs: std::collections::BTreeSet<u64> = records.iter().map(|r| r.seq).collect();
         assert_eq!(seqs.len(), records.len());
+        // The file holds the lines in the order of their numbers, whichever threads wrote them.
+        let in_file: Vec<u64> = records.iter().map(|r| r.seq).collect();
+        assert!(in_file.windows(2).all(|w| w[0] < w[1]), "the file's order is the numbers' order");
     }
 
     #[test]

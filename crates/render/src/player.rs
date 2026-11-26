@@ -89,7 +89,7 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
                     return;
                 }
                 sink.present(frame.width, frame.height, &frame.rgba);
-                due = (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now());
+                due = next_due(due, frame);
             }
             continue;
         }
@@ -102,8 +102,7 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
             }
             sink.present(frame.width, frame.height, &frame.rgba);
             shown = true;
-            // Late (a slow decode, a busy machine): carry on from now rather than rushing to catch up.
-            due = (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now());
+            due = next_due(due, &frame);
             if kept_bytes + frame.rgba.len() > FRAME_BUDGET {
                 kept = None;
             }
@@ -116,6 +115,12 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
             return;
         }
     }
+}
+
+/// When the frame after the one shown at `due` is due: its delay on from `due`, or from now when that is already past (a
+/// slow decode, a busy machine), so the playback carries on from now rather than rushing to catch up.
+fn next_due(due: Instant, frame: &Frame) -> Instant {
+    (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now())
 }
 
 /// Waits for `due`, and while paused; false once stopped. After a pause the next frame is due at once.

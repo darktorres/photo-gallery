@@ -85,7 +85,7 @@ pub fn require_tool(tool: &str, exe: impl AsRef<OsStr>, version_arg: &str) -> bo
         eprintln!("PG_REQUIRE_TOOLS: {text} is not on or off, so the tests skip instead of failing");
     }
     assert!(required != crate::env::Parsed::On, "{tool} not found, and PG_REQUIRE_TOOLS is set");
-    eprintln!("{tool} not found: skipped");
+    skip(&format!("{tool} not found"));
     false
 }
 
@@ -143,9 +143,11 @@ pub fn run_folder_on_system_temp(prefix: &str) -> io::Result<PathBuf> {
     run_in(&system_temp(), prefix)
 }
 
-/// The error for a folder that can't be made or claimed: it names the folder, and how to choose another.
+/// The error for a folder that can't be made or claimed: it names the folder. When `PG_TEST_DIR` is set, the folder is
+/// under it, and the error says how to choose another.
 fn in_folder(base: &Path, err: io::Error) -> io::Error {
-    io::Error::new(err.kind(), format!("the test folder {} ({err}): PG_TEST_DIR names another folder", base.display()))
+    let hint = if crate::env::read(crate::env::Var::TestDir).is_some() { ": PG_TEST_DIR names another folder" } else { "" };
+    io::Error::new(err.kind(), format!("the test folder {} ({err}){hint}", base.display()))
 }
 
 fn run_in(base: &Path, prefix: &str) -> io::Result<PathBuf> {

@@ -229,17 +229,18 @@ impl qobject::GalleryModel {
         }
         self.as_mut().rust_mut().thumb_height = Some(height);
         let rows = self.as_mut().rust_mut().grid.touch_all();
-        let roles = row_change_roles(true, false);
-        for row in 0..rows {
-            let index = self.index(qt_int(row), 0, &QModelIndex::default());
-            self.as_mut().data_changed(&index, &index, &QList::from(roles.as_slice()));
-        }
+        self.signal_values_changed(0..rows);
     }
 
     /// Items changed (rated, turned, marked) without changing shape: their rows are signalled once, with their new
     /// version (its values, `row_change_roles`).
     pub(super) fn items_changed(mut self: Pin<&mut Self>, items: &[usize]) {
         let rows = self.as_mut().rust_mut().grid.touch(items);
+        self.signal_values_changed(rows);
+    }
+
+    /// Signals each of these rows as changed in its values (`row_change_roles`, the count last).
+    fn signal_values_changed(mut self: Pin<&mut Self>, rows: impl IntoIterator<Item = usize>) {
         let roles = row_change_roles(true, false);
         for row in rows {
             let index = self.index(qt_int(row), 0, &QModelIndex::default());
@@ -274,6 +275,9 @@ impl qobject::GalleryModel {
             if generation != this.details_generation {
                 return;
             }
+            if this.details_pending.get() == Some(file) {
+                this.details_pending.set(None);
+            }
             this.details.retain(|(id, _)| *id != file);
             this.details.insert(0, (file, details));
             this.details.truncate(2);
@@ -282,7 +286,7 @@ impl qobject::GalleryModel {
         self.as_mut().refresh_viewed();
     }
 
-    /// The status bar's selection text and the bordered count, the values the views used to call for.
+    /// The status bar's selection text and the bordered count, the values the views call for.
     pub(super) fn refresh_derived(mut self: Pin<&mut Self>) {
         let selection = if self.current >= 0 {
             let rating = self.rating(self.current);

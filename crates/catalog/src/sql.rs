@@ -69,7 +69,7 @@ macro_rules! thumbs_not_failed {
         concat!(
             "NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = ",
             $file,
-            ".id AND x.pass = 'thumbs' AND x.size = ",
+            ".id AND x.pass = 'thumbs' AND x.retry = 0 AND x.size = ",
             $file,
             ".size AND x.mtime = ",
             $file,

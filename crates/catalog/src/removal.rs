@@ -1,6 +1,6 @@
 //! Removing a folder from the library for good: its files go from the catalog, with their analyses, ratings and queued
-//! writes, and its folders, and the walks' rows under it. A folder that is missing (an offline drive, a folder a walk no
-//! longer sees) is not removed: its files stay, marked missing, as before.
+//! writes, and its folders, and the walks' rows under it. The removal does not check that the folder is on disk: an
+//! offline folder, or one a walk no longer sees, is removed like any other.
 //!
 //! The removal runs in steps, each idempotent, and the marker `root_removals` says it is not finished:
 //!
@@ -25,14 +25,14 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::ids::{FileId, RootId};
+use pg_model::num::count_u64;
 use pg_model::removal::{Begun, Volumes};
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::convert::progress_count;
-use crate::core::Catalog;
+use crate::core::{Catalog, checkpoint_truncate};
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
-use crate::types::{WRITE_BATCH, roots_on};
+use crate::types::{WRITE_BATCH, roots_on, stored_path};
 
 /// What a drive of the removals did: the files deleted, the files kept for an unfinished write, and whether the drive
 /// was stopped before the end (the removal goes on at the next drive).
@@ -85,7 +85,7 @@ impl Catalog {
         let stored: Option<Vec<u8>> =
             tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
         let Some(bytes) = stored else { return Ok(Begun::NotFound) };
-        let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored library path has a NUL" })?;
+        let path = stored_path(rules, &bytes)?;
         if !rules.same(&path, expected) {
             return Ok(Begun::Changed);
         }
@@ -107,9 +107,13 @@ impl Catalog {
     }
 
     /// Step B: hides the files under `path`, in batches. Idempotent: a batch that is hidden already changes nothing, so
-    /// the resume of a removal can run it again. Returns the files hidden by this call.
+    /// the resume of a removal can run it again. Each batch checks the folder's marker in its own transaction, as the
+    /// drive does: once the removal has finished, been discarded, or been overtaken by a library folder over it, nothing
+    /// more is hidden. Returns the files hidden by this call.
     pub fn hide_pages(&self, path: &RulePath) -> Result<u64> {
-        let folders = folder_ids_under(&self.conn, self.rules, path)?;
+        let rules = self.rules;
+        let bytes = rules.join(path);
+        let folders = folder_ids_under(&self.conn, rules, path)?;
         let ids: Vec<i64> = {
             let mut stmt = self.conn.prepare("SELECT id FROM files WHERE missing = 0 AND folder_id IN rarray(?1)")?;
             let rows = stmt.query_map([Rc::new(values(&folders))], |r| r.get(0))?;
@@ -118,10 +122,14 @@ impl Catalog {
         let mut hidden: u64 = 0;
         for batch in ids.chunks(WRITE_BATCH) {
             let tx = write_transaction(&self.conn)?;
+            if batch_skipped(&tx, rules, path, &bytes)? {
+                tx.commit()?;
+                break;
+            }
             {
                 let mut hide = tx.prepare_cached("UPDATE files SET missing = 1 WHERE id = ?1 AND missing = 0")?;
                 for &id in batch {
-                    hidden += progress_count(hide.execute([id])?);
+                    hidden += count_u64(hide.execute([id])?);
                 }
             }
             tx.commit()?;
@@ -137,6 +145,23 @@ impl Catalog {
     pub fn drive_removals(&self, before_page: &mut dyn FnMut(&[i64]) -> bool) -> Result<Driven> {
         let mut driven = Driven::default();
         for marker in self.removal_markers()? {
+            if !drive_one(self, &marker.path, before_page, &mut driven)? {
+                driven.stopped = true;
+                break;
+            }
+        }
+        Ok(driven)
+    }
+
+    /// [`Catalog::drive_removals`] for the one marker at `path`: the other removals are left as they are, and their
+    /// markers stay for their own drives.
+    pub(crate) fn drive_removal(
+        &self,
+        path: &RulePath,
+        before_page: &mut dyn FnMut(&[i64]) -> bool,
+    ) -> Result<Driven> {
+        let mut driven = Driven::default();
+        for marker in self.removal_markers()?.into_iter().filter(|m| self.rules.same(&m.path, path)) {
             if !drive_one(self, &marker.path, before_page, &mut driven)? {
                 driven.stopped = true;
                 break;
@@ -190,7 +215,7 @@ impl Catalog {
             .collect::<rusqlite::Result<_>>()?;
         let mut markers = Vec::with_capacity(rows.len());
         for (bytes, deferred) in rows {
-            let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a removal's folder has a NUL" })?;
+            let path = stored_path(rules, &bytes)?;
             markers.push(Marker { path, deferred });
         }
         Ok(markers)
@@ -223,7 +248,7 @@ impl Catalog {
             )
             .optional()?;
         let Some(folder) = folder else { return Ok(false) };
-        let folder = self.rules.parse_bytes(&folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
+        let folder = stored_path(self.rules, &folder)?;
         Ok(self.removal_markers()?.iter().any(|m| self.rules.is_under(&folder, &m.path)))
     }
 
@@ -252,7 +277,7 @@ impl Catalog {
         let rows = tx.execute("DELETE FROM files WHERE folder_id IN rarray(?1)", [Rc::new(values(&folders))])?;
         finish_folders(&tx, rules, path, &folders)?;
         tx.commit()?;
-        Ok(Some(Discarded { rows: progress_count(rows), temps }))
+        Ok(Some(Discarded { rows: count_u64(rows), temps }))
     }
 
     /// Gives the free pages of the catalog file back to the file system (step E). Only with incremental auto-vacuum,
@@ -273,9 +298,10 @@ impl Catalog {
             }
             free = now;
         }
-        let busy: i64 = self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
-        if busy != 0 {
-            self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)")?;
+        // A merge that a reader's pages kept from finishing is left to a PASSIVE checkpoint, not reported.
+        match checkpoint_truncate(&self.conn) {
+            Err(Error::WalNotMerged { .. }) => self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)")?,
+            other => other?,
         }
         Ok(())
     }
@@ -302,23 +328,25 @@ fn drive_one(
         if ids.is_empty() {
             break;
         }
+        // A batch the checks skip is not shown to `before_page`, so it forgets only the thumbnails of files it deletes.
+        let tx = write_transaction(&catalog.conn)?;
+        let skipped = batch_skipped(&tx, rules, path, &bytes)?;
+        tx.commit()?;
+        if skipped {
+            return Ok(true);
+        }
         if !before_page(&ids) {
             return Ok(false);
         }
         let tx = write_transaction(&catalog.conn)?;
-        if !marker_present(&tx, &bytes)? {
-            // Finished or discarded by another drive: nothing is left to do here.
-            return Ok(true);
-        }
-        if overlapping_root(&tx, rules, path)?.is_some() {
-            tx.execute("DELETE FROM root_removals WHERE path = ?1", [&bytes])?;
+        if batch_skipped(&tx, rules, path, &bytes)? {
             tx.commit()?;
             return Ok(true);
         }
         let deleted =
             tx.prepare_cached(DELETE_FILES)?.execute(params![Rc::new(values(&ids)), Rc::new(values(&folders))])?;
         tx.commit()?;
-        driven.files += progress_count(deleted);
+        driven.files += count_u64(deleted);
     }
     // Step D: the folders that hold no file, the walks under the folder, and the marker, once nothing is kept.
     let tx = write_transaction(&catalog.conn)?;
@@ -329,7 +357,7 @@ fn drive_one(
         tx.query_row("SELECT count(*) FROM files WHERE folder_id IN rarray(?1)", [Rc::new(values(&folders))], |r| {
             r.get(0)
         })?;
-    driven.deferred = kept;
+    driven.deferred += kept;
     if kept == 0 {
         finish_folders(&tx, rules, path, &folders)?;
     } else {
@@ -357,7 +385,7 @@ pub(crate) fn folder_ids_under_by_scan(conn: &Connection, rules: PathRules, path
     let mut ids = Vec::new();
     for row in rows {
         let (id, bytes) = row?;
-        let folder = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
+        let folder = stored_path(rules, &bytes)?;
         if rules.is_under(&folder, path) {
             ids.push(id);
         }
@@ -373,7 +401,7 @@ pub(crate) fn marker_paths(conn: &Connection, rules: PathRules) -> Result<Vec<Ru
         .collect::<rusqlite::Result<_>>()?;
     let mut paths = Vec::with_capacity(rows.len());
     for bytes in &rows {
-        paths.push(rules.parse_bytes(bytes).ok_or(Error::Stored { what: "a removal's folder has a NUL" })?);
+        paths.push(stored_path(rules, bytes)?);
     }
     Ok(paths)
 }
@@ -394,6 +422,19 @@ fn overlapping_root(conn: &Transaction<'_>, rules: PathRules, path: &RulePath) -
     Ok(roots_on(conn, rules)?.into_iter().map(|r| r.path).find(|r| overlaps(rules, r, path)))
 }
 
+/// Whether a batch of the removal of `path` is skipped, with nothing deleted: its marker is gone (finished or discarded by
+/// another drive), or a library folder overlaps it, which drops the marker (an older build added the folder meanwhile).
+fn batch_skipped(tx: &Transaction<'_>, rules: PathRules, path: &RulePath, bytes: &[u8]) -> Result<bool> {
+    if !marker_present(tx, bytes)? {
+        return Ok(true);
+    }
+    if overlapping_root(tx, rules, path)?.is_some() {
+        tx.execute("DELETE FROM root_removals WHERE path = ?1", [bytes])?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 fn marker_present(conn: &Connection, bytes: &[u8]) -> Result<bool> {
     let count: i64 = conn.query_row("SELECT count(*) FROM root_removals WHERE path = ?1", [bytes], |r| r.get(0))?;
     Ok(count > 0)
@@ -406,7 +447,7 @@ fn release_leases(tx: &Transaction<'_>, rules: PathRules, path: &RulePath) -> Re
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     for (id, walked) in leases {
-        let walked = rules.parse_bytes(&walked).ok_or(Error::Stored { what: "a scan lease's folder has a NUL" })?;
+        let walked = stored_path(rules, &walked)?;
         if rules.is_under(&walked, path) {
             tx.execute("DELETE FROM scan_leases WHERE id = ?1", [id])?;
         }
@@ -422,7 +463,7 @@ fn finish_folders(tx: &Transaction<'_>, rules: PathRules, path: &RulePath, folde
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     for (id, walked) in scans {
-        let walked = rules.parse_bytes(&walked).ok_or(Error::Stored { what: "a scan's folder has a NUL" })?;
+        let walked = stored_path(rules, &walked)?;
         if rules.is_under(&walked, path) {
             tx.execute("DELETE FROM scans WHERE id = ?1", [id])?;
         }

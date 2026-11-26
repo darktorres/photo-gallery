@@ -1,8 +1,8 @@
 //! Panics in the app. A GUI program has no console, so the default hook's message goes nowhere: a panic on the
 //! UI thread or in an image provider (where it aborts: it can't unwind into Qt) closes the window without a word.
-//! The hook records the message and a backtrace in the log (`pg_log::panic`, `gallery.log` in the data folder, with
-//! `gallery.json`). A panic that ends the process also shows a box with where the log is. A panic that the background
-//! work catches is only logged: its caller reports it, and the app goes on.
+//! The hook records the message and a backtrace in the log (`pg_log::panic`, `gallery.log` in the data folder). A panic
+//! that ends the process also shows a box with where the log is. A panic that the background work catches is only
+//! logged: its caller reports it, and the app goes on.
 //!
 //! Crashes that aren't panics (an access violation in Qt or libjpeg-turbo) still end without a trace: that needs
 //! a minidump writer, which isn't here yet.

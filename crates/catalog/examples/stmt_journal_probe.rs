@@ -5,7 +5,8 @@
 //! turns SQLite's memory statistics off before any connection opens.
 //!
 //! Each variant makes a fresh catalog (`Catalog::prepare`, so the schema and its triggers are the app's), opens it raw
-//! with the catalog's connection settings, adds the rows the writes need (two scans rows, 80 folders), changes the
+//! with the catalog's connection settings except the page cache (256 MiB here, the catalog's 8 MiB) and the automatic
+//! checkpoint, which stays on here (the catalog turns it off), then adds the rows the writes need (two scans rows, 80 folders), changes the
 //! schema or the settings as the variant says, then writes 4,000 files in one `BEGIN IMMEDIATE` transaction as
 //! `pg_scan::write_batch` does: with `ScanWriter`'s statements prepared and held, and its `known` lookup before each
 //! write. The rows are those of the scan probe's library (`folder-NN/IMG_NN_MMMM.jpg` under `/bench-lib`), in their
@@ -125,12 +126,12 @@ enum Removed {
     AddedPart(usize),
     /// `files_added`, and this index.
     AddedAndIndex(&'static str),
-    /// `files_added` as it was up to migration 16, installed: a fresh catalog no longer has it.
+    /// The `files_added` trigger, installed (a fresh catalog has none).
     Kept,
 }
 
-/// `files_added` as it was up to migration 16 (its macros expanded). The variants that keep, split or drop it install
-/// it first, so they measure what they measured before the trigger was removed.
+/// The `files_added` trigger's SQL, with its macros expanded. The variants that keep, split or drop it install it first,
+/// so each one measures the work with the trigger in place.
 const FILES_ADDED: &str = "CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
     UPDATE meta SET value = value + 1 WHERE key = 'seq';
     UPDATE files SET pending = NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
@@ -284,12 +285,12 @@ fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> 
     lookaside(&conn)?;
     let start = Instant::now();
     timed_part(&conn, &ctx, variant.action)?;
-    let micros = start.elapsed().as_micros();
+    let millis = start.elapsed().as_millis();
     let [hit, size, full, used] = lookaside(&conn)?;
     let rows: i64 = conn.query_row("SELECT count(*) FROM files", [], |r| r.get(0))?;
     writeln!(
         std::io::stdout(),
-        "{}\t{}\t{rows} rows\t{micros} us\tlookaside hits {hit}, misses for size {size}, misses with slots full {full}, \
+        "{}\t{}\t{rows} rows\t{millis} ms\tlookaside hits {hit}, misses for size {size}, misses with slots full {full}, \
          slots used at most {used}",
         variant.key,
         variant.about

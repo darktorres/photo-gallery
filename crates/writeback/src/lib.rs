@@ -63,7 +63,7 @@ pub use error::{Error, Result};
 use error::{copy_started_temp, io_kind};
 
 pub use file::{discard_temps, temp_of};
-use file::{stat, sync, unchanged, write_into};
+use file::{stat, sync, write_into};
 pub use inplace::{ReplaceError, replace};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
@@ -81,7 +81,7 @@ pub struct WriteStatus {
     /// The file `error` is about, when it is a job's.
     pub error_file: Option<FileId>,
     /// Queued writes dropped so far because their file left the library (marked missing, or no longer listed).
-    pub dropped: usize,
+    pub dropped: u64,
     /// The kind of the latest of them.
     pub last_dropped: Option<WriteKind>,
     /// The latest thumbnail that couldn't follow a rewritten file (the cache busy or closing), which the app words.
@@ -89,7 +89,7 @@ pub struct WriteStatus {
 }
 
 /// The English words of a write error, for the command line and the queue's `error` column; the app words it through
-/// `pg_wording`. (`WriteError` itself holds the facts, in the model.)
+/// `pg-wording`. (`WriteError` itself holds the facts, in the model.)
 pub fn write_error_words(error: &WriteError) -> String {
     match error {
         WriteError::Failed(cause) => cause.to_string(),
@@ -673,9 +673,8 @@ impl Inner {
         Ok(())
     }
 
-    /// The original opened for the copy, denying other writers (`pg_platform::file::open_for_copy`), once it is
-    /// checked to be as it was read (`before`) and the temp is synced to disk: the new content must be durable before
-    /// the original is overwritten from it.
+    /// The original opened for the copy, denying other writers, once it is checked to be as it was read (`before`) and
+    /// the temp is synced to disk: the new content must be durable before the original is overwritten from it.
     fn open_for_copy(
         native: &NativePath,
         temp: &Path,
@@ -683,10 +682,7 @@ impl Inner {
         shown_temp: &str,
         before: (u64, i64),
     ) -> Result<File> {
-        let file = pg_platform::file::open_for_copy(native)
-            .map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
-        let now = pg_platform::file::stat_of(&file).map_err(|e| Error::io(format!("reading {shown}"), e))?;
-        unchanged(shown, before, now)?;
+        let file = inplace::open_unchanged(native, shown, before)?;
         sync(temp).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
         Ok(file)
     }
@@ -723,8 +719,7 @@ impl Inner {
         let temp_path = disk_path(rules, temp);
         match std::fs::read(&temp_path) {
             Ok(data) => {
-                let file = pg_platform::file::open_for_copy(native)
-                    .map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
+                let file = inplace::open_original(native, shown)?;
                 write_into(file, &data)?;
             }
             // A recorded temp is deleted only once the write is recorded, so a missing one was deleted after its copy

@@ -12,13 +12,9 @@ from collections import defaultdict
 from pathlib import Path
 
 from compiler_graph import normal_pg_deps
+from testcut import split
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def split(text):
-    m = re.search(r"^#\[cfg\(test\)\]", text, flags=re.MULTILINE)
-    return (text[: m.start()], text[m.start() :]) if m else (text, "")
 
 
 def strip(text):
@@ -38,29 +34,34 @@ def names(text, ident):
     return found
 
 
-rows = []
-for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
-    data = tomllib.loads(manifest.read_text(encoding="utf-8"))
-    me = data["package"]["name"]
-    deps = normal_pg_deps(data)
-    files = list((manifest.parent / "src").rglob("*.rs"))
-    for dep in deps:
-        ident = dep.replace("-", "_")
-        prod, test = defaultdict(set), defaultdict(set)
-        for f in files:
-            p, t = split(f.read_text(encoding="utf-8", errors="replace"))
-            pn, tn = names(strip(p), ident), names(strip(t), ident)
-            rel = f.relative_to(manifest.parent / "src").as_posix()
-            if pn:
-                prod[rel] |= pn
-            if tn:
-                test[rel] |= tn
-        all_prod = set().union(*prod.values()) if prod else set()
-        rows.append((me, dep, all_prod, sorted(prod), bool(test)))
+def main() -> None:
+    rows = []
+    for manifest in sorted(ROOT.glob("crates/*/Cargo.toml")):
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        me = data["package"]["name"]
+        deps = normal_pg_deps(data)
+        files = list((manifest.parent / "src").rglob("*.rs"))
+        for dep in deps:
+            ident = dep.replace("-", "_")
+            prod, test = defaultdict(set), defaultdict(set)
+            for f in files:
+                p, t = split(f.read_text(encoding="utf-8", errors="replace"))
+                pn, tn = names(strip(p), ident), names(strip(t), ident)
+                rel = f.relative_to(manifest.parent / "src").as_posix()
+                if pn:
+                    prod[rel] |= pn
+                if tn:
+                    test[rel] |= tn
+            all_prod = set().union(*prod.values()) if prod else set()
+            rows.append((me, dep, all_prod, sorted(prod), bool(test)))
 
-for me, dep, items, files, has_test in rows:
-    flag = "" if items else ("  <-- ONLY TESTS" if has_test else "  <-- NO PATH USE (macro/derive/build?)")
-    print(f"{me} -> {dep}: {len(items)} names in {len(files)} files{flag}")
-    print("    " + ", ".join(sorted(items))[:600])
-    if len(files) <= 3:
-        print("    files: " + ", ".join(files))
+    for me, dep, items, files, has_test in rows:
+        flag = "" if items else ("  <-- ONLY TESTS" if has_test else "  <-- NO PATH USE (macro/derive/build?)")
+        print(f"{me} -> {dep}: {len(items)} names in {len(files)} files{flag}")
+        print("    " + ", ".join(sorted(items))[:600])
+        if len(files) <= 3:
+            print("    files: " + ", ".join(files))
+
+
+if __name__ == "__main__":
+    main()

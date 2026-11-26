@@ -271,26 +271,25 @@ pub struct WriteRow {
 
 /// The file's write row (it must be in the queue: an error otherwise).
 pub fn write_row(c: &Catalog, id: FileId) -> Result<WriteRow> {
-    let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) =
-        c.conn.query_row("SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1", [id.get()], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })?;
-    let temp = temp
-        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or(Error::Invalid("a temp path that doesn't parse".into())))
-        .transpose()?;
-    Ok(WriteRow { attempts, temp, error })
+    write_row_on(c, "SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1", [id.get()])
 }
 
 /// The file's write row of `kind` (`rating` or `rotation`), for a file with both queued (it must be in the queue: an
 /// error otherwise).
 pub fn write_row_of(c: &Catalog, id: FileId, kind: &str) -> Result<WriteRow> {
-    let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) = c.conn.query_row(
+    write_row_on(
+        c,
         "SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1 AND kind = ?2",
         params![id.get(), kind],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )?;
+    )
+}
+
+/// The one write row `sql` selects (its columns: attempts, temp, error), read and its temp path parsed.
+fn write_row_on(c: &Catalog, sql: &str, params: impl rusqlite::Params) -> Result<WriteRow> {
+    let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) =
+        c.conn.query_row(sql, params, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let temp = temp
-        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or(Error::Invalid("a temp path that doesn't parse".into())))
+        .map(|bytes| crate::types::stored_path(c.rules(), &bytes))
         .transpose()?;
     Ok(WriteRow { attempts, temp, error })
 }

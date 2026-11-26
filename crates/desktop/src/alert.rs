@@ -1,4 +1,4 @@
-//! The error box the app shows, from any thread (it runs its own message loop). The one place that gives the window's
+//! The error box the app shows, from any thread (it runs its own message loop). The one place that gives the error box's
 //! title: `fatal` in the root and the panic hook (`panic_log`) both show their messages through it.
 
 /// Shows `message` in an error box titled with the app's name.

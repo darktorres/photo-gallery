@@ -198,12 +198,12 @@ module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI run
 - `model` and `container` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone, `dbfile`
   on `platform` alone, and `log` on `model` and `platform`. `wording` depends on `client` and `model`.
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
-  `client`, `log`, `model`, `platform`, `render`, `trace` and `wording`; it does not depend on `catalog`, `library`, `jobs`,
+  `client`, `log`, `model`, `perf`, `platform`, `render`, `trace` and `wording`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods, and through
   `pg-model` for the plain data they hand out (the moved types live there), and `app` does not depend on it. `dev` is the developer's driver beside it, and `gallery` depends on
-  `desktop` only.
+  `desktop` and `platform` only.
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
-  `catalog`, `query`, `dbfile`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
+  `catalog`, `query`, `dbfile` and `thumbcache`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
   `codec` (the test fixtures included, and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
 
 ## Where the old paths went
@@ -379,7 +379,7 @@ console window opens when it starts from Explorer. PowerShell doesn't wait for a
   fails in the first pass that decodes it (the Thumbs or Placeholders pass, or the Hashes pass).
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
-  in the cache, so the app and the driver keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
+  in the cache, so the app and the driver keep to the same one: a twentieth of its drive (1 to 50 GiB) for a new cache, changed by
   the app's `PG_THUMB_CAP_GIB` (the Library panel sets it too), and shown in the Library panel. The background job (or `pg-driver run --passes thumbs`) fills it at BelowNormal CPU
   priority for the grid's current height, evicting only other heights, and starts over when the size changes.
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
@@ -390,7 +390,7 @@ console window opens when it starts from Explorer. PowerShell doesn't wait for a
     (docs/reference/START_PROFILE.md "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
     the app and `pg-driver` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
-    down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
+    down in slices of 256 MiB, one transaction each, so the other process never waits long for the file.
   - Its layout version is 1. Before the first release a layout change edits the schema in place (no version is bumped
     then: `crates/model/src/versions.rs`), and the cache is
     never migrated: it holds derived data only. A file of another version, layout or catalog is started over (its
@@ -523,9 +523,9 @@ made while a list was on its way is kept. Startup times are in docs/reference/ST
   off into a folder of your choice, as `<folder>\<library folder name>\<path inside it>`, with the original's
   modification time, in the background (`pg_crop`). The originals are never written: a folder whose copies
   would land in the library is refused, and a file changed since its borders were found is skipped. JPEGs are
-  cropped losslessly; their left and top cuts move inward to the 8 or 16 px block grid. PNG, BMP, GIF and WebP
-  are cropped exactly and re-encoded losslessly with every other chunk kept (a lossy WebP comes out lossless,
-  larger), TIFF re-encoded with its metadata copied by ExifTool.
+  cropped losslessly; their left and top cuts move inward to the 8 or 16 px block grid. PNG, uncompressed BMP,
+  GIF and WebP are cropped exactly and re-encoded losslessly with every other chunk kept (a lossy WebP comes out lossless,
+  larger). A compressed BMP and a TIFF are cropped exactly and re-encoded, with their metadata copied by ExifTool.
 - Test hooks (for checking the UI without a screen; see `TestHooks.qml`): `--size=<px> --select=<n> --view=<n>
   --viewer-keys=LBNHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
   --borders=1 --library=1 --save-view=1 --find-similar=<path> --yandex-preview=<n> --add-folder=<path> --save-crops=<folder>

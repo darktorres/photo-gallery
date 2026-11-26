@@ -43,6 +43,9 @@ ModalOverlay {
     // The row to open when the panel opens, or when it appears (the status bar's "N failed": Main finds the pass's
     // ledger; -1: none).
     property int expandRow: -1
+    // The ledger code of the scans' folders (`ledgers::kind_code` on Rust's `LedgerKind::ScanFolders`, which the ledgers'
+    // test pins to this value): its entry lists folders, not files.
+    readonly property int scanFoldersCode: 3
 
     // The entry at `row` is to be copied, dismissed or retried; every entry shown is to be dismissed.
     signal copyRequested(int row)
@@ -132,6 +135,8 @@ ModalOverlay {
                 Layout.fillHeight: true
                 clip: true
                 model: panel.notices
+                // An entry to expand that was past the list's end is expanded once the list has it.
+                onCountChanged: panel.expand()
                 // The selection is the panel's (`selected`), not the view's current row.
                 currentIndex: -1
                 // The keys go to the list when the panel opens (ModalOverlay is a focus scope).
@@ -224,21 +229,21 @@ ModalOverlay {
                         // Not counted (-1: a ledger's counts while the inbox isn't viewed) shows nothing.
                         Label {
                             visible: row.count > 1
-                            text: "×" + row.count
+                            text: "×" + words.count(row.count)
                             textFormat: Text.PlainText
-                            color: "#aaaaaa"
+                            color: Theme.statusText
                         }
                         Label {
                             text: row.source
                             textFormat: Text.PlainText
-                            color: "#aaaaaa"
+                            color: Theme.statusText
                             Layout.preferredWidth: 120
                             elide: Text.ElideRight
                         }
                         Label {
                             text: Qt.formatDateTime(new Date(row.updated * 1000), "yyyy-MM-dd hh:mm")
                             textFormat: Text.PlainText
-                            color: "#888888"
+                            color: Theme.hintText
                         }
                     }
                     TapHandler {
@@ -253,7 +258,7 @@ ModalOverlay {
                     anchors.centerIn: parent
                     visible: list.count === 0
                     text: words.text("ui-inbox-empty")
-                    color: "#888888"
+                    color: Theme.hintText
                 }
             }
             // The selected row's details, selectable; a ledger's, what it lists.
@@ -278,7 +283,7 @@ ModalOverlay {
                 Label {
                     text: panel.selectedText
                     textFormat: Text.PlainText
-                    color: "#aaaaaa"
+                    color: Theme.statusText
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
@@ -288,7 +293,7 @@ ModalOverlay {
                     visible: panel.failedLoading
                     text: words.text("ui-loading")
                     textFormat: Text.PlainText
-                    color: "#888888"
+                    color: Theme.hintText
                 }
                 Label {
                     objectName: "inboxFilesError"
@@ -316,8 +321,8 @@ ModalOverlay {
                         height: visible ? implicitHeight + 4 : 0
                         text: section
                         textFormat: Text.PlainText
+                        color: Theme.statusText
                         font.bold: true
-                        color: "#aaaaaa"
                     }
                     delegate: Item {
                         id: file
@@ -349,7 +354,7 @@ ModalOverlay {
                                 Label {
                                     text: file.isFolder ? file.reason + ": " + file.error : file.error
                                     textFormat: Text.PlainText
-                                    color: "#aaaaaa"
+                                    color: Theme.statusText
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
@@ -370,10 +375,10 @@ ModalOverlay {
                 }
                 Label {
                     visible: panel.failedTotal > files.count && !panel.failedLoading
-                    // The scans' folders (pass 3), or a pass's files.
-                    text: panel.selectedPass === 3 ? words.phrase("ui-inbox-more-folders", 0, "" + panel.failedTotal, "" + files.count) : words.phrase("ui-inbox-more", 0, "" + panel.failedTotal, "" + files.count)
+                    // The scans' folders, or a pass's files.
+                    text: panel.selectedPass === panel.scanFoldersCode ? words.phrase("ui-inbox-more-folders", 0, words.count(panel.failedTotal), words.count(files.count)) : words.phrase("ui-inbox-more", 0, words.count(panel.failedTotal), words.count(files.count))
                     textFormat: Text.PlainText
-                    color: "#888888"
+                    color: Theme.hintText
                 }
             }
             RowLayout {

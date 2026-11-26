@@ -30,7 +30,7 @@ fn main() -> Result<(), String> {
         println!("cargo:rerun-if-env-changed={var}");
     }
 
-    // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that: a fork with local changes, so qmlcachegen sees the module as Qt's CMake build lays it out
+    // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is built from a fork with local changes (pinned in the root Cargo.toml), so qmlcachegen sees the module as Qt's CMake build lays it out
     let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("pg.gallery")
             // The models' base class (QAbstractListModel) is declared there: without it in the qmldir, the QML

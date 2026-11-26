@@ -112,6 +112,74 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(data), {viewer.pair_key(A, B): "different"})
 
+    def test_a_bulk_save_sets_and_clears_marks(self) -> None:
+        status, _ = self.request("POST", "/api/marks/bulk", {"run": RUN, "marks": [[A, B, "same"]]})
+        self.assertEqual(status, 200)
+        status, data = self.request("GET", f"/api/marks?run={RUN}")
+        self.assertEqual(json.loads(data), {viewer.pair_key(A, B): "same"})
+        status, _ = self.request("POST", "/api/marks/bulk", {"run": RUN, "marks": [[B, A, None]]})
+        self.assertEqual(status, 200)
+        status, data = self.request("GET", f"/api/marks?run={RUN}")
+        self.assertEqual(json.loads(data), {})
+
+    def test_a_bulk_save_with_a_bad_mark_answers_400_and_saves_nothing(self) -> None:
+        status, _ = self.request("POST", "/api/marks/bulk", {"run": RUN, "marks": [[A, B, "same"], [A, B, "maybe"]]})
+        self.assertEqual(status, 400)
+        status, data = self.request("GET", f"/api/marks?run={RUN}")
+        self.assertEqual(json.loads(data), {})
+
+    def test_a_corrupt_marks_file_answers_500_and_is_left_alone(self) -> None:
+        path = viewer.run_dir(RUN) / viewer.PAIR_MARKS
+        path.write_text("{not json", encoding="utf-8")
+        try:
+            status, _ = self.request("GET", f"/api/marks?run={RUN}")
+            self.assertEqual(status, 500)
+            status, _ = self.request("POST", "/api/marks", {"run": RUN, "a": A, "b": B, "mark": "same"})
+            self.assertEqual(status, 500)
+            self.assertEqual(path.read_text(encoding="utf-8"), "{not json")
+        finally:
+            path.unlink()
+
+    def test_a_body_longer_than_the_limit_answers_400_without_being_read(self) -> None:
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Content-Type": "application/json", "Content-Length": str(viewer.MAX_BODY + 1)}
+        conn.request("POST", "/api/marks", body=b"{}", headers=headers)
+        res = conn.getresponse()
+        self.assertEqual(res.status, 400)
+        conn.close()
+
+    def test_a_request_without_a_length_answers_400(self) -> None:
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.putrequest("POST", "/api/marks", skip_accept_encoding=True)
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", "")  # not a number: no length to read
+        conn.endheaders()
+        res = conn.getresponse()
+        self.assertEqual(res.status, 400)
+        conn.close()
+
+
+class BenchmarksTest(unittest.TestCase):
+    def setUp(self) -> None:
+        make_run()
+        self.run = viewer.run_dir(RUN)
+        self.written: list[Path] = []
+
+    def tearDown(self) -> None:
+        for path in self.written:
+            path.unlink(missing_ok=True)
+
+    def write(self, name: str, pairs_set: str) -> None:
+        path = self.run / name
+        path.write_text(json.dumps({"pairs_set": pairs_set, "confusion": {}}), encoding="utf-8")
+        self.written.append(path)
+
+    def test_the_synthetic_edit_results_are_not_listed_as_a_pair_set(self) -> None:
+        self.write("verify_synth_sscd_fp16.json", "synth")
+        self.write("verify_sscd_fp16.json", "labeled")
+        verify = viewer.benchmarks(RUN)["verify"]
+        self.assertEqual(sorted(verify), ["verify_sscd_fp16"])
+
 
 if __name__ == "__main__":
     unittest.main()

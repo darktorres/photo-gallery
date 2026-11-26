@@ -166,12 +166,12 @@ TestCase {
         v.index = 0;
         const fit = findChild(v, "fitImage");
         verify(fit !== null);
-        const opened = "image://full/k/fit/" + Math.round(800 * v.dpr) + "x" + Math.round(600 * v.dpr);
+        const opened = "image://full/k/" + Math.round(800 * v.dpr) + "x" + Math.round(600 * v.dpr);
         compare(String(fit.source), opened);
         v.width = 500;
         v.width = 400;
         compare(String(fit.source), opened);
-        const resized = "image://full/k/fit/" + Math.round(400 * v.dpr) + "x" + Math.round(600 * v.dpr);
+        const resized = "image://full/k/" + Math.round(400 * v.dpr) + "x" + Math.round(600 * v.dpr);
         tryVerify(() => String(fit.source) === resized, 2000);
         galleryStub.viewedKey = "";
     }
@@ -188,7 +188,7 @@ TestCase {
         v.dpr = dpr;
         tryCompare(v, "fitW", Math.round(800 * dpr), 2000);
         tryCompare(v, "fitH", Math.round(600 * dpr), 2000);
-        const resized = "image://full/k/fit/" + Math.round(800 * dpr) + "x" + Math.round(600 * dpr);
+        const resized = "image://full/k/" + Math.round(800 * dpr) + "x" + Math.round(600 * dpr);
         tryVerify(() => String(fit.source) === resized, 2000);
         galleryStub.viewedKey = "";
     }

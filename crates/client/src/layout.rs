@@ -73,9 +73,10 @@ pub struct Frame {
 
 /// The frames of a justified grid of items of these aspect ratios in `width` (the rows of `justify_into`, stacked from
 /// the top left, `spacing` apart both ways), and the grid's height. One frame per item, in order; the items of a row
-/// are as wide as their clamped aspect at the row's height. With no width or no height, every frame is empty.
+/// are as wide as their clamped aspect at the row's height. With no width or no height (or one that is not a number),
+/// every frame is empty.
 pub fn frames(aspects: &[f64], width: f64, target_height: f64, spacing: f64) -> (Vec<Frame>, f64) {
-    if width <= 0.0 || target_height <= 0.0 {
+    if width.is_nan() || target_height.is_nan() || width <= 0.0 || target_height <= 0.0 {
         return (vec![Frame::default(); aspects.len()], 0.0);
     }
     let mut rows = Vec::new();
@@ -422,6 +423,9 @@ mod tests {
         assert_eq!(frames(&[], width, target, spacing), (Vec::new(), 0.0));
         assert_eq!(frames(&aspects, 0.0, target, spacing), (vec![Frame::default(); aspects.len()], 0.0));
         assert_eq!(frames(&aspects, width, 0.0, spacing), (vec![Frame::default(); aspects.len()], 0.0));
+        // Not a number is no width either, as `plan` reads it.
+        assert_eq!(frames(&aspects, f64::NAN, target, spacing), (vec![Frame::default(); aspects.len()], 0.0));
+        assert_eq!(frames(&aspects, width, f64::NAN, spacing), (vec![Frame::default(); aspects.len()], 0.0));
     }
 
     #[test]

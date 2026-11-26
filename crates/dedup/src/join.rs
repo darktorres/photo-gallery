@@ -346,7 +346,7 @@ pub const FEW_BASE: usize = 221;
 pub const FEW_PER_THREAD: usize = 38;
 /// The stored entries a thread of the few-owed path takes at a time (its unit of work, and of control).
 const FEW_BLOCK: usize = 4096;
-/// What a join may be tuned by (the gates of docs/plans/PAIRING_PASS_PLAN.md set the defaults, which `None` takes).
+/// What a join may be tuned by (the gates of docs/reference/PROFILING.md, "The settings again", set the defaults, which `None` takes).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tuning {
     /// The most query entries (`QUERY_ORIENTATIONS` per owed picture) the few-owed path takes. `None`: [`FEW_BASE`]

@@ -49,7 +49,7 @@ The rescan has its own costs:
 
 ## Method
 
-- **Scan probe:** `crates/library/examples/scan_probe.rs` (untracked). It adds a folder to a fresh catalog file, then
+- **Scan probe:** `crates/library/examples/scan_probe.rs` (tracked). It adds a folder to a fresh catalog file, then
   times one `pg_scan::scan` call. With `PG_PROBE_AGAIN` set, it scans once untimed first, so the timed scan is a
   rescan.
 - **Libraries:**
@@ -61,12 +61,12 @@ The rescan has its own costs:
 - **Callgrind:** release builds in the `pg-tools` container, `valgrind --tool=callgrind` (3.26), Ir only.
   `--toggle-collect` restricts costs to one function, but call counts stay whole-process. So every count below is
   from a whole-process run, or labelled as such.
-- **SQLite:** 3.54.1, bundled by the workspace's rusqlite fork (`darktorres/rusqlite`, rev `9d76035`). Line numbers
+- **SQLite:** 3.54.1, bundled by the workspace's rusqlite fork (`darktorres/rusqlite`, rev `ac441bb`, the pin in the root Cargo.toml). Line numbers
   are in that checkout's `libsqlite3-sys/sqlite3/sqlite3.c`.
 - **First experiments:** the scan probe with two temporary switches (since reverted). One was
   `sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0)`; the other dropped `files_added` after `Catalog::prepare`, through a
   python3 child process.
-- **Variant probe:** `crates/catalog/examples/stmt_journal_probe.rs` (untracked).
+- **Variant probe:** `crates/catalog/examples/stmt_journal_probe.rs` (tracked).
   - Each variant makes a fresh catalog with `Catalog::prepare` (the app's schema and triggers) and opens it raw with
     the catalog's connection settings.
   - It then writes the 4,000 files in one `BEGIN IMMEDIATE` transaction, as `write_batch` does: `ScanWriter`'s other
@@ -89,7 +89,7 @@ The rescan has its own costs:
 - **Windows:** native release builds, in an elevated shell.
   - Warm runs (`win_timing.ps1`): the variant probe, 5 runs each with memory statistics on and off; the scan probe,
     shipped and patched interleaved, 5 runs on the small library and 3, then 5 more, on the large one; and the lister
-    alone, `crates/platform/examples/list_probe.rs` (untracked).
+    alone, `crates/platform/examples/list_probe.rs` (tracked).
   - Flushed-warm and cold runs: `target/scan-probe/purge.ps1` empties the file cache before each run, as RAMMap
     does: the system cache's working set (`SetSystemFileCacheSize`), the modified list (written out), then the standby
     list (`NtSetSystemInformation`). With `-FlushOnly` it writes the modified pages out and keeps the cache.
@@ -454,7 +454,7 @@ All under `target/scan-probe/` unless noted. Nothing here is tracked.
 - **Copies:** `tree/` (the patched crates), `fork/` (the rusqlite fork with the flag hook), `fork-Cargo.toml`,
   `fork-Cargo.lock`, `bin/` (the Windows binaries).
 - **Libraries:** `lib/` (4,000 files) and `large/` (200,000 files, about 0.3 GB on disk).
-- **Probes in the tree (untracked):** `crates/library/examples/scan_probe.rs`, `crates/catalog/examples/stmt_journal_probe.rs`,
+- **Probes in the tree (all tracked):** `crates/library/examples/scan_probe.rs`, `crates/catalog/examples/stmt_journal_probe.rs`,
   `crates/platform/examples/list_probe.rs`.
 - **Docker volumes:** `pg-scan-large` (the large library), and `pg-cargo-target`'s `patched`, `lto` and `fork` target
   dirs.

@@ -7,7 +7,8 @@ from email.message import Message
 from pathlib import Path
 from unittest import mock
 
-from setup_ffmpeg import HEADER, PIN_FILE, download, installed_pin, is_installed, sha256_of, top_folder, unsafe_name
+from pgtools import sha256
+from setup_ffmpeg import HEADER, PIN_FILE, download, installed_pin, is_installed, top_folder, unsafe_name
 
 PIN = "1d9823c35c7a7e2f54d1438cf61030d6efabe3278de01c191309d1e828bb74df"
 OTHER = "08f4d6542510d35710631e1475e72f1a2e731700f35a701c84d7479893a7aa96"
@@ -85,7 +86,8 @@ class ArchiveChecks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "abc.bin"
             path.write_bytes(b"abc")
-            self.assertEqual(sha256_of(path), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+            # pgtools.sha256 gives the digest in upper case; a pin is compared case-insensitively where it is read.
+            self.assertEqual(sha256(path), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".upper())
 
 
 if __name__ == "__main__":

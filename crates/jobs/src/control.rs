@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
+use pg_model::num::count_u64;
 use pg_model::progress::{Mark, Phase, Progress};
 
 use crate::events::{Bus, Subscription, Watch};
@@ -365,12 +366,6 @@ impl Control {
         own.own || own.holds > 0 || self.family.global_paused.load(Ordering::SeqCst)
     }
 
-    /// Whether this lane waits at its checkpoints now (paused or held).
-    fn waiting(&self) -> bool {
-        let own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
-        self.waits(&own)
-    }
-
     /// Pauses or resumes. On the root this is the global pause: every lane waits, and every lane's clock stops. On a lane
     /// it is that lane's pause alone.
     pub fn set_paused(&self, paused: bool) {
@@ -383,21 +378,26 @@ impl Control {
                 lane.refresh_clock(now);
             }
         } else {
-            {
-                let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
-                own.own = paused;
-                self.resumed.notify_all();
-            }
-            self.refresh_clock(Instant::now());
+            let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+            own.own = paused;
+            self.resumed.notify_all();
+            self.stamp_clock(&own, Instant::now());
         }
         self.changed();
     }
 
-    /// Stops or starts this lane's clock to match whether it is paused.
-    fn refresh_clock(&self, now: Instant) {
-        let paused = self.waiting();
+    /// Stops or starts this lane's clock to match whether it waits, read under `own`: the lane's pause lock, which the
+    /// caller holds, so the clock is stamped from the state it is applied with.
+    fn stamp_clock(&self, own: &Pausing, now: Instant) {
+        let paused = self.waits(own);
         self.progress.update(|running| running.set_paused(paused, now));
         self.pauses.lock().unwrap_or_else(PoisonError::into_inner).set(paused, now);
+    }
+
+    /// [`Control::stamp_clock`], taking the lane's pause lock itself.
+    fn refresh_clock(&self, now: Instant) {
+        let own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        self.stamp_clock(&own, now);
     }
 
     /// The hook `changed` calls from now on (set once: a second one is ignored). Shared by the run's lanes.
@@ -511,8 +511,11 @@ impl Control {
     /// count, and each guard gives back its own. A caller that needs the lane to have stopped asks it to stop as well
     /// ([`Control::request_stop`]), and waits for its round to end.
     pub fn hold(self: &Arc<Self>) -> Hold {
-        self.paused.lock().unwrap_or_else(PoisonError::into_inner).holds += 1;
-        self.refresh_clock(Instant::now());
+        {
+            let mut own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+            own.holds += 1;
+            self.stamp_clock(&own, Instant::now());
+        }
         self.changed();
         Hold { ctl: Arc::clone(self) }
     }
@@ -536,8 +539,11 @@ impl Control {
         let progress = Progress { phase, total, ..Progress::idle() };
         // The pauses and holds outlive phases: a phase that begins while paused starts with its clock stopped.
         let mut running = Running::begun(progress, now);
-        running.set_paused(self.waiting(), now);
-        self.progress.set(running);
+        {
+            let own = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+            running.set_paused(self.waits(&own), now);
+            self.progress.set(running);
+        }
         self.changed();
         PhaseGuard { ctl: self, span }
     }
@@ -547,7 +553,7 @@ impl Control {
         self.update(|p| {
             p.done += 1;
             p.failed += u64::from(failed);
-            p.bytes += u64::try_from(bytes).unwrap_or(u64::MAX);
+            p.bytes += count_u64(bytes);
         });
     }
 
@@ -644,8 +650,8 @@ impl Drop for Hold {
             let mut own = self.ctl.paused.lock().unwrap_or_else(PoisonError::into_inner);
             own.holds = own.holds.saturating_sub(1);
             self.ctl.resumed.notify_all();
+            self.ctl.stamp_clock(&own, Instant::now());
         }
-        self.ctl.refresh_clock(Instant::now());
         self.ctl.changed();
     }
 }
@@ -671,10 +677,13 @@ impl Drop for PhaseGuard<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::mpsc;
 
     use super::*;
+
+    /// The second a ten-minute pause ends at, in the clock tests that take their times from `at`: it starts at the tenth
+    /// second, after ten files a second for ten seconds.
+    const PAUSE_ENDS: u64 = 610;
 
     #[test]
     fn a_progress_read_has_the_time_its_phase_has_run() {
@@ -723,13 +732,13 @@ mod tests {
         }
         let before = running.read(at(10));
         running.set_paused(true, at(10));
-        let during = running.read(at(610));
+        let during = running.read(at(PAUSE_ENDS));
         assert_eq!(during.elapsed, Duration::from_secs(10), "the clock stands still");
         assert_eq!(during.eta(), before.eta(), "the time left doesn't climb during a pause");
-        running.set_paused(false, at(610));
+        running.set_paused(false, at(PAUSE_ENDS));
         // 10 files a second for 5 s after the pause.
         for s in 1..=5 {
-            running.change(at(610 + s), |p| p.done += 10);
+            running.change(at(PAUSE_ENDS + s), |p| p.done += 10);
         }
         let after = running.read(at(615));
         assert_eq!(after.elapsed, Duration::from_secs(15));
@@ -749,8 +758,8 @@ mod tests {
         for _ in 0..40 {
             running.change(at(10), |p| p.done += 1);
         }
-        running.set_paused(false, at(610));
-        let read = running.read(at(610));
+        running.set_paused(false, at(PAUSE_ENDS));
+        let read = running.read(at(PAUSE_ENDS));
         assert_eq!(read.done, 140);
         assert_eq!(read.rate(), 10.0, "100 files in 10 s of working time, not 140");
     }

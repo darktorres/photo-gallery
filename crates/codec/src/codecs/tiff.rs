@@ -139,7 +139,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
                 UnsupportedErrorKind::GenericFeature("Planar TIFF with CMYK color type is not supported".to_string()),
             )));
         }
-        // (The decoder refuses a zero width or height (tiff decoder `image.rs:325`), so an image has at least one
+        // (The decoder refuses a zero width or height (the tiff crate's image decoder), so an image has at least one
         // plane here.)
         if raw.len().checked_div(plane_stride).unwrap_or(0) < usize::from(color.channel_count()) {
             return Err(ImageError::Decoding(DecodingError::new(
@@ -154,7 +154,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
     match stored {
         Stored::Same => convert(raw, color, None, pixels, out)?,
         Stored::Cmyk8 => {
-            // `image` writes each pixel with `write_all` (its tiff.rs:396): short data leaves the rest of the
+            // `image` writes each pixel with `write_all`: short data leaves the rest of the
             // pixels as they were, with no error.
             check_len(raw.len(), pixels * 4)?;
             let px = zeroed(&mut out.pixels, pixels * 3);
@@ -163,7 +163,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
             }
         }
         Stored::Cmyk16 => {
-            // As Cmyk8: `image`'s tiff.rs:402 `write_all` leaves the rest of the pixels as they were.
+            // As Cmyk8: `image`'s `write_all` leaves the rest of the pixels as they were.
             check_len(raw.len(), pixels * 8)?;
             let px = zeroed(&mut out.pixels, pixels * 3);
             let samples = raw.as_chunks::<2>().0.as_chunks::<4>().0;
@@ -174,7 +174,7 @@ fn read(decoder: &mut TiffDecoder<'_>, plan: TiffPlan, raw: &mut Vec<u8>, out: &
         Stored::Gray1 => {
             // `expand_bits(1, …)` per row (0 or 255), then L8 to RGB.
             let row_bytes = num::index(w).div_ceil(8);
-            // `image`'s tiff.rs:410 `chunks_exact` drops a short last row: its rows past the data are left unwritten.
+            // `image`'s `chunks_exact` drops a short last row: its rows past the data are left unwritten.
             check_len(raw.len(), row_bytes * num::index(h))?;
             let px = zeroed(&mut out.pixels, pixels * 3);
             for (row, out_row) in raw.chunks_exact(row_bytes.max(1)).zip(px.chunks_exact_mut(num::index(w) * 3)) {

@@ -2,13 +2,14 @@
 
 use std::io::Cursor;
 
+use crate::codecs::limits::decoded_size;
 use crate::{Error, Result};
 use pg_container::png_chunks;
 use pg_model::num;
 
 use super::chunk::{chunk_bytes, png_chunk};
 use super::op::Op;
-use super::raster::{apply_rows, decoded_size, zeroed};
+use super::raster::{apply_rows, zeroed};
 
 /// A still PNG (an animation's other frames would be lost: the caller checks for `acTL`).
 pub fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {

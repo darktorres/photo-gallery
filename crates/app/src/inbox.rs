@@ -10,30 +10,23 @@
 //! the inbox.
 //!
 //! **The work log.** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the writer:
-//! a wake is never lost, and a close waits at most for the writer's 5 s drain. Every op takes a sequence number under that lock, and the writer
-//! applies what it takes in that order, across every kind of op (a thumbnail's failure reported before the user's Retry
-//! is written before it, so the Retry relists it). What `Work` holds:
+//! a wake is never lost, and a close waits at most for the writer's 5 s drain. Every op takes a sequence number under that
+//! lock, in the same critical section as its push, and the writer applies what it takes in that order, across every kind
+//! of op (a thumbnail's failure reported before the user's Retry is written before it, so the Retry relists it). The lock
+//! is held only to push or to swap, never across SQL. What `Work` holds:
 //! - Events: a bounded queue ([`EVENTS`]); one it has no room for is counted, and a [`Notice::NoticesLost`] says how
 //!   many after the next write that goes through.
 //! - States' posts, replaces, clears and resolves (a [`Trigger`]: it clears every kept kind its resolver matches). A post
-//!   folds into the waiting post of its key and carries its repeats forward (so the count never under-counts), unless a
-//!   clear or a resolve waits after it; a replace or a clear removes every waiting op inside its scope; an identical
-//!   waiting resolve is moot. Bounded by the keys and scopes waiting.
+//!   folds into the latest waiting post of its key and carries its repeats forward (so the count never under-counts),
+//!   unless a clear or a resolve waits after it; a replace or a clear removes every waiting op inside its scope; an identical
+//!   waiting resolve is moot. 50 same-data posts between two drains are one upsert whose count rises by 50. Bounded by the
+//!   keys and scopes waiting.
 //! - Marks, dismissals and the Retry: at human rate, never dropped.
 //! - The window's thumbnail reports, the latest per file.
 //! - The flags: whether the inbox is viewed (the latest wins: the ledgers' counts are read only then), a poke, the stop.
 //!
-//! **Failures.** The writer's connection waits [`BUSY_TIMEOUT`] for a lock another connection holds; a write that is
-//! still busy is tried again, in order, until it goes through, so a scan's batch or an import's flush only delays it.
-//! Any other failure (`SQLITE_LOCKED` included: a conflict inside the connection, which trying again could loop on) is
-//! not tried again: a lost notice is counted, and a mark or a dismissal that fails is logged and the inbox is read again,
-//! which undoes the window's optimistic change. At `Inbox::close` the writer writes what is queued, trying a busy
-//! catalog for at most [`SHUTDOWN_DRAIN`], and logs what is left.
-//!
-//! **The toast rule.** An Event toasts when it is new. A state toasts when it becomes unread (new, posted again with new
-//! data after it was read or dismissed), or when its revision rises while it is unread, at most once per entry per
-//! [`LOG_AGAIN`] (a run of failing files toasts once, and the entry shows the latest). A ledger toasts when it turns
-//! unread. A transient notice (feedback on what the user just did) is only logged and toasted.
+//! Whether a clear has work is decided by SQL on the writer: `clear_notices` (which is `replace_notices` with no notices)
+//! reads `notices(kind, root)` first and takes no write lock when nothing is stored.
 //!
 //! A pass's failure ledger (`pg_catalog::ledger`) is an entry of its own, listed with the rows. The writer also keeps
 //! the thumbnails' ledger for the thumbnails the window makes ([`Inbox::thumb_failed`], [`Inbox::thumb_made`]), and
@@ -48,32 +41,14 @@
 //! catalog's `data_version`, every 30 s (`POLL`), when the window is activated, after each of the job's rounds, and
 //! whenever a pass changes a ledger (`Inbox::poke`). The window never reads the catalog for the inbox's listing.
 //!
-//! **One work log.** What is queued is one `Work`, under one lock with a condvar, shared by the handles and the
-//! writer: a wake is never lost to a full channel, and a close never blocks. Every op takes a sequence number under that
-//! lock, in the same critical section as its push, and the writer applies what it takes in that order across every kind
-//! of op (a thumbnail failure reported before the user's Retry is written before it, so the Retry relists it). The lock is
-//! held only to push or to swap, never across SQL. `Work` holds:
-//!
-//! - Events: a bounded queue (`EVENTS`, 1024). One it has no room for is counted toward `NoticesLost`.
-//! - States' posts, replaces, clears and resolves, which supersede the waiting ops they cover: a post replaces the
-//!   waiting post of its key and carries its repeats forward (they sum even when the data differs, so the count never
-//!   under-counts), unless a clear or a resolve waits after it; a replace or a clear removes every waiting op inside its
-//!   scope; an identical waiting resolve is moot. 50 same-data posts between two drains are one upsert
-//!   whose count rises by 50. Bounded by the distinct keys and scopes waiting.
-//! - Marks, dismissals and the Retry: at human rate, never dropped.
-//! - The window's thumbnail reports (`thumb_failed`, `thumb_made`), the latest per file.
-//! - The flags: whether the inbox is viewed (the latest wins), a poke, the stop.
-//!
-//! Whether a clear has work is decided by SQL on the writer: `clear_notices` (which is `replace_notices` with no notices)
-//! reads `notices(kind, root)` first and takes no write lock when nothing is stored.
-//!
 //! **Failures.** The writer's connection waits `BUSY_TIMEOUT` (100 ms, set by `Catalog::set_busy_timeout`; every other
 //! connection waits 5 s) for a lock another connection holds, so it checks its stop at least that often. A write that is
 //! still busy (`pg_catalog::Error::is_busy`, which walks the error's chain) is tried again, in order, until it goes
 //! through: a scan's batch or an import's flush only delays it. Any other failure, `SQLITE_LOCKED` included (a conflict
-//! inside the connection, which trying again on the same connection could loop on), is not tried again: a lost event or
-//! state op counts toward `NoticesLost`, and a mark or a dismissal that fails is logged and the inbox is read again, which
-//! undoes the window's optimistic change (it doesn't count as lost). `NoticesLost` is posted after the next write that goes
+//! inside the connection, which trying again on the same connection could loop on), is not tried again: a lost event, post or
+//! replace counts toward `NoticesLost`, and a mark or a dismissal that fails is logged and the inbox is read again, which
+//! undoes the window's optimistic change (it doesn't count as lost). A clear or a resolve that fails counts nothing: the
+//! notices it would have removed stay, so none is lost. `NoticesLost` is posted after the next write that goes
 //! through, and counts lost notices only. The Retry is one writer command: it writes `Catalog::retry_failures`, then wakes
 //! the job; a failure reads the inbox again. The writer applies its ops through a small `Store` trait, so the tests inject
 //! `SQLITE_BUSY` and `SQLITE_LOCKED`.
@@ -96,7 +71,7 @@
 //! `Unknown` with the error, which the writer logs once per kind per process; a retired or unknown kind is expected and
 //! not reported.
 //!
-//! The job posts through `pg_jobs::NoticeSink` (`post`, `replace`, `clear`, `poke`), which the inbox implements; it lives in
+//! The job posts through `pg_jobs::NoticeSink` (`post`, `replace`, `resolve`, `poke`), which the inbox implements; it lives in
 //! `pg-jobs` so that the job (`pg_library::runner`) and the writer (`pg_writeback`) both post through it. Tests use
 //! `pg_jobs_testkit::RecordingSink`. The command line passes a printing sink and prints the same words
 //! (`pg_wording::notice_line`) for the notices it has. A rebuilt catalog's notice is `Rebuilt::notice`.
@@ -106,7 +81,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use pg_catalog::Catalog;
 use pg_catalog::inbox::Mark;
@@ -116,6 +91,8 @@ use pg_jobs::events::{Bus, Subscription};
 use pg_model::ids::FileId;
 use pg_model::inbox::{InboxEntry as Entry, InboxEntryId as EntryId};
 use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
+use pg_model::num::count_u64;
+use pg_platform::clock::unix_now as now;
 
 use crate::error::{Error, Result};
 
@@ -279,14 +256,14 @@ impl Work {
 
     /// Queue a state's op, superseding the waiting ones it covers.
     ///
-    /// A post folds into the waiting post of its key only when nothing that clears the key waits after that post: a
+    /// A post folds into the latest waiting post of its key only when nothing that clears the key waits after that post: a
     /// clear ends the post's state, so the post after it starts a new count. (A mark or a dismissal between two posts
     /// does not stop the fold: the count and the latest data come out the same either way.)
     fn state(&mut self, mut op: StateOp) {
         match &mut op {
             StateOp::Post { key, repeats, .. } => {
                 let same =
-                    self.states.iter().position(|(_, s)| matches!(s, StateOp::Post { key: k, .. } if *k == *key));
+                    self.states.iter().rposition(|(_, s)| matches!(s, StateOp::Post { key: k, .. } if *k == *key));
                 if let Some(at) = same
                     && !self.states.get(at + 1..).into_iter().flatten().any(|(_, s)| s.clears(key))
                     && let (_, StateOp::Post { repeats: before, .. }) = self.states.remove(at)
@@ -385,6 +362,15 @@ pub struct Inbox {
     /// The thumbnails' ledger may hold files: a thumbnail the window makes is sent to clear its file only then.
     thumb_failures: Arc<AtomicBool>,
     writer: Mutex<Option<JoinHandle<()>>>,
+}
+
+/// The writer never outlives the inbox that started it: dropping the inbox closes it, as [`Inbox::close`] does (a second
+/// close does nothing). So an early return from opening the app, after the writer has started, does not leave the writer
+/// running on its own catalog connection.
+impl Drop for Inbox {
+    fn drop(&mut self) {
+        self.close();
+    }
 }
 
 impl Inbox {
@@ -739,13 +725,15 @@ enum Step {
 }
 
 impl Step {
-    /// How many notices are lost when it can't be written (a mark, a dismissal or a Retry is not a notice).
+    /// How many notices are lost when it can't be written. A mark, a dismissal, a Retry, a clear and a resolve are not
+    /// notices: a clear or a resolve that fails leaves the notices it would have removed in place, so none is lost.
     fn notices(&self) -> u64 {
         match self {
-            Step::Event { .. } | Step::State(StateOp::Clear { .. } | StateOp::Resolve(_)) => 1,
+            Step::Event { .. } => 1,
+            Step::State(StateOp::Clear { .. } | StateOp::Resolve(_)) => 0,
             Step::State(StateOp::Post { repeats, .. }) => *repeats,
-            Step::State(StateOp::Replace { notices, .. }) => count(notices.len()).max(1),
-            Step::ThumbsFailed(failures) => count(failures.len()),
+            Step::State(StateOp::Replace { notices, .. }) => count_u64(notices.len()).max(1),
+            Step::ThumbsFailed(failures) => count_u64(failures.len()),
             Step::Mutation(_) | Step::ThumbsMade(_) => 0,
         }
     }
@@ -1067,7 +1055,7 @@ impl Writer {
                 news.insert(entry);
             }
         }
-        let unread = count(marks.iter().filter(|m| !m.read).count());
+        let unread = count_u64(marks.iter().filter(|m| !m.read).count());
         self.seen = marks.into_iter().map(|m| (m.id.entry(), m)).collect();
         match store.thumb_failures() {
             Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
@@ -1097,16 +1085,6 @@ impl Writer {
 /// Whether a row's revision rose from `before` to `now` (a state that says something new).
 fn revised(before: EntryId, now: EntryId) -> bool {
     matches!((before, now), (EntryId::Row { rev: was, .. }, EntryId::Row { rev: is, .. }) if is > was)
-}
-
-/// A count as the inbox holds it.
-fn count(n: usize) -> u64 {
-    u64::try_from(n).unwrap_or(u64::MAX)
-}
-
-/// Now, in Unix seconds (the catalog's times).
-fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 #[cfg(test)]
@@ -1362,7 +1340,7 @@ mod tests {
     #[test]
     fn a_full_event_queue_loses_events_only() {
         let mut work = Work::default();
-        for i in 0..count(EVENTS) {
+        for i in 0..count_u64(EVENTS) {
             assert_eq!(work.event(event(i), 0), 0);
         }
         assert_eq!(work.event(event(9999), 0), 1);
@@ -1458,6 +1436,27 @@ mod tests {
             panic!("the post, the resolve and the post, each counted once");
         };
         assert_eq!((first, second), (&failed("a"), &failed("b")));
+    }
+
+    // Posts after a resolve fold into the post that starts the new count: the later posts of a key count together.
+    #[test]
+    fn posts_after_a_resolve_of_their_key_fold_into_one_write() {
+        let mut work = Work::default();
+        work.state(post_op(failed("a")));
+        work.state(StateOp::Resolve(Trigger::Op(pg_model::notice::Op::Listing)));
+        work.state(post_op(failed("b")));
+        work.state(post_op(failed("b")));
+        work.state(post_op(failed("b")));
+        let ops = work.take().ops;
+        let [
+            Op::State(StateOp::Post { repeats: 1, .. }),
+            Op::State(StateOp::Resolve(_)),
+            Op::State(StateOp::Post { notice: second, repeats: 3, .. }),
+        ] = &ops[..]
+        else {
+            panic!("the first post, the resolve, and the later posts folded into one count of three");
+        };
+        assert_eq!(second, &failed("b"));
     }
 
     // A mark between two posts of a key does not stop the fold: the count and the latest data come out the same.

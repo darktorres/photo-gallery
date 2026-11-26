@@ -109,13 +109,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("skipped", skipped.to_string());
             a.set("unsupported", unsupported.to_string());
             a.set("failed", pg_model::num::size(*failed));
-            // The entry shows the first failure; the list is kept for the rest.
-            let (path, error) = match failures.first() {
-                Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
-                None => (String::new(), String::new()),
-            };
-            a.set("path", path);
-            a.set("error", error);
+            first_failure(a, rules, failures);
         }
         Notice::Cropped { folder, saved, skipped, failed, failures } => {
             a.set("folder", isolated(folder));
@@ -123,13 +117,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("skipped", skipped.to_string());
             // A number: the entry says "none failed" for 0.
             a.set("failed", pg_model::num::size(*failed));
-            // The entry shows the first failure; the list is kept for the rest.
-            let (path, error) = match failures.first() {
-                Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
-                None => (String::new(), String::new()),
-            };
-            a.set("path", path);
-            a.set("error", error);
+            first_failure(a, rules, failures);
         }
         Notice::CatalogRebuilt { kept, why, carried } => {
             a.set("kept", isolated(kept));
@@ -236,6 +224,17 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("code", code.clone());
         }
     }
+}
+
+/// The first of a notice's failures, as the entry's `path` and `error`: the entry shows the first; the list is kept for
+/// the rest. Empty for none.
+fn first_failure(a: &mut FluentArgs<'_>, rules: PathRules, failures: &[FileFailure]) {
+    let (path, error) = match failures.first() {
+        Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
+        None => (String::new(), String::new()),
+    };
+    a.set("path", path);
+    a.set("error", error);
 }
 
 /// A count for a plural entry: its number selects the form, its digits are the text.

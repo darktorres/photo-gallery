@@ -28,8 +28,10 @@ from urllib.parse import parse_qs, urlparse
 from PIL import Image
 
 from common import CACHE_DIR, DATA_ROOT, WORK_DIR, load_rgb
+from verify_common import EXPECTED
 
 RUNS_ROOT = WORK_DIR.parent
+MAX_BODY = 8 << 20  # the largest POST body: a bulk save of one group's pairs is far below it
 THUMB_DIR = CACHE_DIR / "viewer_thumbs"
 PAGE = Path(__file__).with_name("viewer.html")
 PAIR_FILES = {
@@ -94,6 +96,8 @@ def benchmarks(run: str) -> dict:
     # verify_<model>.json, verify_cross_<model>.json, verify_knn_<model>.json
     for p in sorted(d.glob("verify*.json")):
         v = load(p)
+        if v.get("pairs_set") == "synth":  # verify_synth.py's results: edits of one picture, not a pair set shown here
+            continue
         # Hand marks per label: how many pairs are marked, and how often the verifier agrees.
         v["marks"] = {}
         csv_path = p.with_suffix(".csv")
@@ -105,12 +109,13 @@ def benchmarks(run: str) -> dict:
                         continue
                     m = v["marks"].setdefault(r["label"], {"marked": 0, "agree": 0})
                     m["marked"] += 1
-                    m["agree"] += {"match": "same", "unrelated": "different"}.get(r["decision"]) == mark
+                    m["agree"] += DECISION_MARK.get(r["decision"]) == mark
         verify[p.stem] = v
     return {
         "decode": load(decode) if decode.exists() else None,
         "hdd": [load(p) for p in sorted(d.glob("bench_hdd*.json"))],
         "verify": verify,
+        "expected": EXPECTED,  # the decision each labelled pair should get, for the verifier tables
     }
 
 
@@ -133,6 +138,8 @@ def pairs(run: str, model: str, kind: str) -> list[dict]:
     for row in rows:
         row["size_a"] = image_size(row["path_a"])
         row["size_b"] = image_size(row["path_b"])
+        row["key"] = pair_key(row["path_a"], row["path_b"])
+        row["decision_mark"] = DECISION_MARK.get(row.get("decision", ""))
     return rows
 
 
@@ -153,6 +160,9 @@ def groups(run: str, model: str) -> dict | None:
     for g in data["groups"]:
         g["sizes"] = [image_size(p) for p in g["members"]]
         g["labels"] = [label_of(p) for p in g["members"]]
+        # Each pair of members as [i, j, key], in the order the page lists them.
+        n = len(g["members"])
+        g["pairs"] = [[i, j, pair_key(g["members"][i], g["members"][j])] for i in range(n) for j in range(i + 1, n)]
     return data
 
 
@@ -170,17 +180,26 @@ def diagnostic_file(run: str, model: str, kind: str, pair_id: str) -> Path:
 # run, keyed by the unordered pair of image paths, so marks survive reruns that renumber pair ids.
 PAIR_MARKS = "pair_marks.json"
 PAIR_MARK_VALUES = ("same", "different")
+# The verifier's decision in mark terms: a match is the same picture (incl. edits), an unrelated pair a different one.
+DECISION_MARK = {"match": "same", "unrelated": "different"}
 marks_lock = threading.Lock()
 
 
 def pair_key(a: str, b: str) -> str:
+    """The marks' key for a pair of images: the same for either order. The page takes its keys from the server."""
     return "|".join(sorted((a, b)))
 
 
 def _read_marks(run: str) -> dict[str, str]:
-    """The run's marks file, read without the lock: only for a caller that holds marks_lock already."""
+    """The run's marks file, read without the lock: only for a caller that holds marks_lock already. A file that isn't
+    valid JSON is a server-side failure (OSError, answered 500), not a bad request, and is left as it is."""
     path = run_dir(run) / PAIR_MARKS
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise OSError(f"{PAIR_MARKS} is not valid JSON ({e}); fix or remove it") from e
 
 
 def load_marks(run: str) -> dict[str, str]:
@@ -307,7 +326,10 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(b"bad request: expected application/json", "text/plain", status=400)
             return
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            length = int(self.headers.get("Content-Length", "-1"))
+            if not 0 <= length <= MAX_BODY:  # checked before the read, which would otherwise wait for that many bytes
+                raise ValueError(f"Content-Length must be between 0 and {MAX_BODY} bytes")
+            body = json.loads(self.rfile.read(length))
             if url.path == "/api/marks":
                 self.reply_json(set_mark(body["run"], body["a"], body["b"], body.get("mark")))
             elif url.path == "/api/marks/bulk":

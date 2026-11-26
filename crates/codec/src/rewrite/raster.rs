@@ -8,19 +8,7 @@ use crate::{Error, Result};
 use super::buffers::reserved;
 use super::op::Op;
 
-/// The bytes of a decoded raster, the product of `factors` (width, height, bytes per pixel), held to the one cap
-/// for decoded buffers ([`crate::max_decode_bytes`], as the app's decoders hold theirs). A header that declares
-/// a huge image (a damaged one) is an error here, before anything that size is allocated: an allocation failure
-/// would abort the process, with no error recorded.
-pub(super) fn decoded_size(what: &str, factors: &[usize]) -> Result<usize> {
-    let len = factors.iter().try_fold(1usize, |n, &f| n.checked_mul(f));
-    match len {
-        Some(len) if u64::try_from(len).is_ok_and(|len| len <= crate::max_decode_bytes()) => Ok(len),
-        _ => Err(Error::invalid(format!("{what} is too large to decode"))),
-    }
-}
-
-/// A zeroed buffer of `len` bytes (a size [`decoded_size`] passed), allocated fallibly.
+/// A zeroed buffer of `len` bytes (a size [`crate::codecs::limits::decoded_size`] passed), allocated fallibly.
 pub(super) fn zeroed(len: usize) -> Result<Vec<u8>> {
     let mut buf = reserved(len)?;
     buf.resize(len, 0);

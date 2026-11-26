@@ -6,9 +6,11 @@
 //! 1. **Same folder and name** on another volume: the file came back under a new identity (a renumbered volume), so
 //!    its old row takes the new identity and keeps everything else.
 //! 2. **Moved while closed**: the same file ID, size, mtime and extension on another volume whose files are all gone
-//!    from this scan. Only on a complete scan, since the old volume's files must have been looked for.
+//!    from this scan, and the same creation time where both rows have one. Only on a complete scan, since the old
+//!    volume's files must have been looked for.
 //! 3. **Replacement** (a save over the same name): a fresh row with no children takes the row of the file it replaced,
-//!    which loses its content state and keeps its ratings. Only on a complete scan.
+//!    which loses its content state and the rating the old file held, and keeps the user's rating. Only on a complete
+//!    scan.
 //!
 //! The folders the scan did not list (unreadable ones, and the reparse folders it does not follow, with what is below
 //! them) are out of every tier: their rows were not seen, so a row there is neither a candidate nor cleared, and the
@@ -29,6 +31,7 @@ use std::collections::BTreeSet;
 
 use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
+use pg_model::num::count_u64;
 use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -36,7 +39,7 @@ use crate::core::ScanLease;
 use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::transaction::write_transaction;
-use crate::types::{Subtree, WRITE_BATCH, skipped_folders, under_params};
+use crate::types::{Subtree, WRITE_BATCH, skipped_folders, stored_path, under_params};
 
 mod coverage;
 pub use coverage::Coverage;
@@ -336,7 +339,7 @@ impl ScanLease<'_> {
             drop(stmt);
             snapshot.commit()?;
         }
-        tail.items(u64::try_from(ambiguous.len()).unwrap_or(u64::MAX));
+        tail.items(count_u64(ambiguous.len()));
         drop(tail);
 
         let close = pg_perf::span("pair.close");
@@ -430,7 +433,7 @@ fn in_batches(
         let batch = {
             let mut read = steps.read.timer();
             let rows = fresh_rows(&tx, under, after, WRITE_BATCH)?;
-            read.items(u64::try_from(rows.len()).unwrap_or(u64::MAX));
+            read.items(count_u64(rows.len()));
             rows
         };
         let Some(last) = batch.last().map(|f| f.id) else { return Ok(()) };
@@ -561,7 +564,7 @@ fn all_volumes(tx: &Transaction) -> Result<Vec<i64>> {
 ///
 /// `CROSS JOIN` keeps the set as the outer loop. With a plain `JOIN` the planner drove the query from the folder's
 /// files and sorted every match for each batch: the cost grew with the square of the library (12.9 s for 85,071 rows
-/// in 172 batches, against 0.27 s with the set outside).
+/// in 172 batches of 500, the batch size of that run, against 0.27 s with the set outside).
 fn fresh_rows(conn: &Connection, under: &Subtree, after: i64, limit: usize) -> Result<Vec<Fresh>> {
     let mut stmt = conn.prepare_cached(concat!(
         "SELECT files.id, files.volume, files.file_ref, files.created, files.folder_id, files.name, files.ext,
@@ -648,8 +651,8 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<(
     Ok(())
 }
 
-/// Give the replaced row `id` the identity of the new file `from` (deleted), and reset what was made from the old file
-/// The rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
+/// Give the replaced row `id` the identity of the new file `from` (deleted), and reset what was made from the old file:
+/// the rotation and its queued turns, the analysis and what hangs off it, the file's own rating (`file_ratings`). The
 /// queued ratings stay, without their temp files, which hold the old file's bytes; the rating row's `value` is written
 /// again from the new file. The temp files to delete go to `temps`. The fresh row's id, which is gone.
 fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mut Vec<RulePath>) -> Result<FileId> {
@@ -657,9 +660,7 @@ fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mu
         let mut stmt = tx.prepare("SELECT temp FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL")?;
         for bytes in stmt.query_map([id], |r| r.get::<_, Vec<u8>>(0))? {
             let bytes = bytes?;
-            let temp = rules
-                .parse_bytes(&bytes)
-                .ok_or(crate::error::Error::Stored { what: "a queued temp path that doesn't parse" })?;
+            let temp = stored_path(rules, &bytes)?;
             temps.push(temp);
         }
     }

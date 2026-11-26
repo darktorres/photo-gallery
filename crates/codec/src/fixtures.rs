@@ -28,24 +28,37 @@ pub fn webp_lossy_rgb(w: u32, h: u32, pixels: &[u8], quality: f32) -> Result<Vec
     Ok(webp::Encoder::from_rgb(pixels, w, h).encode(quality).to_vec())
 }
 
-/// An RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic). Fails as the
-/// encoder does, for one when `pixels` doesn't hold `w × h` RGB pixels.
-pub fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> tiff::TiffResult<Vec<u8>> {
-    use tiff::encoder::{TiffEncoder, colortype::RGB8};
+/// `w` × `h` pixels of colour type `C`, written as a TIFF by the tiff crate's encoder, classic or BigTIFF (`image` writes
+/// only classic). Fails as the encoder does, for `pixels` that don't hold `w × h` pixels of `C`.
+pub fn tiff_of<C: tiff::encoder::colortype::ColorType>(
+    w: u32,
+    h: u32,
+    pixels: &[C::Inner],
+    big: bool,
+) -> tiff::TiffResult<Vec<u8>>
+where
+    [C::Inner]: tiff::encoder::TiffValue,
+{
+    use tiff::encoder::TiffEncoder;
     let mut out = std::io::Cursor::new(Vec::new());
     if big {
-        TiffEncoder::new_big(&mut out)?.write_image::<RGB8>(w, h, pixels)?;
+        TiffEncoder::new_big(&mut out)?.write_image::<C>(w, h, pixels)?;
     } else {
-        TiffEncoder::new(&mut out)?.write_image::<RGB8>(w, h, pixels)?;
+        TiffEncoder::new(&mut out)?.write_image::<C>(w, h, pixels)?;
     }
     Ok(out.into_inner())
+}
+
+/// An RGB8 TIFF, classic or BigTIFF, as [`tiff_of`] writes it.
+pub fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> tiff::TiffResult<Vec<u8>> {
+    tiff_of::<tiff::encoder::colortype::RGB8>(w, h, pixels, big)
 }
 
 /// `rgb` (`w` × `h` pixels, three bytes each) as a JPEG at `quality` (libjpeg-turbo's 1–100) in `chroma`'s
 /// subsampling: the encoder the thumbnails use, so its bytes are the codec's own. Fails for `pixels` that don't hold
 /// `width` × `height` RGB pixels.
-pub fn jpeg_rgb(width: usize, height: usize, pixels: &[u8], quality: u8, chroma: Chroma) -> Result<Vec<u8>> {
-    let img = Rgb { width, height, pixels: pixels.to_vec() };
+pub fn jpeg_rgb(width: u32, height: u32, pixels: &[u8], quality: u8, chroma: Chroma) -> Result<Vec<u8>> {
+    let img = Rgb { width: pg_model::num::index(width), height: pg_model::num::index(height), pixels: pixels.to_vec() };
     JpegEncoder::new(quality, chroma)?.encode(&img)
 }
 
@@ -174,7 +187,7 @@ pub fn png_rgba(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>> {
 
 /// An animated GIF of `frames` 4 × 4 frames, the first red and each after it brighter. The red level steps by 60, so
 /// at most 5 frames (0 to 240): more is an error.
-pub fn gif(frames: usize) -> Result<Vec<u8>> {
+pub fn gif(frames: u32) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
     for i in 0..frames {

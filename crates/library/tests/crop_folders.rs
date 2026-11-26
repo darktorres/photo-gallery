@@ -3,7 +3,7 @@
 //! the plain path names) is neither read nor written. Windows only: the names are normalized there alone.
 #![cfg(windows)]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -11,36 +11,19 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
 use pg_platform::native::verbatim;
+use pg_testkit::files_under;
 
 /// The tests' result: any error of the crates they use.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-/// A letterboxed picture; `seed` changes its content, so that two files' bytes differ.
-fn jpeg(seed: u32) -> Result<Vec<u8>> {
-    let byte = |v: u32| u8::try_from((v + seed) % 256).unwrap_or(u8::MAX);
-    let rgb: Vec<u8> = (0..240u32)
-        .flat_map(|y| {
-            (0..320u32).flat_map(move |x| {
-                if !(40..200).contains(&y) { [0, 0, 0] } else { [byte(x * 7), byte(y * 13), byte((x + y) * 3)] }
-            })
-        })
-        .collect();
+/// A letterboxed JPEG (the testkit's picture) with `pixel` at its centre, so that two files' bytes differ.
+fn jpeg(pixel: [u8; 3]) -> Result<Vec<u8>> {
+    let mut rgb = pg_testkit::letterboxed_rgb(320, 240, 40);
+    let at = (120 * 320 + 160) * 3;
+    rgb[at..at + 3].copy_from_slice(&pixel);
     pg_codec::fixtures::encode(320, 240, &rgb, pg_codec::fixtures::Encoding::Jpeg).map_err(Into::into)
 }
 
-/// Every file under `dir`, recursively.
-fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(verbatim(dir)).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            out.extend(files_under(&path));
-        } else {
-            out.push(path);
-        }
-    }
-    out
-}
 
 /// A library at `dir\images`, with two folders: `Acme Inc.` (its name ends in a dot) and its sibling `Acme Inc`, each
 /// with an `a.jpg`. Scanned, imported and with the borders found. Returns the catalog, the dotted folder's file and the
@@ -48,9 +31,9 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     let images = dir.join("images");
     let (dotted, sibling) = (images.join("Acme Inc."), images.join("Acme Inc"));
-    for (folder, seed) in [(&dotted, 0), (&sibling, 97)] {
+    for (folder, pixel) in [(&dotted, [255u8, 0, 0]), (&sibling, [0u8, 0, 255])] {
         std::fs::create_dir_all(verbatim(folder))?;
-        std::fs::write(verbatim(&folder.join("a.jpg")), jpeg(seed)?)?;
+        std::fs::write(verbatim(&folder.join("a.jpg")), jpeg(pixel)?)?;
     }
     let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
@@ -106,7 +89,7 @@ fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<(
     assert_eq!(folders, ["Acme Inc", "Acme Inc."], "each copy in its own folder: {copies:?}");
     // Each copy is of its own source: the two sources' pixels differ, so their copies do.
     let [first, second] = copies.as_slice() else { return Err(format!("two copies: {copies:?}").into()) };
-    assert_ne!(std::fs::read(first)?, std::fs::read(second)?, "{copies:?}");
+    assert_ne!(std::fs::read(verbatim(first))?, std::fs::read(verbatim(second))?, "{copies:?}");
     drop(c);
     let _ = std::fs::remove_dir_all(verbatim(&dir));
     Ok(())

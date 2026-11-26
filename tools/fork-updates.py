@@ -67,15 +67,20 @@ def collect(lock_paths: list[Path]) -> list[tuple[str, str, str, list[str]]]:
 
 
 def newest_release(crate: str) -> str:
-    """The newest stable version of the crate on crates.io. Raises NotPublishedError when crates.io has no such crate."""
+    """The newest stable version of the crate on crates.io. Raises NotPublishedError when crates.io has no such crate, and
+    ValueError when its answer names no version this script can compare (no stable one, or one it cannot read)."""
     request = urllib.request.Request(f"https://crates.io/api/v1/crates/{crate}", headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (a fixed https URL: crates.io)
-            return json.load(response)["crate"]["max_stable_version"]
+            newest = json.load(response)["crate"]["max_stable_version"]
     except urllib.error.HTTPError as error:
         if error.code == 404:
             raise NotPublishedError(crate) from error
         raise
+    if not isinstance(newest, str):
+        raise ValueError(f"crates.io gives no stable version for {crate}: {newest!r}")
+    version_key(newest)
+    return newest
 
 
 def version_key(version: str) -> tuple[int, int, int]:

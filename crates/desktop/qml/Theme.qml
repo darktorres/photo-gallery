@@ -52,4 +52,7 @@ QtObject {
     readonly property color viewerFill: "#000000"
     // The viewer's frame around a picture while its borders are shown: a magenta line, so black bars inside it stand out.
     readonly property color borderFrame: "#ff00ff"
+    // The cut borders over a picture, and a grid cell's border mark: magenta, and grey where the borders are marked as not a border.
+    readonly property color borderTint: "#ff00c8"
+    readonly property color borderMarkedTint: "#a0a0a0"
 }

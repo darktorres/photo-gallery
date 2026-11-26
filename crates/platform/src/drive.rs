@@ -30,7 +30,7 @@ pub struct SystemDrives;
 #[cfg(windows)]
 impl Drives for SystemDrives {
     fn of(&self, path: &Path) -> io::Result<Drive> {
-        win::of(path)
+        windows::of(path)
     }
 }
 
@@ -190,6 +190,8 @@ mod windows_facts {
     pub(super) const BUS_UNKNOWN: i32 = 0;
     #[cfg(test)]
     pub(super) const BUS_SATA: i32 = 11;
+    #[cfg(test)]
+    pub(super) const BUS_NVME: i32 = 17;
     pub(super) const BUS_USB: i32 = 7;
     pub(super) const BUS_RAID: i32 = 8;
     pub(super) const BUS_ISCSI: i32 = 9;
@@ -258,7 +260,7 @@ mod windows_facts {
 }
 
 #[cfg(windows)]
-mod win {
+mod windows {
     use super::facts::{DiskFact, drive_of_disks};
     use super::types::Drive;
     use super::windows_facts as wf;
@@ -788,17 +790,16 @@ mod tests {
         drive_of_disks("test".to_string(), facts)
     }
 
-    // Each bus the storage rule names (`pg_scan::refusal`: only plain physical disks are taken on Windows): the ones whose
-    // disks can't be seen make the volume opaque, and the physical ones (USB, SATA, NVMe, and SCSI and SAS, which are not
-    // iSCSI) do not.
+    // Each bus the storage rule names (`crates/scan/src/refusal.rs`: only plain physical disks are taken on Windows): the
+    // ones whose disks can't be seen make the volume opaque, and the physical ones (USB, SATA, NVMe, and SCSI and SAS,
+    // which are not iSCSI) do not.
     #[test]
     fn each_bus_is_opaque_or_a_physical_disk_as_the_storage_rule_has_it() {
         use wf::*;
         const SCSI: i32 = 1;
         const SAS: i32 = 10;
-        const NVME: i32 = 17;
         let opaque = [BUS_VIRTUAL, BUS_FILE_BACKED_VIRTUAL, BUS_SPACES, BUS_RAID, BUS_ISCSI, BUS_UNKNOWN];
-        let physical = [BUS_USB, BUS_SATA, NVME, SCSI, SAS];
+        let physical = [BUS_USB, BUS_SATA, BUS_NVME, SCSI, SAS];
         for bus in opaque {
             let drive = drive_of_dev_facts(&[wf::disk_fact(1, Some(bus), Some(true))]).unwrap();
             assert_eq!(drive.key, DriveKey::Opaque, "bus {bus}");
@@ -814,7 +815,7 @@ mod tests {
     fn a_disk_is_read_by_its_bus_and_its_seek_penalty() {
         use wf::*;
         assert_eq!(wf::disk_fact(1, Some(BUS_SATA), Some(true)).kind, Kind::Rotational);
-        assert_eq!(wf::disk_fact(1, Some(17), Some(false)).kind, Kind::Solid, "NVMe, no seek penalty");
+        assert_eq!(wf::disk_fact(1, Some(BUS_NVME), Some(false)).kind, Kind::Solid, "NVMe, no seek penalty");
         assert_eq!(wf::disk_fact(1, Some(BUS_SATA), None).kind, Kind::Unknown, "the query failed");
         assert_eq!(wf::disk_fact(1, Some(BUS_USB), Some(false)).kind, Kind::Unknown, "a bridge's answer");
         assert_eq!(wf::disk_fact(1, Some(BUS_USB), Some(true)).kind, Kind::Rotational, "a spinning disk says so");
@@ -866,6 +867,7 @@ mod tests {
         assert_eq!(wf::BUS_UNKNOWN, fs::BusTypeUnknown);
         assert_eq!(wf::BUS_USB, fs::BusTypeUsb);
         assert_eq!(wf::BUS_SATA, fs::BusTypeSata);
+        assert_eq!(wf::BUS_NVME, fs::BusTypeNvme);
         assert_eq!(wf::BUS_VIRTUAL, fs::BusTypeVirtual);
         assert_eq!(wf::BUS_FILE_BACKED_VIRTUAL, fs::BusTypeFileBackedVirtual);
         assert_eq!(wf::BUS_SPACES, fs::BusTypeSpaces);

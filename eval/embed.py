@@ -3,7 +3,7 @@
 Usage: python embed.py --model sscd [--trim] [--draft]
 Writes WORK_DIR/emb_<model>.npy (float16, row i = files.txt line i) and ok_<model>.npy. With --trim, each image's
 borders are cut first (the gallery's detector) and the files are named <model>_trim. With --draft, JPEGs decode
-DCT-scaled by the Rust import's rule (long side >= 512, short side >= 320) and the names gain _draft.
+DCT-scaled by the Rust import's rule (the sides in common.ANALYSIS_DRAFT_SIDES) and the names gain _draft.
 """
 
 import argparse

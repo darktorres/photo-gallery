@@ -71,7 +71,7 @@ fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
 #[test]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "crop", &["images/sub"]).unwrap();
@@ -189,7 +189,7 @@ fn library_with_borders(dir: &Path) -> Result<(Catalog, Vec<(i64, String)>)> {
 
 /// Write the ImageDescription `value` into `path`, with ExifTool.
 fn tag(path: &Path, value: &str) -> Result<()> {
-    let out = std::process::Command::new("exiftool")
+    let out = std::process::Command::new(pg_platform::env::exiftool_program())
         .arg("-overwrite_original")
         .arg(format!("-ImageDescription={value}"))
         .arg(path)
@@ -200,7 +200,7 @@ fn tag(path: &Path, value: &str) -> Result<()> {
 
 /// The ImageDescription ExifTool reads from `path`.
 fn description(path: &Path) -> Result<String> {
-    let out = std::process::Command::new("exiftool").args(["-s3", "-ImageDescription"]).arg(path).output()?;
+    let out = std::process::Command::new(pg_platform::env::exiftool_program()).args(["-s3", "-ImageDescription"]).arg(path).output()?;
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
@@ -211,7 +211,7 @@ fn description(path: &Path) -> Result<String> {
 /// files, find no border.
 #[test]
 fn cut_originals_lose_their_borders_and_are_replaced_in_place() -> Result<()> {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut", &["images/sub"]).unwrap();
@@ -285,7 +285,7 @@ fn cut_originals_lose_their_borders_and_are_replaced_in_place() -> Result<()> {
 /// `remaining`, and no file is both.
 #[test]
 fn a_stop_during_a_cut_records_every_original_it_rewrote() -> Result<()> {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-stop", &["images/sub"]).unwrap();
@@ -334,7 +334,7 @@ fn a_stop_during_a_cut_records_every_original_it_rewrote() -> Result<()> {
 /// is left as it was, and the others are cut.
 #[test]
 fn a_file_removed_before_its_cut_is_not_written() -> Result<()> {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-removed", &["images/sub"]).unwrap();
@@ -384,7 +384,7 @@ fn an_unconfirmed_cut_writes_nothing() -> Result<()> {
 /// the original is replaced, so its tag is still there. Its cut is exact, and it is still a TIFF.
 #[test]
 fn a_tiff_is_cut_and_keeps_its_metadata() -> Result<()> {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-tiff", &["images/sub"]).unwrap();
@@ -427,7 +427,7 @@ fn a_tiff_is_cut_and_keeps_its_metadata() -> Result<()> {
 #[test]
 fn a_failure_mid_write_leaves_the_original_intact_and_the_rest_go_on() -> Result<()> {
     use std::os::windows::fs::OpenOptionsExt;
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return Ok(());
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "cut-held", &["images/sub"]).unwrap();

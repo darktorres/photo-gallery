@@ -83,9 +83,9 @@ def main() -> None:
                 print(f"   part {k}: {names[i]}")
         for name in failed:
             print(f"   (failed to load: {name})")
-    print(f"\n## Folders with a single file (partner missing): {len(singles)}")
+    print(f"\n## Folders with fewer than two files (partner missing): {len(singles)}")
     for group in singles:
-        print(f"   {GROUPS_DIR}/{group}: {members[group][0]}")
+        print(f"   {GROUPS_DIR}/{group}: {', '.join(members[group]) or '(empty folder)'}")
     print("\n## Weakest consistent groups (lowest best-partner similarity), worth a glance:")
     for score, group in sorted(weak)[:10]:
         print(f"   {GROUPS_DIR}/{group}: {score:.2f}")

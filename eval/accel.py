@@ -41,7 +41,9 @@ from common import (
     WORK_SIDE,
     image_list,
     load_rgb,
+    partial_path,
     pg_path,
+    save_atomic,
 )
 from models import SPECS, SSCD, build_transform
 
@@ -109,16 +111,18 @@ def onnx_path(size: int, precision: str) -> Path:
     assert isinstance(sscd, SSCD)
     model = SSCDExport(sscd).eval().to(dtype)
     x = torch.zeros(2, 3, size, size, dtype=dtype)
+    tmp = partial_path(path)
     torch.onnx.export(
         model,
         (x,),
-        str(path),
+        str(tmp),
         input_names=["x"],
         output_names=["y"],
         opset_version=17,
         dynamic_axes={"x": {0: "batch"}, "y": {0: "batch"}},
         dynamo=False,
     )
+    tmp.replace(path)
     return path
 
 
@@ -146,7 +150,7 @@ def calibration_batch(size: int) -> Path:
             break
     if len(batch) < CALIB_IMAGES:
         sys.exit(f"accel: only {len(batch)} calibration images outside files.txt: run on a subset work dir")
-    np.save(path, np.stack(batch).astype(np.float32))
+    save_atomic(path, lambda f: np.save(f, np.stack(batch).astype(np.float32)))
     return path
 
 
@@ -165,13 +169,17 @@ def _quantize_int8(src: Path, calib: Path, dst: Path, method: str = "entropy", e
     DLLs). method: "entropy" or "max" activation ranges; exclude: node-name regexes kept in fp16. ModelOpt gets a
     copy of the source graph: it rewrites its input file in place."""
     work = dst.with_suffix(".src.onnx")
+    out = partial_path(dst)
     shutil.copyfile(src, work)
     options = json.dumps({"calibration_method": method, "nodes_to_exclude": list(exclude) or None})
     env = {**os.environ, "PATH": str(Path(torch.__file__).parent / "lib") + os.pathsep + os.environ["PATH"]}
     try:
-        subprocess.run([str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(dst), options], check=True, env=env)
+        subprocess.run(
+            [str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(out), options], check=True, env=env
+        )
     finally:
         work.unlink(missing_ok=True)
+    out.replace(dst)
 
 
 # --- TensorRT (this venv's TensorRT 11) ---
@@ -211,7 +219,9 @@ def build_engine(onnx: Path, path: Path, shapes: tuple[tuple[int, ...], ...]) ->
     plan = builder.build_serialized_network(network, config)
     if plan is None:
         sys.exit(f"accel: TensorRT build failed for {path.name} (the engine cannot be built here)")
-    path.write_bytes(bytes(plan))
+    tmp = partial_path(path)
+    tmp.write_bytes(bytes(plan))
+    tmp.replace(path)
 
 
 class TRTRunner(nn.Module):
@@ -268,16 +278,18 @@ def disk_onnx_path(precision: str) -> Path:
     dtype = {"fp32": torch.float32, "fp16": torch.float16}[precision]
     unet = KF.DISK.from_pretrained("depth").unet.eval().to(dtype)
     x = torch.zeros(1, 3, 256, 192, dtype=dtype)
+    tmp = partial_path(path)
     torch.onnx.export(
         unet,
         (x,),
-        str(path),
+        str(tmp),
         input_names=["x"],
         output_names=["y"],
         opset_version=17,
         dynamic_axes={"x": {2: "h", 3: "w"}, "y": {2: "h", 3: "w"}},
         dynamo=False,
     )
+    tmp.replace(path)
     return path
 
 
@@ -351,10 +363,11 @@ class ORTModule(nn.Module):
         to_torch = {"tensor(float)": torch.float32, "tensor(float16)": torch.float16}
         self.input, self.output = meta_in.name, meta_out.name
         self.in_dtype, self.out_dtype = to_torch[meta_in.type], to_torch[meta_out.type]
+        self.width = int(meta_out.shape[1])  # the embedding width the graph was exported with
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(self.in_dtype).contiguous()
-        y = torch.empty((x.shape[0], 512), dtype=self.out_dtype, device=x.device)
+        y = torch.empty((x.shape[0], self.width), dtype=self.out_dtype, device=x.device)
         binding = self.session.io_binding()
         np_dtype = {torch.float32: np.float32, torch.float16: np.float16}
         binding.bind_input(self.input, "cuda", 0, np_dtype[self.in_dtype], tuple(x.shape), x.data_ptr())

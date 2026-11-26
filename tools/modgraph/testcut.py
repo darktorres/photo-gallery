@@ -11,11 +11,20 @@ here, rather than each repeating the reason.
 
 import re
 
-_CUT = re.compile(r"^#\[cfg\(test\)\]", re.MULTILINE)
+# The attribute of a test-only item: `#[cfg(test)]`, or `#[cfg(all(test, ...))]`. boundaries.py matches it too, for
+# the items it blanks; this module cuts at the first one that starts a line.
+TEST_CFG = r"#\[cfg\((?:test|all\(test\b[^\]]*\))\)\]"
+_CUT = re.compile(r"^" + TEST_CFG, re.MULTILINE)
+
+
+def split(text: str) -> tuple[str, str]:
+    """A Rust file's text as (production code, test section): the test section starts at the first line-start test cfg.
+    The second part is empty when there is none."""
+    cut = _CUT.search(text)
+    return (text[: cut.start()], text[cut.start() :]) if cut else (text, "")
 
 
 def production_part(text: str) -> str:
-    """The production code of a Rust file's text: everything before its first line-start `#[cfg(test)]`. The whole text
+    """The production code of a Rust file's text: everything before its first line-start test cfg. The whole text
     when there is none."""
-    cut = _CUT.search(text)
-    return text[: cut.start()] if cut else text
+    return split(text)[0]

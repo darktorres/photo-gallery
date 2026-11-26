@@ -11,6 +11,7 @@ use pg_codec::decode::{Decoder, MinSize, Request};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
+use pg_model::analysis::{DECODE_MIN_LONG, DECODE_MIN_SHORT, PDQ_SIDE};
 use pg_model::format::Format;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,14 +42,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let meta = Meta::read(b, format, &mut meta_scratch);
         t[1] += s.elapsed();
         let s = Instant::now();
-        let request = Request { format, exif: meta.orientation, min: MinSize::Sides(512, 320), turns: Turns::NONE };
+        let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
+        let request = Request { format, exif: meta.orientation, min, turns: Turns::NONE };
         dec.decode_into(b, request, &mut image, &mut spare)?;
         t[2] += s.elapsed();
         let s = Instant::now();
         analyze::pixel_hash(&image)?;
         t[3] += s.elapsed();
         let s = Instant::now();
-        let img = if resizer.fit_within(&image, 512, &mut fitted)? { &fitted } else { &image };
+        let img = if resizer.fit_within(&image, PDQ_SIDE, &mut fitted)? { &fitted } else { &image };
         t[4] += s.elapsed();
         let s = Instant::now();
         let _ = hasher.hash_rgb_dihedral(&img.pixels, img.width, img.height);
@@ -57,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = analyzer.analyze(b, Turns::NONE)?;
         t[6] += s.elapsed();
     }
-    for (name, d) in ["blake3", "metadata", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t)
+    for (name, d) in ["blake3", "metadata", "decode", "pixel hash", "pdq resize", "pdq", "analyze total"].iter().zip(t)
     {
         println!("{name:>14}: {:.2} ms", d.as_secs_f64() * 1e3 / pg_model::num::count(bytes.len()));
     }

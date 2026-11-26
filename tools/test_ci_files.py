@@ -250,6 +250,10 @@ class WorkflowPins(unittest.TestCase):
         # `just lint` leaves cargo-deny out (its advisory fetch is a network call); each job runs `just deny` in its own step.
         self.assertEqual(WORKFLOW.count("run: |\n          for attempt in 1 2 3; do\n            if just deny"), 2)
 
+    def test_each_job_runs_the_eval_tests(self):
+        # The workflow's header says both jobs run the same recipes, so the eval tools' tests run in each job.
+        self.assertEqual(WORKFLOW.count("just test-eval"), 2)
+
     def test_the_workflow_holds_no_pinned_value(self):
         for name, value in PINNED.items():
             self.assertNotIn(value, WORKFLOW, f"{name} is written in ci.yml: read it from the pins step")
@@ -265,7 +269,9 @@ class WorkflowPins(unittest.TestCase):
             uses = [i for i in (text.find(use) for use in ("env.QT_", "env.TAIKI_TOOLS", "env.AQTINSTALL_COMMIT")) if i != -1]
             self.assertLess(pins, min(uses), job)
             if "runs-on: windows" in text:
-                self.assertLess(text.find("actions/setup-python"), pins, job)
+                setup = text.find("actions/setup-python")
+                self.assertNotEqual(setup, -1, job)
+                self.assertLess(setup, pins, job)
 
 
 def crate_clippy_names(root):
@@ -339,6 +345,22 @@ class Consumers(unittest.TestCase):
         if match is None:
             self.fail("build_static_qt.py has no QT_VERSION line")
         self.assertEqual(match.group(1), PINNED["qt_version"])
+
+    def test_the_libjpeg_turbo_fork_is_the_commit_the_manifests_pin(self):
+        # build_jpeg_turbo.py builds the libjpeg-turbo that Qt and the app both link, from the fork its root Cargo.toml
+        # pins: it reads that pin rather than keeping a copy. Each manifest patches turbojpeg-sys to the same fork at its
+        # rev, so every manifest must name one commit of one URL, and that commit must be the one the build reads.
+        text = (REPO / "tools" / "build_jpeg_turbo.py").read_text(encoding="utf-8")
+        self.assertIn('["patch"]["crates-io"]["turbojpeg-sys"]', text, "build_jpeg_turbo.py reads the pin from Cargo.toml")
+        pins = {}
+        for manifest in (REPO / "Cargo.toml", REPO / "eval" / "jpeg-decoders" / "Cargo.toml"):
+            pin = tomllib.loads(manifest.read_text(encoding="utf-8"))["patch"]["crates-io"]["turbojpeg-sys"]
+            pins[manifest.relative_to(REPO).as_posix()] = (pin["git"], pin["rev"])
+        root = pins["Cargo.toml"]
+        self.assertRegex(root[1], r"^[0-9a-f]{40}$")
+        for name, pin in pins.items():
+            with self.subTest(manifest=name):
+                self.assertEqual(pin, root)
 
     def test_the_qml_host_and_the_env_example_name_the_pinned_kit(self):
         minor = ".".join(PINNED["qt_version"].split(".")[:2])
@@ -602,12 +624,13 @@ class AnalysisScaleRule(unittest.TestCase):
     eval's ANALYSIS_DRAFT_SIDES. The three must agree."""
 
     def test_the_three_copies_agree(self):
-        analyze = (REPO / "crates" / "analysis" / "src" / "analyze.rs").read_text(encoding="utf-8")
+        # The app's minimum is defined once, in pg_model, and the analysis imports it.
+        model = (REPO / "crates" / "model" / "src" / "analysis.rs").read_text(encoding="utf-8")
         decoder = (REPO / "eval" / "jpeg-decoders" / "src" / "lib.rs").read_text(encoding="utf-8")
         common = (REPO / "eval" / "common.py").read_text(encoding="utf-8")
         app = (
-            int(_const(analyze, "DECODE_MIN_LONG")),
-            int(_const(analyze, "DECODE_MIN_SHORT")),
+            int(_const(model, "DECODE_MIN_LONG")),
+            int(_const(model, "DECODE_MIN_SHORT")),
         )
         eval_decoder = (
             int(_const(decoder, "ANALYZE_MIN_LONG")),

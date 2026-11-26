@@ -266,11 +266,14 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// The bytes a hex text (two digits a byte, either case) holds; `None` for an odd length or any other character. Every
+/// character is checked as a digit first, so a sign (which `from_str_radix` takes) is refused.
 fn hex_decode(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) || !text.is_ascii() {
+    let digits = text.as_bytes();
+    if !digits.len().is_multiple_of(2) || !digits.iter().all(u8::is_ascii_hexdigit) {
         return None;
     }
-    text.as_bytes().chunks(2).map(|pair| u8::from_str_radix(core::str::from_utf8(pair).ok()?, 16).ok()).collect()
+    digits.chunks(2).map(|pair| u8::from_str_radix(core::str::from_utf8(pair).ok()?, 16).ok()).collect()
 }
 
 #[cfg(test)]
@@ -366,6 +369,16 @@ mod tests {
         assert_eq!(json, r#"{"b":"eda080"}"#);
         assert_eq!(serde_json::from_str::<Name>(&json).unwrap(), lone);
         assert_eq!(serde_json::from_str::<Name>(r#""photo.jpg""#).unwrap(), text);
+    }
+
+    #[test]
+    fn a_hex_text_is_two_digits_a_byte_and_nothing_else() {
+        assert_eq!(hex_decode("eda080"), Some(vec![0xED, 0xA0, 0x80]));
+        assert_eq!(hex_decode("EDA080"), Some(vec![0xED, 0xA0, 0x80]));
+        assert_eq!(hex_decode("abc"), None, "an odd digit is refused");
+        assert_eq!(hex_decode("+1"), None, "a sign is not a digit");
+        assert_eq!(hex_decode("-1"), None, "a sign is not a digit");
+        assert_eq!(hex_decode("0g"), None);
     }
 }
 

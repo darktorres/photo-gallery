@@ -14,7 +14,7 @@ pub mod qobject {
         #[qproperty(bool, real_size, cxx_name = "realSize", READ = read_real_size, WRITE = set_real_size_saved, NOTIFY, FINAL)]
         /// Detect the borders of the files, in the background (on by default). Off: the borders pass waits.
         #[qproperty(bool, detect_borders, cxx_name = "detectBorders", READ = read_detect_borders, WRITE = set_detect_borders_saved, NOTIFY, FINAL)]
-        /// Detect the duplicates (on by default): the import hashes the files and the pairing pass pairs them. Off: both wait.
+        /// Detect the duplicates (on by default): the Hashes pass hashes the files and the pairing pass pairs them. Off: both wait.
         #[qproperty(bool, detect_duplicates, cxx_name = "detectDuplicates", READ = read_detect_duplicates, WRITE = set_detect_duplicates_saved, NOTIFY, FINAL)]
         /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: every thumbnail is decoded from its original.
         #[qproperty(bool, thumb_cache, cxx_name = "thumbCache", READ = read_thumb_cache, WRITE = set_thumb_cache_saved, NOTIFY, FINAL)]

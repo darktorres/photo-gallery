@@ -18,7 +18,7 @@ Item {
     property bool marked: false
     property real lineWidth: 2
 
-    readonly property color tint: marked ? "#a0a0a0" : "#ff00c8"
+    readonly property color tint: marked ? Theme.borderMarkedTint : Theme.borderTint
     // What is left, in pixels.
     readonly property real keptLeft: kept.x * width
     readonly property real keptTop: kept.y * height

@@ -59,7 +59,9 @@ def timed(label: str, command: list[str], work: Path, drop: bool) -> None:
 
 def renumber(library: Path) -> int:
     """Moves each file's number to the other range (0..999 to 1000..1999 and back), in two phases through temporary names, so
-    no rename lands on a name still in use. Returns the number of files moved."""
+    no rename lands on a name still in use. Every name is checked before the first rename: a temporary name already in use
+    or a target taken by a file that is not moved stops the run with the library as it was. Returns the number of files
+    moved."""
     moves: list[tuple[Path, Path, Path]] = []
     for folder in sorted(p for p in library.iterdir() if p.is_dir()):
         for index, name in enumerate(sorted(p.name for p in folder.iterdir())):
@@ -70,11 +72,15 @@ def renumber(library: Path) -> int:
             new = number + 1000 if number < 1000 else number - 1000
             target = folder / f"IMG_{match[1]}_{new:03d}.{match[3]}"
             moves.append((folder / name, folder / f".renumber-{index}", target))
+    sources = {source for source, _, _ in moves}
+    for _, temporary, target in moves:
+        if temporary.exists():
+            sys.exit(f"renumber: {temporary} is in use (a leftover of an earlier run?): nothing was renamed")
+        if target.exists() and target not in sources:
+            sys.exit(f"renumber: {target} is in use: nothing was renamed")
     for source, temporary, _ in moves:
         source.rename(temporary)
     for _, temporary, target in moves:
-        if target.exists():
-            sys.exit(f"renumber: {target} is in use")
         temporary.rename(target)
     return len(moves)
 

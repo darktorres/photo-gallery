@@ -279,7 +279,7 @@ the record. Under dhat and offscreen the stage times were not comparable to the 
 | Peak      |  17.2 MB in 2,125 blocks |        11.4 MB in 131 |   11.4 MB in 131 |  11.5 MB in 118 |
 | At exit   |      1.9 KB in 26 blocks |          2.1 KB in 26 |     2.1 KB in 26 |    1.2 KB in 15 |
 
-- **The list** is 189,518 entries of 56 bytes (`crates/model/src/grid.rs:41`), 10.6 MB. Before the fixes its `Vec` was
+- **The list** is 189,518 entries of 56 bytes (`crates/model/src/grid.rs:16`), 10.6 MB. Before the fixes its `Vec` was
   built without a size hint, so it doubled to 262,144 slots (14.7 MB, 4.1 MB unused) and was the peak. After the third
   fixes it is one block, sized to its exact count.
 - **The rest** after the third fixes: the rows (537 KB), the placeholders' RGBA (101 blocks, 290 KB, handed to Qt
@@ -352,7 +352,7 @@ kept counting after it (a 0.96 G SQLite thread: the library's first import check
 ### Library scan, wall clock
 
 Wall-clock time on this machine, not instructions, so these are a record, not a `perf` result. They were taken with the
-shell script `scan-timing.sh`. Its Python successor is `tools/profiling/scan_timing.py`, with the same arguments:
+shell script `scan-timing.sh`, which is no longer in the repository. Its Python successor is `tools/profiling/scan_timing.py`, with the same arguments:
 `python3 tools/profiling/scan_timing.py GALLERY LIBRARY WORK [--drop-caches]`.
 
 **WSL, 2026-11-07.**
@@ -363,7 +363,7 @@ shell script `scan-timing.sh`. Its Python successor is `tools/profiling/scan_tim
 - **Library:** `tools/profiling/synthetic_library.py --folders 100 --per-folder 100 --seed 1`: 10,000 files (mostly
   JPEG, some PNG, GIF and WebP), on WSL's ext4 disk (`/dev/sdf`), not tmpfs. Renumbered in place, which the scan pairs
   (the same folder, size, mtime and identity under a new name).
-- **Command:** `scan-timing.sh GALLERY LIBRARY WORK [--drop-caches]` (the shell script; the Python one takes the same
+- **Command:** `scan-timing.sh GALLERY LIBRARY WORK [--drop-caches]` (the shell script, since removed; the Python one takes the same
   arguments), run as root for `--drop-caches`. Each scan is into a fresh catalog;
   `first` scans the library from nothing, `unchanged` rescans it, and `renumbered` rescans after every file's number
   moved to the other range (0 to 999 and back).
@@ -964,9 +964,10 @@ Kept (6 pairs against step 1's remainder, gated on time; cycles beside):
 #### The write (pairing plan, second round, step 7)
 
 **Where it went.** `crates/catalog/examples/pairs_write_probe.rs` replays the pass's write of all 187,804 pictures
-and 5,277 pairs on a copy of the catalog: transactions of 2,000 owed pictures, the catalog's settings and the pass's
-16 MB cache, a fresh connection, every picture owed and no pair stored before each run. The probe takes those values
-from `PG_PROBE_WRITE=2000` and `PG_PROBE_CACHE_KIB=16384` (they have no default, so a run names what it measured). Each variant changes one part
+and 5,277 pairs on a copy of the catalog: transactions of 2,000 owed pictures (the value this measurement used; the pass's
+`WRITE` is 4,000 in `crates/import/src/pairs.rs` now, so a run that compares with the pass names 4,000), the catalog's
+settings and the pass's 16 MB cache, a fresh connection, every picture owed and no pair stored before each run. The probe
+takes those values from `PG_PROBE_WRITE=2000` and `PG_PROBE_CACHE_KIB=16384` (they have no default, so a run names what it measured). Each variant changes one part
 (medians of 6 runs, ms):
 
 | Variant                                                                 | Statements | Commits |     Total |  WAL after |
@@ -1138,7 +1139,8 @@ with either part boundary off by one).
 #### The settings again (pairing plan, second round, step 9)
 
 Each setting is compared inside one binary, through the probe's switches (`PG_PROBE_LOAD_PARTS`, `PG_PROBE_WRITE`,
-`PG_PROBE_WORKERS`, `PG_PROBE_FEW`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_SLICE`), 6 pairs against the default.
+`PG_PROBE_WORKERS`, `PG_PROBE_FEW`, `PG_PROBE_CACHE_KIB`, `PG_PROBE_BLOCK`, `PG_PROBE_SLICE`), 6 pairs against the
+default.
 
 **The threads: logical cores.** 6 workers (this CPU's physical cores) against 12: pass +20.87% [+2.62, +25.30] on all
 owed, +22.64% [+18.29, +23.94] on four slices (proven losses), cycles −22 to −34%. The join keeps every logical core.
@@ -1338,10 +1340,9 @@ Sort times at 12 workers are the team's thread time. The oracle's pairs are iden
 `PG_PERF_LOG` turns on the perf log (`crates/perf`, `pg-perf`). Unset, nothing is recorded and a span costs one flag test.
 
 - `PG_PERF_LOG=<file>`: the command line appends each run's records to the file and prints the run's table when the command ends. The app (`gallery`'s window) appends its background job's rounds to the same kind of file as they end. The file is rotated at 16 MiB, keeping two older files beside it (`pg_log::LogFile`).
-- `PG_PERF_LOG=-`: the command line echoes each top-level step to stderr as it ends, and writes no file.
-- `gallery perf <file>`: prints the table for every run in a file (the app's too). Lines that aren't records are skipped.
+- `pg-driver perf <file>`: prints the table for every run in a file (the app's too). Lines that aren't records are skipped.
 
-Each record is one JSON line: `session` (the process's start, epoch ms, and `pid`), `name` (`cmd.import`, `round`, `pass.scan`, `phase.scan`, `pipeline`, `scan.walk`, `pending.import`, `pair.tier1`, `mark_missing.write`, ...), `parent`, `dur_ms` (wall), `self_ms` (wall less the time of the spans inside it on the same thread), `items`, `bytes`, `failed`, `paused_ms` where it applies, and `fields`. A tally in `fields` (`scan.write_batch`, `catalog.tx.wait`, `catalog.tx.hold`, `catalog.tx.commit`) is thread time: the sum over the threads that ran the step, so it can exceed the wall time of the step it is on.
+Each record is one JSON line: `session` (the epoch milliseconds the log was opened at, and `pid`), `t_ms` (the time the span opened, in milliseconds from the origin the session record's `t_origin` names: the process's creation on Windows, the first clock read elsewhere), `name` (`cmd.import`, `round`, `pass.scan`, `phase.scan`, `pipeline`, `scan.walk`, `pending.import`, `pair.tier1`, `mark_missing.write`, ...), `parent`, `dur_ms` (wall), `self_ms` (wall less the time of the spans inside it on the same thread), `items`, `bytes`, `failed`, `paused_ms` where it applies, and `fields`. A tally in `fields` (`scan.write_batch`, `catalog.tx.wait`, `catalog.tx.hold`, `catalog.tx.commit`) is thread time: the sum over the threads that ran the step, so it can exceed the wall time of the step it is on.
 
 The table has, per session: the steps by name (count, total and self seconds, share of the top-level time, items and items per second, bytes per second), the scan's post-walk time (its phase less its walk loop), and a verdict for each pipeline:
 

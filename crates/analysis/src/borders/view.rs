@@ -59,7 +59,7 @@ impl<'a> View<'a> {
         self.steps3(line).map(i64::from).sum()
     }
 
-    /// Mean gray step of a line (`borders.py`'s `detail`).
+    /// Mean gray step of a line, over its column steps.
     pub(super) fn detail(&self, line: usize) -> f64 {
         pg_model::num::signed(self.detail3(line)) / (3.0 * pg_model::num::count(self.positions.max(2) - 1))
     }

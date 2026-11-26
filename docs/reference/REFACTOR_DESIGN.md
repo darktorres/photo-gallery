@@ -4,18 +4,18 @@ Status (2026-11-12, HEAD `898b709`): this file is the design record, rewritten f
 
 ## 1. Corrected baseline
 
-These facts were checked against the tree at HEAD `898b709` on 2026-11-12. They replace the Context of the old file.
+These facts were checked against the tree at HEAD `898b709` on 2026-11-12, except the counts, sizes and file citations, which were rechecked at HEAD `c1c9014e` on 2026-11-26 (the crate count, the QML line count, the reference-key rows, the fuzz targets and the cited paths and lines). They replace the Context of the old file.
 
-- **Crates.** `members = ["crates/*"]` (the root `Cargo.toml` `[workspace]` table) gives 34 crates. The ledger's S-13.1 row says 24, so it is stale.
+- **Crates.** `members = ["crates/*"]` (the root `Cargo.toml` `[workspace]` table) gives 37 crates. The ledger's S-13.1 row says 24, so it is stale.
 - **LTO.** No release LTO is configured. The only explicit `lto = false` is in `[profile.dhat]` (root `Cargo.toml`), the heap profiler's build.
-- **Desktop dependencies.** `crates/desktop/Cargo.toml` depends on eight pg crates at runtime: client, log, model, perf, platform, trace, app, render. It also has `pg-testkit` as a dev-dependency. That is nine in all, not eleven. The ledger's S-13.1 claim that the desktop depends only on Qt and `pg-app` is false.
+- **Desktop dependencies.** `crates/desktop/Cargo.toml` depends on nine pg crates at runtime: client, log, model, perf, platform, trace, wording, app, render. It also has `pg-testkit` as a dev-dependency. That is ten in all, not eleven. The ledger's S-13.1 claim that the desktop depends only on Qt and `pg-app` is false.
 - **Desktop tests.** The desktop sets `doctest = false` only, with no `test = false`. Its tests run in `just test` (`Justfile`).
-- **QML.** `crates/desktop/qml/Main.qml` is 758 lines. It holds no `Timer` and no controller policy. The policy is in Rust: `pg_client::controller` has `deadlines`, `input`, `listing`, `panels`, `replay`, `size` and `start` (`crates/client/src/controller/`). `Shell` is `crates/desktop/src/shell.rs`, a QObject created by id in `Main.qml`.
+- **QML.** `crates/desktop/qml/Main.qml` is 898 lines. Its two `Timer`s are presentation only (the lane-row refresh at line 397 and the feature popup's close at line 727); the deadlines are not in QML. The policy is in Rust: `pg_client::controller` has `deadlines`, `input`, `listing`, `panels`, `replay`, `size` and `start` (`crates/client/src/controller/`). `Shell` is `crates/desktop/src/shell.rs`, a QObject created by id in `Main.qml`.
 - **The bridge.** Filter and facet queries are not JSON across the bridge. The bridge uses typed invokables (`Shell::save_view(name)`, `apply_view(name) -> bool`, `delete_view`). JSON is parsed only from the command line, in Rust.
-- **`#[qenum]`.** `MediaKind` is the only one (`crates/desktop/src/gallery_bridge.rs:30`).
+- **`#[qenum]`.** Three enums use it: `FacetChoices`, `Filters` and `GalleryModel`, the last holding `MediaKind` (`crates/desktop/src/bridges/gallery_bridge.rs:30`, `facet_choices_bridge.rs:24`, `filters_bridge.rs:15`).
 - **Lossy names.** Fixed. Names are `pg_model::name::Name` (exact bytes; WTF-8 on Windows, raw bytes on Unix). The scanner keeps a lone surrogate (`a_listed_name_is_kept_exactly`, `crates/scan/src/lib.rs`). The catalog stores folder paths and file names as BLOBs (`crates/catalog/src/schema.rs`), and `meta.path_rules` is checked on open.
 - **The CLI and native paths.** The import, thumbnail, border and crop readers and the lister take `pg_platform::native::NativePath`, not `Vec<u16>`.
-- **Reference keys.** `crates/model/tests/reference_keys.tsv` is committed (2034 rows). Whether its rows were reviewed is not recorded.
+- **Reference keys.** `crates/model/tests/reference_keys.tsv` is committed (2059 rows, after its header line). Whether its rows were reviewed is not recorded.
 - **Screenshots.** `just shots` runs `tools/compare_shots.py` over `tools/shots/` with recorded references. The file `tools/compare-shots.ps1` in the old file does not exist.
 - **WSL.** Retired (commit `62b4540`). There is no `just wsl-check` recipe, and `tools/wsl-check.sh` and `tools/profiling/wsl-bench.sh` are gone. Linux checks run in the `pg-dev` container (`just check-linux`) and in CI's `linux` job. Ledger rows S-01.3 and S-17.8 describe WSL and are historical.
 - **Fuzzing.** `fuzz/` is outside the workspace and has seven targets (containers, metadata, edit, model keys and query JSON, codec transform).
@@ -24,9 +24,9 @@ These facts were checked against the tree at HEAD `898b709` on 2026-11-12. They 
 
 The decisions from the old file, each with its status.
 
-1. **One controller in `pg-client`, built from sub-machines.** Built. `pg_client::controller` has seven sub-modules (see above). Each is pure, takes `now_ms` as an input, and returns commands. Time is an input, not a `std::time` call. The per-crate `clippy.toml` in `crates/model` and `crates/client` bans `Instant`, `SystemTime`, `thread::spawn` and `fs::*`.
+1. **One controller in `pg-client`, built from sub-machines.** Built. `pg_client::controller` has seven sub-modules (see above). Each is pure, takes `now_ms` as an input, and returns commands. Time is an input, not a `std::time` call. The per-crate `clippy.toml` in `crates/wording` bans `Instant`, `SystemTime`, `thread::spawn` and the `std::fs` reads and writes, so the words take time as an input too.
 2. **Deadlines.** Built. The core holds one deadline per id (`deadlines.rs`: `ApplyQuery` 300 ms, `Size` 300 ms, `SaveSession` 1 s, `Layout` 50 ms). The desktop drives them with one single-shot `QTimer` in `crates/desktop/cpp/deadline.cpp`.
-3. **Data stays with its owner.** Built. `Grid` is a pure `pg-client` struct (`grid.rs`, `layout.rs`), and `GalleryModel` keeps it (`crates/desktop/src/gallery/state.rs`). `Tree` lives in `crates/desktop/src/folders.rs` as a `thread_local!`, not as a field of a model struct. No shared core cell was built.
+3. **Data stays with its owner.** Built. `Grid` is a pure `pg-client` struct (`grid.rs`, `layout.rs`), and the Rust struct behind the `GalleryModel` QML type, `GalleryRust`, keeps it (`crates/desktop/src/bridges/gallery_state.rs`). `Tree` lives in `crates/desktop/src/folders.rs` as a `thread_local!`, not as a field of a model struct. No shared core cell was built.
 4. **Where the instance lives.** Built as `Shell` on the GUI thread. `pg-app` keeps persistence only, and there is no `pg-app` to `pg-client` edge. Cross-thread results enter through `Shell::post`.
 5. **Listing.** Built as `pg_model::view::Listing` (`folder`, `recursive`, `sort`, `query`), renamed from `Place` in S-12.9. The name `Place` no longer exists in the code.
 6. **Commands.** Built in two kinds: model commands run in Rust on the data owner; presentation commands are typed `Shell` signals routed by `Connections` handlers.
@@ -34,16 +34,16 @@ The decisions from the old file, each with its status.
 8. **Prefs.** Built. `pg_app::store::JsonStore<T>` (load, `.bad` quarantine, temp-and-rename, `serde(default)`). `gallery.json` is the only prefs file; `desktop.json` is no longer read.
 9. **Paths.** Built. See the baseline. The planned `Ext::of_name_utf16` is replaced by `Ext::of_name_bytes`, which returns `None` for non-UTF-8 names.
 10. **Facades.** Partly built. A facade exists where it holds logic or owns an object QML calls by id. `ViewsMenu` is a separate file. The remaining facade work is in S-12 (step 12, open).
-11. **Localisation.** Built. Fluent (`fluent-bundle` 0.16, `unic-langid`), with `crates/client/locales/en/*.ftl` and the `Words` facade in QML. `en` is the only shipped locale; `--locale=pseudo` runs the pseudo-locale.
+11. **Localisation.** Built. Fluent (`fluent-bundle` 0.16, `unic-langid`), with `crates/wording/locales/en/*.ftl` and the `Words` facade in QML. `en` is the only shipped locale; `--locale=pseudo` runs the pseudo-locale.
 12. **Crate splits.** Built (S-20). The pass crates are split out of `pg-library`. The ledger records one deviation in S-20.3.
 13. **Verification.** Built with gaps. `just lint` (includes the wasm32 check of `pg-model` and `pg-client`, machete, ruff, markdownlint, `lint-qml`; `just deny` runs `cargo deny`), `just test`, `just qmltest`, `just shots`, `just perf`, `just fuzz-smoke`. CI is in place but red at `15ca4e1` (S-15).
 
 ## 3. Deviations from the old plan
 
-- The controller's test layout is `crates/client/tests/` (facets, sort and the start traces), not a single `crates/client/tests/controller/` directory.
+- The controller's tests are split between `crates/client/tests/controller.rs` and the `crates/client/tests/controller/` folder (one file per sub-machine), not one file.
 - `Place` was the name in the session and views code until S-12.9 and is `Listing` now.
 - The session's last file is its own `session` key in the desktop's settings, not a field of `Place`.
-- `pg_catalog::query` does not exist. `from_json` and `to_json` are in `pg-query` (`crates/query/src/lib.rs:320,326`).
+- `pg_catalog::query` does not exist. `from_json` and `to_json` are in `pg-query` (`crates/query/src/lib.rs:348,354`).
 - The web client's verdict is not recorded in this file. See `WEB_CLIENT.md`.
 
 ## 4. Reuse (verified names)
@@ -58,11 +58,11 @@ The decisions from the old file, each with its status.
 - `pg_app::yandex::{Source, replay}`: the Yandex source seam and the offline replay, `crates/app/src/yandex/`.
 - `pg_client::viewport`: `crates/client/src/viewport.rs`. (The desktop's `ViewportRust` is `crates/desktop/src/bridges/viewport_state.rs`.)
 - `pg_testkit`: `crates/testkit/src/lib.rs`.
-- `PG_CATALOG_DIR` and `PG_PREFS`: `crates/app/src/config.rs`, `crates/cli/src/args.rs`.
+- `PG_CATALOG_DIR` and `PG_PREFS`: named in `crates/platform/src/env.rs`, resolved in `crates/library/src/layout.rs`.
 - `catalog::rebuild`: `crates/catalog/src/rebuild.rs` (`pub(crate)`; there is no CLI command).
 - `tools/profiling/synthetic_library.py`, the screenshot harness in `tools/shots/`, `tools/perf_check.py`, `tools/lint_qml.py`, `tools/qmltest.py`.
 
-Not in the code, so not reusable: `command_line::value`, `Tree::row_of_path`, `tools/wsl-check.sh`, `tools/profiling/wsl-bench.sh`, and the key-check pattern cited at `catalog/src/lib.rs:1637-1643` (that file is 54 lines).
+Not in the code, so not reusable: `command_line::value`, `Tree::row_of_path`, `tools/wsl-check.sh`, `tools/profiling/wsl-bench.sh`, and the key-check pattern cited at `catalog/src/lib.rs:1637-1643` (that file is 72 lines, so the cite is past its end).
 
 ## 5. Verification
 

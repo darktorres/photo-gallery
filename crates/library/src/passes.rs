@@ -3,7 +3,7 @@
 //! over the lane's volumes (`Inner::volume_set`), so the lanes of two drives run these passes at once, and the lanes of
 //! one drive run them in turn.
 
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 
 use pg_catalog::Catalog;
 use pg_jobs::failure::Failed;
@@ -28,14 +28,9 @@ pub(crate) struct Cx<'a> {
     pub(crate) said: &'a mut bool,
 }
 
-/// The notice of a crop job's file failure: its error capped as a notice holds it.
-pub(crate) fn file_failure(failure: FileFailure) -> FileFailure {
+/// A file failure of a crop job, with its error capped as a notice holds it.
+pub(crate) fn cap_error(failure: FileFailure) -> FileFailure {
     FileFailure { error: tidy(&failure.error, ERROR_CAP), ..failure }
-}
-
-/// A count as a notice holds it.
-pub(crate) fn count(n: usize) -> u64 {
-    u64::try_from(n).unwrap_or(u64::MAX)
 }
 
 /// An error's text as a notice holds it (`pg_model::notice::error_text`).
@@ -79,6 +74,23 @@ pub(crate) fn after_pairing(inner: &Inner, rules: PathRules, path: &RulePath, pa
     }
 }
 
+/// The folder a lane is walking, shown to the coordinator until the guard drops: the mark is cleared however the walk ends,
+/// a panic included.
+struct Walking<'a>(&'a Mutex<Option<RulePath>>);
+
+impl<'a> Walking<'a> {
+    fn begin(slot: &'a Mutex<Option<RulePath>>, path: &RulePath) -> Self {
+        *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
+        Self(slot)
+    }
+}
+
+impl Drop for Walking<'_> {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
 /// Walks the folders asked for, skipping those no longer in the library. A scan stopped early goes back to the front.
 pub(crate) struct Scans;
 
@@ -106,9 +118,10 @@ impl Pass<Cx<'_>> for Scans {
             if !library.iter().any(|l| rules.is_under(&path, l)) {
                 continue;
             }
-            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
-            let scanned = pg_scan::scan(cx.catalog, &path, &cx.inner.ctl);
-            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            let scanned = {
+                let _walking = Walking::begin(&cx.inner.scanning, &path);
+                pg_scan::scan(cx.catalog, &path, &cx.inner.ctl)
+            };
             // What a scan leaves to the runner after the scan's phase has closed: the replaced thumbnails, the temp files, the
             // notices.
             let _after = pg_perf::span("scan.after");
@@ -204,6 +217,8 @@ impl Pass<Cx<'_>> for Hashes {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let features = cx.inner.shared.features.clone();
         if !features.get().duplicates {
+            // Nothing is hashed, so nothing is unreadable: a notice from an earlier round is no longer true.
+            cx.inner.files_read(FilePass::Import, 0, true);
             return Ok(Step::Done);
         }
         let volumes = cx.inner.volume_set();

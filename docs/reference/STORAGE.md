@@ -55,7 +55,7 @@ read at once, and folders on one drive stay one stream.
 ### Which disks are supported (Windows)
 
 Only NTFS on plain physical disks. After the network, removable, link and NTFS checks, the scan's folder check
-(`pg_scan::refusal`, step 7) asks the drive probe (`pg_platform::drive::Drives`, the same one the lanes use) for the
+(`crates/scan/src/refusal.rs`, step 7) asks the drive probe (`pg_platform::drive::Drives`, the same one the lanes use) for the
 folder's drive, and refuses an opaque one (`RefusedReason::OpaqueDisk`): a virtual or file-backed disk (VHD, VHDX),
 Storage Spaces, a RAID controller, iSCSI, or an unknown bus. The rule is the probe's own (`OPAQUE_BUSES`), not a second
 list. A USB disk is taken; its kind is `Unknown`. SCSI and SAS are taken: "SCSI" in the rule is read as iSCSI (to be
@@ -90,7 +90,7 @@ catalog, scan and platform tests).
 
 - **Birth time** is `statx` btime (`std::fs::Metadata::created()`). A file system that gives none (drvfs) gives NULL,
   and NULL matches any creation time: the file is still the same file by its identity (S-17.7 decision 2).
-- **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`pg_scan::refusal`, from `pg_platform::dir::fs_type`). Their inode numbers come
+- **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`crates/scan/src/refusal.rs`, from `pg_platform::dir::fs_type`). Their inode numbers come
   from the server and can be unstable or duplicated. FAT (`vfat`, `msdos`) and exFAT roots, as on Windows: they store
   no inode numbers, so the kernel derives each one while the volume is mounted, and a file's number is not the same
   after a remount. The kernel's pseudo file systems (`/proc`, `/sys`, ...). A mount under a root is checked the same

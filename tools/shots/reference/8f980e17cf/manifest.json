@@ -4,7 +4,7 @@
   "fixtures": {
     "default": "C18A607BB6F65B51016A081D67637E4FE0338E963D68D20CD0C99DDE1D14D04F"
   },
-  "qt": "C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe",
+  "qt": "C:\\Qt\\6.12.0\\msvc2022_64\\bin\\qmake.exe",
   "wait": 10.0,
   "scenarios": [
     {

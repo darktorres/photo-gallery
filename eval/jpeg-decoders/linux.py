@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The JPEG decoder comparison, on Linux: in the container (`just linux-eval
-eval/jpeg-decoders/linux.py STEP...`) or natively (it was wsl.sh). Usage, from the repository:
+eval/jpeg-decoders/linux.py STEP...`) or natively. Usage, from the repository:
     python3 eval/jpeg-decoders/linux.py STEP...
 Steps: inputs (copy the 7 files to the inputs folder), check (clippy, rustfmt), compare (output vs libjpeg-turbo), time
 (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs, all threads: libvips
@@ -56,7 +56,7 @@ def ffmpeg_prefix() -> Path:
     prefix.mkdir(parents=True, exist_ok=True)
     for link, target in (("include", f"/usr/include/{arch}"), ("lib", f"/usr/lib/{arch}")):
         path = prefix / link
-        if not path.is_symlink() or path.readlink() != target:
+        if not path.is_symlink() or path.readlink() != Path(target):
             path.unlink(missing_ok=True)
             path.symlink_to(target)
     return prefix

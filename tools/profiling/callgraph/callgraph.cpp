@@ -34,6 +34,7 @@
 
 #include "pin.H"
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -311,7 +312,8 @@ VOID on_set_name(Thread* t, ADDRINT handle, ADDRINT name) {
     UINT16 wide[128];
     size_t got = PIN_SafeCopy(wide, reinterpret_cast<VOID*>(name), sizeof wide - sizeof wide[0]) / sizeof wide[0];
     std::string s;
-    for (size_t i = 0; i < got && wide[i]; i++) s += wide[i] < 0x80 ? char(wide[i]) : '?';
+    // Printable ASCII only: a control character (a newline, say) would split the callgrind line the name is written on.
+    for (size_t i = 0; i < got && wide[i]; i++) s += wide[i] >= 0x20 && wide[i] < 0x7f ? char(wide[i]) : '?';
     t->name = s;
 }
 
@@ -417,9 +419,13 @@ void write_all() {
 }
 
 VOID on_start(THREADID tid) {
-    static bool done = false;
-    if (done || !PIN_StopApplicationThreads(tid)) return;
-    done = true;
+    // Claimed by one thread, which then stops the application; a failed stop releases the claim for the next entry.
+    static std::atomic<bool> claimed{false};
+    if (claimed.exchange(true)) return;
+    if (!PIN_StopApplicationThreads(tid)) {
+        claimed = false;
+        return;
+    }
     for (Thread* t : all_threads()) {
         t->count = t->mark = 0;
         std::fill(t->self.begin(), t->self.end(), 0);
@@ -430,11 +436,14 @@ VOID on_start(THREADID tid) {
 }
 
 VOID on_stop(THREADID tid) {
-    static bool done = false;
-    if (done) return;
+    // Claimed by one thread, which writes the profile and exits; a failed stop releases the claim for the next entry.
+    static std::atomic<bool> claimed{false};
+    if (claimed.exchange(true)) return;
     fprintf(stderr, "callgraph: stopping the threads\n");
-    if (!PIN_StopApplicationThreads(tid)) return;
-    done = true;
+    if (!PIN_StopApplicationThreads(tid)) {
+        claimed = false;
+        return;
+    }
     fprintf(stderr, "callgraph: writing\n");
     write_all();
     PIN_ExitProcess(0);

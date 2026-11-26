@@ -196,6 +196,15 @@ pub(crate) const UNC_AFTER: &[Unit] = &[
 ];
 #[cfg(windows)]
 const DEVICE: &[Unit] = &[0x5C, 0x5C, 0x2E, 0x5C]; // \\.\
+/// A `/`, which the verbatim form does not take as a separator.
+#[cfg(windows)]
+const SLASH: Unit = 0x2F;
+/// A `.`: a name's trailing dot, which the plain form drops.
+#[cfg(windows)]
+const DOT: Unit = 0x2E;
+/// A `:`, after a drive letter.
+#[cfg(windows)]
+const COLON: Unit = 0x3A;
 
 /// How a path is given in the verbatim form.
 #[cfg(windows)]
@@ -214,9 +223,6 @@ enum Form {
 /// of which the plain form resolves, and the verbatim form would take literally) keep it plain.
 #[cfg(windows)]
 fn form_of(path: &[Unit]) -> Form {
-    const SLASH: Unit = 0x2F;
-    const DOT: Unit = 0x2E;
-    const COLON: Unit = 0x3A;
     if path.contains(&SLASH) || path.starts_with(VERBATIM) || path.starts_with(DEVICE) {
         return Form::Plain;
     }
@@ -264,7 +270,6 @@ fn to_verbatim(path: &mut Vec<Unit>) {
 /// `\\?\UNC\server\…` becomes `\\server\…`. Any other verbatim path (a volume's GUID path, a device) is as it is.
 #[cfg(windows)]
 fn plain_in_place(path: &mut Vec<Unit>) {
-    const COLON: Unit = 0x3A;
     let plain: Option<Vec<Unit>> = match path.strip_prefix(VERBATIM) {
         Some(rest) if matches!(rest, [letter, COLON, SEP, ..] if u8::try_from(*letter).is_ok_and(|b| b.is_ascii_alphabetic())) => {
             Some(rest.to_vec())

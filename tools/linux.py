@@ -137,9 +137,10 @@ def build(target, tag):
 
 
 def ensure_image(tag, target):
+    """Builds the image on every call: the pins are build arguments, so a changed pin rebuilds the layers that use it, and
+    Docker's layer cache makes an up-to-date build a quick no-op. An image that merely exists may be stale."""
     ensure_daemon()
-    if not docker_ok("image", "inspect", tag):
-        build(target, tag)
+    build(target, tag)
 
 
 def cache_mounts():

@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use pg_jobs::tuner::{Learned, Prior, Tuner, TunerConfig};
 use pg_model::profile::{DriveProfiles, ProfileEntry};
@@ -85,10 +85,8 @@ pub(crate) fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-/// The time now, in Unix seconds (0 before the epoch).
-pub(crate) fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-}
+// The time now, in Unix seconds: the platform's clock, which every crate reads the same way.
+pub(crate) use pg_platform::clock::unix_now as now_secs;
 
 /// A lane's tuners and its drive. See the module comment.
 pub(crate) struct LaneTuner {

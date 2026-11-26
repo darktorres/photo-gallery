@@ -106,7 +106,7 @@ the opposite: global edits = duplicate, local content edits = not a duplicate. C
 models like SSCD are trained to *ignore* local edits (overlays, pasted content), so this is not
 a calibration problem. **No threshold, normalization or better embedding model fixes it.** It
 needs a stage that aligns the two images and looks at *where* they differ (see
-`PLAN.md` / the verifier decision below).
+`../plans/PLAN.md` and the verifier in [VERIFIER.md](VERIFIER.md)).
 
 ### Synthetic edits, all models (subset, 2026-10-29)
 
@@ -141,7 +141,7 @@ d p50 0, within d ≤ 31 99.7%. The other rows don't change.
   95%-recall threshold (0.879) is set by labeled pairs, which are mostly light edits. Confirms
   design conclusion 2 (rank + verifier, not a lower threshold) and 3 (trim borders first).
 - **SSCD-large vs SSCD:** same retrieval; slightly higher similarity on crops (crop 80% above the
-  threshold 0.98 vs 0.77). Not enough to justify 7× the cost (below).
+  threshold 0.98 vs 0.77). Not enough to justify about 4× the cost (185 vs 47 GPU hours for 70M, in the speed table above).
 
 ## Accelerators and a second model
 

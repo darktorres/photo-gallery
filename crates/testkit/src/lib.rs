@@ -74,6 +74,12 @@ pub fn run_folder_with(scratch: &str, prefix: &str, dirs: &[&str]) -> Result<Pat
 /// one at a time. Each test binary has its own copy.
 pub static ONE_PASS: Mutex<()> = Mutex::new(());
 
+/// Whether ExifTool runs here: a test that writes or reads through it returns when this is `false`, and says so
+/// (`pg_platform::testing::require_tool`, which fails the test instead when `PG_REQUIRE_TOOLS` is on).
+pub fn require_exiftool() -> bool {
+    pg_platform::testing::require_tool("ExifTool", pg_platform::env::exiftool_program(), "-ver")
+}
+
 /// The interval a [`wait_until`] polls at.
 const POLL: Duration = Duration::from_millis(20);
 
@@ -91,6 +97,12 @@ pub fn wait_until<W: Display>(within: Duration, what: impl Fn() -> W, mut done: 
 /// [`wait_until`] for a file: until `path` exists.
 pub fn wait_for_path(path: &Path, within: Duration) {
     wait_until(within, || format!("{} to appear", path.display()), || path.exists());
+}
+
+/// A float as whole units, rounded to the nearest (a negative value is 0): the tests' own conversion, through its
+/// decimal text.
+pub fn whole_units(x: f64) -> u64 {
+    format!("{:.0}", x.max(0.0)).parse().unwrap_or(0)
 }
 
 /// The interleaved RGB bytes of a `w` × `h` picture whose channels step across it, so a crop or a turn moves pixels that
@@ -145,6 +157,23 @@ pub fn letterboxed_rgb(w: u32, h: u32, bar: u32) -> Vec<u8> {
         let c = |shift: u32| u8::try_from(60 + (block >> shift) % 150 + noise).unwrap_or(u8::MAX);
         [c(0), c(8), c(16)]
     })
+}
+
+/// Every file under `dir`, at any depth, as `dir.join`s of their names, so a path given in the verbatim form comes back in
+/// it and a plain one comes back plain. The folders are read verbatim (`pg_platform::native::verbatim`), so a deep one is
+/// read whole on Windows.
+pub fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(pg_platform::native::verbatim(dir)) else { return found };
+    for entry in entries.flatten() {
+        let path = dir.join(entry.file_name());
+        if pg_platform::native::verbatim(&path).is_dir() {
+            found.extend(files_under(&path));
+        } else {
+            found.push(path);
+        }
+    }
+    found
 }
 
 #[cfg(test)]

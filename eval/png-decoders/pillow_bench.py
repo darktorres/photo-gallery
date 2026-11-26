@@ -5,8 +5,10 @@ on the same files as `png-decoders time`.
 
 DIR holds the app's output from `png-decoders dump DIR FILE...` (NAME.raw, and NAME.txt with "width height channels
 bytes-per-sample"). Each file is read into memory first, so the timing is the decode alone, as the Rust harness times
-it: `Image.open` on the bytes, `load()`, then a conversion only when the mode isn't L, RGB or RGBA (a palette: RGBA if
-it has transparency, RGB otherwise). Pixels are compared with the app's output, sample by sample.
+it: `Image.open` on the bytes, `load()`, then a conversion only where the mode needs one to match the app's layout: a
+palette becomes RGBA if it has transparency and RGB otherwise; grey with a colour key becomes LA and RGB with a key
+becomes RGBA; any other mode without alpha becomes RGB, and one with alpha becomes RGBA. Pixels are compared with the
+app's output, sample by sample.
 
 16-bit files are not timed or compared: Pillow reads a 16-bit RGB(A) PNG at 8 bits, so its output isn't the app's.
 """

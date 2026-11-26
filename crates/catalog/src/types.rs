@@ -106,7 +106,7 @@ pub(crate) fn roots_on(conn: &Connection, rules: PathRules) -> Result<Vec<Root>>
     let mut roots = Vec::new();
     for row in rows {
         let (id, bytes) = row?;
-        let path = rules.parse_bytes(&bytes).ok_or(Error::Stored { what: "a stored library path has a NUL" })?;
+        let path = stored_path(rules, &bytes)?;
         roots.push(Root { id: RootId::new(id), path });
     }
     Ok(roots)
@@ -221,6 +221,14 @@ pub(crate) fn bad_value(index: usize, ty: Type, column: &'static str, value: &st
     rusqlite::Error::FromSqlConversionFailure(index, ty, Box::new(BadValue { column, value: value.to_string() }))
 }
 
+/// The words of the error for a stored path that does not read under its rules: its bytes hold a NUL, so the row is damaged.
+pub(crate) const STORED_PATH_DAMAGED: &str = "a stored path has a NUL, so its row is damaged";
+
+/// A stored path's bytes read under `rules` (`PathRules::parse_bytes`), or the damaged-row error ([`STORED_PATH_DAMAGED`]).
+pub(crate) fn stored_path(rules: PathRules, bytes: &[u8]) -> Result<RulePath> {
+    rules.parse_bytes(bytes).ok_or(Error::Stored { what: STORED_PATH_DAMAGED })
+}
+
 /// The kind in column `i` (`files.kind`, a `Kind::code`): an error for one that doesn't read, as an unknown extension is.
 pub(crate) fn kind_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Kind> {
     let code = r.get_ref(i)?.as_i64()?;
@@ -275,8 +283,8 @@ pub(crate) fn key_version_text() -> String {
 }
 
 /// The versions of what the build makes, which `files.pending`, `analysis.borders_due` and the failure ledger are kept
-/// against (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`, `pg_model::versions::THUMBS_VERSION`). The library passes them
-/// to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.
+/// against (`pg_model::versions::IMPORT_VERSION`, `pg_model::versions::BORDERS_VERSION`, `pg_model::versions::THUMBS_VERSION`).
+/// The library passes them to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Versions {
     /// The import's version.
@@ -285,7 +293,7 @@ pub struct Versions {
     pub borders: i64,
     /// The thumbnails' version.
     pub thumbs: i64,
-    /// `pg_model::pdq::PAIRING_VERSION`: the pairs the pairing pass makes.
+    /// `pg_model::versions::PAIRING_VERSION`: the pairs the pairing pass makes.
     pub pairing: i64,
 }
 

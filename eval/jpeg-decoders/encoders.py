@@ -30,18 +30,9 @@ import env
 from timing import median_s, seconds_of
 
 from linux import ENCODES as W
-from linux import EVAL, INPUTS
+from linux import EVAL, INPUTS, NAMES
 
 BIN = EVAL / "bin"
-NAMES = [
-    "pin-base444-1mp",
-    "pin-base444-3mp",
-    "pin-prog420-1mp",
-    "pin-base420-1mp",
-    "phone-base420-4mp",
-    "sony-base422-7mp",
-    "a6000-base422-24mp",
-]
 QUALITIES = [50, 60, 70, 75, 80, 85, 90, 95]
 GUETZLI_Q = [84, 88, 92, 95]  # guetzli refuses quality below 84
 GUETZLI_MAX_MP = 3.5  # minutes per megapixel and ~300 MB per megapixel: Pinterest-sized inputs only
@@ -170,27 +161,41 @@ def score_one(out):
     return float(r.stdout.split()[-1])
 
 
+CACHE_FIELDS = ["file", "bytes", "mtime_ns", "ssimulacra2"]
+
+
 def score():
+    """The SSIMULACRA2 of every output, from the cache where the output is still the file it was scored from: the same
+    name, size and modification time. An output re-encoded under the same name is scored again."""
     cache = W / "scores.csv"
-    known = {}
+    known = {}  # output name -> (bytes, mtime_ns, score)
     if cache.exists():
-        with cache.open() as f:
-            known = {r["file"]: float(r["ssimulacra2"]) for r in csv.DictReader(f)}
+        with cache.open(newline="") as f:
+            rows = csv.DictReader(f)
+            if rows.fieldnames == CACHE_FIELDS:  # an older layout is scored again
+                known = {r["file"]: (int(r["bytes"]), int(r["mtime_ns"]), float(r["ssimulacra2"])) for r in rows}
     outs = sorted(p for p in (W / "out").glob("*.jpg"))
-    todo = [p for p in outs if p.name not in known]
+    stats = {p: p.stat() for p in outs}
+
+    def fresh(p):
+        entry = known.get(p.name)
+        return entry is not None and entry[:2] == (stats[p].st_size, stats[p].st_mtime_ns)
+
+    todo = [p for p in outs if not fresh(p)]
     with ThreadPoolExecutor(os.cpu_count()) as ex:
         for p, s in zip(todo, ex.map(score_one, todo), strict=True):
-            known[p.name] = s
+            known[p.name] = (stats[p].st_size, stats[p].st_mtime_ns, s)
     with cache.open("w", newline="") as f:
         wr = csv.writer(f)
-        wr.writerow(["file", "ssimulacra2"])
+        wr.writerow(CACHE_FIELDS)
         for k in sorted(known):
-            wr.writerow([k, f"{known[k]:.3f}"])
+            size, mtime, s = known[k]
+            wr.writerow([k, size, mtime, f"{s:.3f}"])
     # name -> enc -> [(q, bytes, score)]
     data = {}
     for p in outs:
         name, enc, q = p.name.split(".")[:3]
-        data.setdefault(name, {}).setdefault(enc, []).append((int(q[1:]), p.stat().st_size, known[p.name]))
+        data.setdefault(name, {}).setdefault(enc, []).append((int(q[1:]), stats[p].st_size, known[p.name][2]))
     encs = sorted({e for d in data.values() for e in d}, key=lambda e: (e != REFERENCE, e))
     print(
         f"Bytes to reach the score of {REFERENCE} Q{REF_Q} (4:4:4, optimized Huffman), as a ratio of its bytes; "
@@ -199,10 +204,11 @@ def score():
     print("image".ljust(22), "ref score".rjust(9), "ref bpp".rjust(8), *[e.rjust(13) for e in encs[1:]])
     ratios = {e: [] for e in encs}
     for name in NAMES:
-        if name not in data or REFERENCE not in data[name]:
+        ref = next((r for r in data.get(name, {}).get(REFERENCE, []) if r[0] == REF_Q), None)
+        if ref is None:  # a partial encode can leave the reference without its Q75 output
+            print(name.ljust(22), f"skipped: no {REFERENCE} Q{REF_Q} output")
             continue
         w, h = ppm_size(W / "src" / f"{name}.ppm")
-        ref = next(r for r in data[name][REFERENCE] if r[0] == REF_Q)
         cells = []
         for e in encs[1:]:
             pts = sorted(data[name].get(e, []), key=lambda r: r[2])

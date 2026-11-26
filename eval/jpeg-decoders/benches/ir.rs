@@ -53,11 +53,11 @@ mod linux {
     bench!(full_jpeg_decoder, Dec::JpegDecoder, Mode::Full);
     bench!(full_ffmpeg, Dec::Ffmpeg, Mode::Full);
     bench!(full_vips, Dec::Vips, Mode::Full);
-    bench!(scaled_turbo, Dec::Turbo, Mode::Analyze);
-    bench!(scaled_turbo_fast, Dec::TurboFast, Mode::Analyze);
-    bench!(scaled_jpeg_decoder, Dec::JpegDecoder, Mode::Analyze);
-    bench!(scaled_ffmpeg, Dec::Ffmpeg, Mode::Analyze);
-    bench!(scaled_vips, Dec::Vips, Mode::Analyze);
+    bench!(analyze_turbo, Dec::Turbo, Mode::Analyze);
+    bench!(analyze_turbo_fast, Dec::TurboFast, Mode::Analyze);
+    bench!(analyze_jpeg_decoder, Dec::JpegDecoder, Mode::Analyze);
+    bench!(analyze_ffmpeg, Dec::Ffmpeg, Mode::Analyze);
+    bench!(analyze_vips, Dec::Vips, Mode::Analyze);
 
     library_benchmark_group!(
         name = decoders,
@@ -68,11 +68,11 @@ mod linux {
             full_jpeg_decoder,
             full_ffmpeg,
             full_vips,
-            scaled_turbo,
-            scaled_turbo_fast,
-            scaled_jpeg_decoder,
-            scaled_ffmpeg,
-            scaled_vips
+            analyze_turbo,
+            analyze_turbo_fast,
+            analyze_jpeg_decoder,
+            analyze_ffmpeg,
+            analyze_vips
         ]
     );
 }

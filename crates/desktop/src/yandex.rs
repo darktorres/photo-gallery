@@ -46,8 +46,8 @@ const ROLE_FRAME_HEIGHT: i32 = 263;
 const ROLE_IS_OTHER: i32 = 264;
 
 /// The height a row of results is laid out at: fixed, at the size the gallery's rows start at. The search makes its grid
-/// pictures at this height.
-const ROW_HEIGHT: RowHeight = RowHeight::DEFAULT;
+/// pictures at this height. Not the gallery's row height range (`pg_model::size::ROW_HEIGHT`).
+const RESULT_ROW_HEIGHT: RowHeight = RowHeight::DEFAULT;
 
 /// The app's search, which the panel shows.
 fn search() -> &'static pg_app::yandex::Yandex {
@@ -153,7 +153,7 @@ impl qobject::YandexSearch {
     /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
-        match search().start(path, ROW_HEIGHT) {
+        match search().start(path, RESULT_ROW_HEIGHT) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("search", &e),
@@ -306,9 +306,9 @@ impl qobject::YandexSearch {
         self.results.get(i).map(|hit| hit.id)
     }
 
-    /// Lay the results out in the panel's width, at `ROW_HEIGHT` and the gallery's gap, as the gallery lays its rows out:
-    /// each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks' heights
-    /// are set. Each result's frame is read again (its roles).
+    /// Lay the results out in the panel's width, at `RESULT_ROW_HEIGHT` and the gallery's gap, as the gallery lays its
+    /// rows out: each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks'
+    /// heights are set. Each result's frame is read again (its roles).
     fn relayout(mut self: Pin<&mut Self>) {
         self.as_mut().compute_layout();
         self.emit_frames();
@@ -319,7 +319,7 @@ impl qobject::YandexSearch {
     fn compute_layout(mut self: Pin<&mut Self>) {
         let other_aspects: Vec<f64> = self.results.first().iter().map(hit_aspect).collect();
         let similar_aspects: Vec<f64> = self.results.second().iter().map(hit_aspect).collect();
-        let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT.get()), self.gap);
+        let (width, height, gap) = (self.layout_width, f64::from(RESULT_ROW_HEIGHT.get()), self.gap);
         let (mut frames, other_height) = layout::frames(&other_aspects, width, height, gap);
         let (similar, similar_height) = layout::frames(&similar_aspects, width, height, gap);
         frames.extend(similar);

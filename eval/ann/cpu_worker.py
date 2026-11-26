@@ -9,12 +9,18 @@ Job keys:
 - metric: "ip" (unit vectors: cosine) or "l2"
 - family: "usearch", "faiss" or "nndescent"; config: that family's build settings (see build_*)
 - params: the search settings to run, one search each (ef / efSearch / nprobe); k: results per query
-- order: "file" (rows added in file order, as an import would) or "shuffled" (seeded by "seed")
-- train: .npy of training vectors, or null to train on a sample of the base; centroids: .npy of IVF centroids to
-  use instead of training the coarse quantizer
-- out: folder for ids_<param>.npy (int32, -1 = no result) and result.json (times, memory, peak RSS)
+- order: "file" (default: rows added in file order, as an import would) or "shuffled" (seeded by "seed", default 0)
+- train: .npy of training vectors, or null (default) to train on a random sample of 300,000 base rows (seed 0);
+  centroids: .npy of IVF centroids to use instead of training the coarse quantizer
 - converged (default 1e-4), max_search_s (default none): stop widening the search once fewer than this share of
   rows change their top 10, or once the sweep's total search time passes this
+- out: folder for the outputs, created if missing:
+  - ids_<i>.npy: the results of params[i] (int32, -1 = no result); ids_graph.npy for "nndescent" instead: the
+    K-nearest-neighbour graph of the base (int32, -1 = none)
+  - result.json: family, config, build_s, index_bytes (usearch and faiss), searches (one per file: param, search_s,
+    file), stopped (set when the sweep ended early, with the reason), peak_rss_bytes, base_bytes
+Build defaults: THREADS = 12; faiss HNSW efConstruction 40 unless the config gives efC; nndescent iter 10, S 10,
+R 100 and L K + 50 unless the config gives them.
 """
 
 import json
@@ -154,6 +160,8 @@ def main() -> None:
         # more. Neither rule looks at the ground truth.
         spent += seconds
         top = np.sort(ids[:, :10], axis=1)
+        if top.shape[1] < 10:  # a width below ten: pad, so every width is compared on the same ten slots
+            top = np.pad(top, ((0, 0), (0, 10 - top.shape[1])), constant_values=-1)
         if previous is not None and (top != previous).any(axis=1).mean() < job.get("converged", 1e-4):
             result["stopped"] = f"converged after {param}"
             break

@@ -328,7 +328,7 @@ mod tests {
             let m = meta_of(&block, Format::Tiff);
             assert_eq!((m.rating.map(Rating::get), m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
         }
-        // The library's case (6 files, which kamadak-exif read no rating from): a block that ends 4 bytes early,
+        // A case seen in the library (6 files): a block that ends 4 bytes early,
         // cutting off the Exif IFD's next-IFD offset. IFD0's rating is whole, and read.
         let exif_version = (0x9000, TIFF_UNDEFINED, 4, b"0210".to_vec());
         let mut block =
@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn exif_dates_as_kamadak_read_them() {
+    fn exif_dates_are_read_from_their_text_form() {
         assert_eq!(exif_date(b"2023:07:15 18:30:05"), Some(1_689_445_805));
         // Anything after the seconds is ignored.
         assert_eq!(exif_date(b"2023:07:15 18:30:05.123+02:00"), Some(1_689_445_805));

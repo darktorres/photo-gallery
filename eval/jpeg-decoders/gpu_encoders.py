@@ -10,20 +10,25 @@ encode time for GPUJPEG).
 import argparse
 import os
 import re
-import statistics
 import subprocess
-import time
+import uuid
 from pathlib import Path
 
 import env
+from encoders import QUALITIES
 from nvidia import nvimgcodec as nv
 from reference_io import read_ppm
-from timing import BUDGET_S
+from timing import timed_s
 
 if not os.environ.get("PG_JPEG_ENC_DIR"):
     raise SystemExit("set PG_JPEG_ENC_DIR (.env) to encoders.py's work folder, the one the container mounts")
 W = Path(os.environ["PG_JPEG_ENC_DIR"])
-QUALITIES = [50, 60, 70, 75, 80, 85, 90, 95]
+
+
+def tmp_of(out):
+    """A unique temp name beside `out`: an encode writes here and is renamed to `out` only when it has finished,
+    so an interrupted run never leaves a truncated file under the name a later run takes as done."""
+    return out.with_name(f"{out.name}.{uuid.uuid4().hex}.tmp")
 
 
 def nv_params(q):
@@ -51,23 +56,21 @@ def main():
         for q in QUALITIES:
             out = W / "out" / f"{name}.nvjpeg.q{q}.jpg"
             if not out.exists():
-                out.write_bytes(enc.encode(img, "jpeg", params=nv_params(q)))
+                tmp = tmp_of(out)
+                tmp.write_bytes(enc.encode(img, "jpeg", params=nv_params(q)))
+                tmp.replace(out)
             out = W / "out" / f"{name}.gpujpeg.q{q}.jpg"
             if not out.exists():
+                tmp = tmp_of(out)
                 subprocess.run(
-                    [a.gpujpeg, "-e", "-q", str(q), "--subsampled=4:4:4", "-i", str(ppm), str(out)],
+                    [a.gpujpeg, "-e", "-q", str(q), "--subsampled=4:4:4", "-i", str(ppm), str(tmp)],
                     check=True,
                     capture_output=True,
                 )
+                tmp.replace(out)
         p = nv_params(75)
-        for _ in range(3):
-            enc.encode(img, "jpeg", params=p)
-        ts, t0 = [], time.perf_counter()
-        while len(ts) < 5 or time.perf_counter() - t0 < BUDGET_S:
-            t = time.perf_counter()
-            enc.encode(img, "jpeg", params=p)
-            ts.append(time.perf_counter() - t)
-        nvms = statistics.median(ts) * 1e3 / mp
+        secs, _ = timed_s(lambda: enc.encode(img, "jpeg", params=p))
+        nvms = secs * 1e3 / mp
         r = subprocess.run(
             [a.gpujpeg, "-v", "-n", "20", "-e", "-q", "75", "--subsampled=4:4:4", "-i", str(ppm), str(W / "speed-gpujpeg.jpg")],
             capture_output=True,

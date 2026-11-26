@@ -5,7 +5,7 @@ use pg_model::detection::{Kind, Reason, Side};
 use super::lines::SolidLines;
 use super::params::Params;
 use super::seam::{DetailSums, refine_seam, seam_straightness};
-use super::stats::{hist_median2, run_length};
+use super::stats::{hist_median2, run_length, tally};
 use super::view::View;
 
 /// The buffers a side's detection uses, kept from side to side and image to image.
@@ -22,11 +22,6 @@ impl Scratch {
     pub(super) fn capacity_bytes(&self) -> usize {
         self.lines.capacity_bytes() + self.sums.capacity_bytes() + self.act_cum.capacity() * size_of::<f64>()
     }
-}
-
-/// `x` rounded toward zero, as a count of pixels or lines.
-fn to_count(x: f64) -> usize {
-    pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
 /// What starts a side's detection: its first lines solid (measured into `lines`), or blurred. `blur_thr`: see
@@ -50,7 +45,7 @@ fn blurred(v: &View, blur_thr: Option<f64>) -> bool {
 
 /// A border at the edge of `v`, if any (accepted, or a rejected candidate).
 pub(super) fn detect_side(s: &mut Scratch, v: &View, p: &Params, blur_thr: Option<f64>) -> Option<Side> {
-    let depth_max = to_count(pg_model::num::count(v.depth) * p.max_frac);
+    let depth_max = pg_model::num::f64_to_pixels(pg_model::num::count(v.depth) * p.max_frac);
     if depth_max < p.min_px + 8 {
         return None;
     }
@@ -120,9 +115,7 @@ fn solid_side(v: &View, p: &Params, depth_max: usize, lines: &mut SolidLines, su
     let mut hi = [i32::MIN; 3];
     for m in meds {
         for (((hist, &value), low), high) in hists.iter_mut().zip(m).zip(&mut lo).zip(&mut hi) {
-            if let Some(bin) = usize::try_from(value).ok().and_then(|v| hist.get_mut(v)) {
-                *bin += 1;
-            }
+            tally(hist, value);
             *low = (*low).min(value);
             *high = (*high).max(value);
         }
@@ -136,8 +129,7 @@ fn solid_side(v: &View, p: &Params, depth_max: usize, lines: &mut SolidLines, su
         for px in v.line(line) {
             let dev4 = px.iter().zip(&center4).map(|(&x, &c)| (4 * x - c).abs()).max().unwrap_or(0);
             // At most 4 × 255 (4 × a channel against 4 × a median colour): it has its bin.
-            if let Some(bin) = usize::try_from(dev4).ok().and_then(|d| hist.get_mut(d)) {
-                *bin += 1;
+            if tally(&mut hist, dev4) {
                 count += 1;
             }
         }
@@ -158,25 +150,30 @@ fn blur_side(v: &View, p: &Params, depth_max: usize, sums: &mut DetailSums, act_
     if first >= last {
         return None;
     }
-    sums.measure(v, 0..lines);
-    let sums = &*sums;
     // Each line's detail (as the sum over its columns: only ratios of them are compared), summed down the lines.
     act_cum.clear();
     act_cum.reserve(lines + 1);
     act_cum.push(0.0);
     let mut total = 0.0;
     for line in 0..lines {
-        let act: u64 = sums.between(line, line + 1)?.map(u64::from).sum();
+        let act: u64 = v.steps3(line).map(u64::from).sum();
         total += pg_model::num::size(act);
         act_cum.push(total);
     }
+    // The cheap bar-against-content test comes first, so the straightness check (which measures the lines around
+    // its row, and only those) runs for the few rows that pass it.
     let found = (first..last).find_map(|row| {
-        let straight = seam_straightness(v, sums, row, K, p);
         // The mean detail of the bar above the row, and of the content below it (`last` leaves room for it).
         let (&cum_row, &cum_end) = (act_cum.get(row)?, act_cum.get(row + CONTENT)?);
         let bar = cum_row / pg_model::num::count(row);
         let content = (cum_end - cum_row) / pg_model::num::count(CONTENT);
-        (straight >= p.blur_straight && bar < 0.35 * content).then_some((row, straight))
+        if bar >= 0.35 * content {
+            return None;
+        }
+        // The lines `seam_straightness` reads: `K` above the row and `K` below it, with the row's neighbours.
+        sums.measure(v, row - 1 - K..row + 2 + K);
+        let straight = seam_straightness(v, &*sums, row, K, p);
+        (straight >= p.blur_straight).then_some((row, straight))
     });
     let (row, straight) = found?;
     let seam = refine_seam(v, row, 1, 3);

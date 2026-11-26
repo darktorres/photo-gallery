@@ -6,7 +6,7 @@ use std::io;
 use std::path::Path;
 use std::time::Duration;
 
-use pg_platform::file::beside;
+use pg_platform::file::{LOCK_SUFFIX, beside};
 
 /// How long [`Lock::take`] waits for another holder: about five seconds, as the connections' `busy_timeout`.
 const LOCK_TRIES: u32 = 100;
@@ -25,7 +25,7 @@ impl Lock {
     /// The lock on the database at `path`, waiting up to `LOCK_TRIES` tries for another holder to let go. `None` when
     /// another still holds it after that.
     pub fn take(path: &Path) -> io::Result<Option<Lock>> {
-        let file = OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".lock"))?;
+        let file = OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, LOCK_SUFFIX))?;
         Ok(lock_with_retries(&file, false)?.then_some(Lock { _held: file }))
     }
 }

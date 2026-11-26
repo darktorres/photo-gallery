@@ -31,11 +31,15 @@ use serde_json::{Map, Value, json};
 pub const PERF_FILE_CAP: u64 = 16 * 1024 * 1024;
 
 /// The `program` every perf log's meta names. The command line and the window are one executable, so both write this
-/// name (the CLI and the app's trace used to differ).
+/// name.
 pub const PROGRAM: &str = "gallery";
 
 /// The file the records go to, set once by [`open`].
 static SINK: OnceLock<pg_log::LogFile> = OnceLock::new();
+/// Serialises [`open`]: two opens can't both install a sink.
+static INSTALL: Mutex<()> = Mutex::new(());
+/// Serialises the writes to the sink: the log file takes one caller at a time, and the threads of a process share it.
+static WRITING: Mutex<()> = Mutex::new(());
 /// Whether a span records anything: a sink is open, or a capture is running.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// The records a capture took, in the order they closed.
@@ -75,7 +79,8 @@ pub fn session_id() -> u64 {
 
 /// Opens the file at `path` as this process's sink, appending to it, and writes a `session` record with `meta` (what the
 /// run is: the build, the data folder, the options, the catalog's counts). Creates the file's folder. Once per process:
-/// a second open is an error, and the first sink stays.
+/// a second open is an error, and the first sink stays. A failed write of the session record is an error too, and
+/// nothing is opened.
 pub fn open(path: &Path, meta: Value) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -85,18 +90,18 @@ pub fn open(path: &Path, meta: Value) -> io::Result<()> {
 }
 
 fn install(file: pg_log::LogFile, meta: Value) -> io::Result<()> {
-    if SINK.set(file).is_err() {
+    let _one = lock(&INSTALL);
+    if SINK.get().is_some() {
         return Err(io::Error::other("the perf log is already open in this process"));
     }
     let epoch =
         u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()).unwrap_or(u64::MAX);
     let pid = std::process::id();
-    let _ = SESSION.set((epoch, pid));
-    ENABLED.store(true, Ordering::Relaxed);
     let line = json!({
         "session": epoch,
         "pid": pid,
         "t_ms": pg_platform::clock::process_age_ms(),
+        "t_origin": pg_platform::clock::age_origin(),
         "id": 0,
         "name": "session",
         "parent": Value::Null,
@@ -107,8 +112,14 @@ fn install(file: pg_log::LogFile, meta: Value) -> io::Result<()> {
         "failed": 0,
         "fields": meta,
     });
-    // Not a step: the session record is the file's first line of the run.
-    emit(line);
+    // Not a step: the session record is the file's first line of the run. It is written before the sink is set, so a
+    // failed write leaves nothing installed and the run is not recording.
+    let mut text = line.to_string();
+    text.push('\n');
+    file.append(&text)?;
+    let _ = SESSION.set((epoch, pid));
+    let _ = SINK.set(file);
+    ENABLED.store(true, Ordering::Relaxed);
     Ok(())
 }
 
@@ -126,6 +137,7 @@ fn emit(record: Value) {
     if let Some(file) = SINK.get() {
         let mut line = record.to_string();
         line.push('\n');
+        let _one = lock(&WRITING);
         if file.append(&line).is_err() {
             DROPPED.fetch_add(1, Ordering::Relaxed);
         }
@@ -139,9 +151,10 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// Milliseconds of a duration, as the log holds times.
 fn ms(d: Duration) -> f64 {
-    pg_model::num::size(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)) / 1e6
+    ms_of_ns(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
 }
 
+/// Milliseconds of a count of nanoseconds.
 fn ms_of_ns(ns: u64) -> f64 {
     pg_model::num::size(ns) / 1e6
 }
@@ -457,21 +470,31 @@ struct RestoreCapture {
 impl Drop for RestoreCapture {
     fn drop(&mut self) {
         CAPTURE_HERE.with(|here| here.set(self.was_here));
-        ENABLED.store(self.was_enabled, Ordering::Relaxed);
+        // A sink opened while the capture ran stays on: the flag is on when a sink is open, whatever it was before.
+        ENABLED.store(self.was_enabled || SINK.get().is_some(), Ordering::Relaxed);
     }
+}
+
+/// The text of the perf log at `path` and its older files, oldest first: a session can span a rotation. Fails when the
+/// file itself is missing, as reading it would.
+fn read_log(path: &Path) -> io::Result<String> {
+    std::fs::metadata(path)?;
+    Ok(pg_log::read_all(path))
 }
 
 /// The table of a perf file: for each session in it, the steps by name (count, total and self time, their share of the
 /// session's top-level time, items and bytes with their rates), the pipelines' verdicts, and the scan's post-walk time.
-/// Lines that aren't records (a torn last line, a line another version wrote) are skipped.
+/// The file's rotated older files are read too. Lines that aren't records (a torn last line, a line another version
+/// wrote) are skipped.
 pub fn summarize(path: &Path) -> io::Result<String> {
-    let text = std::fs::read_to_string(path)?;
+    let text = read_log(path)?;
     Ok(summarize_text(&text))
 }
 
-/// The table of one session of a perf file (`session` is its id, as [`session_id`] gives it for this process).
+/// The table of one session of a perf file, its rotated older files included (`session` is its id, as [`session_id`]
+/// gives it for this process).
 pub fn summarize_session(path: &Path, session: u64) -> io::Result<String> {
-    let text = std::fs::read_to_string(path)?;
+    let text = read_log(path)?;
     let mut sessions = parse_sessions(&text);
     Ok(match sessions.remove(&session) {
         Some(records) => session_table(session, &records),
@@ -537,9 +560,10 @@ fn session_table(session: u64, records: &[Value]) -> String {
         agg.count += 1;
         agg.dur_ms += num(v, "dur_ms");
         agg.self_ms += num(v, "self_ms");
-        agg.items += int(v, "items");
-        agg.bytes += int(v, "bytes");
-        agg.failed += int(v, "failed");
+        // The counts come from the file, so a corrupt one saturates rather than overflowing the sum.
+        agg.items = agg.items.saturating_add(int(v, "items"));
+        agg.bytes = agg.bytes.saturating_add(int(v, "bytes"));
+        agg.failed = agg.failed.saturating_add(int(v, "failed"));
     }
     let mut rows: Vec<(String, Agg)> = by_name.into_iter().collect();
     rows.sort_by(|a, b| b.1.dur_ms.total_cmp(&a.1.dur_ms));
@@ -596,13 +620,15 @@ fn session_table(session: u64, records: &[Value]) -> String {
 
 /// The name of the nearest `pass.` span at or above span `id`, by the records' parents (`up`: id to name and parent).
 fn pass_above<'a>(up: &BTreeMap<u64, (&'a str, Option<u64>)>, mut id: u64) -> Option<&'a str> {
-    loop {
+    // A chain has at most one link per record: a longer one revisits a span, as a file with a cycle in its parents does.
+    for _ in 0..=up.len() {
         let (name, parent) = up.get(&id)?;
         if name.starts_with("pass.") {
             return Some(name);
         }
         id = (*parent)?;
     }
+    None
 }
 
 /// The bottleneck a pipeline's stage shares point to. The shares are percentages of the pass's wall time, and the
@@ -631,12 +657,19 @@ mod tests {
 
     #[test]
     fn a_span_with_no_sink_is_inert() {
-        // Nothing is opened here (the test process may hold a capture of another test, which is serialised): this checks
-        // only that a span built while disabled holds nothing.
-        let (_, records) = capture(|| ());
-        assert!(records.is_empty());
-        let s = Span { live: None, _not_send: PhantomData };
+        // Captures run one at a time: holding their lock keeps another test's capture from switching the records on.
+        let _alone = lock(&CAPTURE_LOCK);
+        assert!(!enabled(), "no sink is open in the tests");
+        static TALLY: Tally = Tally::new("inert");
+        let mut s = span("inert");
+        s.items(3);
+        assert!(s.live.is_none(), "a span with no sink reads no clock and holds nothing");
         drop(s);
+        let mut t = TALLY.timer();
+        t.items(2);
+        drop(t);
+        record("inert", Duration::from_millis(1), &[]);
+        assert_eq!(TALLY.totals(), (0, 0), "a tally with no sink counts nothing");
     }
 
     #[test]
@@ -657,7 +690,8 @@ mod tests {
         assert_eq!(inner["items"], 3);
         assert_eq!(outer["bytes"], 10);
         let (dur, self_ms) = (outer["dur_ms"].as_f64().unwrap_or(0.0), outer["self_ms"].as_f64().unwrap_or(0.0));
-        assert!(self_ms <= dur + 1e-9, "self {self_ms} within duration {dur}");
+        let inner_ms = inner["dur_ms"].as_f64().unwrap_or(0.0);
+        assert!((self_ms + inner_ms - dur).abs() < 1e-6, "self {self_ms} and the inner span {inner_ms} make up {dur}");
     }
 
     #[test]
@@ -684,13 +718,17 @@ mod tests {
     fn a_measured_duration_is_a_child_of_the_open_span() {
         let (_, records) = capture(|| {
             let _outer = span("outer");
+            // The outer span runs longer than the measured duration, so its self time is what is left of it.
+            std::thread::sleep(Duration::from_millis(6));
             record("measured", Duration::from_millis(4), &[("join_ms", json!(4.0))]);
         });
         let measured = records.iter().find(|v| v["name"] == "measured").expect("recorded");
         let outer = records.iter().find(|v| v["name"] == "outer").expect("outer recorded");
         assert_eq!(measured["parent"], outer["id"]);
         assert_eq!(measured["fields"]["join_ms"], 4.0);
-        assert!(outer["self_ms"].as_f64().unwrap_or(f64::MAX) <= outer["dur_ms"].as_f64().unwrap_or(0.0));
+        let (dur, self_ms) = (outer["dur_ms"].as_f64().unwrap_or(0.0), outer["self_ms"].as_f64().unwrap_or(0.0));
+        let measured_ms = measured["dur_ms"].as_f64().unwrap_or(0.0);
+        assert!((self_ms + measured_ms - dur).abs() < 1e-6, "self {self_ms} and the measured {measured_ms} make up {dur}");
     }
 
     #[test]

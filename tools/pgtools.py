@@ -24,11 +24,9 @@ if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this gua
 REPO = Path(__file__).resolve().parent.parent
 WINDOWS = os.name == "nt"
 _ENV_LINE = re.compile(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$")
-# The MSVC toolset of the static builds (vcvars64 -vcvars_ver). The PowerShell copies keep their own; a tools test asserts
-# they agree.
+# The MSVC toolset of the static builds (vcvars64 -vcvars_ver): the one place it is pinned in code.
 MSVC_TOOLSET = "14.44.35207"
-# The default Visual Studio Build Tools and MSYS2 folders of the static builds. The PowerShell copies keep their own; the
-# tools test asserts they agree.
+# The default Visual Studio Build Tools and MSYS2 folders of the static builds.
 DEFAULT_BUILD_TOOLS = Path(r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools")
 DEFAULT_MSYS = Path(r"C:\tools\msys64")
 
@@ -132,16 +130,16 @@ def import_msvc_environment(build_tools: Path, toolset: str | None = None) -> st
     if not vcvars.is_file():
         sys.exit(f"pgtools: vcvars64.bat not found: {vcvars} (Visual Studio Build Tools, see the pins)")
     pin = f" -vcvars_ver={toolset}" if toolset else ""
-    # A string, not a list: a list would have its quotes escaped with backslashes, which cmd.exe does not read.
+    # A string, not a list: a list would have its quotes escaped with backslashes, which cmd.exe does not read. The console
+    # is switched to UTF-8 first, so `set` writes its values in the code page the dump is decoded with (not the locale's).
     dump = subprocess.run(
-        f'cmd.exe /d /c ""{vcvars}"{pin} >nul 2>nul && set"',
+        f'cmd.exe /d /c "chcp 65001 >nul && ""{vcvars}"{pin} >nul 2>nul && set"',
         capture_output=True,
-        text=True,
         check=False,
     )
     if dump.returncode != 0:
         sys.exit(f"pgtools: vcvars64.bat failed (exit {dump.returncode})")
-    for line in dump.stdout.splitlines():
+    for line in dump.stdout.decode("utf-8", errors="replace").splitlines():
         key, sep, value = line.partition("=")
         if sep and key:
             os.environ[key] = value

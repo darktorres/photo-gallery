@@ -5,13 +5,13 @@
 use std::collections::BTreeSet;
 
 use pg_model::ids::FileId;
+use pg_model::num::count_u64;
 use pg_model::path::WorkList;
 use pg_model::turns::Turns;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::convert::progress_count;
-use crate::core::{Catalog, ReadOnly, Reader};
+use crate::core::{Catalog, ReadOnly, Reader, checkpoint_truncate};
 use crate::error::Result;
 use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, PairingWork, PlaceholderWork, VolumeSet, WorkItem, folder_path, pairing_marks};
@@ -84,13 +84,17 @@ impl Catalog {
         // without.
         let changed = if since.is_some() { "f.seq > ?1 AND " } else { "" };
         let sql = format!(
-            "SELECT f.id, f.folder_id, f.folder, f.name, f.mtime, f.turns, f.size, f.poster_ms, f.seq, f.volume, f.file_ref
-             FROM thumb_sources f
-             WHERE {changed}+f.volume IN ({})
-               AND NOT EXISTS (SELECT 1 FROM thumb_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
-                               AND x.retry = 0 AND x.mtime = f.mtime AND x.size = f.size AND x.rotation = f.turns)
-             ORDER BY f.id",
-            list.join(",")
+            concat!(
+                "SELECT f.id, f.folder_id, f.folder, f.name, f.mtime, f.turns, f.size, f.poster_ms, f.seq, f.volume, f.file_ref
+                 FROM thumb_sources f
+                 WHERE {changed}+f.volume IN ({})
+                   AND ",
+                thumbs_not_failed!("f"),
+                "
+                 ORDER BY f.id"
+            ),
+            list.join(","),
+            changed = changed
         );
         {
             let mut stmt = tx.prepare(&sql)?;
@@ -481,7 +485,7 @@ fn pairing_work_on(
     let owes: Vec<bool> =
         columns.ids.iter().map(|&id| present_w.has(id) && !pending_w.has(id) && owed_w.has(id)).collect();
     let (mut present_w, mut pending_w) = (present.walk(), pending.walk());
-    let legacy = progress_count(legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count());
+    let legacy = count_u64(legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count());
     tx.commit()?;
     let Grown { ids, hashes, quality } = columns;
     Ok(PairingWork {
@@ -590,9 +594,14 @@ impl Reader<'_> {
 /// or pending one stays owed, and the first pass after its file is back makes its pairs.
 const OWED: &str = concat!("FROM pairs_owed o CROSS JOIN files f WHERE f.id = o.file_id AND ", present_ready!(f));
 
+/// The files that owe their duplicate hashes (`hashes_owed`), of present, non-pending files: the one predicate of
+/// [`Catalog::owed_hashes`] and [`Catalog::has_owed_hashes`].
+const OWED_HASHES: &str =
+    concat!("FROM hashes_owed h CROSS JOIN files f WHERE f.id = h.file_id AND ", present_ready!(f));
+
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), in on-disk order (volume, then MFT record number), which
-    /// reads ~3× faster than path order on an HDD. It's read in that order from `files_to_import`, so nothing pending is
+    /// reads faster than path order on an HDD. It's read in that order from `files_to_import`, so nothing pending is
     /// one probe. A failed file is listed once the user's Retry marks it pending (`Catalog::retry_failures`). `volumes`
     /// limits the list to those volumes.
     pub fn pending_import(&self, volumes: &VolumeSet) -> Result<WorkList<WorkItem>> {
@@ -675,14 +684,7 @@ impl Catalog {
     /// How many present, non-pending files are stored without their duplicate hashes (`hashes_owed`): the status's count
     /// of what duplicates detection, while it was off, left for the Hashes pass.
     pub fn owed_hashes(&self) -> Result<u64> {
-        Ok(self.conn.query_row(
-            concat!(
-                "SELECT count(*) FROM hashes_owed h CROSS JOIN files f WHERE f.id = h.file_id AND ",
-                present_ready!(f)
-            ),
-            [],
-            |r| r.get(0),
-        )?)
+        Ok(self.conn.query_row(&format!("SELECT count(*) {OWED_HASHES}"), [], |r| r.get(0))?)
     }
 
     /// The pictures the pairing pass pairs, in file-id order, read in one snapshot: a picture is an analysis with stored
@@ -698,13 +700,13 @@ impl Catalog {
 
     /// Owe every eligible picture its pairs again, and drop the pairs (`Catalog::pairs_again`): what the pairing pass
     /// then makes is all of them again. Returns how many are owed. The WAL this write leaves is merged into the file
-    /// before returning: otherwise the pass's first commits merge it, which took about a second on the 187,804-picture
-    /// library (the pass alone takes 0.8 s after a merge).
+    /// before returning: otherwise the pass's first commits merge it, which stalls the first of them on a library of
+    /// this size.
     pub fn pairs_again(&mut self) -> Result<u64> {
         let tx = write_transaction(&self.conn)?;
         let owed = crate::lifecycle::owe_pairs_again(&tx)?;
         tx.commit()?;
-        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        checkpoint_truncate(&self.conn)?;
         Ok(owed)
     }
 
@@ -716,15 +718,7 @@ impl Catalog {
     /// Whether any file owes its duplicate hashes (`hashes_owed`, present and not pending): one probe. The duplicate
     /// list waits while one does (`NOT_DUPLICATES`).
     pub fn has_owed_hashes(&self) -> Result<bool> {
-        Ok(self.conn.query_row(
-            concat!(
-                "SELECT EXISTS(SELECT 1 FROM hashes_owed h JOIN files ff ON ff.id = h.file_id WHERE ",
-                present_ready!(ff),
-                ")"
-            ),
-            [],
-            |r| r.get(0),
-        )?)
+        Ok(self.conn.query_row(&format!("SELECT EXISTS(SELECT 1 {OWED_HASHES})"), [], |r| r.get(0))?)
     }
 
     /// Whether any picture owes its pairs ([`Catalog::owed_pairs`] above zero): the pairing pass's "nothing to do",
@@ -737,15 +731,18 @@ impl Catalog {
     /// the import reads, which does not bump IMPORT_VERSION. Their next analysis
     /// clears it, as any does (`analysis_added`). Missing files are left as they are. Returns how many it marked.
     pub fn mark_pending(&self, ids: &[FileId]) -> Result<usize> {
-        let tx = write_transaction(&self.conn)?;
         let mut marked = 0;
-        {
-            let mut mark = tx.prepare("UPDATE files SET pending = 1 WHERE id = ?1 AND missing = 0")?;
-            for id in ids {
-                marked += mark.execute([id.get()])?;
+        // Each batch of `WRITE_BATCH` ids is a write transaction of its own, so the write lock is not held across all.
+        for batch in ids.chunks(crate::WRITE_BATCH) {
+            let tx = write_transaction(&self.conn)?;
+            {
+                let mut mark = tx.prepare("UPDATE files SET pending = 1 WHERE id = ?1 AND missing = 0")?;
+                for id in batch {
+                    marked += mark.execute([id.get()])?;
+                }
             }
+            tx.commit()?;
         }
-        tx.commit()?;
         Ok(marked)
     }
 }

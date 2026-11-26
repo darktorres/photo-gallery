@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 // crossbeam-channel rather than std::sync::mpsc: the readers and workers share one receiver each (`raw_rx.clone()`), and
 // std's `Receiver` cannot be cloned. Every one-to-one handoff elsewhere in the workspace uses std::sync::mpsc.
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded, unbounded};
+use pg_model::num::count_u64;
 use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 use serde_json::json;
@@ -98,14 +99,22 @@ pub const MAX_SLOTS: usize = 1 << 16;
 /// then stay below [`MAX_SLOTS`].
 const MAX_DEFAULT_WORKERS: NonZeroUsize = NonZeroUsize::MIN.saturating_add(4095);
 
-/// The logical CPUs the pools are sized by: `available_parallelism`, or 4 where the platform cannot say.
-pub fn cpus() -> usize {
-    std::thread::available_parallelism().map_or(4, |n| n.get())
+/// The logical CPU count the platform cannot say, as the pools are sized by it then.
+const CPUS_IF_UNKNOWN: NonZeroUsize = NonZeroUsize::MIN.saturating_add(3);
+
+/// The logical CPUs the pools are sized by: `available_parallelism`, or [`CPUS_IF_UNKNOWN`] if it cannot say.
+fn logical_cpus() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or(CPUS_IF_UNKNOWN)
 }
 
-/// The workers of the default options: a worker per logical CPU (4 where the platform cannot say), at most 4096.
+/// The logical CPUs the pools are sized by (see [`logical_cpus`]).
+pub fn cpus() -> usize {
+    logical_cpus().get()
+}
+
+/// The workers of the default options: a worker per logical CPU, at most 4096.
 pub fn default_workers() -> NonZeroUsize {
-    std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN.saturating_add(3)).min(MAX_DEFAULT_WORKERS)
+    logical_cpus().min(MAX_DEFAULT_WORKERS)
 }
 
 /// Why reader and worker counts make no [`Options`] ([`Options::sized`]).
@@ -267,6 +276,7 @@ impl Clock {
         self.0.load(Ordering::Relaxed)
     }
 
+    /// The time added so far, in seconds.
     fn secs(&self) -> f64 {
         Duration::from_nanos(self.nanos()).as_secs_f64()
     }
@@ -1110,7 +1120,7 @@ impl<'p> Reader<'p> {
     /// A read of `bytes` done: one more read for the meters.
     fn note(&self, bytes: usize) {
         self.timing.reads.add(1);
-        self.timing.bytes.add(u64::try_from(bytes).unwrap_or(u64::MAX));
+        self.timing.bytes.add(count_u64(bytes));
     }
 
     /// Read the file at `path` into a buffer from the pool, its size reserved in list order. `None` once the pass stops.
@@ -1122,12 +1132,14 @@ impl<'p> Reader<'p> {
             Err(e) => return Some(Err(e)),
         };
         let mut lease = self.pool.take(self.i, opened.size)?;
+        if let Err(e) = lease.grow_to(opened.size) {
+            return Some(Err(e));
+        }
         if let Err(e) = self.read_rest(opened.file.as_mut(), &mut lease) {
             return Some(Err(e));
         }
         if lease.bytes.len() != opened.size {
-            let as_u64 = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
-            let changed = ChangedWhileRead { opened: as_u64(opened.size), read: as_u64(lease.bytes.len()) };
+            let changed = ChangedWhileRead { opened: count_u64(opened.size), read: count_u64(lease.bytes.len()) };
             return Some(Err(std::io::Error::other(changed)));
         }
         Some(Ok(lease))
@@ -1152,6 +1164,9 @@ impl<'p> Reader<'p> {
         let (mut file, size) = (opened.file, opened.size);
         if size <= hint {
             let mut lease = self.pool.take(self.i, size)?;
+            if let Err(e) = lease.grow_to(size) {
+                return Some(Err(e));
+            }
             return Some(self.read_rest(file.as_mut(), &mut lease).map(|()| lease));
         }
         let mut lease = self.pool.take(self.i, hint)?;
@@ -1280,10 +1295,10 @@ impl Pool {
         }
     }
 
-    /// A buffer with room for `size` bytes for item `i`, once the items before it have theirs and a slot is free. `None`
-    /// once the pass stops.
+    /// A buffer for item `i`, once the items before it have theirs and a slot is free. `None` once the pass stops. Its room
+    /// for `size` bytes is the caller's to make ([`Lease::grow_to`]), which allocates fallibly and outside the pool's lock.
     ///
-    /// The smallest idle buffer that is large enough is reused. If none is, the smallest idle one grows to `size` (the
+    /// The smallest idle buffer that is large enough is reused. If none is, the smallest idle one is handed out (the
     /// larger ones stay for the files that need them), and a new buffer is made only when none is idle. So there are
     /// never more buffers than slots, and a pass allocates once per slot, plus once per file larger than the buffer it
     /// is given.
@@ -1301,7 +1316,6 @@ impl Pool {
                     None => {
                         let mut bytes = st.idle.pop().unwrap_or_default();
                         bytes.clear();
-                        bytes.reserve_exact(size);
                         bytes
                     }
                 };
@@ -1417,13 +1431,19 @@ mod tests {
         let pool = pool(4);
         let a = pool.take(0, 60).unwrap();
         std::thread::scope(|s| {
-            let waiter = s.spawn(|| pool.take(2, 50).map(|l| l.bytes.capacity()));
+            let waiter = s.spawn(|| {
+                pool.take(2, 50).map(|mut l| {
+                    l.grow_to(50).unwrap();
+                    l.bytes.capacity()
+                })
+            });
             std::thread::sleep(std::time::Duration::from_millis(50));
             assert!(!waiter.is_finished(), "item 2 waits for item 1's turn");
             pool.pass(1);
             assert!(waiter.join().unwrap().unwrap() >= 50);
         });
-        let big = pool.take(3, 50 << 20).unwrap();
+        let mut big = pool.take(3, 50 << 20).unwrap();
+        big.grow_to(50 << 20).unwrap();
         assert!(big.bytes.capacity() >= 50 << 20, "a large file is granted beside the others");
         check(&pool, &[&a, &big]);
     }
@@ -1433,7 +1453,8 @@ mod tests {
     fn a_pool_reuses_its_buffers_whatever_the_sizes() {
         let pool = pool(8);
         for (i, size) in [100, 300, 200, 1000, 50, 4000, 4000, 10].into_iter().enumerate() {
-            let lease = pool.take(i, size).unwrap();
+            let mut lease = pool.take(i, size).unwrap();
+            lease.grow_to(size).unwrap();
             assert!(lease.bytes.capacity() >= size);
             check(&pool, &[&lease]);
             drop(lease);
@@ -1457,7 +1478,12 @@ mod tests {
         let leases: Vec<Lease> = (0..3).map(|i| pool.take(i, 16 << 10).unwrap()).collect();
         check(&pool, &leases.iter().collect::<Vec<_>>());
         std::thread::scope(|s| {
-            let waiter = s.spawn(|| pool.take(3, 16 << 10).map(|l| l.bytes.capacity()));
+            let waiter = s.spawn(|| {
+                pool.take(3, 16 << 10).map(|mut l| {
+                    l.grow_to(16 << 10).unwrap();
+                    l.bytes.capacity()
+                })
+            });
             std::thread::sleep(std::time::Duration::from_millis(50));
             assert!(!waiter.is_finished(), "a fourth buffer while three are lent");
             drop(leases);
@@ -2007,7 +2033,10 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let pool = Arc::clone(pool);
         std::thread::spawn(move || {
-            let _ = tx.send(pool.take(i, size).map(|lease| lease.bytes.capacity()));
+            let _ = tx.send(pool.take(i, size).map(|mut lease| {
+                lease.grow_to(size).unwrap();
+                lease.bytes.capacity()
+            }));
         });
         rx
     }

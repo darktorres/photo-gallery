@@ -33,6 +33,8 @@ use pg_model::orientation::Orientation;
 const POSTER_FRACTION: f64 = 0.1;
 /// …but no later than this (a long video's first scene is usually its title).
 const POSTER_MAX_MS: i64 = 10_000;
+/// The error of a stream whose picture has no size, from the two places that read it.
+const NO_PICTURE_SIZE: &str = "no picture size";
 
 #[expect(unsafe_code, reason = "FFI: the call that sets FFmpeg's log level, through its function pointer")]
 fn init() {
@@ -127,7 +129,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
     }
     let (w, h) = stream.picture_size();
     if w == 0 || h == 0 {
-        return Err(Error::stream("no picture size"));
+        return Err(Error::stream(NO_PICTURE_SIZE));
     }
     let w = display_width(w, stream.sample_aspect_ratio());
     let orientation = display_orientation(&stream);
@@ -293,7 +295,7 @@ fn to_rgb(mut src: Frame, orientation: Orientation, min: MinSize, out: &mut Rgb)
     let (w, h) = (src.width(), src.height());
     let dw = display_width(w, src.sample_aspect_ratio());
     if dw == 0 || h == 0 {
-        return Err(Error::stream("no picture size"));
+        return Err(Error::stream(NO_PICTURE_SIZE));
     }
     if src.color_space() == AVColorSpace_AVCOL_SPC_UNSPECIFIED {
         src.set_color_space(if h >= 720 { AVColorSpace_AVCOL_SPC_BT709 } else { AVColorSpace_AVCOL_SPC_BT470BG });

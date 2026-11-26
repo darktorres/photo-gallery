@@ -23,8 +23,8 @@ mod tests {
 
     use super::chunk::png_chunk;
     use super::op::Op;
-    use super::raster::decoded_size;
     use super::{gif, png};
+    use crate::codecs::limits::decoded_size;
 
     // A header that declares a huge image is an error before anything that size is allocated (an allocation
     // failure would abort the process): a PNG's height, and a GIF's logical screen.

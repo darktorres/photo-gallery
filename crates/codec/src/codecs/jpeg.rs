@@ -12,11 +12,14 @@ use super::convert::{finish, target};
 use super::limits::reserve;
 use crate::pixels::Rgb;
 
+/// The options of both readers: lenient, and no size limit of zune-jpeg's own (the codec's limits are the reserve's).
+fn options() -> DecoderOptions {
+    DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX)
+}
+
 /// The stored size of a JPEG libjpeg-turbo's header read rejects, from zune-jpeg's headers (what [`decode`] would then
 /// decode from). No pixels: the headers only.
 pub(super) fn dimensions(scratch: &mut zune_jpeg::Scratch, bytes: &[u8]) -> ImageResult<(u32, u32)> {
-    let options =
-        || DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX);
     let mut headers = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options(), std::mem::take(scratch));
     headers.set_skip_metadata(true);
     let read = headers.decode_headers();
@@ -52,8 +55,6 @@ pub(super) fn decode(
     bytes: &[u8],
     out: &mut Rgb,
 ) -> ImageResult<()> {
-    let options =
-        || DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX);
     let mut headers = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options(), std::mem::take(scratch));
     headers.set_skip_metadata(true);
     let read = headers.decode_headers();

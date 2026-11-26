@@ -22,9 +22,10 @@ fn print_stage(stage: &str, ms: f64) {
     eprintln!("stage {ms:>9.1} ms  {stage}");
 }
 
-/// With `PG_TRACE=1`, each stage prints its milliseconds since the process was created on stderr (`stage 1070.4 ms
-/// pg_stage_first_frame`). Called before the first stage; without it a stage costs a call. Returns the perf log's failure
-/// to open, if it failed: the window has no stderr, so the caller logs it once the log exists.
+/// With `PG_TRACE=1`, each stage prints its milliseconds since the process was created on stderr, as the number in a
+/// field nine wide (`stage    1070.4 ms  pg_stage_first_frame`). Called before the first stage; without it a stage costs
+/// a call. Returns the perf log's failure to open, if it failed: the window has no stderr, so the caller logs it once the
+/// log exists.
 pub(crate) fn install() -> Option<String> {
     // A value that is neither on nor off turns the trace off, and is returned for the caller to log with the perf log's
     // failure: the window has no stderr to say it on.

@@ -120,6 +120,9 @@ impl qobject::FolderModel {
                 Visible::DriveRoots => (KIND_DRIVE_ROOTS, tree.folders().root_files()),
                 Visible::Folder(_) => (KIND_FOLDER, 0),
             };
+            if role == ROLE_KIND {
+                return QVariant::from(&kind);
+            }
             let Visible::Folder(n) = v else {
                 // The words of "All folders" and "Drive roots" are the QML's (`ui.ftl`), by the row's kind.
                 return match role {
@@ -127,14 +130,12 @@ impl qobject::FolderModel {
                     ROLE_DEPTH => QVariant::from(&0i32),
                     ROLE_EXPANDABLE | ROLE_EXPANDED | ROLE_MERGED => QVariant::from(&false),
                     ROLE_TOTAL => QVariant::from(&total),
-                    ROLE_KIND => QVariant::from(&kind),
                     _ => QVariant::default(),
                 };
             };
             let folders = tree.folders();
             let Some(node) = folders.node(n) else { return QVariant::default() };
             match role {
-                ROLE_KIND => QVariant::from(&kind),
                 ROLE_NAME => QVariant::from(&QString::from(folders.name(n).display().as_ref())),
                 ROLE_DEPTH => QVariant::from(&(i32::try_from(node.depth).unwrap_or(i32::MAX))),
                 ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),

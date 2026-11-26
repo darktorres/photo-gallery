@@ -13,6 +13,7 @@ use pg_model::turns::Turns;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
+use crate::codecs::limits::decoded_size;
 use crate::pixels::Rgb;
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
@@ -84,8 +85,9 @@ pub enum MinSize {
 
 impl MinSize {
     /// The scale that fits a `width × height` image into a `box_w × box_h` box, its aspect kept: the smaller of the two
-    /// sides' scales (above 1 for an image smaller than the box). The one fit the decode, the resizer and the viewer's
-    /// check use.
+    /// sides' scales (above 1 for an image smaller than the box). The one scale the decode, the resizer and the viewer's
+    /// check use: the decode's least size rounds the fitted sides up (never below the fit), and the resizer rounds them to
+    /// the nearest pixel.
     pub fn fit_scale(box_w: usize, box_h: usize, width: usize, height: usize) -> f64 {
         let count = pg_model::num::count;
         (count(box_w) / count(width)).min(count(box_h) / count(height))
@@ -122,7 +124,7 @@ impl Decoder {
         Self::with_full_threads(0)
     }
 
-    /// A decoder whose full-size JPEG decodes run on `threads` threads, through parajpeg (`pg_parajpeg`). Its pixels
+    /// A decoder whose full-size JPEG decodes run on `threads` threads, through the `parajpeg` crate. Its pixels
     /// are libjpeg-turbo's, so the choice changes no hash; a JPEG parajpeg doesn't decode goes to libjpeg-turbo.
     /// Smaller decodes (the thumbnails') stay on libjpeg-turbo's one thread, which is what the batch work wants.
     pub fn with_full_threads(threads: usize) -> Result<Decoder> {
@@ -218,7 +220,7 @@ impl Decoder {
             && self.full_threads > 0
             && let Some(header) = parajpeg::header(bytes)
         {
-            out.pixels.resize(header.rgb_len(), 0);
+            out.pixels.resize(decoded_size("the JPEG", &[header.rgb_len()])?, 0);
             if parajpeg::decode_rgb(bytes, self.full_threads, header, &mut out.pixels) {
                 (out.width, out.height) = (pg_model::num::index(header.width), pg_model::num::index(header.height));
                 return Ok((1, (header.width, header.height)));
@@ -237,8 +239,8 @@ impl Decoder {
                 let (bw, bh) = if quarter_turn { (bh, bw) } else { (bw, bh) };
                 let scale = MinSize::fit_scale(bw, bh, w, h);
                 (
-                    to_pixels((pg_model::num::count(w) * scale).ceil()),
-                    to_pixels((pg_model::num::count(h) * scale).ceil()),
+                    pg_model::num::f64_to_pixels((pg_model::num::count(w) * scale).ceil()),
+                    pg_model::num::f64_to_pixels((pg_model::num::count(h) * scale).ceil()),
                 )
             }
         };
@@ -246,8 +248,9 @@ impl Decoder {
         let denom = [8, 4, 2].into_iter().find(|&d| w.div_ceil(d) >= min_w && h.div_ceil(d) >= min_h).unwrap_or(1);
         self.jpeg.set_scaling_factor(ScalingFactor::new(1, denom)).map_err(Error::decoder)?;
         let scaled = header.scaled(self.jpeg.scaling_factor());
-        // Every byte is written by the decode: a grown buffer only zeroes what it grew by.
-        out.pixels.resize(scaled.width * scaled.height * 3, 0);
+        // Every byte is written by the decode: a grown buffer only zeroes what it grew by. The size is checked against
+        // the cap before it is allocated: a damaged header can declare any size.
+        out.pixels.resize(decoded_size("the JPEG", &[scaled.width, scaled.height, 3])?, 0);
         (out.width, out.height) = (scaled.width, scaled.height);
         self.jpeg
             .decompress(
@@ -267,11 +270,6 @@ impl Decoder {
         );
         Ok((u8::try_from(denom).map_err(|e| Error::decode("scale denominator over u8", e))?, full))
     }
-}
-
-/// `x` rounded toward zero, as a count of pixels.
-pub(crate) fn to_pixels(x: f64) -> usize {
-    pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
 /// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer). An upright image is
@@ -418,6 +416,21 @@ mod parallel_tests {
         if let (Ok(plain), Ok(parallel)) = (plain, parallel) {
             assert!(parallel.pixels == plain.pixels);
         }
+    }
+
+    // A header that declares a picture over the cap is refused before its buffer is allocated: the size is patched into
+    // a real JPEG's frame header (40,000 x 40,000 is over 512 MiB at three bytes a pixel).
+    #[test]
+    fn a_jpeg_declaring_a_picture_over_the_cap_is_refused_before_it_is_allocated() {
+        let mut jpeg = jpeg_of(64, 48, Chroma::Half);
+        let frame = jpeg.windows(2).position(|w| w == [0xFF, 0xC0]).expect("a baseline frame header");
+        jpeg[frame + 5..frame + 7].copy_from_slice(&40_000u16.to_be_bytes());
+        jpeg[frame + 7..frame + 9].copy_from_slice(&40_000u16.to_be_bytes());
+        let Err(error) = decode_full(&mut Decoder::new().unwrap(), &jpeg) else {
+            panic!("a 40,000 x 40,000 picture was decoded");
+        };
+        let message = format!("{error:#}");
+        assert!(message.contains("too large"), "{message}");
     }
 
     #[test]

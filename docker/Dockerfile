@@ -34,13 +34,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
     PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/opt/exiftool:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# The system packages: the list CI installs (apt-packages.txt), the mold linker (CI's Linux job links with it), git (the
-# aqtinstall install below is from a git URL), nodejs and npm (markdownlint), and the venv module, its own package on
-# Ubuntu. FFmpeg's headers come from its development packages, which pkg-config finds (crates/video/build.rs).
+# The system packages: the list CI installs (apt-packages.txt, which has git, the aqtinstall install below being from a git
+# URL), the mold linker (CI's Linux job links with it), nodejs and npm (markdownlint), and the venv module, its own package
+# on Ubuntu. FFmpeg's headers come from its development packages, which pkg-config finds (crates/video/build.rs).
 COPY docker/apt-packages.txt /opt/pg/apt-packages.txt
 RUN apt-get update \
  && grep -v '^#' /opt/pg/apt-packages.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
-      ca-certificates curl git mold nodejs npm python3-venv \
+      ca-certificates curl mold nodejs npm python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
 # ExifTool at the Justfile's pinned release (the source archive, checked by SHA-256; tools/install_exiftool.py), in /opt, which

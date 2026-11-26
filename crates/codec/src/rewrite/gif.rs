@@ -1,16 +1,17 @@
 //! A still GIF: its one image decoded from LZW, turned or cropped, and encoded again, its other blocks kept.
 
+use crate::codecs::limits::decoded_size;
 use crate::{Error, Result};
 use pg_container::{GifBlock, GifImage, gif_blocks, gif_header_len, gif_sub_block_data, gif_sub_blocks};
 
 use super::op::Op;
-use super::raster::{decoded_size, zeroed};
+use super::raster::zeroed;
 
 /// The `pixels` color indices of a GIF image, from its LZW data with its minimum code size. The stream must end with
 /// its end code. What it holds past the image's pixels (some encoders write more) is decoded into a small buffer and
 /// dropped: the frame's size, not the stream, bounds what is kept, so a few KB of file that claim a 65535 x 65535 frame
 /// make no buffer larger than the frame. An image with no pixels decodes nothing. `pixels` is a size
-/// [`decoded_size`] passed; the buffer is allocated fallibly.
+/// [`decoded_size`](crate::codecs::limits::decoded_size) passed; the buffer is allocated fallibly.
 fn decode_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
     let mut indices = zeroed(pixels)?;
     if pixels == 0 {

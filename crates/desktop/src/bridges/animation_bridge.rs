@@ -13,7 +13,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        /// The catalog's file played (its id); 0 stops. The file's path is the app's (`App::file_path`).
+        /// The catalog's file played (its id); 0 stops. The file's path is the catalog's (`Catalogs::file_path`).
         #[qproperty(i64, file_id, cxx_name = "fileId", READ, WRITE = set_file_id_and_play, NOTIFY, FINAL)]
         /// False pauses.
         #[qproperty(bool, playing, READ, WRITE = set_playing_and_apply, NOTIFY, FINAL)]

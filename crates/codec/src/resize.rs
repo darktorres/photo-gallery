@@ -6,14 +6,15 @@ use crate::error::{Error, Result};
 use fast_image_resize::images::{TypedImage, TypedImageRef};
 use fast_image_resize::pixels::U8x3;
 use fast_image_resize::{ResizeAlg, ResizeOptions};
+use pg_model::num::f64_to_pixels;
 
-use crate::decode::to_pixels;
 use crate::kernel::mks2021;
 use crate::pixels::Rgb;
 
 /// A resizer, kept by a worker from image to image. Each method writes into a caller's image, whose buffer keeps its
 /// capacity. They fail as `fast_image_resize` does: when the image's pixels are fewer than its size needs, or (for
-/// [`Resizer::resize_region`]) when the region is not inside the image.
+/// [`Resizer::resize_region`]) when the region starts outside the image; a region that runs past its far edge is held
+/// to the image.
 #[derive(Default)]
 pub struct Resizer {
     inner: fast_image_resize::Resizer,
@@ -33,8 +34,8 @@ impl Resizer {
             return Ok(false);
         }
         let scale = crate::decode::MinSize::fit_scale(side, side, img.width, img.height);
-        let w = to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
-        let h = to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
+        let w = f64_to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
+        let h = f64_to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
         self.resize(img, w, h, out)?;
         Ok(true)
     }
@@ -43,8 +44,8 @@ impl Resizer {
     /// box, up when it is smaller.
     pub fn fit_box(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) -> Result<()> {
         let scale = crate::decode::MinSize::fit_scale(width, height, img.width, img.height);
-        let w = to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
-        let h = to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
+        let w = f64_to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
+        let h = f64_to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
         self.resize(img, w, h, out)
     }
 
@@ -54,7 +55,7 @@ impl Resizer {
         if img.height <= height {
             return Ok(false);
         }
-        let w = to_pixels(
+        let w = f64_to_pixels(
             (pg_model::num::count(img.width) * pg_model::num::count(height) / pg_model::num::count(img.height)).round(),
         )
         .max(1);
@@ -68,7 +69,7 @@ impl Resizer {
         if img.width <= width {
             return Ok(false);
         }
-        let h = to_pixels(
+        let h = f64_to_pixels(
             (pg_model::num::count(img.height) * pg_model::num::count(width) / pg_model::num::count(img.width)).round(),
         )
         .max(1);
@@ -87,9 +88,13 @@ impl Resizer {
         out: &mut Rgb,
     ) -> Result<()> {
         let (x, y, w, h) = region;
+        // The region's far edges are rounded sums, so one can pass the image's edge by a rounding step, and the
+        // resizer refuses a crop past the edge: the box is held inside the image.
+        let (iw, ih) = (pg_model::num::count(img.width), pg_model::num::count(img.height));
+        let (x, y) = (x.min(iw), y.min(ih));
+        let (w, h) = (w.max(1.0).min(iw - x), h.max(1.0).min(ih - y));
         let kernel = mks2021().map_err(|e| Error::resize("the MKS 2021 filter", e))?;
-        let options =
-            ResizeOptions::new().resize_alg(ResizeAlg::Convolution(kernel)).crop(x, y, w.max(1.0), h.max(1.0));
+        let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(kernel)).crop(x, y, w, h);
         self.run(img, width.max(1), height.max(1), &options, out)
     }
 

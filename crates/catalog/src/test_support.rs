@@ -74,15 +74,7 @@ pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> ScanId {
     crate::roots::ensure_seen(&c.conn).unwrap();
     // As `begin_scan` does: a walk starts with no rows seen (the previous walk's set went with its lease).
     c.conn.execute("DELETE FROM temp.scan_seen", []).unwrap();
-    c.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes]).unwrap();
-    let scan = ScanId::new(c.conn.last_insert_rowid());
-    c.conn
-        .execute(
-            "INSERT INTO scan_leases(id, root, holder, heartbeat) VALUES (?1, ?2, 'a test', unixepoch())",
-            rusqlite::params![scan.get(), bytes],
-        )
-        .unwrap();
-    scan
+    crate::roots::open_walk(&c.conn, &bytes, "a test").unwrap()
 }
 
 /// The lease of the walk `scan` of `root` ([`begin`]), to run its end through (`pair_after_scan`, `mark_missing`) as

@@ -7,6 +7,7 @@ Methods work on compact ids: the rows that embedded (ok), in files.txt order.
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -53,6 +54,35 @@ class Base:
 
 def size_tag(size: int) -> str:
     return f"{size / 1000:g}k"
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    """The lines of a results file that parse. A line torn by an interrupted append does not parse: its configuration
+    has no recorded result, so a rerun runs it again."""
+    if not path.exists():
+        return []
+    rows, torn = [], 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            torn += 1
+    if torn:
+        print(f"{path.name}: skipping {torn} unreadable line(s), left by an interrupted append", flush=True)
+    return rows
+
+
+def append_jsonl(path: Path, rows: list[dict]) -> None:
+    """Appends one JSON line per row. A torn line left by an interrupted append is ended first, so the new lines
+    start on their own line and the torn one stays a line of its own."""
+    with path.open("a+b") as f:
+        f.seek(0, 2)
+        if f.tell():
+            f.seek(-1, 2)
+            if f.read(1) != b"\n":
+                f.write(b"\n")
+        f.seek(0, 2)
+        f.write("".join(json.dumps(row) + "\n" for row in rows).encode("utf-8"))
 
 
 def load_base() -> Base:

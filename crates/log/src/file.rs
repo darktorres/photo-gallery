@@ -7,7 +7,7 @@
 //!   the older file shifted (`.1` to `.2`), then the aside file becomes `.1`. A failed first rename shifts nothing, so
 //!   a retry can't overwrite an older file.
 //! - **Rotations are serialised between processes** by an OS lock on `gallery.log.lock` (std's `File::try_lock`, as
-//!   `pg_dbfile::lock` does: released by the OS when a process ends). A process that finds it taken skips the rotation
+//!   `pg_dbfile::Lock` does: released by the OS when a process ends). A process that finds it taken skips the rotation
 //!   for this record; the holder is rotating.
 //! - **An aside file left over** (a crash between the renames) is unambiguous under the lock, and is finished first.
 //!   The reader reads it meanwhile, in its place between `.1` and the file.
@@ -20,7 +20,7 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
-use pg_platform::file::beside;
+use pg_platform::file::{LOCK_SUFFIX, beside};
 
 /// The most bytes of a log file before it is rotated.
 pub const FILE_CAP: u64 = 5 * 1024 * 1024;
@@ -103,7 +103,7 @@ impl LogFile {
     /// it can't be had (the rotation is then skipped).
     fn lock(&self) -> Option<File> {
         let file =
-            OpenOptions::new().create(true).write(true).truncate(false).open(beside(&self.path, ".lock")).ok()?;
+            OpenOptions::new().create(true).write(true).truncate(false).open(beside(&self.path, LOCK_SUFFIX)).ok()?;
         match file.try_lock() {
             Ok(()) => Some(file),
             Err(TryLockError::WouldBlock | TryLockError::Error(_)) => None,
@@ -127,8 +127,13 @@ impl LogFile {
     /// The fallback for a file that can't be renamed: its text copied aside, then the file emptied in place. A line
     /// another process appends between the two is lost.
     fn copy_aside(&self) -> io::Result<()> {
-        std::fs::copy(&self.path, aside(&self.path))?;
-        OpenOptions::new().write(true).truncate(true).open(&self.path).map(drop)
+        let done = std::fs::copy(&self.path, aside(&self.path))
+            .and_then(|_| OpenOptions::new().write(true).truncate(true).open(&self.path).map(drop));
+        if done.is_err() {
+            // The file still holds its text (or was not emptied), so the copy would repeat it in the history: it goes.
+            let _ = std::fs::remove_file(aside(&self.path));
+        }
+        done
     }
 }
 
@@ -149,7 +154,7 @@ fn aside(path: &Path) -> PathBuf {
 
 /// The log's files at `path`, oldest first, as their text (a file that can't be read is left out; a byte that is no
 /// UTF-8 is replaced). An aside file a rotation left is newer than `.1` and older than the file.
-pub(crate) fn read_all(path: &Path) -> String {
+pub fn read_all(path: &Path) -> String {
     let mut files: Vec<PathBuf> = (1..FILES).rev().map(|n| older(path, n)).collect();
     files.push(aside(path));
     files.push(path.to_path_buf());
@@ -298,7 +303,12 @@ mod tests {
         for i in 0..2 {
             file.append(&line(i)).unwrap();
         }
-        let other = OpenOptions::new().create(true).write(true).truncate(false).open(beside(&path, ".lock")).unwrap();
+        let other = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(beside(&path, LOCK_SUFFIX))
+            .unwrap();
         other.try_lock().unwrap();
         file.append(&line(2)).unwrap();
         assert!(!older(&path, 1).exists(), "skipped while held");

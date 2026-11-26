@@ -51,8 +51,8 @@ pub struct Update {
     pub span: bool,
     /// Its items changed (rated, turned, marked, a new list): its cells read their items again.
     pub items: bool,
-    /// The height role is sent with the others: its height changed, or its span changed, or its items changed and
-    /// its height didn't (a row whose only change is its items is sent its items alone).
+    /// The height role is sent with the others, unless the row's only change is its items: a row whose span or height
+    /// changed is sent its height, and a row whose only change is its items is sent its items alone.
     pub height: bool,
 }
 
@@ -313,11 +313,17 @@ impl Grid {
             self.held = Some((generation, entries));
             return Arrival::Held;
         }
-        for id in core::mem::take(&mut self.edited) {
-            if let Some(slot) = entries.iter_mut().find(|e| e.id == id)
-                && let Some(fresh) = reload(id)
-            {
-                *slot = fresh;
+        let mut edited = core::mem::take(&mut self.edited);
+        if !edited.is_empty() {
+            // One pass over the list, each entry looked up among the sorted ids of the files edited.
+            edited.sort_unstable();
+            edited.dedup();
+            for slot in entries.iter_mut() {
+                if edited.binary_search(&slot.id).is_ok()
+                    && let Some(fresh) = reload(slot.id)
+                {
+                    *slot = fresh;
+                }
             }
         }
         Arrival::Ready(entries)

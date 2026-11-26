@@ -14,6 +14,7 @@ prefix\\ (the install: the app's PG_QT_DIR), logs\\ and manifest.json. Put it on
 
 import argparse
 import datetime
+import http.client
 import json
 import os
 import re
@@ -59,8 +60,9 @@ def pg_home_folder(name: str) -> Path:
 
 
 def download(archive: Path) -> None:
-    """The source zip, from download.qt.io, with three tries (the network drops connections). A file already there is kept
-    only if its size and SHA-256 are the pins."""
+    """The source zip, from download.qt.io, with three tries (the network drops connections, and can cut a body short). A
+    try counts as failed when the connection errors or the body is not the pinned size. A file already there is kept only if
+    its size and SHA-256 are the pins."""
     if archive.is_file() and archive.stat().st_size == SOURCE_BYTES and sha256(archive) == SOURCE_SHA256:
         return
     archive.parent.mkdir(parents=True, exist_ok=True)
@@ -69,11 +71,14 @@ def download(archive: Path) -> None:
         try:
             with urllib.request.urlopen(SOURCE_URL, timeout=60) as response, partial.open("wb") as file:
                 shutil.copyfileobj(response, file, 1 << 20)
+            problem = None if partial.stat().st_size == SOURCE_BYTES else f"{partial.stat().st_size} bytes, not {SOURCE_BYTES}"
+        except (OSError, http.client.HTTPException) as error:
+            problem = str(error)
+        if problem is None:
             break
-        except OSError as error:
-            if attempt == 3:
-                sys.exit(f"download of {SOURCE_URL} failed after 3 attempts: {error}")
-            time.sleep(10 * attempt)
+        if attempt == 3:
+            sys.exit(f"download of {SOURCE_URL} failed after 3 attempts: {problem}")
+        time.sleep(10 * attempt)
     size, actual = partial.stat().st_size, sha256(partial)
     if size != SOURCE_BYTES or actual != SOURCE_SHA256:
         partial.unlink()
@@ -82,15 +87,22 @@ def download(archive: Path) -> None:
 
 
 def extract(archive: Path, work: Path) -> Path:
-    """The source tree, unpacked into `work` unless it is already there (a run that was interrupted leaves no configure.bat)."""
+    """The source tree, unpacked into `work` unless it is already there. The archive unpacks into a staging folder that is
+    renamed to the source's name only when it is complete, so an interrupted run leaves nothing that looks finished."""
     source = work / SOURCE_NAME
     if (source / "configure.bat").is_file():
         return source
-    shutil.rmtree(source, ignore_errors=True)
+    staging = work / f"{SOURCE_NAME}.unpacking"
+    if staging.exists():
+        shutil.rmtree(staging)
+    if source.exists():
+        shutil.rmtree(source)
     with zipfile.ZipFile(archive) as zipped:
-        zipped.extractall(work)
-    if not (source / "configure.bat").is_file():
-        sys.exit(f"{archive} does not unpack to {source}")
+        zipped.extractall(staging)
+    if not (staging / SOURCE_NAME / "configure.bat").is_file():
+        sys.exit(f"{archive} does not unpack to {SOURCE_NAME} with a configure.bat")
+    (staging / SOURCE_NAME).replace(source)
+    shutil.rmtree(staging)
     return source
 
 
@@ -187,9 +199,10 @@ def main() -> None:
     source = extract(archive, work)
 
     # Configure out of tree, into a folder that starts empty. Install goes to prefix, which the configure is told.
-    shutil.rmtree(build, ignore_errors=True)
+    for folder in (build, prefix):
+        if folder.exists():
+            shutil.rmtree(folder)
     build.mkdir(parents=True)
-    shutil.rmtree(prefix, ignore_errors=True)
     configure(source, build, prefix, jpeg, ffmpeg, logs / "configure.log")
     if args.configure_only:
         print(f"configured: {build}")

@@ -1,6 +1,7 @@
 //! The state of the `GalleryModel` QObject: the bridge's backing struct (the property values, the viewer's item's
 //! values, the grid and the details read last), and what it reads of the catalog.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
@@ -61,6 +62,9 @@ pub struct GalleryRust {
     pub(crate) details_generation: u64,
     /// Where a details read's answer goes; set when the model is made. A read asked before it is set is not carried out.
     pub(crate) details_delivery: Option<DetailsDelivery>,
+    /// The file whose details read is asked for and not yet delivered. The reader keeps only its newest details read, so
+    /// a read asked for another file supersedes this one, and that file is asked for again when it is next wanted.
+    pub(crate) details_pending: Cell<Option<FileId>>,
     /// The border marks written off the window's thread and not yet shown, per file: the marks the writes still to be
     /// made set, in the order they were asked for (`set_border_marked`).
     pub(crate) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
@@ -100,6 +104,7 @@ impl Default for GalleryRust {
             details: Vec::new(),
             details_generation: 0,
             details_delivery: None,
+            details_pending: Cell::new(None),
             mark_writes: BTreeMap::new(),
         }
     }
@@ -130,7 +135,9 @@ impl GalleryRust {
             Some((_, Some(details))) => Some(f(e, details)),
             Some((_, None)) => None,
             None => {
-                self.read_details(e.id);
+                if self.details_pending.get() != Some(e.id) {
+                    self.read_details(e.id);
+                }
                 None
             }
         }
@@ -144,10 +151,11 @@ impl GalleryRust {
             pg_log::warn("gallery", "a file's details were asked for before the grid model was made; not read");
             return;
         };
+        self.details_pending.set(Some(file));
         crate::app::session().details(file, move |read| {
             // No details when the read fails (the notice says why) or the file is gone.
             let details = crate::app::observe(Op::RowRead, read, |err| Notice::RowReadFailed {
-                error: crate::app::error_text(&format!("{err:#}")),
+                error: crate::app::error_text(err),
             })
             .flatten();
             deliver(generation, file, details);
@@ -158,6 +166,7 @@ impl GalleryRust {
     pub(crate) fn forget_details(&mut self) {
         self.details.clear();
         self.details_generation += 1;
+        self.details_pending.set(None);
     }
 
     /// The mark an item's borders will have once the border marks asked for are written: the last one asked for, else
@@ -189,7 +198,7 @@ impl GalleryRust {
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the inbox says why).
 pub(crate) fn fresh_entry(id: FileId) -> Option<Entry> {
     crate::app::observe(Op::Reload, crate::app::get().reading().entry(id), |e| Notice::ReloadFailed {
-        error: crate::app::error_text(&format!("{e:#}")),
+        error: crate::app::error_text(e),
     })
     .flatten()
 }

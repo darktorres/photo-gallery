@@ -22,6 +22,7 @@ import time
 import numpy as np
 
 from ann.data import FLOOR, K
+from ann.metrics import BANDS
 from common import CACHE_DIR, LIBRARY_SIZE, NO_SIM, WORK_DIR, ground_truth, image_list
 
 DIM = 512
@@ -191,11 +192,6 @@ def stage_exact(p: dict) -> dict:
     return {"ids": ids, "sims": sims, "rate": rate}
 
 
-# [lo, hi) cosine bands. The top is 1.01, not 1.0, so a cosine of exactly 1.0 (identical vectors) falls in the top band,
-# as ann/metrics.py's BANDS (edges ending at 1.01) puts it; the labels still print 1.0.
-BANDS = ((0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.8), (0.8, 1.01))
-
-
 def partner_cos(p: dict) -> np.ndarray:
     return np.array(json.loads(p["meta.json"].read_text(encoding="utf-8"))["partner_cos"])
 
@@ -205,7 +201,7 @@ def score_search(found: np.ndarray, exact: dict, partners: np.ndarray, cos: np.n
     ex = exact["ids"]
     recall = np.mean([len(set(found[i]) & set(ex[i])) / K for i in range(len(ex))])
     hit = np.array([partners[i] in set(found[i]) for i in range(len(ex))])
-    bands = {f"{a:.1f}-{b:.1f}": float(hit[(cos >= a) & (cos < b)].mean()) for a, b in BANDS}
+    bands = {f"{a:.1f}-{b:.1f}": float(hit[(cos >= a) & (cos < b)].mean()) for a, b in zip(BANDS[:-1], BANDS[1:])}
     return {"recall_at_10": float(recall), "partners_found": float(hit[cos >= FLOOR].mean()), "bands": bands}
 
 

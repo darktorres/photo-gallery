@@ -55,8 +55,9 @@ endif()
 if(JPEGLI_SRC)
   set_source_files_properties(dec_jpegli.cpp PROPERTIES
     INCLUDE_DIRECTORIES "${JPEGLI_SRC};${JPEGLI_BUILD}/lib/include/jpegli" COMPILE_DEFINITIONS HAVE_JPEGLI)
-  target_link_libraries(harness PRIVATE "${JPEGLI_BUILD}/lib/libjpegli-static.a"
-                        "${JPEGLI_BUILD}/third_party/highway/libhwy.a")
+  target_link_libraries(harness PRIVATE
+    "${JPEGLI_BUILD}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}jpegli-static${CMAKE_STATIC_LIBRARY_SUFFIX}"
+    "${JPEGLI_BUILD}/third_party/highway/${CMAKE_STATIC_LIBRARY_PREFIX}hwy${CMAKE_STATIC_LIBRARY_SUFFIX}")
 endif()
 
 if(WUFFS_SRC)

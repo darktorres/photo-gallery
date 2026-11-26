@@ -6,7 +6,7 @@
 #![expect(unsafe_code, reason = "FFI: the Windows directory and handle calls, and libc's statfs and ioctl on Unix")]
 //!
 //! The facts about the volume a folder is on are here too ([`RootFacts`], [`fs_type`]): the scanner decides from them
-//! which folders it accepts, and why it refuses one (`pg_scan::refusal`).
+//! which folders it accepts, and why it refuses one (`crates/scan/src/refusal.rs`).
 
 #[cfg(windows)]
 use crate::native::NativePath;
@@ -731,6 +731,8 @@ mod unix {
         use std::os::unix::io::AsRawFd;
         use std::path::Path;
 
+        use crate::drive::stable_hash;
+
         /// `FS_IOC_GETFSUUID`, `_IOR(0x15, 0, struct fsuuid2)`: the kernel's file system UUID (Linux 6.13 and later).
         const FS_IOC_GETFSUUID: u32 = 0x8011_1500;
 
@@ -797,9 +799,7 @@ mod unix {
         /// stored); a shorter serial as the little-endian integer of its bytes, which is the number udev writes in hex.
         fn uuid_id(bytes: &[u8]) -> Option<u64> {
             match bytes.len() {
-                16 => Some(
-                    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)),
-                ),
+                16 => Some(stable_hash(bytes)),
                 1..=8 => Some(bytes.iter().rev().fold(0u64, |acc, b| (acc << 8) | u64::from(*b))),
                 _ => None,
             }
@@ -874,7 +874,8 @@ mod facts_tests {
     use super::*;
     use crate::names::units_of;
 
-    // Real calls: the test binary's folder is on a fixed NTFS disk, not a link, and really where it is.
+    // Real calls on the test binary's folder, which must not be a link and must really be where it is. The facts are
+    // checked on a fixed NTFS disk; a test run from a volume of another kind skips, since it has no such folder.
     #[cfg(windows)]
     #[test]
     fn the_facts_of_a_folder_on_a_fixed_ntfs_disk() {
@@ -882,8 +883,11 @@ mod facts_tests {
         let path = units_of(dir.to_str().unwrap().as_bytes());
         let facts = SystemFacts;
         let volume = facts.volume_root(&path).unwrap();
-        assert_eq!(facts.drive_type(&volume), DriveType::Fixed, "{}", dir.display());
         let handle = facts.open(&path).unwrap();
+        if facts.drive_type(&volume) != DriveType::Fixed || facts.file_system(&handle).unwrap() != "NTFS" {
+            crate::testing::skip(&format!("{} is not on a fixed NTFS disk", dir.display()));
+            return;
+        }
         assert!(!facts.is_reparse_point(&handle).unwrap());
         assert!(facts.final_path(&handle).unwrap().starts_with(&units_of(br"\\?\")));
         assert_eq!(facts.file_system(&handle).unwrap(), "NTFS");

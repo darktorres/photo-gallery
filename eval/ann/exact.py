@@ -1,19 +1,20 @@
 """Exact k-NN self-join on the GPU: the ground truth, and the exact method's own timing.
 
-The ground truth is the fp16 join with fp32 accumulation (`topk(..., fp16=True)`, as `run.py`'s exact family uses),
-checked against float64 by `validate`; plain `topk` is fp32.
-Self is excluded by id.
-Each row keeps its TOP most similar
-rows; a row whose TOP-th neighbour is still >= FLOOR (a hub) also gets every neighbour >= FLOOR (radius).
+The ground truth is the fp32 join (`topk` with fp16 off), checked against float64 by `validate`. The exact family in
+`run.py` and the timing in `fp16_rate` run the fp16 join (`topk(..., fp16=True)`, fp32 accumulation): its similarities
+are fp16-rounded, so only its ids are kept, and every similarity is rescored in fp32.
+Self is excluded by id. Each row keeps its TOP most similar rows; a row whose TOP-th neighbour is still >= FLOOR (a hub)
+also gets every neighbour >= FLOOR (radius).
 """
 
+import hashlib
 import time
 
 import numpy as np
 import torch
 
 from ann.data import FLOOR, OUT, Base, size_tag
-from common import NO_SIM
+from common import NO_SIM, save_atomic
 
 TOP = 64
 BLOCK = 1024  # query rows per GEMM: a (BLOCK x n) fp32 block is ~0.8 GB at 206k rows
@@ -79,14 +80,16 @@ def fp16_rate(x: np.ndarray) -> float:
     return len(x) * (len(x) - 1) / seconds
 
 
-def ground_truth(base: Base, size: int | None) -> dict:
-    """Cached exact results for a nested subset, in its local ids (positions in base.subset(size))."""
-    path = OUT / f"exact_{size_tag(size)}.npz"
+def knn_truth(base: Base, size: int | None) -> dict:
+    """Cached exact results for a nested subset, in its local ids (positions in base.subset(size)). The cache name
+    carries a digest of the subset's vectors and of the rule, so a rebuilt base never reads another base's results."""
+    sub = base.subset(size)
+    x = base.x[sub]
+    digest = hashlib.sha256(f"{TOP},{FLOOR}".encode() + np.ascontiguousarray(x).tobytes()).hexdigest()[:16]
+    path = OUT / f"exact_{size_tag(size)}_{digest}.npz"
     if path.exists():
         d = np.load(path)
         return {k: d[k] for k in d.files}
-    sub = base.subset(size)
-    x = base.x[sub]
     sims, ids, seconds = topk(x, TOP)
     hub_rows = np.flatnonzero(sims[:, -1] >= FLOOR)
     found = radius(x, hub_rows, FLOOR)
@@ -103,5 +106,5 @@ def ground_truth(base: Base, size: int | None) -> dict:
         "hub_sims": hub_sims,
     }
     OUT.mkdir(parents=True, exist_ok=True)
-    np.savez(path, **d)
+    save_atomic(path, lambda f: np.savez(f, **d))
     return d

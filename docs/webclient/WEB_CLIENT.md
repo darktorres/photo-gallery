@@ -24,12 +24,13 @@ Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `p
 ## Status
 
 **Decided** (approved in review): the controller runs in every client; the server is the only data authority and the only
-process that writes the catalog; the desktop talks to the server over loopback; mutations are versioned sets; items are
-identified by `FileId` on the wire; listings are stamped with a generation and freeze membership and order. From the latest
+process that writes the catalog; the desktop talks to the server over loopback; mutations are versioned sets (from migration
+10; until then unversioned, O17); items are identified by `FileId` on the wire; listings are client-held replicas, stamped by
+listing key and sequence, and frozen in membership and order (O16, `WEB_CLIENT_TECH_DECISIONS.md`). From the latest
 review: the server is async (`axum` on `tokio`); the CLI's writes go through the server while it runs; access is by login,
-not pairing; a cache miss queues the work and returns a placeholder; `write_back` is a server-wide setting that the owner can
-change from any client, on by default; deletes and moves are in version 1 (quarantine is dropped, see WEB_CLIENT_TECH_DECISIONS.md); scan changes reach clients
-live, and a phone can start scans and imports; the layout runs in a Web Worker; the phone target is Android (Chrome) for now;
+not pairing; a cache miss returns a placeholder, and only the client's want list queues work (TECH B6); `write_back` is a
+server-wide setting that the owner can change from any client, on by default; deletes and moves are in version 1 (quarantine
+is dropped, see WEB_CLIENT_TECH_DECISIONS.md); scan changes reach clients live, and a phone can start scans and imports; the layout runs in a Web Worker; the phone target is Android (Chrome) for now;
 Yandex is in version 1; a server-side folder browser can add library folders; the budgets are set by measurement.
 
 **Target, gated:** one shared QML frontend in the browser and on the desktop. The gate is an HTTPS run of the spike on a
@@ -200,8 +201,8 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - Items are identified by `FileId` on the wire. An index is local to one snapshot on one client and never crosses the
   boundary. The client's data layer converts index-carrying commands (`Select(usize)`, `Rate { item }`,
   `ShowViewer(usize)`) to `FileId` using its own snapshot.
-- Every message that refers to a listing carries `(listing_id, generation)`. The server rejects a mismatch with a typed
-  error, so a stale index can't reach the wrong file.
+- Every message that refers to a listing carries its listing key and the replica's sequence `S` (O16). The server rejects a
+  stamp it cannot match with a typed error, so a stale index can't reach the wrong file.
 - The `Event` and `Command` enums in `crates/client/src/controller.rs` use indices (`Select(usize)`, `Rate { item }`). They
   stay local. The wire message set is defined from this section, not from those enums.
 
@@ -222,7 +223,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 - *Decided, version 1 membership changes:* scan-missing files, library folder removal, and rating-driven sort. The desktop
   edits a rating in place today, so for the web client it is a membership rule, not a new behaviour. Scan-driven changes
   reach clients live.
-- Using an expired snapshot returns `SnapshotExpired`, and the client reopens it as above.
+- Using an expired snapshot returns `snapshot-expired`, and the client reopens it as above.
 
 ### Mutations
 
@@ -294,7 +295,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
 ### Open
 
 - The video side (work in progress; kept open).
-- The TLS library for the LAN listener: `rustls` or `native-tls` (see Server).
+- The TLS library for the LAN listener: decided as `rustls` (TECH B5; see Server).
 - The login details (see Processes and access).
 - The snapshot grace length for a sleeping phone. The 10-minute backstop and the cap of four are proposals.
 - Device identity: the record's key, and the client key for the snapshot cap.
@@ -320,7 +321,7 @@ Everything else in this section is *Proposed* unless it says otherwise; the open
   - Carried on the one WebSocket, which also carries events, so plain HTTP on the LAN never runs out of sockets.
   - The client stores each image in Cache Storage under its single URL.
   - With HTTP/2 over the LAN certificate, plain `<img>` would also do. The async server gives HTTP/2 natively, so no second
-    process is needed. Which TLS library carries it is open (see Server). Nothing here is built yet.
+    process is needed. It runs over `rustls` (TECH B5; see Server). Nothing here is built yet.
 - **Viewer:** a fitted image at screen × DPR, then zoomed regions; JPEG for formats the browser can't decode.
 - **Video (work in progress; open):**
   - Original with byte ranges when the browser can play it (`canPlayType` on an exact codec string).
@@ -375,13 +376,13 @@ The built frontend (the QML WASM bundle, or the fallback's bundle) is served fro
 **Stack (decided: async).** `axum` on `tokio`, with HTTP/2 and WebSockets from `hyper`. It is the project's first async code,
 and every `pg-app` call goes through a blocking pool sized to the catalog's connections. The sync option (`tiny_http` with
 `tungstenite`) is rejected: it has no HTTP/2, and a thread per connection does not suit a WebSocket per client with streamed
-thumbnails. `REFACTOR_PLAN.md:136` already says "the axum server later", which agrees with this.
+thumbnails. The deleted plan `d28e2f72^:docs/temp/REFACTOR_PLAN.md:148` already says "the axum server later", which agrees with this.
 
-**TLS library (open):** `rustls` or `native-tls`. The choice matters for HTTP/2. The Windows backend of `native-tls` 0.2.18 has
-no server-side ALPN (`native-tls-0.2.18/src/imp/schannel.rs` has no server accept path), so it cannot negotiate HTTP/2 on
-Windows. `rustls` is pure Rust and supports server-side ALPN. It does not read the Windows certificate store by default, which
-the LAN setup does not need, because the server loads its own certificate from a file. The repo's only current TLS user is
-`ureq`, through `native-tls` (the `native-tls` package in Cargo.lock). Choosing `rustls` adds a second TLS stack beside it.
+**TLS library (decided: `rustls`, `WEB_CLIENT_TECH_DECISIONS.md` B5).** The Windows backend of `native-tls` 0.2.18 does have a
+server-side ALPN accept path (schannel, behind the opt-in `alpn-accept` feature, off in this repo; spike C2), so ALPN alone does
+not decide the library. The reasons are the others in B5: `rustls` is async-friendly with tokio and axum, and one TLS stack
+serves both the LAN listener and `ureq`. The server loads its own certificate from a file, so the Windows certificate store is
+not needed for the LAN.
 
 The LAN listener needs a connection cap, and thumbnail reads need a handoff from the async runtime to the blocking pool.
 
@@ -394,8 +395,8 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
   immutable` (O11 option (a)). A missing height gets the nearest one (`ThumbCache::get_nearest`). Turns are not in the key; the client applies them in CSS.
 - `GET /api/files/{id}/view?w=&h=`: a fitted image, or the original bytes with `Range` for video.
 - `POST /api/login`: login, which sets the httpOnly cookie.
-- `POST /api/items/{file_id}/set`: `field`, `value`, `expected_version`. Returns the new version, or `VersionMismatch`.
-- `POST /api/resume`: `seq`. Replays the missed events, or returns `ResyncRequired`.
+- `POST /api/items/{file_id}/set`: `field`, `value`, `expected_version`. Returns the new version, or `version-mismatch`.
+- `POST /api/resume`: `seq`. Replays the missed events, or returns `resync-required`.
 - Listing endpoints carry the generation (see State model).
 - `GET /ws` (WebSocket): events as JSON, and the thumbnail batch as binary frames with request ids, in viewport order,
   with cancellation.
@@ -411,7 +412,7 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 
 **Behaviour the server must have:**
 
-- **Snapshots expire.** Expiry and recovery are defined in State model (`SnapshotExpired`, then reopen by query).
+- **Snapshots expire.** Expiry and recovery are defined in State model (`snapshot-expired`, then reopen by query).
 - **The cache is the only source for thumbnails.** A miss is queued, never read from the originals on the request path.
   Decided: the server queues the work and returns a placeholder. The current code reads the original on a miss
   (`crates/app/src/images.rs:179-191`); that path changes with the server.
@@ -420,7 +421,7 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 
 **Open decisions:**
 
-- **Stack:** decided, async (see Stack). The TLS library is open.
+- **Stack:** decided, async (see Stack). The TLS library is decided: `rustls` (TECH B5).
 - **Catalog writers:** decided. While the server runs it is the only process that writes the catalog, and the CLI's writes go
   through it (see Processes and access).
 - **Login:** decided over pairing. The details are open (see Processes and access).
@@ -432,7 +433,7 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
 **What the QML is made of** (`crates/desktop`):
 
 - **Views:** 34 QML files, 5,115 lines, in the `pg.gallery` module. `Theme` and `Ratings` are singletons.
-- **Bridge:** 19 Rust files each register one type the QML uses, with `#[qml_element]`. They declare 272 members: 112
+- **Bridge:** 20 Rust files, `bridges/*.rs` (including `lane_model_bridge.rs`), each register one type the QML uses, with `#[qml_element]`. They declare 272 members: 112
   properties, 140 invokables and 20 signals. The largest are `shell_bridge.rs` (56 attribute lines), `gallery_bridge.rs`
   (36), `yandex_bridge.rs` (26) and `viewport_bridge.rs` (23). Each member reads in-process Rust state: the catalog, the
   thumbnail cache, the job queue. Under the State model, control members read the local controller and data members
@@ -444,9 +445,9 @@ The LAN listener needs a connection cap, and thumbnail reads need a handoff from
   `cpp/frame_sink.cpp` (Rust threads feeding a `QVideoSink`), `cpp/gpu_device.cpp` (the app's D3D11 device, shared
   with Qt Quick and the player), and the screenshot and live-reload helpers. The browser build needs a replacement for each.
 
-**What is already in place:** `crates/desktop/tests/qml/stubs/pg/gallery/` has stand-ins for 9 of the 19 bridge types
-(160 lines of QML), and `tools/qmltest.py` runs the real views against them. So the views depend on names, not on the
-Rust implementations. That is the seam a browser backend would plug into. It covers 9 types, though, and the stubs hold
+**What is already in place:** `crates/desktop/tests/qml/stubs/pg/gallery/` has stand-ins for 11 of the 20 bridge types
+(268 lines of QML, `qmldir` lists 11 types), and `tools/qmltest.py` runs the real views against them. So the views depend on names, not on the
+Rust implementations. That is the seam a browser backend would plug into. It covers 11 types, though, and the stubs hold
 only what the tests read. A full `pg.gallery` for the browser has to implement all of the surface.
 
 **What blocks it:**
@@ -575,7 +576,7 @@ did not settle.
 | P9 Layout threading            | Decided: Web Worker              | Layout runs in a worker.                                                                                                                                                                                                             | Measure to set the budget.                                                                                                                                                                                       |
 | P10 Thumbnail transport        | Proposed (M)                     | The async server, which gives HTTP/2 natively.                                                                                                                                                                                       | The TLS library (see Server); whether the WebSocket batch is still needed on the LAN; time-to-fill on a phone, measured.                                                                                         |
 | P11 Phone spike, touch, decode | Decided: Android only            | A desktop Chromium pre-screen first, then the phone gate after the trust test. The viewer preloads eight neighbours, so the decode budget counts eight.                                                                              | Pass budgets, measured first (see Testing).                                                                                                                                                                      |
-| P12 Server stack               | Decided: async                   | `axum` on `tokio`.                                                                                                                                                                                                                   | The TLS library: `rustls` or `native-tls`. `native-tls` has no server-side ALPN on Windows.                                                                                                                      |
+| P12 Server stack               | Decided: async                   | `axum` on `tokio`.                                                                                                                                                                                                                   | TLS library: `rustls` (TECH B5). native-tls has an opt-in Windows ALPN path, not enabled.    |                                                                                                                   |
 | P13 CLI writers                | Decided                          | While the server runs, the CLI writes through it; otherwise it writes directly. No refusal.                                                                                                                                          | None.                                                                                                                                                                                                            |
 | P14 Login                      | Decided: login, not pairing      | The owner sets a password at first run; the phone logs in and gets an httpOnly cookie bound to a revocable device record. Works while the desktop is closed.                                                                         | Password storage and hashing; lockout and rate limits; the reset path; no QR code (decided).                                                                                                                     |
 

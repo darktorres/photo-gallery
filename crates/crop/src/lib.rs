@@ -279,9 +279,9 @@ struct CutWorker {
 /// bytes in the file's own format (`pg_edit::crop::cut`), which replace the original (`pg_writeback::replace`). The
 /// originals change, so this refuses to run unless `confirmed`, which only the user's confirmation gives. No backup is
 /// kept, and no border mark is set: the cut's file has no borders left, and its detection is stored as none. Bytes that
-/// come out without their metadata (JPEG, TIFF, lossy WebP) get the original's tags first, by ExifTool, so a failed tag
-/// copy leaves the original as it was. A file that fails is counted and the rest go on; a file whose catalog row can't be
-/// updated after its cut counts as failed, though its original is cut.
+/// come out without their metadata (JPEG, lossy WebP, TIFF, compressed BMP) get the original's tags first, by ExifTool,
+/// so a failed tag copy leaves the original as it was. A file that fails is counted and the rest go on; a file whose
+/// catalog row can't be updated after its cut counts as failed, though its original is cut.
 ///
 /// `present` says whether a file is still in the library. It is asked before each original is written, since a folder
 /// can be removed while the pass runs: a file that is not is skipped, and its original is left as it is.

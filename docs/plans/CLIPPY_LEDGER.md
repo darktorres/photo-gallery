@@ -13,7 +13,10 @@ Baseline recorded 2026-11-05 at commit `c988b9c`.
 - Each crate opts in with `[lints] workspace = true`. The vendored crates in `vendor/` are outside the workspace.
 - `[workspace.lints.rust]` sets `unreachable_pub` at warn (Phase 12, `e1477ee`), `missing_docs` at warn (Phase 9 of the consistency program: every public item and field has a doc comment) and `unsafe_code` at deny (Phase 8 of the consistency program). The crates without unsafe code say `#![forbid(unsafe_code)]` at their root; an unsafe item carries `#[expect(unsafe_code, reason)]`. `UnsafePolicy` in `tools/test_ci_files.py` checks both.
 - `clippy.toml` bans `std::collections::HashMap`, `HashSet` and `RandomState`.
-- `just lint` runs `cargo clippy --workspace --all-targets -- -D warnings`, so a lint at `warn` fails the gate.
+- `just lint` (`tools/lint.py`) runs `cargo clippy --workspace --all-targets --locked --timings -- -D warnings`, then the
+  same clippy command with `--locked` for each crate whose feature the workspace step does not turn on (`pg-gallery` `dhat-heap`,
+  `pg-model` `specta`, `pg-app` `fault`, `pg-driver` `fault`) and for `fuzz/Cargo.toml`. Every step passes `-D warnings`,
+  so a lint at `warn` fails the gate.
 
 ## Baseline counts
 
@@ -43,8 +46,9 @@ configured.
 Style and documentation lints, not recommended: `use_self` (424), `must_use_candidate` (338), `missing_errors_doc` (190),
 `too_long_first_doc_paragraph` (128), `missing_const_for_fn` (110), `doc_markdown` (87), `missing_panics_doc` (74).
 
-Cheap style wins: `derive_partial_eq_without_eq` (10), `redundant_closure_for_method_calls` (16), `float_cmp` (7),
-`semicolon_if_nothing_returned` (4), `needless_pass_by_value` (4), `match_same_arms` (5).
+Cheap style wins, with the hit counts the phase tables below give: `derive_partial_eq_without_eq` (10),
+`redundant_closure_for_method_calls` (17), `float_cmp` (10), `semicolon_if_nothing_returned` (6),
+`needless_pass_by_value` (5), `match_same_arms` (5).
 
 Phases 5 to 14 group the remaining lints by the work each one needs: enable now, correct, decide, or leave off.
 
@@ -224,12 +228,12 @@ Mechanical changes with no behaviour change. Warn, then deny once the sites are 
 
 ## Phase 9: arithmetic and floats (decided)
 
-A change here can alter a result on overflow, rounding or a negative operand, so each site is checked, not swept. `integer_division` and `integer_division_remainder_used` ask the same question.
+A change here can alter a result on overflow, rounding or a negative operand, so each site is checked, not swept. `integer_division` and `integer_division_remainder_used` ask the same question. In this table, Level is the level the lint takes once adopted, and the Work column agrees with it.
 
 | Lint                              | Level | Hits | Work                                                                                                                                                                                            | Status         |
 |-----------------------------------|-------|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
 | `integer_division`                | warn  | 87   | Adopt. Per site: `div_ceil` where rounding up is meant, `checked_div` where the divisor can be zero, `#[expect]` with a reason where truncation is the intent                                   | decided: adopt |
-| `arithmetic_side_effects`         | warn  | 642  | Adopt workspace-wide at `deny`, test code included. Checked arithmetic that propagates the error, or `saturating_*` for counters; wrapping only where the bits are the value                    | decided: adopt |
+| `arithmetic_side_effects`         | deny  | 642  | Adopt workspace-wide at `deny`, test code included. Checked arithmetic that propagates the error, or `saturating_*` for counters; wrapping only where the bits are the value                    | decided: adopt |
 | `integer_division_remainder_used` | warn  | 175  | Adopt. Fires on unsigned `/` and `%` too (probe). `checked_div` and `checked_rem` where the divisor can be zero (a panic path); `div_euclid` and `rem_euclid` where the operand can be negative | decided: adopt |
 | `suboptimal_flops`                | warn  | 19   | Adopt. `mul_add` at each site. The result can differ in the last bit; the golden-output and pixel tests decide whether a result moved, and any change is listed in the commit                   | decided: adopt |
 | `modulo_arithmetic`               | warn  | 6    | Adopt. `rem_euclid` for timestamps and offsets; `#[expect]` with a reason where the operand is known non-negative                                                                               | decided: adopt |
@@ -297,8 +301,8 @@ Not measured: eight names in the rustc list were not recognised by the compiler 
 
 | Lint                 | Level | Hits        | Work                                                                                                                                                                                                                                                                             | Status               |
 |----------------------|-------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|
-| `disallowed_methods` | warn  | not counted | Adopt at `deny` in `crates/model/clippy.toml`, banning `SystemTime::now` and `std::fs`, since the library docs describe `model` as pure and WASM-safe. That file replaces the root one, so the root's settings are repeated there                                                | decided: adopt       |
-| `disallowed_types`   | warn  | not counted | Adopt at `deny` workspace-wide, banning `std::process::Command`. Each place that spawns a process (`pg-exiftool`, `video`, the platform process code, the tools) takes `#[expect(clippy::disallowed_types, reason = "...")]`. Crates with their own `clippy.toml` repeat the ban | decided: adopt       |
+| `disallowed_methods` | deny  | not counted | Adopt at `deny` in `crates/model/clippy.toml`, banning `SystemTime::now` and `std::fs`, since the library docs describe `model` as pure and WASM-safe. That file replaces the root one, so the root's settings are repeated there                                                | decided: adopt       |
+| `disallowed_types`   | deny  | not counted | Adopt at `deny` workspace-wide, banning `std::process::Command`. Each place that spawns a process (`pg-exiftool`, `video`, the platform process code, the tools) takes `#[expect(clippy::disallowed_types, reason = "...")]`. Crates with their own `clippy.toml` repeat the ban | decided: adopt       |
 | `disallowed_macros`  | warn  | not counted | Not adopted. `print_stdout` and `print_stderr` already deny the same macros                                                                                                                                                                                                      | decided: not adopted |
 
 ## Phase 14: not recommended

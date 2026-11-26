@@ -167,9 +167,7 @@ mod tests {
         })
         .unwrap();
         // The first wait returns at once (started woken); the others wait for a wake.
-        while runs.load(Ordering::SeqCst) < 1 {
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        pg_testkit::wait_until(Duration::from_secs(5), || "the body ran once", || runs.load(Ordering::SeqCst) >= 1);
         service.wake();
         service.wake();
         assert!(service.stop_within(Duration::from_secs(5)));

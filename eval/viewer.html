@@ -161,12 +161,12 @@ const VERIFY_TABS = ["verify", "verify_cross", "verify_knn"];
 const PAGE = 60;
 const state = { runs: [], run: null, tab: "summary", model: null, rows: [], view: [], shown: 0, marks: {}, open: -1,
   side: 0, swapSide: null };
-// Same key as viewer.py's pair_key: marks are per unordered pair of images, across sets and reruns.
-const keyOf = (a, b) => [a, b].sort().join("|");
-const pairKey = (r) => keyOf(r.path_a, r.path_b);
+// Marks are per unordered pair of images, across sets and reruns. The server sends each pair's key (viewer.py's
+// pair_key), so the page never builds one.
+const pairKey = (r) => r.key;
 const markOf = (r) => state.marks[pairKey(r)] ?? null;
-// The verifier's decision in mark terms ("match" = same picture, incl. edits).
-const decisionMark = (r) => ({ match: "same", unrelated: "different" })[r.decision] ?? null;
+// The verifier's decision in mark terms ("match" = same picture, incl. edits), as the server gives it.
+const decisionMark = (r) => r.decision_mark ?? null;
 const $ = (id) => document.getElementById(id);
 
 function el(tag, attrs = {}, ...children) {
@@ -328,7 +328,7 @@ async function renderSummary() {
       for (const [label, c] of Object.entries(v.confusion)) {
         const total = c.match + c.unrelated + c.error;
         if (!total) continue;
-        const expected = { duplicate: "match", cross_group: "unrelated" }[label];
+        const expected = bench.expected[label];
         const right = expected ? c[expected] / total : null;
         const mk = v.marks?.[label];
         const agree = mk ? mk.agree / mk.marked : null;
@@ -342,7 +342,7 @@ async function renderSummary() {
       }
     }
     out.push(table(["result file", "label", "pairs", "match", "unrelated", "error", "correct (labels)",
-      "marked by you", "agrees with your marks", "run"], rows));
+      "marked by you", "agrees with your marks", "floor · time"], rows));
   }
   $("content").replaceChildren(...out);
 }
@@ -386,10 +386,13 @@ async function renderBenchmarks() {
       `${h.files.toLocaleString()} files under ${h.root}; each order reads its own sample: ${sample}. ` +
       `Layout rank correlation: path↔physical ${L.spearman_path_vs_lcn.toFixed(3)}, MFT↔physical ${L.spearman_mft_vs_lcn.toFixed(3)}; ` +
       `${pct(L.fragmented_files)} of files fragmented.`));
-    out.push(table(["order", "files", "files/s", "MB/s", "70M files at this rate"],
+    // The library size comes from the bench's report (bench_hdd.py); reports from before it carried one show a dash.
+    const lib = h.library_size;
+    out.push(table(["order", "files", "files/s", "MB/s", lib ? `${(lib / 1e6).toLocaleString()}M files at this rate` : "days for the library"],
       bestRow(h.rows.map((r) => r.order), h.rows.map((r) => [
         { text: r.files.toLocaleString(), raw: null }, { text: num(r.files_s), raw: r.files_s },
-        { text: num(r.mb_s), raw: r.mb_s }, { text: (70e6 / r.files_s / 86400).toFixed(1) + " days", raw: null }]),
+        { text: num(r.mb_s), raw: r.mb_s },
+        { text: lib ? (lib / r.files_s / 86400).toFixed(1) + " days" : "-", raw: null }]),
         [null, "max", "max", null])));
   }
   $("content").replaceChildren(...out);
@@ -623,10 +626,9 @@ async function renderGroups() {
   applyGroupFilters();
 }
 
+// Each pair of members as [i, j, key], from the server.
 function memberPairs(g) {
-  const out = [];
-  for (let i = 0; i < g.members.length; i++) for (let j = i + 1; j < g.members.length; j++) out.push([i, j]);
-  return out;
+  return g.pairs;
 }
 
 // The saved marks as sets: images joined by "same" marks share a set; images without any mark go in A.
@@ -634,8 +636,8 @@ function setsFromMarks(g) {
   const parent = g.members.map((_, i) => i);
   const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
   const touched = g.members.map(() => false);
-  for (const [i, j] of memberPairs(g)) {
-    const m = state.marks[keyOf(g.members[i], g.members[j])];
+  for (const [i, j, key] of memberPairs(g)) {
+    const m = state.marks[key];
     if (m) touched[i] = touched[j] = true;
     if (m === "same") parent[find(i)] = find(j);
   }
@@ -650,7 +652,7 @@ function setsFromMarks(g) {
 
 function markStatus(g) {
   const pairs = memberPairs(g);
-  const marked = pairs.filter(([i, j]) => state.marks[keyOf(g.members[i], g.members[j])]).length;
+  const marked = pairs.filter(([, , key]) => state.marks[key]).length;
   return { total: pairs.length, marked, done: marked === pairs.length };
 }
 
@@ -727,22 +729,25 @@ function repaintGroup(g) {
   updateGroupModal();
 }
 
+// items: [a, b, mark, key] per pair; mark null clears it.
 async function postMarks(items) {
-  const res = await postJson("/api/marks/bulk", { run: state.run, marks: items }, "Saving the marks failed");
+  const res = await postJson("/api/marks/bulk", { run: state.run, marks: items.map(([a, b, m]) => [a, b, m]) },
+    "Saving the marks failed");
   if (!res) return false;
-  for (const [a, b, m] of items) {
-    if (m) state.marks[keyOf(a, b)] = m; else delete state.marks[keyOf(a, b)];
+  for (const [, , m, key] of items) {
+    if (m) state.marks[key] = m; else delete state.marks[key];
   }
   return true;
 }
 
 async function saveGroup(g) {
-  const items = memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], g.sets[i] === g.sets[j] ? "same" : "different"]);
+  const items = memberPairs(g).map(([i, j, key]) =>
+    [g.members[i], g.members[j], g.sets[i] === g.sets[j] ? "same" : "different", key]);
   if (await postMarks(items)) repaintGroup(g);
 }
 
 async function clearGroup(g) {
-  if (await postMarks(memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], null]))) {
+  if (await postMarks(memberPairs(g).map(([i, j, key]) => [g.members[i], g.members[j], null, key]))) {
     g.sets = g.members.map(() => 0);
     repaintGroup(g);
   }

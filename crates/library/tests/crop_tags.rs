@@ -2,13 +2,12 @@
 //! output, nor a temporary beside it; a cut whose tags can't be copied leaves its original as it was. The program that
 //! can't run is given to the crop (`save_with`, `cut_with`), so no test reads or sets the environment for it.
 
-use std::path::{Path, PathBuf};
-
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::path::PathArena;
+use pg_testkit::files_under;
 
 /// The tests' result: any error of the crates they use.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -18,20 +17,6 @@ fn letterboxed_tiff() -> pg_codec::Result<Vec<u8>> {
     pg_codec::fixtures::encode(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40), pg_codec::fixtures::Encoding::Tiff)
 }
 
-/// Every file under `dir`, at any depth.
-fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return found };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            found.extend(files_under(&path));
-        } else {
-            found.push(path);
-        }
-    }
-    found
-}
 
 #[test]
 fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() -> Result<()> {

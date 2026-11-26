@@ -7,6 +7,8 @@ benches used before (quantization tables of quality 80). Its content is 1/f nois
 a natural photo: most of the energy in low frequencies, so the decoder and the thumbnail maker see photo-like work. The
 seed and the contrast are fixed, so the file is the same on every run. Regenerating it changes the per-file baseline
 (docs/perf/baseline.json): re-measure after any change here.
+
+Needs numpy and Pillow, at the versions tools/shots/requirements.txt pins (the venv `just shots` makes from that file).
 """
 
 import argparse

@@ -175,7 +175,7 @@ def main() -> None:
         docker_up,
         "Docker",
         "running",
-        "the Linux checks, benches and fuzzer run in a container: start Docker, then `just linux-build`",
+        "the Linux checks, benches and fuzzer run in a container: start Docker Desktop, then `just linux-build`",
     )
 
     if doctor.missing_required:

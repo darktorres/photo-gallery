@@ -185,7 +185,7 @@ impl PathRules {
         Some(Merged(parts))
     }
 
-    /// A folder's parts joined by the separator, for display only (the title, the Hud, messages): lossy.
+    /// A folder's parts joined by the separator, for display only (the title, the HUD, messages): lossy.
     pub fn display_merged(self, folder: &Merged) -> String {
         let sep = self.sep();
         let mut out = String::new();

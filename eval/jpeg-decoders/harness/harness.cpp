@@ -119,6 +119,13 @@ Diff compare(const Image& out, const Image& rgb, const Image& yuv) {
     return finish(sum, sq, mx, n);
 }
 
+const DecoderSpec* find(const std::vector<DecoderSpec>& v, const std::string& name) {
+    for (const auto& s : v)
+        if (s.name == name) return &s;
+    std::fprintf(stderr, "unknown decoder %s (harness list)\n", name.c_str());
+    return nullptr;
+}
+
 int time_mode(std::vector<std::string> args) {
     double budget = 1.0;
     std::string only;
@@ -129,13 +136,17 @@ int time_mode(std::vector<std::string> args) {
         args.erase(args.begin(), args.begin() + 2);
     }
     auto decs = all_decoders();
+    // The references are named: libjpeg-turbo's RGB output, and its planes for the decoders that output planes.
+    const auto* turbo = find(decs, "turbo");
+    const auto* turbo_yuv = find(decs, "turbo-yuv");
+    if (!turbo || !turbo_yuv) return 2;
     std::printf("%-34s %-16s %10s %10s %6s   %s\n", "file", "decoder", "wall ms", "cpu ms", "n",
                 "vs libjpeg-turbo: mean |diff| / max / PSNR");
     for (const auto& path : args) {
         auto jpeg = read_file(path);
         Image rgb, yuv;
-        auto ref = decs[0].make();  // turbo
-        auto refy = decs[1].make();  // turbo-yuv
+        auto ref = turbo->make();
+        auto refy = turbo_yuv->make();
         std::string e1 = ref->decode(jpeg, rgb), e2 = refy->decode(jpeg, yuv);
         for (const auto& spec : decs) {
             if (!only.empty() && only.find("," + spec.name + ",") == std::string::npos) continue;
@@ -149,7 +160,9 @@ int time_mode(std::vector<std::string> args) {
                 std::printf("error: %s\n", err.c_str());
                 continue;
             }
-            Diff d = e1.empty() ? compare(out, rgb, yuv) : Diff{"no reference: " + e1};
+            // Planar decoders are compared with libjpeg-turbo's planes, the others with its RGB: each reports its own failure.
+            const std::string& ref_err = out.layout == Image::Planar ? e2 : e1;
+            Diff d = ref_err.empty() ? compare(out, rgb, yuv) : Diff{"no reference: " + ref_err};
             std::vector<double> samples;
             double c0 = cpu_seconds(), t0 = now();
             while (samples.size() < 5 || now() - t0 < budget) {
@@ -169,16 +182,8 @@ int time_mode(std::vector<std::string> args) {
             else std::printf("%.3f / %d / %.1f dB\n", d.mean, d.max, d.psnr);
             std::fflush(stdout);
         }
-        (void)e2;
     }
     return 0;
-}
-
-const DecoderSpec* find(const std::vector<DecoderSpec>& v, const std::string& name) {
-    for (const auto& s : v)
-        if (s.name == name) return &s;
-    std::fprintf(stderr, "unknown decoder %s (harness list)\n", name.c_str());
-    return nullptr;
 }
 
 int repeat_mode(const std::vector<std::string>& a) {

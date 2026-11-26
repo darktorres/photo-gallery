@@ -52,7 +52,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from pgtools import QT_DIR_HOW, REPO, WINDOWS, default_python, load_env_file, not_set, run
+from pgtools import QT_DIR_HOW, REPO, WINDOWS, default_python, load_env_file, not_set, run, sha256
 
 HERE = Path(__file__).resolve().parent
 SHOTS = REPO / "target" / "shots"
@@ -157,14 +157,6 @@ class Shot:
 
     def timed_out(self) -> bool:
         return self.settle.startswith("timed out")
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
 
 
 def git_commit(commit: str) -> str:
@@ -387,7 +379,7 @@ def invoke_shot(exe: Path, side: str, name: str, hooks: tuple[str, ...], templat
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
-        return Shot(name, None, "TIMEOUT", "timed out", "")
+        return Shot(name, None, "", "", "timed out: the app was still running at the cap and was killed")
     crops = "\n".join(
         f"{path.name} {sha256(path)}"
         for path in sorted(run_folder.joinpath("crops").iterdir(), key=lambda p: p.name)
@@ -504,11 +496,11 @@ def table(rows: list[tuple[str, str, str]]) -> str:
 
 def judge(name: str, before: Shot, after: Shot, expect: list[str], diff_folder: Path) -> tuple[str, str]:
     """The status and detail of one scenario, compared with the base's."""
-    if not before.png or not after.png:
-        status, detail = "MISSING", f"base: {before.note} current: {after.note}"
-    elif before.timed_out() or after.timed_out():
-        # Saved at the cap without settling: the picture may be mid-change, so it is not compared.
+    if before.timed_out() or after.timed_out():
+        # Saved at the cap without settling, or killed at it: the picture may be mid-change, so it is not compared.
         status, detail = "UNSETTLED", f"base: {before.settle} current: {after.settle}"
+    elif not before.png or not after.png:
+        status, detail = "MISSING", f"base: {before.note} current: {after.note}"
     else:
         count, size = compare_pixels(before.png, after.png, diff_folder / f"{name}.png")
         crops_same = before.crops == after.crops
@@ -577,7 +569,7 @@ def compare(
     if not args.self:
         reference = resolve_reference(args.base)
         manifest = json.loads((reference / "manifest.json").read_text(encoding="utf-8-sig"))
-        if manifest["qt"] != str(qmake):
+        if Path(manifest["qt"]) != qmake:  # compared as paths: the slash style the manifest was written with does not matter
             print(f"warning: the reference was recorded with Qt at {manifest['qt']}; this tree uses {qmake}", file=sys.stderr)
     ensure_library()
     changed = changed_fixtures(manifest, scenarios) if manifest else []

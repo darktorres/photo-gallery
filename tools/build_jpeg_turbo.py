@@ -20,11 +20,13 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 from pgtools import (
     DEFAULT_BUILD_TOOLS,
     MSVC_TOOLSET,
+    REPO,
     WINDOWS,
     checked,
     import_msvc_environment,
@@ -33,11 +35,16 @@ from pgtools import (
     sha256,
 )
 
-# ---- Pins. Change them here, and note the reason beside each one.
-# The libjpeg-turbo sources are inside the rust-turbojpeg fork at this commit (turbojpeg-sys/libjpeg-turbo), the same commit
-# the root Cargo.toml pins for turbojpeg-sys, so the app's and Qt's libjpeg come from one source.
-FORK_URL = "https://github.com/darktorres/rust-turbojpeg"
-FORK_COMMIT = "28b8b86af795d5e6f1402c978e62facd61952da2"
+
+def cargo_fork_pin() -> tuple[str, str]:
+    """The rust-turbojpeg fork's URL and commit, as the root Cargo.toml's [patch.crates-io] pins turbojpeg-sys. The
+    libjpeg-turbo sources are inside that fork (turbojpeg-sys/libjpeg-turbo), so the app's and Qt's libjpeg come from one
+    source: the build reads the pin from Cargo.toml rather than keeping a second copy of it."""
+    patch = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))["patch"]["crates-io"]["turbojpeg-sys"]
+    return patch["git"], patch["rev"]
+
+
+FORK_URL, FORK_COMMIT = cargo_fork_pin()
 
 
 def fetch_pinned(src: Path, log: Path) -> None:
@@ -92,9 +99,11 @@ def main() -> None:
     if not (libjpeg / "CMakeLists.txt").is_file():
         sys.exit(f"libjpeg-turbo sources not found in {libjpeg}")
 
-    # Clean output folders, so each run starts empty.
+    # Clean output folders, so each run starts empty. A folder that cannot be removed stops the run: its old files must not
+    # be left in the new build.
     for folder in [build, prefix, link]:
-        shutil.rmtree(folder, ignore_errors=True)
+        if folder.exists():
+            shutil.rmtree(folder)
     build.mkdir(parents=True)
 
     # The configure line. JPEG8: the IJG 8.0 API (JPEG_LIB_VERSION 80), which Qt's libjpeg expects. WITH_CRT_DLL: the dynamic
@@ -119,14 +128,16 @@ def main() -> None:
     if not re.search(r"#define\s+JPEG_LIB_VERSION\s+80", jconfig):
         sys.exit("jconfig.h does not have JPEG_LIB_VERSION 80")
 
-    library = prefix / "lib" / "turbojpeg-static.lib"
+    # Every library the prefix installs (jpeg-static.lib as well as turbojpeg-static.lib, which is the one the process links).
+    libraries = sorted((prefix / "lib").glob("*.lib"))
     manifest = {
         "fork_url": FORK_URL,
         "fork_commit": FORK_COMMIT,
         "msvc_toolset": MSVC_TOOLSET,
         "configure": cmake_args[:-1],
         "libraries": [
-            {"path": library.relative_to(prefix).as_posix(), "bytes": library.stat().st_size, "sha256": sha256(library)}
+            {"path": lib.relative_to(prefix).as_posix(), "bytes": lib.stat().st_size, "sha256": sha256(lib)}
+            for lib in libraries
         ],
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

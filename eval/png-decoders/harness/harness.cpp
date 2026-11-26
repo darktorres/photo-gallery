@@ -4,6 +4,10 @@
 //   png-c-harness time [--secs S] FILE...     median ms per decode, one thread, full size; counting off
 //   png-c-harness compare DIR FILE...         each decoder's output against DIR/NAME.raw (the app's), sample by sample
 //   png-c-harness allocs FILE...              one decode's heap calls after two warm-ups; counting on
+//   png-c-harness dump DIR FILE...            each decoder's output as DIR/NAME.DECODER.raw, for finding where it differs
+//   png-c-harness profile --decoder NAME [--secs S] FILE...   one decoder decoding for S seconds, for a profiler
+//   png-c-harness inflate [--secs S] FILE...  zlib's inflate alone on the IDAT stream; inflate-stream: zlib streamed in pieces
+//   png-c-harness inflate-wuffs [--secs S] FILE...  Wuffs' zlib decoder, streamed and in one call
 //
 // The time and compare commands run with the counting hooks inert (heap::enable is off). Only allocs turns them on.
 // Each decoder is created once per command and used for every file, as the Rust harness's Decoders is.
@@ -36,7 +40,8 @@ double now_ms() {
 bool read_file(const std::string& path, std::vector<uint8_t>& bytes) {
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f) return false;
-    const std::streamsize size = f.tellg();
+    const std::streamoff size = f.tellg();  // -1 when the size cannot be found
+    if (size < 0) return false;
     bytes.resize(size_t(size));
     f.seekg(0);
     return bool(f.read(reinterpret_cast<char*>(bytes.data()), size));
@@ -139,8 +144,9 @@ bool load_reference(const std::string& dir, const std::string& name, std::vector
     if (!read_file(dir + "/" + name + ".raw", raw)) return false;
     std::vector<uint8_t> txt;
     if (!read_file(dir + "/" + name + ".txt", txt)) return false;
+    const std::string text(txt.begin(), txt.end());  // a std::string's c_str() ends the text, which sscanf needs
     unsigned w = 0, h = 0, c = 0, b = 0;
-    if (std::sscanf(reinterpret_cast<const char*>(txt.data()), "%u %u %u %u", &w, &h, &c, &b) != 4) return false;
+    if (std::sscanf(text.c_str(), "%u %u %u %u", &w, &h, &c, &b) != 4) return false;
     dims = {w, h, c, b};
     return true;
 }
@@ -290,6 +296,10 @@ bool inflate_once(z_stream& s, const std::vector<uint8_t>& stream, std::vector<u
 // png does by default). zlib then reads raw deflate, which starts after the stream's 2-byte zlib header.
 bool no_checksum() { return std::getenv("PNG_INFLATE_NO_CHECKSUM") != nullptr; }
 int init_inflate(z_stream* s) { return no_checksum() ? inflateInit2(s, -15) : inflateInit(s); }
+// The input the inflate takes: the whole zlib stream, or with no checksum its raw deflate (from the 2-byte header on).
+std::vector<uint8_t> zlib_input(const std::vector<uint8_t>& whole) {
+    return no_checksum() ? std::vector<uint8_t>(whole.begin() + 2, whole.end()) : whole;
+}
 
 // The stream inflated the way a streaming reader does it, as Rust's inflate_stream does for fdeflate: input in 16 KiB
 // pieces, output into a 96 KiB window that is reused and discarded (zlib keeps its own history, so it needs no rolling).
@@ -353,15 +363,15 @@ int inflate_mode(const std::vector<std::string>& args) {
             std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
             continue;
         }
-        const std::vector<uint8_t> stream = idat_stream(bytes);
+        const std::vector<uint8_t> stream = zlib_input(idat_stream(bytes));
         std::vector<uint8_t> out(stored_scanline_bytes(info));
         z_stream s{};
-        if (inflateInit(&s) != Z_OK) return 1;
+        if (init_inflate(&s) != Z_OK) return 1;
         const double reused = median_ms(budget, [&] { return inflateReset(&s) == Z_OK && inflate_once(s, stream, out); });
         inflateEnd(&s);
         const double fresh = median_ms(budget, [&] {
             z_stream t{};
-            if (inflateInit(&t) != Z_OK) return false;
+            if (init_inflate(&t) != Z_OK) return false;
             const bool ok = inflate_once(t, stream, out);
             inflateEnd(&t);
             return ok;
@@ -399,8 +409,7 @@ int inflate_stream_mode(const std::vector<std::string>& args) {
             std::printf("%-*s  interlaced: skipped\n", int(width), name.c_str());
             continue;
         }
-        const std::vector<uint8_t> whole = idat_stream(bytes);
-        const std::vector<uint8_t> stream = no_checksum() ? std::vector<uint8_t>(whole.begin() + 2, whole.end()) : whole;
+        const std::vector<uint8_t> stream = zlib_input(idat_stream(bytes));
         const size_t raw = stored_scanline_bytes(info);
         z_stream s{};
         if (init_inflate(&s) != Z_OK) return 1;
@@ -536,7 +545,10 @@ int profile_mode(const std::vector<std::string>& args) {
 int main(int argc, char** argv) {
     std::vector<std::string> args(argv + 1, argv + argc);
     if (args.empty()) {
-        std::fprintf(stderr, "usage: png-c-harness time [--secs S] FILE... | compare DIR FILE... | allocs FILE...\n");
+        std::fprintf(stderr,
+                     "usage: png-c-harness time [--secs S] FILE... | compare DIR FILE... | allocs FILE... | dump DIR FILE... | "
+                     "profile --decoder NAME [--secs S] FILE... | inflate [--secs S] FILE... | inflate-stream [--secs S] FILE... | "
+                     "inflate-wuffs [--secs S] FILE...\n");
         return 2;
     }
     const std::string cmd = args[0];

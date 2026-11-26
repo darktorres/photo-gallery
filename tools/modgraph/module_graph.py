@@ -112,19 +112,28 @@ def resolve(cur, kind, segs, modules, enc, imports=None):
     return b if b in modules else ""
 
 
+def split_alias(entry):
+    """`name as alias` -> (name, alias); `name` -> (name, name)."""
+    name, _, alias = entry.partition(" as ")
+    name = name.strip()
+    return name, alias.strip() or name
+
+
 def use_paths(body):
-    """The paths a `use` body binds, as segment lists: `a::b::{c::D, E}` -> [a, b, c, D] and [a, b, E]. A `self` or
-    a glob binds no single name, and is left out."""
-    body = re.sub(r"\s+", "", body)
+    """The names a `use` body binds, as (segment list, bound name): `a::b::{c::D, E as F}` -> ([a, b, c, D], D) and
+    ([a, b, E], F). A `self` or a glob binds no single name, and is left out. Only the punctuation's spaces are removed,
+    so the ` as ` of an alias stays whole."""
+    body = re.sub(r"\s*(::|[{},])\s*", r"\1", body.strip())
     m = re.fullmatch(r"(.*?)::\{(.*)\}", body)
     if not m:
-        return [body.split("::")] if body and not body.endswith("*") else []
+        name, alias = split_alias(body)
+        return [(name.split("::"), alias)] if name and not name.endswith("*") else []
     prefix = m.group(1).split("::")
     out = []
     for entry in m.group(2).split(","):
-        name = entry.split(" as ")[0]
+        name, alias = split_alias(entry)
         if name and name != "self" and not name.endswith("*") and "{" not in name:
-            out.append(prefix + name.split("::"))
+            out.append((prefix + name.split("::"), alias))
     return out
 
 
@@ -160,11 +169,14 @@ def analyse_crate(crate_files):
 
     def children_of(src):
         # Edition 2018+: a path may start with a child module of the current module without `crate::`. Only child
-        # modules count, so local names and std or extern paths add nothing.
+        # modules count, so local names and std or extern paths add nothing. A test-only child (a file in a tests
+        # folder, or a tests.rs) is not one: production code cannot name it, whichever layout (a.rs or a/mod.rs) holds it.
         if src not in children_cache:
             prefix = (src + "::") if src else ""
             children_cache[src] = {
-                x[len(prefix) :] for x in modules if x and x.startswith(prefix) and "::" not in x[len(prefix) :]
+                x[len(prefix) :]
+                for x, f in modules.items()
+                if x and x.startswith(prefix) and "::" not in x[len(prefix) :] and not is_test_file(f)
             }
         return children_cache[src]
 
@@ -173,7 +185,7 @@ def analyse_crate(crate_files):
     for m, text, ranges in sources:
         for mm in PRIVATE_USE.finditer(text):
             src = node_id(m, enclosing(ranges, mm.start()))
-            for path in use_paths(mm.group(1)):
+            for path, bound in use_paths(mm.group(1)):
                 if len(path) < 2 or not all(re.fullmatch(r"[A-Za-z_]\w*", s) for s in path):
                     continue
                 head, rest = path[0], path[1:]
@@ -185,7 +197,7 @@ def analyse_crate(crate_files):
                     continue  # std or another crate
                 tgt = resolve(src, kind, segs[:-1], modules, []) if segs[:-1] else resolve(src, kind, [], modules, [])
                 if tgt in modules and tgt != src:
-                    imports.setdefault(src, {})[path[-1]] = tgt
+                    imports.setdefault(src, {})[bound] = tgt
 
     edges = {}
     for m, text, ranges in sources:
@@ -300,7 +312,8 @@ def main():
         text=True,
         check=True,
     ).stdout.split()
-    files = sorted(set(files))
+    # `--cached` lists a tracked file that is deleted from the working tree too: only the files on disk are scanned.
+    files = sorted({f for f in files if (REPO / f).is_file()})
 
     summary = {}
     graph = {"crates": {}}

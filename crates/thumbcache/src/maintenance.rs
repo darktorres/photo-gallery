@@ -63,7 +63,8 @@ pub(crate) fn shrink(conn: &Connection) -> Result<i64> {
         if free <= SHRINK_ABOVE_PAGES {
             break;
         }
-        // It frees one page per step (a row each), so it is stepped to the end: `execute_batch` would free one.
+        // Each step asks for `shrink_step_pages!()` pages. The statement is stepped to its end rather than run with
+        // `execute`, which refuses a statement that returns rows.
         let mut step = conn.prepare(concat!("PRAGMA incremental_vacuum(", shrink_step_pages!(), ")"))?;
         let mut rows = step.query([])?;
         while rows.next()?.is_some() {}

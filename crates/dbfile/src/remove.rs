@@ -1,10 +1,10 @@
 //! Moving a database file aside and deleting it, each with its sidecars (`-wal`, `-shm`, `-journal`). The renames never
-//! replace a file (`pg_platform::file::rename_no_replace`).
+//! replace a file (`pg_platform::file::move_aside` moves the parts, each by `rename_no_replace`).
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use pg_platform::file::{beside, rename_no_replace};
+use pg_platform::file::beside;
 
 /// A database file's parts, the sidecars first: a `-wal` left beside a main file that moved would be replayed into
 /// whatever takes the name next.
@@ -19,23 +19,7 @@ const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
 /// ours takes a name between the check and the move. Each move never replaces a file all the same
 /// (`pg_platform::file::rename_no_replace`): one another program made in between fails the move, and is kept.
 pub fn move_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
-    let mut n = 0u32;
-    let base = loop {
-        let base = if n == 0 { mark.to_string() } else { format!("{mark}.{n}") };
-        if PARTS.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()) {
-            break base;
-        }
-        n += 1;
-    };
-    for part in PARTS {
-        let from = beside(path, part);
-        if from.exists() {
-            let to = beside(path, &format!("{base}{part}"));
-            rename_no_replace(&from, &to)
-                .map_err(|e| io::Error::new(e.kind(), format!("can't move {} aside: {e}", from.display())))?;
-        }
-    }
-    Ok(beside(path, &base))
+    pg_platform::file::move_aside(path, &PARTS, mark)
 }
 
 /// Delete the database at `path` with its sidecars, the sidecars first: a `-wal` left beside a new file of the name would

@@ -9,7 +9,9 @@ aspect ratio, never enlarged. Quality is SSIMULACRA2 (libjxl's tool; ~90 visuall
 very high, 70 high, 50 medium). Times are one thread, files in RAM, machine in use.
 
 **Resize** (from the original file to the exact thumbnail size; score vs a float Lanczos3 resize of the
-full decode, 384 px; zone plate = worst-case aliasing test):
+full decode, 384 px; zone plate = worst-case aliasing test). Measured before the switch to Magic Kernel Sharp 2021:
+the Lanczos3 rows are the pipelines compared at the time, and the bold row was the chosen one then. The thumbnail
+resampler is now Magic Kernel Sharp 2021, as the bullet below says.
 
 | Pipeline                                                 | Score mean / p10 | ms   | Zone plate |
 |----------------------------------------------------------|------------------|------|------------|

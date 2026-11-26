@@ -108,7 +108,7 @@ pub detect_borders: bool,
 pub pregenerate_thumbnails: bool,
 ```
 
-`impl Prefs { pub fn features(&self) -> Features { Features { borders: self.detect_borders, thumbnails: self.pregenerate_thumbnails } } }`. Phase 3 adds `detect_duplicates` the same way.
+`impl Prefs { pub fn features(&self) -> Features { Features { borders: self.detect_borders, duplicates: self.detect_duplicates } } }`, as built (the Phase 3 text below predates the `detect_duplicates` pref).
 
 Settings bridge (`crates/desktop/src/settings_bridge.rs:11-14`, `settings.rs:29-41`): two qproperties after `realSize`, each with NOTIFY. Each setter writes the prefs and then tells the library:
 
@@ -380,8 +380,8 @@ Phase 3 adds `ui-duplicates-disabled`, `ui-dupl-not-checked`, `ui-feature-duplic
 
 ```rust
 /// The duplicate hashes of an upright full-size image (the import and the Dups pass both call this).
-pub struct Hashes { pub pixel: [u8; 16], pub quality: u8, pub dihedral: [pdq::Hash; 8] }   // pdq == dihedral[0]
-pub fn hashes(upright: &Rgb) -> Hashes;      // PDQ fitted to 512, the pixel hash, the eight dihedral hashes
+pub struct Hashes { pub pixel: [u8; 16], pub quality: u8, pub dihedral: [pdq::Hash; 4] }   // pdq == dihedral[0]; the 4 kept orientations (`pdq::ORIENTATIONS`), whose transposes make the other four
+pub fn hashes(upright: &Rgb) -> Hashes;      // PDQ fitted to 512, the pixel hash, the four kept dihedral hashes
 pub fn thumbhash(upright: &Rgb) -> Vec<u8>;  // fitted to THUMBHASH_SIDE
 ```
 
@@ -623,7 +623,7 @@ The duplicates facet has four values, because a file that is not checked yet is 
 - `Features` gains `duplicates` (the pref's `Prefs::features()`, 2.3). `ImportOptions` (`import/src/lib.rs:32`, which takes an options struct today) carries the features and the thumbnail height (5.11). `Features` stays bool-only: a toggle is a bool and the height is a size, so each keeps its own type. About 23 call sites change (the runner, the CLI, the `thumbs` test, `library/tests/*`, and `writeback.rs` with 9); the count is taken at the start of the phase.
 - With detection off, the import stores the hashes and `'due'`, and builds no Pairer (3.6). Turning detection on makes the next Dups pass pair the owed rows (pairs only: no file is read, and the pairs come from the stored PDQ hashes).
 
-**Ledger codes.** The inbox's pass code is the position in `LedgerKind::ALL` (`crates/desktop/src/ledgers.rs:9`, `crates/model/src/notice.rs:310-315`): Thumbs 0, Borders 1, Import 2, ScanFolders 3. The Retry action is on the Thumbs ledger only (`notice.rs:1163`). Phase 3 adds `FilePass::Duplicates`, and `InboxPanel.qml:461` compares `selectedPass === 3` for the scan folders, so a new ledger ahead of ScanFolders would silently break that check. The Duplicates ledger is therefore added after ScanFolders (code 4), so no existing code moves, and the QML takes the scan-folders code from Rust (a bound property), not a literal 3.
+**Ledger codes.** The inbox's pass code is the position in `LedgerKind::ALL` (the list at `crates/model/src/notice.rs:476`, read by `kind_code` at `crates/desktop/src/ledgers.rs:9`): Thumbs 0, Borders 1, Import 2, ScanFolders 3. The Retry action is on the Thumbs ledger only (`notice.rs:1163`). Phase 3 adds `FilePass::Duplicates`, and `InboxPanel.qml:461` compares `selectedPass === 3` for the scan folders, so a new ledger ahead of ScanFolders would silently break that check. The Duplicates ledger is therefore added after ScanFolders (code 4), so no existing code moves, and the QML takes the scan-folders code from Rust (a bound property), not a literal 3.
 
 ### 3.10 Wake on another process's bump
 
@@ -648,7 +648,7 @@ A `DUPS_VERSION` bump run by another process's `prepare` (`catalog/tests/other_p
 
 The rows below are what the existing stamps cannot say. Each has a remedy in 4.2 to 4.6.
 
-- **Deletes.** A removed file's row is gone, so no stamp on it can be read. The scan's removals delete `files` rows (`catalog/src/pair.rs:345, 434`); `remove_root` sets `files.missing = 1` instead (`catalog/src/roots.rs:58-70`), which *is* stamped (`files_source_changed`).
+- **Deletes.** A removed file's row is gone, so no stamp on it can be read. The scan's removals delete `files` rows (`catalog/src/pair.rs:601` in `rebind`, `:686` in `replace`); `remove_root` sets `files.missing = 1` instead (`catalog/src/roots.rs:58-70`), which *is* stamped (`files_source_changed`).
 - **Duplicate status.** A file's status depends on other files: a file that becomes a hash mate or a pair partner flips the status of its mates, which stamps nothing of theirs.
 - **Bulk rewrites.** `set_taken_zone`'s recompute, `set_import_version` and the version bumps rewrite many rows at once and stamp only what they touch, so they bump `view_epoch` instead (4.5).
 
@@ -850,7 +850,7 @@ DELETE FROM files_log WHERE seq IN (                                            
 - **Full list.** `list_grid` (`catalog/src/browse/read/grid.rs:115-153`) returns `(Vec<Placed>, Stamp)` (`Placed` is 4.7). The stamp is read in the list's own read transaction (WAL gives one consistent snapshot per transaction), so the rows and the stamp agree.
 - **Delta.** `Catalog::grid_delta(listing, since: Stamp, bound: usize) -> Result<Delta>`, in **one** read transaction. `DELTA_BOUND` = 8,192 changed rows. A delta is one transaction and the client merge is O(suffix), so above the bound a full list is cheaper and bounds the memory. The value is checked in Phase 6 against the delta timing. The result is `Delta::Changes { stamp, upserts: Vec<Placed>, removed: Vec<FileId> }` or `Delta::Reload`:
   1. If `since.epoch != view_epoch`, or `since.seq < log_horizon`: `Reload`. Read both from `meta`.
-  2. The changed ids, through the index `files_changed`: `SELECT id FROM files WHERE changed > :since ORDER BY changed LIMIT :bound + 1`. More than `bound` rows: `Reload`.
+  2. The changed ids, through the index `files_changed`: `SELECT id FROM files WHERE changed > :since ORDER BY changed LIMIT :bound + 1`. More than `bound` rows: `Reload`. The index is not in the baseline today: `CATALOG_SIZE_PLAN.md` D2 drops it (2026-11-19) and says the plan that needs it recreates it. This phase adds `CREATE INDEX files_changed ON files(changed)` to `baseline.sql` with its change, without the index the query is a table scan (about 310 ms on the real catalog, against 0.07-0.12 ms).
   3. The removed ids: `SELECT id FROM files_log WHERE seq > :since LIMIT :bound + 1`. More than `bound` rows: `Reload`.
   4. The listing for the changed ids. Their ids go into the temp table `temp.delta_ids` (`temp_store = MEMORY` is already set, `schema.rs:377-378`), and `grid_sql`'s WHERE gains `AND f.id IN (SELECT id FROM temp.delta_ids)`. The rows it returns are the **upserts**. A changed id that the listing no longer returns (a file moved out of the folder, or out of the filters) joins the removed ids. The temp table is emptied at the end of the transaction.
   5. `Delta::Changes { stamp: Stamp { seq: <meta.seq read at the start>, epoch }, upserts, removed }`.
@@ -1002,7 +1002,7 @@ For each file, on one worker, in this order:
 3. **Decode F** into `image` (`decode_stored_into`, `MinSize::Full`, the stored orientation). Video: the poster frame into `image` at display size (`analyze_video`, `analyze.rs:194-214`).
 4. **Borders** on the stored, unoriented pixels (`detector.detect`, `analyze.rs:141-152`), inside `panics::guard` with `AssertUnwindSafe`. A caught panic resets the detector with `Detector::trim`, which already rebuilds it to the default (`analysis/src/borders.rs:63-67`). Borders (this step) must come before step 5, because the borders are measured on the stored orientation (`analyze.rs:141-145`).
 5. **Orient** in place: `orient_into` (`decode.rs:197-203`), which swaps through `spare`, and `spare` is released.
-6. **Hashes** on the upright image: `analysis::hashes` (3.1: PDQ from `fit_within(img, 512)`, the pixel hash, the eight dihedral hashes), always, in every mode.
+6. **Hashes** on the upright image: `analysis::hashes` (3.1: PDQ from `fit_within(img, 512)`, the pixel hash, the four kept dihedral hashes), always, in every mode.
 7. **ThumbHash** from the upright image: `analysis::thumbhash` (fitted to 100). Always computed, because it is always stored.
 8. **Thumbnail** if the thumbnail feature is on and the cache is enabled: `to_height` from the upright image into the encoder half (5.7), producing the JPEG bytes.
 
@@ -1062,7 +1062,7 @@ let sink_thread = s.spawn(move || -> Result<Ended> {
 - **Held batches.** `tick_every` closes the gap that `pipeline.rs:260` leaves: today `every` is checked only when a result arrives, so an idle pass never flushes a held batch on time.
 - **Send.** The sink thread needs `Sink: Send`, and therefore `Catalog: Send`. `Catalog` (`crates/catalog/src/core.rs:32-41`) holds a `rusqlite::Connection` (`unsafe impl Send` at rusqlite `lib.rs:371`), `PathRules` (a closed enum), `Option<Rebuilt>` (`PathBuf`, `String`, `Carried`) and `Option<pg_dbfile::Live>` (a `File`). None is `!Send`, so the sink needs no second connection. The build in Phase 6 (step 1) is the compile check; if it fails, the sink needs a second connection, and this section changes.
 - **Batches.** The import and the Dups pass use `Batch { size: 100, every: Some(Duration::from_millis(250)) }`. The import's batch is 500 today (`import/src/lib.rs:18`). The reason is the app's writers' 100 ms busy wait (`crates/app/src/inbox.rs:73`): a sink transaction must be short. Borders and Thumbs keep theirs.
-- **WAL.** The catalog is in WAL mode (`schema.rs:377`), so a BelowNormal writer does not block Normal readers. Writers are still serialised, so a BelowNormal sink holding the write lock can delay a Normal writer (a rating, a scan). The batch size and the busy timeout bound this. Phase 6 records the sink's lock-hold time (6.4).
+- **WAL.** The catalog is in WAL mode (`schema.rs:128`), so a BelowNormal writer does not block Normal readers. Writers are still serialised, so a BelowNormal sink holding the write lock can delay a Normal writer (a rating, a scan). The batch size and the busy timeout bound this. Phase 6 records the sink's lock-hold time (6.4).
 
 Tests: the sink drains after the readers stop; a full channel slows the workers, not the reverse; a stop during a batch writes the kept rows and nothing more; a held batch is written within about 250 ms with no further result.
 
@@ -1145,7 +1145,7 @@ no_dups: bool,
 thumbs_height: Option<ThumbHeight>,
 ```
 
-The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_dups, thumbnails: thumbs_height.is_some() };` and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. `ThumbHeight` is already imported (`args.rs:7`).
+The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, duplicates: !no_dups };` (`Features` has no thumbnails field, 2.1), and the options carry the height: `ImportOptions { features, thumb_height: thumbs_height, .. }`. `Features` stays bool-only (2.1), and the height is a separate value of the import options. The import takes `import(catalog, &opts, retry_errors, ctl)`, with the features and the height inside the options. `ThumbHeight` is already imported (`args.rs:7`).
 
 - The doc comment of `fn thumb_height` (`args.rs:137`, its body at `:138-141`) names `--cap-gb`; that text belongs to `fn cap_gb` (`:143-146`). It is fixed in the same commit.
 - The `import` crate's `Cargo.toml` header comment (`crates/import/Cargo.toml`, "not on the thumbnails or the writes") is updated. The crate gains `pg-render`, `pg-thumbcache` and `pg-trace`, which are on earlier lines of `crate-layers.txt` (5.13), so the edges are allowed.
@@ -1168,7 +1168,7 @@ The arm in `cli/src/lib.rs`: `let features = Features { borders: !no_borders, du
 
 ### 5.13 Benches (written here, run in Phase 6)
 
-Inputs: a PNG, a WebP and a 12 MP JPEG. The phase creates them (`make_bench_jpeg.py` gains `--format {jpeg,webp}` and `--size WxH`, seed 20261105); they are not assumed to exist. The `ir` harness folder holds `ir.rs` (the root: `include!("ir/linux.rs")` on Linux), `ir/linux.rs` (the per-file and viewer groups; `main!` at `:107`), `ir/catalog.rs` (`LAYOUT` at `:40`; the groups at `:235` and `:277`) and `ir/sample.jpg`.
+Inputs: a PNG, a WebP and a 12 MP JPEG. The phase creates them (`make_bench_jpeg.py` gains `--format {jpeg,webp}` and `--size WxH`, seed 20261105); they are not assumed to exist. The `ir` harness folder holds `ir.rs` (the root: `include!("ir/linux.rs")` on Linux), `ir/linux.rs` (the per-file and viewer groups; `main!` at `:107`), `ir/catalog.rs` (`BENCH_LAYOUT` at `:41`; the groups at `:225` and `:265`) and `ir/sample.jpg`.
 
 The benches go in `pg-bench`, which runs only through `cargo bench -p pg-bench --bench ir` (`tools/profiling/bench.py:95`). A bench in `import` would never run under `just perf`. They are added to the `ir` harness through `include!`, as `catalog.rs` is (`linux.rs:105`):
 
@@ -1211,7 +1211,7 @@ Committed inputs: `ir/sample.jpg` only (1280×1017, 1.3 MP, from `make_bench_jpe
 
 2. **Benches and the callgrind baseline.**
    - Superseded 2026-11-26: the layout's name stays `v1-windows-rules` before the first release (`crates/model/src/versions.rs`); the data is made again under it with `bench_data.py --replace`.
-   - Bump the bench data's `LAYOUT` (`crates/bench/benches/ir/catalog.rs:40`, `v7-windows-rules`) when the schema changes, as its comment (`:35`) and `tools/profiling/bench_data.py:7-9` require. The schema is at version 9 today (`schema.rs:35-45`: the baseline plus eight migrations); it is at 10 after TO_10 (Phase 3) and 11 after TO_11 (Phase 4). The bump is made at the commit that changes the schema.
+   - The bench data's name is `BENCH_LAYOUT` (`crates/bench/benches/ir/catalog.rs:41`, `v1-windows-rules`), and the note above says when it changes. The schema is at version 1 today (`schema.rs`: the baseline, with no migrations yet); the phases below add migrations (TO_10 in Phase 3, TO_11 in Phase 4).
    - Build a source catalog with the new build: a gallery `scan`, `import` and `thumbs` on a synthetic library (`make_strata.py`, 6.1). `bench_data.py` copies an existing catalog (`VACUUM INTO`, `bench_data.py:155`) and seeds `file_failures` rows (the ledger option, `bench_data.py:139-142`, default 0 except for a `-large` layout). It writes no image files, so the new layout needs a source catalog made from real images first.
    - Record the planned import-path increase in `docs/perf/budgets.json` (`--budgets`). `--update` refuses to combine with `--budgets` (`tools/perf-compare.py:92-93`; `perf_check.py` only documents it, `:12-13`). Run `just perf --update` only after the closing commit, since `bench.py` benches HEAD.
    - Check the new benches: the per-file borders bench, the merged-import bench, the decode bench, and the grid merge at 1M rows (`crates/bench/benches/ir/grid.rs`).

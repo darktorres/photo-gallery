@@ -477,7 +477,7 @@ Planned only once the licence is settled.
 Run on 2026-11-26 in photo-gallery's container (Perl 5.40.1, B::Deparse 1.76, JSON::PP 4.16) against the ExifTool
 clone at tag 13.64, with no config file. Everything is in photo-gallery's `eval/exiftool-dump/` (its README says how to
 rerun it): `dump.pl` (the dump), `check.py` (the cross-check against `-list`), `census.py` (the census), the census
-report `census.txt`, and the output in `out/` (12 MB, 156 files). It moves to the engine's `dump/` and
+report `census.txt`, and the output in `out/` (12 MB, 173 files: 154 `.jsonl` files outside `lang/`, which are the modules, `code.jsonl` and `shortcuts.jsonl`; 18 in `lang/`; and `meta.json`). It moves to the engine's `dump/` and
 `schema-data/` when its repository is made.
 
 **Output.** One JSON Lines file per module (`Exif.jsonl`, `Canon.jsonl`, ...) holding `table`, `tag` and `shared`

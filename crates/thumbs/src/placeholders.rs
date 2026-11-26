@@ -1,6 +1,6 @@
 //! The Placeholders pass: the ThumbHash placeholder of each file that owes one (`Catalog::pending_placeholders`), made
 //! after the thumbnails. A file's placeholder is read from its cached thumbnail when the cache holds one at least
-//! `CACHED_MIN_SIDE` high (about a millisecond: the thumbnail is already decoded once, for the Thumbs pass), and from a
+//! `PLACEHOLDER_DECODE_SIDE` high (about a millisecond: the thumbnail is already decoded once, for the Thumbs pass), and from a
 //! DCT-scaled decode of the original otherwise. A file whose original doesn't decode is recorded in the Thumbs ledger, as
 //! the Thumbs pass records one (`retry = false`: tried again once the file changes, or when the user retries it).
 //!
@@ -11,24 +11,21 @@ use crate::{Error, Result};
 use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, PlaceholderWork, WorkItem};
 use pg_jobs::control::Control;
-use pg_jobs::failure::Failed as JobFailed;
 use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::analysis::ThumbHash;
 use pg_model::media::Kind;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
-use pg_render::maker::Maker;
+use pg_render::maker::{Maker, PLACEHOLDER_DECODE_SIDE};
 use pg_thumbcache::{Source, ThumbCache};
 
 use crate::{BATCH, Failed, MakerSource, Ran, file_failed, stopped, unix_now};
 
 /// The height of the cached thumbnail a placeholder is read from when there is one: the nearest the cache has to it
-/// (`ThumbCache::get_nearest_into`), and it is used only if it is at least [`CACHED_MIN_SIDE`] high.
+/// (`ThumbCache::get_nearest_into`), and it is used only if it is at least [`PLACEHOLDER_DECODE_SIDE`] high: a shorter
+/// one is fitted from a decode of the original, as the placeholder's definition is.
 const CACHED_HEIGHT: u32 = 256;
-/// The shortest cached thumbnail a placeholder is read from: a shorter one is fitted from a decode of the original,
-/// as the placeholder's definition is (`pg_render::maker::PLACEHOLDER_DECODE_SIDE`).
-const CACHED_MIN_SIDE: u32 = 200;
 
 /// What a placeholder pass did: the counts its report states.
 #[derive(Clone, Copy, Debug)]
@@ -161,26 +158,14 @@ pub fn run_while(
     Ok(stats)
 }
 
-/// Whether the cache holds a thumbnail of `item` as it is, at least [`CACHED_MIN_SIDE`] high, and reads its bytes into
+/// Whether the cache holds a thumbnail of `item` as it is, at least [`PLACEHOLDER_DECODE_SIDE`] high, and reads its bytes into
 /// `jpeg` if so. A row that doesn't read is a miss (the cache says so, D8); an error reading the cache is the pass's
 /// (`CacheRead`, D7), mapped here.
 fn cached(cache: &ThumbCache, item: &WorkItem, jpeg: &mut Vec<u8>) -> Result<bool> {
     let source = Source { mtime: item.mtime, turns: item.turns };
     let height = ThumbHeight::new(CACHED_HEIGHT).unwrap_or(ThumbHeight::DEFAULT);
     let nearest = cache.get_nearest_into(item.id, height, source, jpeg).map_err(Error::CacheRead)?;
-    Ok(nearest.is_some_and(|h| h.get() >= CACHED_MIN_SIDE))
-}
-
-/// Whether a failure is the file's read that failed (an offline drive, a file in use): tried again by the next pass, and
-/// not recorded.
-fn is_unreadable(e: &JobFailed) -> bool {
-    matches!(Failed::of(e), Failed::Unreadable)
-}
-
-/// Whether a failure is recorded in the Thumbs ledger: a file that doesn't decode, or panicked. Neither is tried again
-/// until it changes or the user retries it (`retry = false`), as the Thumbs pass records them.
-fn is_recorded(e: &JobFailed) -> bool {
-    matches!(Failed::of(e), Failed::Panicked | Failed::Undecodable)
+    Ok(nearest.is_some_and(|h| pg_model::num::index(h.get()) >= PLACEHOLDER_DECODE_SIDE))
 }
 
 /// One file of a batch: the file, and what making its placeholder came to (the placeholder, and whether it was read from
@@ -219,16 +204,18 @@ fn flush(catalog: &mut Catalog, batch: &mut Vec<Made<'_>>, stats: &mut Placehold
             }
             Err(e) => {
                 done.failed += 1;
-                if is_unreadable(&e) {
+                let failed = Failed::of(&e);
+                if matches!(failed, Failed::Unreadable) {
                     done.unreadable += 1;
-                } else if is_recorded(&e) {
+                }
+                if let Some(retry) = failed.recorded() {
                     failures.push(LedgerFailure {
                         file_id: item.id,
                         mtime: item.mtime,
                         size: item.size,
                         turns: item.turns,
                         error: e.text().to_string(),
-                        retry: false,
+                        retry,
                     });
                 }
             }

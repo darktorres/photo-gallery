@@ -1,6 +1,6 @@
 //! What `Catalog::prepare` reports while it works: the phase it is in, and the bytes of a copy. It is report only: a
 //! `Progress` can't stop the work. Quitting in the middle of a change is safe because every step is crash-atomic, and the
-//! next start resumes from the file's `user_version` (the plan's D1: there is no cancel, and no SQLite progress handler).
+//! next start resumes from the file's `user_version`. There is no cancel, and no SQLite progress handler.
 
 /// The free bytes of a volume, as a test reports them in place of the volume's own (`Prepare::free_space`). Defined here,
 /// a leaf module, so the room check (`lifecycle`) and the builder (`core`) both name it without a cycle between them.
@@ -13,7 +13,7 @@ pub type FreeSpace<'a> = dyn Fn(&std::path::Path) -> Option<u64> + Send + Sync +
 pub enum Phase {
     /// Judging the file: its version, its schema and its path rules. Nothing is written yet.
     Check,
-    /// Copying the catalog aside before it is migrated.
+    /// Copying the catalog aside before a migration changes it. A rebuild's copy is [`Phase::Copy`].
     Backup,
     /// Step `step` (0-based) of `steps` of the migration that takes the catalog from `from` to `to`.
     Migrate {
@@ -32,7 +32,7 @@ pub enum Phase {
     Checkpoint,
     /// Flushing a copy to disk before it is renamed into place.
     Fsync,
-    /// Copying a file (a backup, or the copy aside of a rebuild).
+    /// Copying the file aside for a rebuild, beside the old catalog. The copy taken before a migration is [`Phase::Backup`].
     Copy,
     /// Putting the new file in the old one's place.
     Swap,

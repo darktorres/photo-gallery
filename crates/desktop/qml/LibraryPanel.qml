@@ -55,7 +55,7 @@ ModalOverlay {
             }
             Label {
                 text: words.text("ui-library-intro")
-                color: "#999999"
+                color: Theme.captionText
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
@@ -86,7 +86,7 @@ ModalOverlay {
                     anchors.centerIn: parent
                     visible: !panel.hasRoots
                     text: words.text("ui-no-folders-yet")
-                    color: "#888888"
+                    color: Theme.hintText
                 }
             }
             // The folders being removed for good (their files are going, or kept for a write not yet finished).
@@ -95,7 +95,7 @@ ModalOverlay {
                 visible: panel.hasRemovals
                 Label {
                     text: words.text("ui-removal-heading")
-                    color: "#999999"
+                    color: Theme.captionText
                     font.bold: true
                 }
                 Repeater {
@@ -108,12 +108,12 @@ ModalOverlay {
                             text: keptRow.modelData
                             textFormat: Text.PlainText
                             elide: Text.ElideMiddle
-                            color: "#999999"
+                            color: Theme.captionText
                             Layout.fillWidth: true
                         }
                         Label {
                             text: words.text("ui-removal-kept")
-                            color: "#999999"
+                            color: Theme.captionText
                         }
                         Button {
                             text: words.text("ui-discard-removal")
@@ -132,12 +132,12 @@ ModalOverlay {
                             text: removingRow.modelData
                             textFormat: Text.PlainText
                             elide: Text.ElideMiddle
-                            color: "#999999"
+                            color: Theme.captionText
                             Layout.fillWidth: true
                         }
                         Label {
                             text: words.text("ui-removal-removing")
-                            color: "#999999"
+                            color: Theme.captionText
                         }
                     }
                 }

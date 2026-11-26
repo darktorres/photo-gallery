@@ -140,15 +140,19 @@ pub fn view_path(view: &View) -> String {
     }
 }
 
+/// The largest side of an output image a view may name: a fit box's sides and a region's output's are capped to it. The
+/// image limits are those and 64 megapixels in all (`docs/webclient/WEB_CLIENT.md`, "Limits"); this clamps the sides,
+/// and the product is the server's to refuse.
+const MAX_SIDE: usize = 8192;
+
 /// The view the part after the key names, or `None` when it doesn't read, or a region is out of the image. A region is
-/// cut to the image, and its output size to 8,192 px a side. The image limits are those and 64 megapixels in all
-/// (`docs/webclient/WEB_CLIENT.md`, "Limits"); this clamps the sides, and the product is the server's to refuse.
+/// cut to the image; a fit box and a region's output are capped to [`MAX_SIDE`] a side.
 pub fn view_of(rest: &str) -> Option<View> {
     if rest == "full" {
         return Some(View::Full);
     }
     let Some(region) = rest.strip_prefix("region/") else {
-        return size(rest).map(|(w, h)| View::Fit(w, h));
+        return size(rest).map(|(w, h)| View::Fit(w.min(MAX_SIDE), h.min(MAX_SIDE)));
     };
     let (r, out) = region.split_once('/')?;
     let mut r = r.split(',').map(str::parse::<f64>);
@@ -158,7 +162,7 @@ pub fn view_of(rest: &str) -> Option<View> {
     };
     let (ow, oh) = size(out)?;
     let ok = (0.0..1.0).contains(&x) && (0.0..1.0).contains(&y) && w > 0.0 && h > 0.0;
-    ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(8192), oh.min(8192)))
+    ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(MAX_SIDE), oh.min(MAX_SIDE)))
 }
 
 /// `<width>x<height>` in device pixels.
@@ -195,7 +199,13 @@ mod tests {
     #[test]
     fn a_region_is_cut_to_the_image_and_its_output_capped() {
         let view = view_of("region/0.5,0.5,0.9,0.9/20000x7").expect("reads");
-        assert_eq!(view, View::Region((0.5, 0.5, 0.5, 0.5), 8192, 7));
+        assert_eq!(view, View::Region((0.5, 0.5, 0.5, 0.5), MAX_SIDE, 7));
+    }
+
+    #[test]
+    fn a_fit_box_is_capped_to_the_same_side_as_a_region_output() {
+        assert_eq!(view_of("20000x7"), Some(View::Fit(MAX_SIDE, 7)));
+        assert_eq!(view_of("300x200"), Some(View::Fit(300, 200)));
     }
 
     #[test]

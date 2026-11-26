@@ -10,7 +10,7 @@ use pg_model::num;
 pub(super) fn flattened(img: DynamicImage) -> (usize, usize, Vec<u8>) {
     let (w, h) = (num::index(img.width()), num::index(img.height()));
     let px = if img.color().has_alpha() {
-        img.into_rgba8().pixels().flat_map(|p| [0, 1, 2].map(|c| over_white(p[c], p[3]))).collect()
+        flatten_rgba(&img.into_rgba8().into_raw())
     } else {
         img.into_rgb8().into_raw()
     };

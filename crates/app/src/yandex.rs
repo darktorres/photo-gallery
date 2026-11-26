@@ -574,13 +574,15 @@ impl Search {
             reason = "the folder the user picked, kept as they gave it: the preference has always been that"
         )]
         let chosen = rule_path_of(&folder);
-        if let Some(chosen) = chosen {
-            let _ = prefs.update(|p| p.yandex_folder = Some(chosen));
-        }
+        // The change is in memory now; its file is written by the save's worker, off the caller's thread.
+        let folder_save = chosen.map(|chosen| prefs.change(|p| p.yandex_folder = Some(chosen)));
         let shared = self.shared.clone();
         let changes = self.changes.clone();
         let pictures = self.pictures();
         self.spawn_worker("yandex save", move || {
+            if let Some(folder_save) = folder_save {
+                let _ = folder_save.write();
+            }
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
             let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
                 Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),

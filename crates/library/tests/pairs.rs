@@ -3,47 +3,36 @@
 //! A pair is made with a partner whose file is away (missing or pending), so it is there when the file is back
 //! without a new analysis, however it comes back.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 use std::time::Duration;
 
+use common::{Result, opts, scanned};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_catalog::queue::WriteEffect;
 use pg_jobs::control::Control;
-use pg_jobs::pipeline::Options;
 use pg_model::turns::Turns;
-use pg_platform::priority::Priority;
 
 use pg_testkit::ONE_PASS;
-
-/// The tests' result: any error of the crates they use.
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// A run folder with `images/a.png` and `images/b.png` (the same textured picture) and `images/c.png` (another one),
 /// scanned and imported into a catalog beside them: the catalog, the run's control, and the folder.
 fn imported(prefix: &str) -> Result<(Catalog, Control, PathBuf)> {
-    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
-    let images = dir.join("images");
-    std::fs::create_dir_all(&images)?;
     let png = pg_codec::fixtures::Encoding::Png;
     let same = pg_codec::fixtures::encode(96, 80, &pg_testkit::textured_rgb(96, 80), png)?;
-    std::fs::write(images.join("a.png"), &same)?;
-    std::fs::write(images.join("b.png"), &same)?;
-    std::fs::write(images.join("c.png"), pg_codec::fixtures::encode(96, 80, &pg_testkit::other_rgb(96, 80), png)?)?;
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
-    let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&images)?;
-    c.add_root(&root)?;
-    pg_scan::scan(&mut c, &root, &ctl)?;
+    let other = pg_codec::fixtures::encode(96, 80, &pg_testkit::other_rgb(96, 80), png)?;
+    let (mut c, ctl, dir) = scanned(prefix, |images| {
+        std::fs::write(images.join("a.png"), &same)?;
+        std::fs::write(images.join("b.png"), &same)?;
+        Ok(std::fs::write(images.join("c.png"), &other)?)
+    })?;
     pg_import::import(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl)?;
     // The Hashes pass makes the hashes the import leaves owed: the pairs are made from them.
     pg_import::hashes::hash(&mut c, &opts(), &pg_catalog::VolumeSet::All, &|| true, &ctl)?;
     Ok((c, ctl, dir))
-}
-
-fn opts() -> Options {
-    Options::new(Priority::Normal)
 }
 
 /// A scan of the run folder's `images`, as [`imported`] made it.

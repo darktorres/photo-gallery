@@ -6,6 +6,7 @@ compared on exactly the same images in the same order.
 
 import os
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
@@ -54,7 +55,7 @@ def exe_name(name: str) -> str:
 # A venv's interpreter, as (folder, file) under the venv: Scripts\python.exe on Windows, bin/python elsewhere.
 VENV_PYTHON = ("Scripts" if os.name == "nt" else "bin", exe_name("python"))
 
-DATA_ROOT = pg_path("PG_DATA_ROOT", "datasets", "pinterest")
+DATA_ROOT = pg_path("PG_DATA_ROOT", "datasets")
 WORK_DIR = pg_path("PG_WORK_DIR", "eval")
 CACHE_DIR = pg_path("PG_CACHE_DIR", "cache")
 
@@ -70,8 +71,9 @@ WORK_SIDE = 1024
 LIBRARY_SIZE = 70e6
 # The similarity of a row with nothing (itself, a padded slot): below every cosine (at least -1), so a top-k never picks it.
 NO_SIM = float("-inf")
-# The decode rule of the Rust import (crates/analysis/src/analyze.rs, DECODE_MIN_*): the long side at least 512 and the
-# short side at least 320, after orientation.
+# The decode rule of the Rust import (crates/model/src/analysis.rs, DECODE_MIN_LONG and DECODE_MIN_SHORT): the long side
+# at least 512 and the short side at least 320, after orientation. Python cannot import the Rust constant, so this copy
+# is by hand.
 ANALYSIS_DRAFT_SIDES = (512, 320)
 
 # The model the eval scripts use when none is named: the PyTorch SSCD baseline (models.py's SPECS).
@@ -96,6 +98,11 @@ def analysis_denom(w: int, h: int) -> int:
 Image.MAX_IMAGE_PIXELS = None
 
 
+def quarter_turn(im: Image.Image) -> bool:
+    """True when the EXIF orientation turns the image a quarter turn, so its width and height swap (orientations 5-8)."""
+    return im.getexif().get(0x0112, 1) in (5, 6, 7, 8)
+
+
 def load_rgb(
     path: Path | BinaryIO, draft: tuple[int, int] | None = None, draft_sides: tuple[int, int] | None = None
 ) -> Image.Image:
@@ -104,14 +111,13 @@ def load_rgb(
     draft=(w, h): let a JPEG decode at 1/2, 1/4 or 1/8 scale in the DCT (libjpeg-turbo) while staying at least
     w x h after orientation; other formats decode in full.
     draft_sides=(long, short): the same, keeping the long side >= long and the short side >= short; this is the
-    Rust import's decode rule (ANALYSIS_DRAFT_SIDES, from crates/analysis/src/analyze.rs)."""
+    Rust import's decode rule (ANALYSIS_DRAFT_SIDES, from crates/model/src/analysis.rs)."""
     with Image.open(path) as im:
         if draft_sides and im.format == "JPEG":
             long, short = draft_sides  # orientation doesn't change which side is the long one
             im.draft("RGB" if im.mode == "RGB" else None, (long, short) if im.width >= im.height else (short, long))
         elif draft and im.format == "JPEG":
-            swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)  # rotated a quarter turn
-            im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if swap else draft)
+            im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if quarter_turn(im) else draft)
         oriented = ImageOps.exif_transpose(im)
         if oriented.mode in ("RGBA", "LA") or (oriented.mode == "P" and "transparency" in oriented.info):
             rgba = oriented.convert("RGBA")
@@ -143,6 +149,20 @@ def vips_thumbnail(data: bytes, width: int, height: int) -> np.ndarray:
     return np.ndarray(buffer=im.write_to_memory(), dtype=np.uint8, shape=(im.height, im.width, 3))
 
 
+def partial_path(path: Path) -> Path:
+    """The temporary name a file is written under before it is renamed into place."""
+    return path.with_name(path.name + ".partial")
+
+
+def save_atomic(path: Path, save: Callable[[BinaryIO], None]) -> None:
+    """Writes `path` through a temp file and a rename, so an interrupted write never leaves a file that a rerun
+    takes as finished."""
+    tmp = partial_path(path)
+    with tmp.open("wb") as f:
+        save(f)
+    tmp.replace(path)
+
+
 def image_list() -> list[str]:
     """Relative POSIX paths of all images under DATA_ROOT, in a stable order (cached)."""
     cache = WORK_DIR / "files.txt"
@@ -152,7 +172,7 @@ def image_list() -> list[str]:
         p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
     )
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    cache.write_text("\n".join(files), encoding="utf-8")
+    save_atomic(cache, lambda f: f.write("\n".join(files).encode("utf-8")))
     return files
 
 

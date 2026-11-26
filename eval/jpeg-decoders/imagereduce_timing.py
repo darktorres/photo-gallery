@@ -16,11 +16,11 @@ import os
 import random
 import statistics
 import subprocess
-import time
 from pathlib import Path
 
 os.environ["VIPS_CONCURRENCY"] = "1"  # set before pyvips loads
 import imagereduce_switch as s  # sets PATH for libvips and jpegli; the harness folder is on sys.path
+from timing import median_s, seconds_of
 
 REPS = 3
 JP_Q = 80
@@ -36,15 +36,6 @@ def load_px(path: Path):
     if px.format != "uchar":
         px = px.cast("uchar")
     return px.copy_memory()
-
-
-def median_time(fn, reps: int = REPS) -> float:
-    times = []
-    for _ in range(reps):
-        t0 = time.perf_counter()
-        fn()
-        times.append(time.perf_counter() - t0)
-    return statistics.median(times)
 
 
 def cjpegli(src: Path, out: Path) -> None:
@@ -68,7 +59,7 @@ def main() -> None:
     work: Path = a.work
 
     tiny = s.write_ppm(s.pyvips.Image.black(8, 8, bands=3).cast("uchar"), work / "tiny.ppm")
-    startup = median_time(lambda: cjpegli(tiny, work / "tiny.jpg"), 5)
+    startup = median_s(5, lambda: seconds_of(lambda: cjpegli(tiny, work / "tiny.jpg")))
     print(f"cjpegli process baseline (8x8): {startup * 1000:.1f} ms", flush=True)
 
     lib = encoded_rows(work / "library.csv")
@@ -79,9 +70,11 @@ def main() -> None:
     for set_name, sample in (("library", lib), ("camera", cam)):
         for k, r in enumerate(sample, 1):
             px = load_px(Path(r["path"]))
-            t_vips = median_time(lambda px=px: px.jpegsave_buffer(Q=75, subsample_mode="off", optimize_coding=True))
+            t_vips = median_s(
+                REPS, lambda px=px: seconds_of(lambda: px.jpegsave_buffer(Q=75, subsample_mode="off", optimize_coding=True))
+            )
             s.write_ppm(px, ppm)
-            t_jp = median_time(lambda: cjpegli(ppm, work / "time_out.jpg"))
+            t_jp = median_s(REPS, lambda: seconds_of(lambda: cjpegli(ppm, work / "time_out.jpg")))
             rows.append(
                 {
                     "set": set_name,

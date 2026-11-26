@@ -15,26 +15,18 @@ use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
 use proptest::prelude::*;
 
-/// The row height the fixtures use: a shown row of 200 and a saved one of 200.
-const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
+mod common;
+
+use common::{ROW_200, controller, folder};
+
 /// The scale a window reports first.
 const SCALE_1: Scale = Scale::new(1.0).expect("a positive scale");
-
-/// A controller that shows `row` 200 and has saved 200, with no scale yet.
-fn controller(listing: Listing) -> Controller {
-    Controller::new(Start::new(listing, ROW_200, ROW_200))
-}
 
 /// A controller at scale 1 (the window's scale arrives as the first size event, as the desktop sends it).
 fn scaled(listing: Listing) -> Controller {
     let mut c = controller(listing);
     c.update(0, Event::Size(size::Event::Scale(SCALE_1)));
     c
-}
-
-/// A folder given as its path text, one part a `\`-separated component (the test's own spelling).
-fn folder(text: &str) -> Merged {
-    Merged::from(text.split('\\').filter(|p| !p.is_empty()).map(Name::from).collect::<Vec<_>>())
 }
 
 fn listing(text: &str) -> Listing {

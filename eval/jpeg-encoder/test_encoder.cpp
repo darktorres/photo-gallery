@@ -2,7 +2,8 @@
 //
 // Usage: test_encoder.exe [--tests 1,2,...] [--sample DIR] [--work DIR] [--ssim EXE] [--no-ssim]
 // Tests: 1 entropy exactness, 2 coefficient agreement, 3 valid JPEG, 4 batch invariance,
-//        5 edge sizes, 6 quality vs libjpeg-turbo, 7 throughput.
+//        5 edge sizes, 6 quality vs libjpeg-turbo, 7 throughput. Test 8 is a DCT-method diagnostic, run only
+//        with --tests 8.
 
 #include "encode_gpu.h"
 
@@ -38,12 +39,19 @@ namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------- options and reporting
 
-// Defaults: scratch under the OS temp folder, and ssimulacra2 from PG_HOME's libjxl build (PG_HOME is read from the
-// environment; `just` loads it from .env). --sample, --work and --ssim override them.
+// Defaults: scratch under the OS temp folder, and ssimulacra2 from the JPEG comparison's jpegli build (the folder is
+// PG_JPEG_EVAL, else PG_ROOT's tools\jpeg-eval, as win_env.py reads it; `just` loads both from .env). --sample, --work
+// and --ssim override them.
 static std::string default_ssim_exe() {
-    const char* home = std::getenv("PG_HOME");
-    if (!home || !*home) return "";
-    return (fs::path(home) / "tools" / "jpeg-eval" / "build" / "jpegli" / "tools" / "ssimulacra2.exe").string();
+    fs::path eval_dir;
+    if (const char* eval = std::getenv("PG_JPEG_EVAL"); eval && *eval) {
+        eval_dir = eval;
+    } else if (const char* root = std::getenv("PG_ROOT"); root && *root) {
+        eval_dir = fs::path(root) / "tools" / "jpeg-eval";
+    } else {
+        return "";
+    }
+    return (eval_dir / "build" / "jpegli" / "tools" / "ssimulacra2.exe").string();
 }
 static std::string g_sample_dir = (fs::temp_directory_path() / "pg_gpu_sample").string();
 static std::string g_work_dir = (fs::temp_directory_path() / "pg_jpeg_encoder_work").string();
@@ -130,15 +138,22 @@ static void jerr_emit(j_common_ptr cinfo, int level) {
 
 static void jerr_output(j_common_ptr) {}
 
-// Decodes to RGB with libjpeg. Returns false on a fatal error.
-static bool decode_rgb(const uint8_t* data, size_t len, Rgb& out, int& warnings) {
-    jpeg_decompress_struct d;
-    JerrMgr em;
+// Points the object's error manager at the handlers above, with the warning count reset. Each helper calls this
+// before its setjmp.
+static void jerr_setup(JerrMgr& em, j_common_ptr cinfo) {
     em.warnings = 0;
-    d.err = jpeg_std_error(&em.pub);
+    cinfo->err = jpeg_std_error(&em.pub);
     em.pub.error_exit = jerr_exit;
     em.pub.emit_message = jerr_emit;
     em.pub.output_message = jerr_output;
+}
+
+// Decodes to RGB with libjpeg. Returns false on a fatal error. A libjpeg call that reports failure (the memory
+// source never suspends, so that is corrupt input) takes the same longjmp path as a libjpeg error.
+static bool decode_rgb(const uint8_t* data, size_t len, Rgb& out, int& warnings) {
+    jpeg_decompress_struct d;
+    JerrMgr em;
+    jerr_setup(em, (j_common_ptr)&d);
     if (setjmp(em.jb)) {
         jpeg_destroy_decompress(&d);
         warnings = em.warnings;
@@ -146,17 +161,17 @@ static bool decode_rgb(const uint8_t* data, size_t len, Rgb& out, int& warnings)
     }
     jpeg_create_decompress(&d);
     jpeg_mem_src(&d, data, (unsigned long)len);
-    jpeg_read_header(&d, TRUE);
+    if (jpeg_read_header(&d, TRUE) != JPEG_HEADER_OK) longjmp(em.jb, 1);
     d.out_color_space = JCS_RGB;
-    jpeg_start_decompress(&d);
+    if (!jpeg_start_decompress(&d)) longjmp(em.jb, 1);
     out.w = (int)d.output_width;
     out.h = (int)d.output_height;
     out.px.resize((size_t)out.w * out.h * 3);
     while (d.output_scanline < d.output_height) {
         JSAMPROW row = out.px.data() + (size_t)d.output_scanline * out.w * 3;
-        jpeg_read_scanlines(&d, &row, 1);
+        if (jpeg_read_scanlines(&d, &row, 1) != 1) longjmp(em.jb, 1);
     }
-    jpeg_finish_decompress(&d);
+    if (!jpeg_finish_decompress(&d)) longjmp(em.jb, 1);
     warnings = em.warnings;
     jpeg_destroy_decompress(&d);
     return true;
@@ -168,6 +183,17 @@ static bool load_sample(int index, Rgb& out) {
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     int warn = 0;
     return decode_rgb(data.data(), data.size(), out, warn);
+}
+
+// Loads samples first..last. Each one that will not load is listed in `missing`, and the caller fails its test on it.
+static std::vector<Rgb> load_samples(int first, int last, std::string& missing) {
+    std::vector<Rgb> out;
+    for (int i = first; i <= last; ++i) {
+        Rgb s;
+        if (load_sample(i, s)) out.push_back(std::move(s));
+        else missing += fmt(" %03d", i);
+    }
+    return out;
 }
 
 static double psnr(const Rgb& a, const Rgb& b) {
@@ -209,6 +235,31 @@ struct GpuResult {
     EgpuTimings t{};
 };
 
+// The images laid out back to back in one device buffer, with one descriptor per image.
+struct DeviceBatch {
+    std::vector<EgpuImage> desc;
+    uint8_t* d = nullptr;
+    uint64_t bytes = 0;
+};
+
+// Copies the images to the device. Returns false when the device buffer cannot be allocated; a failed copy ends the run.
+static bool upload_batch(const std::vector<const Rgb*>& imgs, DeviceBatch& b) {
+    std::vector<uint8_t> host;
+    b.desc.assign(imgs.size(), EgpuImage{});
+    for (size_t i = 0; i < imgs.size(); ++i) {
+        b.desc[i].offset = host.size();
+        b.desc[i].width = (uint32_t)imgs[i]->w;
+        b.desc[i].height = (uint32_t)imgs[i]->h;
+        host.insert(host.end(), imgs[i]->px.begin(), imgs[i]->px.end());
+    }
+    b.bytes = host.size();
+    const size_t alloc = host.empty() ? 1 : host.size();
+    b.d = nullptr;
+    if (cudaMalloc((void**)&b.d, alloc) != cudaSuccess) return false;
+    if (!host.empty()) cuda_ok(cudaMemcpy(b.d, host.data(), host.size(), cudaMemcpyHostToDevice), "cudaMemcpy");
+    return true;
+}
+
 static GpuResult gpu_encode(const std::vector<const Rgb*>& imgs, int quality, bool c420, uint64_t budget, bool keep) {
     GpuResult r;
     EgpuOptions o;
@@ -222,55 +273,47 @@ static GpuResult gpu_encode(const std::vector<const Rgb*>& imgs, int quality, bo
         r.err = egpu_last_error();
         return r;
     }
-    const uint32_t n = (uint32_t)imgs.size();
-    std::vector<EgpuImage> desc(n);
-    std::vector<uint8_t> host;
-    for (uint32_t i = 0; i < n; ++i) {
-        desc[i].offset = host.size();
-        desc[i].width = (uint32_t)imgs[i]->w;
-        desc[i].height = (uint32_t)imgs[i]->h;
-        host.insert(host.end(), imgs[i]->px.begin(), imgs[i]->px.end());
-    }
-    uint8_t* d = nullptr;
-    const size_t bytes = host.empty() ? 1 : host.size();
-    if (cudaMalloc((void**)&d, bytes) != cudaSuccess) {
+    DeviceBatch b;
+    if (!upload_batch(imgs, b)) {
         r.rc = EGPU_ERR_MEMORY;
         r.err = "cudaMalloc failed in test";
         egpu_destroy(ctx);
         return r;
     }
-    if (!host.empty()) cuda_ok(cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice), "cudaMemcpy");
-    r.rc = egpu_encode_batch(ctx, d, host.size(), desc.data(), n);
-    if (r.rc != EGPU_OK) {
-        r.err = egpu_last_error();
-    } else {
+    const uint32_t n = (uint32_t)imgs.size();
+    r.rc = egpu_encode_batch(ctx, b.d, b.bytes, b.desc.data(), n);
+    if (r.rc == EGPU_OK) {
         r.jpg.resize(n);
         if (keep) r.coef.resize(n);
-        for (uint32_t i = 0; i < n; ++i) {
+        for (uint32_t i = 0; i < n && r.rc == EGPU_OK; ++i) {
             const uint8_t* p = nullptr;
             uint64_t sz = 0;
-            egpu_output(ctx, i, &p, &sz);
+            if ((r.rc = egpu_output(ctx, i, &p, &sz)) != EGPU_OK) break;
             r.jpg[i].assign(p, p + sz);
             if (keep) {
                 const int16_t* c = nullptr;
                 uint64_t blocks = 0;
-                egpu_coefficients(ctx, i, &c, &blocks);
+                if ((r.rc = egpu_coefficients(ctx, i, &c, &blocks)) != EGPU_OK) break;
                 r.coef[i].assign(c, c + blocks * 64);
             }
         }
-        egpu_timings(ctx, &r.t);
+        if (r.rc == EGPU_OK) r.rc = egpu_timings(ctx, &r.t);
     }
-    cudaFree(d);
+    if (r.rc != EGPU_OK) r.err = egpu_last_error();
+    cuda_ok(cudaFree(b.d), "cudaFree");
     egpu_destroy(ctx);
     return r;
 }
 
 static std::vector<uint8_t> turbo_encode(const Rgb& im, int q, bool c420) {
     tjhandle h = tjInitCompress();
+    if (!h) return {};  // no compressor: an empty result, counted as a failed decode by the callers
     unsigned char* buf = nullptr;
     unsigned long sz = 0;
-    tjCompress2(h, im.px.data(), im.w, 0, im.h, TJPF_RGB, &buf, &sz, c420 ? TJSAMP_420 : TJSAMP_444, q, 0);
-    std::vector<uint8_t> out(buf, buf + sz);
+    // A failed encode gives an empty result, which the callers count as a failed decode.
+    const int rc = tjCompress2(h, im.px.data(), im.w, 0, im.h, TJPF_RGB, &buf, &sz, c420 ? TJSAMP_420 : TJSAMP_444, q, 0);
+    std::vector<uint8_t> out;
+    if (rc == 0) out.assign(buf, buf + sz);
     tjFree(buf);
     tjDestroy(h);
     return out;
@@ -438,11 +481,7 @@ static bool libjpeg_from_coefs(const Layout& L, const uint16_t ql[64], const uin
                                const std::vector<int16_t>& coef, std::vector<uint8_t>& out, Codes* codes) {
     jpeg_compress_struct c;
     JerrMgr em;
-    em.warnings = 0;
-    c.err = jpeg_std_error(&em.pub);
-    em.pub.error_exit = jerr_exit;
-    em.pub.emit_message = jerr_emit;
-    em.pub.output_message = jerr_output;
+    jerr_setup(em, (j_common_ptr)&c);
     unsigned char* buf = nullptr;
     unsigned long len = 0;
     if (setjmp(em.jb)) {
@@ -503,11 +542,7 @@ static bool libjpeg_from_coefs(const Layout& L, const uint16_t ql[64], const uin
 static bool libjpeg_encode_rgb(const Rgb& im, int q, bool c420, std::vector<uint8_t>& out) {
     jpeg_compress_struct c;
     JerrMgr em;
-    em.warnings = 0;
-    c.err = jpeg_std_error(&em.pub);
-    em.pub.error_exit = jerr_exit;
-    em.pub.emit_message = jerr_emit;
-    em.pub.output_message = jerr_output;
+    jerr_setup(em, (j_common_ptr)&c);
     unsigned char* buf = nullptr;
     unsigned long len = 0;
     if (setjmp(em.jb)) {
@@ -538,7 +573,7 @@ static bool libjpeg_encode_rgb(const Rgb& im, int q, bool c420, std::vector<uint
     jpeg_start_compress(&c, TRUE);
     while (c.next_scanline < c.image_height) {
         JSAMPROW row = const_cast<uint8_t*>(im.px.data()) + (size_t)c.next_scanline * im.w * 3;
-        jpeg_write_scanlines(&c, &row, 1);
+        if (jpeg_write_scanlines(&c, &row, 1) != 1) longjmp(em.jb, 1);
     }
     jpeg_finish_compress(&c);
     out.assign(buf, buf + len);
@@ -553,11 +588,7 @@ static size_t roundtrip_mismatches(const std::vector<uint8_t>& jpg, const Layout
                                    const std::vector<int16_t>& coef, std::string& first) {
     jpeg_decompress_struct d;
     JerrMgr em;
-    em.warnings = 0;
-    d.err = jpeg_std_error(&em.pub);
-    em.pub.error_exit = jerr_exit;
-    em.pub.emit_message = jerr_emit;
-    em.pub.output_message = jerr_output;
+    jerr_setup(em, (j_common_ptr)&d);
     if (setjmp(em.jb)) {
         jpeg_destroy_decompress(&d);
         first = "read error";
@@ -565,7 +596,7 @@ static size_t roundtrip_mismatches(const std::vector<uint8_t>& jpg, const Layout
     }
     jpeg_create_decompress(&d);
     jpeg_mem_src(&d, jpg.data(), (unsigned long)jpg.size());
-    jpeg_read_header(&d, TRUE);
+    if (jpeg_read_header(&d, TRUE) != JPEG_HEADER_OK) longjmp(em.jb, 1);
     jvirt_barray_ptr* arr = jpeg_read_coefficients(&d);
     size_t mism = 0;
     for (int comp = 0; comp < 3; ++comp) {
@@ -587,7 +618,7 @@ static size_t roundtrip_mismatches(const std::vector<uint8_t>& jpg, const Layout
             }
         }
     }
-    jpeg_finish_decompress(&d);
+    if (!jpeg_finish_decompress(&d)) longjmp(em.jb, 1);
     jpeg_destroy_decompress(&d);
     return mism;
 }
@@ -595,11 +626,8 @@ static size_t roundtrip_mismatches(const std::vector<uint8_t>& jpg, const Layout
 // ---------------------------------------------------------------- test 1: entropy exactness
 
 static bool test1_entropy() {
-    std::vector<Rgb> imgs;
-    for (int i = 1; i <= 3; ++i) {
-        Rgb s;
-        if (load_sample(i, s)) imgs.push_back(std::move(s));
-    }
+    std::string missing;
+    std::vector<Rgb> imgs = load_samples(1, 3, missing);
     imgs.push_back(make_image(97, 61, 0, 1));
     imgs.push_back(make_image(129, 77, 2, 2));
     imgs.push_back(make_image(64, 64, 1, 3));
@@ -607,13 +635,14 @@ static bool test1_entropy() {
 
     struct Cfg { bool c420; int q; };
     const std::vector<Cfg> cfgs = {{true, 50}, {true, 75}, {true, 100}, {false, 50}, {false, 75}, {false, 100}};
-    int checked = 0, identical = 0;
+    int checked = 0, identical = 0, failed = 0;
     std::string first_fail, first_dump;
     for (const Cfg& cfg : cfgs) {
         for (size_t ii = 0; ii < imgs.size(); ++ii) {
             const Rgb& im = imgs[ii];
             GpuResult g = gpu_encode({&im}, cfg.q, cfg.c420, 0, true);
             if (g.rc != EGPU_OK) {
+                ++failed;
                 first_fail = fmt("gpu encode failed: %s", g.err.c_str());
                 continue;
             }
@@ -623,11 +652,13 @@ static bool test1_entropy() {
             std::vector<uint8_t> lj;
             Codes codes[4];
             if (!libjpeg_from_coefs(L, ql, qc, g.coef[0], lj, codes)) {
+                ++failed;
                 first_fail = "libjpeg coefficient encode failed";
                 continue;
             }
             std::vector<uint8_t> sg, sl;
             if (!scan_bytes(g.jpg[0], sg) || !scan_bytes(lj, sl)) {
+                ++failed;
                 first_fail = "could not locate scan data";
                 continue;
             }
@@ -636,9 +667,13 @@ static bool test1_entropy() {
             const size_t rtm = roundtrip_mismatches(lj, L, g.coef[0], rt);
             if (sg == sl) {
                 ++identical;
-                if (rtm != 0) first_fail = fmt("round trip mismatches %zu (%s)", rtm, rt.c_str());
+                if (rtm != 0) {
+                    ++failed;
+                    first_fail = fmt("round trip mismatches %zu (%s)", rtm, rt.c_str());
+                }
                 continue;
             }
+            ++failed;
             // Compare unstuffed data so the first difference maps to a bit position.
             const std::vector<uint8_t> ug = unstuff(sg), ul = unstuff(sl);
             size_t bu = 0;
@@ -672,17 +707,28 @@ static bool test1_entropy() {
                 dump += fmt("\n       bits from block start: libjpeg %s", bl.c_str());
                 first_dump = dump;
             }
-            if (first_fail.empty()) first_fail = fmt("%s q%d image %zu (%dx%d): first differing unstuffed byte %zu (bit %zu of block %zu, comp %d, block starts at bit %llu); "
+            // The first differing bit: the first bit of the first differing byte where the two streams disagree.
+            uint64_t diff_bit = (uint64_t)bu * 8;
+            if (bu < ug.size() && bu < ul.size()) {
+                const unsigned x = (unsigned)(ug[bu] ^ ul[bu]);
+                int k = 0;
+                while (k < 7 && !((x >> (7 - k)) & 1)) ++k;
+                diff_bit += (uint64_t)k;
+            }
+            if (first_fail.empty()) first_fail = fmt("%s q%d image %zu (%dx%d): first differing unstuffed byte %zu (bit %llu of block %zu, comp %d, block starts at bit %llu); "
                              "GPU entropy %zu bytes, host-predicted %llu bits (%llu bytes), libjpeg %zu bytes; "
                              "round trip of libjpeg output: %zu mismatched coefficients (%s)",
-                             cfg.c420 ? "4:2:0" : "4:4:4", cfg.q, ii, im.w, im.h, bu, (bu * 8) % 8, blk, comp,
+                             cfg.c420 ? "4:2:0" : "4:4:4", cfg.q, ii, im.w, im.h, bu,
+                             (unsigned long long)(diff_bit - starts[blk]), blk, comp,
                              (unsigned long long)starts[blk], ug.size(), (unsigned long long)expected_bits,
                              (unsigned long long)((expected_bits + 7) / 8), ul.size(), rtm, rt.c_str());
         }
     }
-    const bool pass = identical == checked && checked > 0;
-    std::string detail = fmt("%d of %d scan streams byte-identical to libjpeg-turbo (configs: 4:2:0 and 4:4:4 at q50/75/100, %zu images)",
-                             identical, checked, imgs.size());
+    // Every encode must have run and matched: a skipped or failed encode fails the test, whatever the others did.
+    const bool pass = failed == 0 && identical == checked && checked > 0 && missing.empty();
+    std::string detail = fmt("%d of %d scan streams byte-identical to libjpeg-turbo (configs: 4:2:0 and 4:4:4 at q50/75/100, %zu images), %d failed",
+                             identical, checked, imgs.size(), failed);
+    if (!missing.empty()) detail += "; sample images not loaded:" + missing;
     if (!first_fail.empty()) detail += "; " + first_fail + first_dump;
     report("1 entropy exactness", pass, detail);
     return pass;
@@ -691,15 +737,13 @@ static bool test1_entropy() {
 // ---------------------------------------------------------------- test 2: coefficient agreement
 
 static bool test2_coefficients() {
-    std::vector<Rgb> imgs;
-    for (int i = 1; i <= 3; ++i) {
-        Rgb s;
-        if (load_sample(i, s)) imgs.push_back(std::move(s));
-    }
+    std::string missing;
+    std::vector<Rgb> imgs = load_samples(1, 3, missing);
     imgs.push_back(make_image(96, 80, 0, 5));
     imgs.push_back(make_image(70, 45, 2, 6));
 
-    bool pass = true;
+    bool pass = missing.empty();
+    if (!missing.empty()) report("2 coefficient agreement", false, "sample images not loaded:" + missing);
     for (int c420i = 0; c420i < 2; ++c420i) {
         const bool c420 = c420i == 1;
         for (int q : {50, 75, 90}) {
@@ -714,11 +758,7 @@ static bool test2_coefficients() {
 
                 jpeg_decompress_struct d;
                 JerrMgr em;
-                em.warnings = 0;
-                d.err = jpeg_std_error(&em.pub);
-                em.pub.error_exit = jerr_exit;
-                em.pub.emit_message = jerr_emit;
-                em.pub.output_message = jerr_output;
+                jerr_setup(em, (j_common_ptr)&d);
                 if (setjmp(em.jb)) {
                     jpeg_destroy_decompress(&d);
                     pass = false;
@@ -727,7 +767,7 @@ static bool test2_coefficients() {
                 }
                 jpeg_create_decompress(&d);
                 jpeg_mem_src(&d, lj.data(), (unsigned long)lj.size());
-                jpeg_read_header(&d, TRUE);
+                if (jpeg_read_header(&d, TRUE) != JPEG_HEADER_OK) longjmp(em.jb, 1);
                 jvirt_barray_ptr* arr = jpeg_read_coefficients(&d);
                 const Layout L = make_layout(im.w, im.h, c420);
                 for (int comp = 0; comp < 3; ++comp) {
@@ -747,7 +787,11 @@ static bool test2_coefficients() {
                         }
                     }
                 }
-                jpeg_finish_decompress(&d);
+                // Checked after the counts above: a failure here marks the case failed without a longjmp past them.
+                if (!jpeg_finish_decompress(&d)) {
+                    pass = false;
+                    why += " libjpeg-read";
+                }
                 jpeg_destroy_decompress(&d);
             }
             const double frac = total ? (double)within1 / (double)total : 0.0;
@@ -815,9 +859,9 @@ static bool test3_valid() {
     }
     // Sample images at two qualities and both chroma modes.
     int sample_ok = 0, sample_total = 0;
-    for (int i = 1; i <= 40; ++i) {
-        Rgb s;
-        if (!load_sample(i, s)) continue;
+    std::string missing;
+    const std::vector<Rgb> samples = load_samples(1, 40, missing);
+    for (const Rgb& s : samples) {
         for (bool c420 : {true, false}) {
             for (int q : {50, 90}) {
                 GpuResult g = gpu_encode({&s}, q, c420, 0, false);
@@ -831,8 +875,9 @@ static bool test3_valid() {
             }
         }
     }
-    pass = pass && sample_ok == sample_total && sample_total > 0;
+    pass = pass && sample_ok == sample_total && sample_total > 0 && missing.empty();
     detail += fmt("sample images: %d of %d decode with 0 warnings (q50/q90, both chroma modes)", sample_ok, sample_total);
+    if (!missing.empty()) detail += "; sample images not loaded:" + missing;
     report("3 valid JPEG", pass, detail);
     return pass;
 }
@@ -874,11 +919,8 @@ static bool test5_edges() {
 // ---------------------------------------------------------------- test 4: batch invariance
 
 static bool test4_invariance() {
-    std::vector<Rgb> imgs;
-    for (int i = 1; i <= 24; ++i) {
-        Rgb s;
-        if (load_sample(i, s)) imgs.push_back(std::move(s));
-    }
+    std::string missing;
+    std::vector<Rgb> imgs = load_samples(1, 24, missing);
     std::mt19937 rng(42);
     for (int i = 0; i < 8; ++i) {
         const int w = 1 + (int)(rng() % 257), h = 1 + (int)(rng() % 257);
@@ -886,7 +928,7 @@ static bool test4_invariance() {
     }
     const size_t n = imgs.size();
 
-    bool pass = true;
+    bool pass = missing.empty();
     std::string detail;
     for (bool c420 : {true, false}) {
         for (int q : {75, 90}) {
@@ -939,6 +981,7 @@ static bool test4_invariance() {
             }
         }
     }
+    if (!missing.empty()) detail += "sample images not loaded:" + missing;
     report("4 batch invariance", pass, detail);
     return pass;
 }
@@ -1008,7 +1051,7 @@ static bool test6_quality() {
     struct Setting { bool c420; int q; };
     const std::vector<Setting> settings = {{true, 50}, {true, 75}, {true, 90}, {false, 50}, {false, 75}, {false, 90}};
     std::vector<QualityRow> rows(settings.size());
-    int failed_loads = 0;
+    int failures = 0;   // samples that do not load, GPU batches that fail, and images that do not decode
     const std::string ssim_ref_dir = g_work_dir;
 
     for (int b0 = 1; b0 <= N; b0 += BATCH) {
@@ -1016,7 +1059,7 @@ static bool test6_quality() {
         for (int i = b0; i < b0 + BATCH && i <= N; ++i) {
             Rgb s;
             if (load_sample(i, s)) src.push_back(std::move(s));
-            else ++failed_loads;
+            else ++failures;
         }
         std::vector<const Rgb*> ptrs;
         for (const Rgb& s : src) ptrs.push_back(&s);
@@ -1025,6 +1068,7 @@ static bool test6_quality() {
             GpuResult g = gpu_encode(ptrs, st.q, st.c420, 0, false);
             if (g.rc != EGPU_OK) {
                 printf("gpu batch failed: %s\n", g.err.c_str());
+                ++failures;  // a failed batch fails the test, as the other failures here do
                 continue;
             }
             for (size_t i = 0; i < src.size(); ++i) {
@@ -1034,7 +1078,7 @@ static bool test6_quality() {
                 if (!decode_rgb(g.jpg[i].data(), g.jpg[i].size(), dg, wg) ||
                     !decode_rgb(tj.data(), tj.size(), dt, wt)) {
                     printf("decode failed for image %d\n", b0 + (int)i);
-                    ++failed_loads;  // a decode failure fails the test, as the other failures here do
+                    ++failures;  // a decode failure fails the test, as the other failures here do
                     continue;
                 }
                 QualityRow& row = rows[si];
@@ -1059,7 +1103,7 @@ static bool test6_quality() {
         fflush(stdout);
     }
 
-    bool pass = failed_loads == 0;
+    bool pass = failures == 0;
     for (size_t si = 0; si < settings.size(); ++si) {
         const Setting& st = settings[si];
         const QualityRow& r = rows[si];
@@ -1097,6 +1141,7 @@ static bool test7_throughput() {
         return false;
     }
     std::string detail;
+    bool pass = true;
     for (size_t batch : {64u, 128u}) {
         EgpuOptions o;
         o.quality = 75;
@@ -1109,47 +1154,60 @@ static bool test7_throughput() {
             report("7 throughput", false, egpu_last_error());
             return false;
         }
-        std::vector<EgpuImage> desc(batch);
-        std::vector<uint8_t> host;
-        for (size_t i = 0; i < batch; ++i) {
-            desc[i].offset = host.size();
-            desc[i].width = (uint32_t)src[i].w;
-            desc[i].height = (uint32_t)src[i].h;
-            host.insert(host.end(), src[i].px.begin(), src[i].px.end());
+        std::vector<const Rgb*> ptrs;
+        for (size_t i = 0; i < batch; ++i) ptrs.push_back(&src[i]);
+        DeviceBatch b;
+        if (!upload_batch(ptrs, b)) {
+            report("7 throughput", false, "cudaMalloc failed in test");
+            egpu_destroy(ctx);
+            return false;
         }
-        uint8_t* d = nullptr;
-        cuda_ok(cudaMalloc((void**)&d, host.size()), "cudaMalloc");
-        cuda_ok(cudaMemcpy(d, host.data(), host.size(), cudaMemcpyHostToDevice), "cudaMemcpy");
 
-        // Warm-up, then timed repetitions. Input stays on the device, as in the pipeline.
-        for (int w = 0; w < 3; ++w) egpu_encode_batch(ctx, d, host.size(), desc.data(), (uint32_t)batch);
+        // Warm-up, then timed repetitions. Input stays on the device, as in the pipeline. A failed encode fails the
+        // test; otherwise the numbers are measurement only.
+        std::string err;
+        for (int w = 0; w < 3 && err.empty(); ++w) {
+            if (egpu_encode_batch(ctx, b.d, b.bytes, b.desc.data(), (uint32_t)batch) != EGPU_OK) err = egpu_last_error();
+        }
         std::vector<double> ms;
         EgpuTimings acc{};
         const int reps = 20;
-        for (int r = 0; r < reps; ++r) {
+        for (int r = 0; r < reps && err.empty(); ++r) {
             const auto t0 = std::chrono::steady_clock::now();
-            const int rc = egpu_encode_batch(ctx, d, host.size(), desc.data(), (uint32_t)batch);
+            const int rc = egpu_encode_batch(ctx, b.d, b.bytes, b.desc.data(), (uint32_t)batch);
             const auto t1 = std::chrono::steady_clock::now();
-            if (rc != EGPU_OK) break;
+            if (rc != EGPU_OK) {
+                err = egpu_last_error();
+                break;
+            }
             ms.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
             EgpuTimings t;
-            egpu_timings(ctx, &t);
+            if (egpu_timings(ctx, &t) != EGPU_OK) {
+                err = egpu_last_error();
+                break;
+            }
             acc.colour_ms += t.colour_ms; acc.dct_ms += t.dct_ms; acc.sizes_ms += t.sizes_ms;
             acc.scan_ms += t.scan_ms; acc.pack_ms += t.pack_ms; acc.pad_ms += t.pad_ms;
             acc.stuff_ms += t.stuff_ms; acc.copy_ms += t.copy_ms; acc.total_ms += t.total_ms;
         }
-        const double med_ms = median(ms);
-        const double ips = med_ms > 0 ? (double)batch / (med_ms / 1000.0) : 0.0;
-        const double k = ms.empty() ? 1.0 : (double)ms.size();
-        detail += fmt("\n       batch %zu (4:2:0 q75, %zu reps): median %.2f ms per batch, %.1f images/s; "
-                       "stages (mean ms): colour %.3f dct %.3f sizes %.3f scan %.3f pack %.3f pad %.3f stuff %.3f copy %.3f",
-                       batch, ms.size(), med_ms, ips, acc.colour_ms / k, acc.dct_ms / k, acc.sizes_ms / k,
-                       acc.scan_ms / k, acc.pack_ms / k, acc.pad_ms / k, acc.stuff_ms / k, acc.copy_ms / k);
-        cudaFree(d);
+        if (err.empty() && ms.empty()) err = "no timed repetitions";
+        if (!err.empty()) {
+            pass = false;
+            detail += fmt("\n       batch %zu: failed: %s", batch, err.c_str());
+        } else {
+            const double med_ms = median(ms);
+            const double ips = med_ms > 0 ? (double)batch / (med_ms / 1000.0) : 0.0;
+            const double k = (double)ms.size();
+            detail += fmt("\n       batch %zu (4:2:0 q75, %zu reps): median %.2f ms per batch, %.1f images/s; "
+                           "stages (mean ms): colour %.3f dct %.3f sizes %.3f scan %.3f pack %.3f pad %.3f stuff %.3f copy %.3f",
+                           batch, ms.size(), med_ms, ips, acc.colour_ms / k, acc.dct_ms / k, acc.sizes_ms / k,
+                           acc.scan_ms / k, acc.pack_ms / k, acc.pad_ms / k, acc.stuff_ms / k, acc.copy_ms / k);
+        }
+        cuda_ok(cudaFree(b.d), "cudaFree");
         egpu_destroy(ctx);
     }
-    report("7 throughput", true, detail.substr(8));   // measurement only
-    return true;
+    report("7 throughput", pass, detail.substr(8));
+    return pass;
 }
 
 // ---------------------------------------------------------------- main
@@ -1172,11 +1230,7 @@ static void cuda_ok(cudaError_t e, const char* what) {
 static std::vector<uint8_t> libjpeg_encode(const Rgb& im, int q, bool c420, J_DCT_METHOD dct) {
     jpeg_compress_struct c;
     JerrMgr em;
-    em.warnings = 0;
-    c.err = jpeg_std_error(&em.pub);
-    em.pub.error_exit = jerr_exit;
-    em.pub.emit_message = jerr_emit;
-    em.pub.output_message = jerr_output;
+    jerr_setup(em, (j_common_ptr)&c);
     unsigned char* buf = nullptr;
     unsigned long sz = 0;
     if (setjmp(em.jb)) {
@@ -1198,7 +1252,7 @@ static std::vector<uint8_t> libjpeg_encode(const Rgb& im, int q, bool c420, J_DC
     jpeg_start_compress(&c, TRUE);
     for (int y = 0; y < im.h; ++y) {
         JSAMPROW row = const_cast<JSAMPROW>(im.px.data() + (size_t)y * im.w * 3);
-        jpeg_write_scanlines(&c, &row, 1);
+        if (jpeg_write_scanlines(&c, &row, 1) != 1) longjmp(em.jb, 1);
     }
     jpeg_finish_compress(&c);
     std::vector<uint8_t> out(buf, buf + sz);
@@ -1264,7 +1318,7 @@ int main(int argc, char** argv) {
     }
     if (which.empty()) which = {1, 2, 3, 4, 5, 6, 7};
     if (g_use_ssim && g_ssim_exe.empty() && which.count(6)) {
-        printf("PG_HOME is not set and no --ssim EXE given: set PG_HOME, pass --ssim, or pass --no-ssim\n");
+        printf("PG_JPEG_EVAL and PG_ROOT are not set and no --ssim EXE given: set one, pass --ssim, or pass --no-ssim\n");
         return 2;
     }
 

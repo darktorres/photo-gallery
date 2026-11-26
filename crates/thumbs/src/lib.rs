@@ -21,6 +21,7 @@ use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FileFailure;
 use pg_model::notice::FilePass;
+use pg_model::num::count_u64;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
@@ -29,8 +30,8 @@ pub mod placeholders;
 
 /// What a thumbnail or placeholder pass couldn't do: the catalog failed, the cache couldn't store or couldn't be read, a
 /// file couldn't be read (its read's error), a thumbnail couldn't be made (`Make`), the maker couldn't be started
-/// (`Render`), the pipeline failed, or the cache said something it can't hold (`Invalid`). The cache's two are told apart
-/// where it is called (section 10, D7): its stores are one round error, its reads another, each with its own notice.
+/// (`Render`), or the pipeline failed. The cache's two are told apart where it is called (section 10, D7): its stores
+/// are one round error, its reads another, each with its own notice.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The catalog failed (see `pg_catalog::Error`).
@@ -60,9 +61,6 @@ pub enum Error {
     /// The pass's pipeline failed (see `pg_jobs::failure::Failed`).
     #[error(transparent)]
     Pipeline(#[from] JobFailed),
-    /// The cache said something it can't hold (a negative size).
-    #[error("{0}")]
-    Invalid(&'static str),
 }
 
 /// The result of a thumbnail or placeholder pass's steps.
@@ -143,7 +141,7 @@ pub struct ThumbStats {
     /// The files that needed a thumbnail at the height when the pass began.
     pub needed: usize,
     /// The thumbnail cache's size (bytes) when the pass began.
-    pub cache_bytes: u64,
+    pub cache_bytes: i64,
     /// The thumbnails made by the pass.
     pub made: usize,
     /// The files whose thumbnail couldn't be made, for whatever reason ([`ThumbStats::unreadable`] among them).
@@ -195,9 +193,10 @@ impl LedgerOutcome {
     }
 }
 
-/// What a failed thumbnail is, for what is done about it.
+/// What a failed thumbnail or placeholder is, for what is done about it. Shared by the thumbnail pass and the placeholder
+/// pass, so both keep, count and record a failure the same way.
 #[derive(Debug, PartialEq, Eq)]
-enum Failed {
+pub(crate) enum Failed {
     /// It panicked: recorded, and tried again only once the file changes (it would panic again, and log its backtrace
     /// at every pass), or the user retries it, or a new thumbnailer comes.
     Panicked,
@@ -213,7 +212,7 @@ enum Failed {
 impl Failed {
     /// By the error's type, never its text or its root cause: a truncated file's decode error has an I/O error at its
     /// root, and is no read failure.
-    fn of(e: &JobFailed) -> Failed {
+    pub(crate) fn of(e: &JobFailed) -> Failed {
         match e.class() {
             Class::Panic => Failed::Panicked,
             Class::Data => Failed::Undecodable,
@@ -226,7 +225,7 @@ impl Failed {
     /// changes (or the user retries it), which is every recorded failure today. `Some(true)` (the ledger's retry flag,
     /// tried again by the next pass) is not produced by any failure yet. `None` is not recorded (tried again, and no
     /// failure of the file's).
-    fn recorded(&self) -> Option<bool> {
+    pub(crate) fn recorded(&self) -> Option<bool> {
         match self {
             Failed::Panicked | Failed::Undecodable => Some(false),
             Failed::Unreadable | Failed::Other => None,
@@ -361,10 +360,7 @@ pub fn run_while(
         return finished.map(|()| stats).map_err(stopped(ThumbStats::empty(0)));
     }
     stats.cache_bytes = match cache.totals().map_err(Error::CacheRead) {
-        Ok((bytes, _)) => match u64::try_from(bytes) {
-            Ok(bytes) => bytes,
-            Err(_) => return Err(stopped(stats)(Error::Invalid("the cache's size is negative"))),
-        },
+        Ok((bytes, _)) => bytes,
         Err(error) => return Err(stopped(stats)(error)),
     };
     let setup = pg_perf::span("thumbs.setup");
@@ -381,7 +377,7 @@ pub fn run_while(
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
     // The phase ends when this is dropped: after the last flush, before the cache is checked and shrunk, or when the
     // pass leaves early (an error, a panic).
-    let phase = ctl.begin(Phase::Thumbs { height: thumb }, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    let phase = ctl.begin(Phase::Thumbs { height: thumb }, count_u64(items.len()));
     // The writer's state: the catalog (moved in, and back when the pass ends), the thumbnails to keep, the failures.
     let writing = Writing {
         catalog,
@@ -551,8 +547,8 @@ pub fn run_while(
         return Err(stopped(stats)(Error::CacheStore(e)));
     }
     drop(finish);
-    pass.items(u64::try_from(stats.made).unwrap_or(u64::MAX));
-    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    pass.items(count_u64(stats.made));
+    pass.failed(count_u64(stats.failed));
     for (step, mark) in steps.iter().zip(step_marks) {
         pass.attach_since(step, mark);
     }
@@ -841,7 +837,10 @@ mod tests {
         });
         assert_eq!((Failed::of(&read), Failed::of(&read).recorded()), (Failed::Unreadable, None));
         // No per-file failure is `Other` (D4): a catalog or a cache error is the pass's.
-        assert!(matches!(file_failed(Error::Invalid("x")), ItemError::Pass(_)));
+        assert!(matches!(
+            file_failed(Error::Render(pg_render::Error::Invalid("no maker here"))),
+            ItemError::Pass(Error::Render(_))
+        ));
         assert!(matches!(
             file_failed(Error::CacheStore(pg_thumbcache::Error::Invalid("refused".into()))),
             ItemError::Pass(Error::CacheStore(_))

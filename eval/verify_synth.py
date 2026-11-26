@@ -21,7 +21,7 @@ import numpy as np
 from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
 from verify import Features, PairRunner, Prepared, prepared
-from verify_common import Prefetcher, add_decision_args, params_from, work_image, write_outputs
+from verify_common import Prefetcher, add_decision_args, params_from, score, work_image, write_outputs
 from verify_types import ROTATIONS, Checkpoint
 
 
@@ -54,10 +54,8 @@ def main() -> None:
 
     def done(row: dict, out: dict, diag) -> None:
         nonlocal verified
-        row.update(out)
-        # Every synthetic pair is a planted match: an error decision is not the expected one, so it is not correct (as
-        # verify.py scores a labelled pair).
-        row["correct"] = row["decision"] == "match"
+        # Every synthetic pair is a planted match, scored as verify.py scores a labelled pair.
+        score(row, out, "match")
         if diag is not None:
             cv2.imwrite(str(diag_dir / f"{row['id']}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])
         results[row.pop("slot")] = row

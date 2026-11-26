@@ -23,8 +23,13 @@ pub fn hide_console_window(_cmd: &mut Command) {}
 /// destructors, so a stay-open ExifTool would otherwise outlive it.
 #[cfg(windows)]
 pub fn spawn_background(mut cmd: Command) -> io::Result<Child> {
-    let child = cmd.spawn()?;
-    die_with_parent(&child);
+    let mut child = cmd.spawn()?;
+    if let Err(error) = die_with_parent(&child) {
+        // Without the job the child would outlive this process, so it is ended here and the start fails.
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
     Ok(child)
 }
 
@@ -101,36 +106,54 @@ fn spawn_with_parent_death(cmd: &mut Command) -> io::Result<Child> {
     cmd.spawn()
 }
 
-/// Put a child process in a job that kills it when this process ends, however it ends.
+/// Put a child process in a job that kills it when this process ends, however it ends. An error when the job can't be
+/// made or the child can't be put in it: the child would then outlive this process.
 #[cfg(windows)]
-fn die_with_parent(child: &Child) {
+fn die_with_parent(child: &Child) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use std::sync::OnceLock;
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
-    };
-    // The job handle is never closed: the system closes it when the process exits.
-    static JOB: OnceLock<usize> = OnceLock::new();
-    let job = *JOB.get_or_init(|| {
-        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // A size the call can't take (it can't happen) is a limit not set, as when the call fails.
-        let size = u32::try_from(std::mem::size_of_val(&info));
-        // SAFETY: null security attributes and name are allowed; `info` is the struct this information class
-        // takes, with its size.
-        unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if let Ok(size) = size {
-                SetInformationJobObject(job, JobObjectExtendedLimitInformation, (&raw const info).cast(), size);
-            }
-            job.addr()
-        }
-    });
+    use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+    // The job is made once. Its failure is kept as its message, which every start reports.
+    static JOB: OnceLock<Result<usize, String>> = OnceLock::new();
+    let job = JOB
+        .get_or_init(|| kill_on_close_job().map_err(|error| error.to_string()))
+        .as_ref()
+        .map_err(|message| io::Error::other(message.clone()))?;
     // The stored address becomes a handle again. A handle is a number the kernel gives, not memory: no provenance.
-    let job = std::ptr::without_provenance_mut(job);
+    let job = std::ptr::without_provenance_mut(*job);
     // SAFETY: the job handle is never closed, and the child's handle is open while `child` lives.
-    unsafe { AssignProcessToJobObject(job, child.as_raw_handle()) };
+    if unsafe { AssignProcessToJobObject(job, child.as_raw_handle()) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// A job object whose processes all end when its last handle closes, which is when this process ends. The job's handle is
+/// returned as an address, and is never closed: the system closes it when the process exits.
+#[cfg(windows)]
+fn kill_on_close_job() -> io::Result<usize> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::JobObjects::{
+        CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
+    };
+    let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    let size = u32::try_from(std::mem::size_of_val(&info)).map_err(io::Error::other)?;
+    // SAFETY: null security attributes and name are allowed; `info` is the struct this information class takes, with its
+    // size. A job that can't take the limit is closed, since its processes would not end with this one.
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        if SetInformationJobObject(job, JobObjectExtendedLimitInformation, (&raw const info).cast(), size) == 0 {
+            let error = io::Error::last_os_error();
+            CloseHandle(job);
+            return Err(error);
+        }
+        Ok(job.addr())
+    }
 }
 
 #[cfg(all(test, target_os = "linux"))]

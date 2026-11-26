@@ -13,10 +13,14 @@ use std::ops::Range;
 /// The signature of an APP1 segment that holds a chunk of an extended XMP packet.
 pub const JPEG_XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
 
-/// Where `part`, a slice of `bytes`, is in it.
+/// Where `part`, a slice of `bytes`, is in it. Panics when `part` does not lie inside `bytes`.
 pub fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
-    let start = part.as_ptr().addr() - bytes.as_ptr().addr();
-    debug_assert!(start + part.len() <= bytes.len());
+    let start = part
+        .as_ptr()
+        .addr()
+        .checked_sub(bytes.as_ptr().addr())
+        .filter(|&start| start.checked_add(part.len()).is_some_and(|end| end <= bytes.len()));
+    let start = start.expect("`part` is a slice of `bytes`");
     start..start + part.len()
 }
 
@@ -54,13 +58,6 @@ impl JpegSegments<'_> {
     /// file ending before the scan), rather than at the scan or the end marker.
     pub fn damaged(&self) -> bool {
         self.damaged
-    }
-
-    /// Where the walk stopped at a start-of-scan marker (its 0xFF byte), once the walk is over and undamaged. `None`
-    /// at the end marker, at damage, or when the file ends before any scan.
-    pub fn scan_at(&self) -> Option<usize> {
-        let at = self.i;
-        (!self.damaged && bytes_at::<2>(self.bytes, at) == Some([0xFF, 0xDA])).then_some(at)
     }
 }
 
@@ -258,12 +255,12 @@ pub struct Chunk<'a> {
 pub fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     let mut i = 8;
     std::iter::from_fn(move || {
-        if i + 12 > bytes.len() {
+        if i + PNG_FRAMING > bytes.len() {
             return None;
         }
         let len = usize::try_from(u32::from_be_bytes(bytes_at::<4>(bytes, i)?)).unwrap_or(usize::MAX);
         let kind: [u8; 4] = bytes_at(bytes, i + 4)?;
-        let end = (i + 12).checked_add(len)?;
+        let end = (i + PNG_FRAMING).checked_add(len)?;
         if end > bytes.len() {
             return None;
         }
@@ -274,8 +271,10 @@ pub fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
 }
 
 const PNG_SIGNATURE: [u8; 8] = *b"\x89PNG\r\n\x1a\n";
+/// A PNG chunk's framing around its data: the length, the type and the CRC, 12 bytes in all.
+const PNG_FRAMING: usize = 12;
 /// An `IEND` chunk: no data, and its CRC.
-const PNG_IEND: [u8; 12] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82];
+const PNG_IEND: [u8; PNG_FRAMING] = [0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82];
 /// Room for the chunks after the image data when the tail is read again, wider.
 const PNG_SLACK: usize = 64 << 10;
 /// The widest tail read.
@@ -336,7 +335,7 @@ pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u
     };
     let mut out = head.get(..idat_at).unwrap_or_default().to_vec();
     png_zero_idat(&mut out);
-    let Some(first_end) = png_chunk_end(idat_at, idat_len).filter(|&end| end.saturating_add(12) <= size) else {
+    let Some(first_end) = png_chunk_end(idat_at, idat_len).filter(|&end| end.saturating_add(PNG_FRAMING) <= size) else {
         return Ok(None);
     };
     // The second chunk's header gives the grid: in the head, read on its own when it is before the tail, or in the tail.
@@ -407,7 +406,7 @@ fn png_zero_idat(out: &mut Vec<u8>) {
 
 /// The end of the chunk at `at` with `len` bytes of data (its length, type and CRC around them).
 fn png_chunk_end(at: usize, len: usize) -> Option<usize> {
-    at.checked_add(12)?.checked_add(len)
+    at.checked_add(PNG_FRAMING)?.checked_add(len)
 }
 
 /// The length and type of the chunk at `at` of `bytes`, when its header is in them.
@@ -474,7 +473,7 @@ struct Grid {
 
 impl Grid {
     fn step(&self) -> usize {
-        self.len.saturating_add(12)
+        self.len.saturating_add(PNG_FRAMING)
     }
 
     fn on(&self, at: usize) -> bool {
@@ -559,7 +558,7 @@ fn after_image(tail: &[u8], start: usize, grid: &Grid) -> AfterImage {
 /// Where the chunk that ends at `end` of `tail` starts: its length reaches `end`, its type is letters and its CRC holds.
 fn png_chunk_ending_at(tail: &[u8], end: usize) -> Option<usize> {
     let crc = u32::from_be_bytes(bytes_at::<4>(tail, end.checked_sub(4)?)?);
-    (0..=end.checked_sub(12)?).rev().find(|&p| {
+    (0..=end.checked_sub(PNG_FRAMING)?).rev().find(|&p| {
         png_header_in(tail, p).is_some_and(|(len, kind)| {
             png_chunk_end(p, len) == Some(end)
                 && kind.iter().all(u8::is_ascii_alphabetic)
@@ -577,7 +576,7 @@ fn png_ends_on_grid<R: Read + Seek>(
     end: usize,
 ) -> io::Result<bool> {
     let step = grid.step();
-    let Some(before) = end.checked_sub(12).and_then(|e| e.checked_sub(grid.at)) else { return Ok(false) };
+    let Some(before) = end.checked_sub(PNG_FRAMING).and_then(|e| e.checked_sub(grid.at)) else { return Ok(false) };
     let point = grid.at + before / step * step;
     let Some((len, kind)) = known.header_or_read(file, point)? else { return Ok(false) };
     if &kind != b"IDAT" || len > grid.len {
@@ -587,7 +586,7 @@ fn png_ends_on_grid<R: Read + Seek>(
     if next == end {
         return Ok(true);
     }
-    if len == grid.len || next.saturating_add(12) > end {
+    if len == grid.len || next.saturating_add(PNG_FRAMING) > end {
         return Ok(false);
     }
     Ok(known
@@ -721,7 +720,7 @@ pub fn webp_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
 /// than a chunk's length field counts.
 pub fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Option<Vec<u8>> {
     let len = u32::try_from(data.len()).ok()?;
-    let mut out = Vec::with_capacity(data.len() + 12);
+    let mut out = Vec::with_capacity(data.len() + PNG_FRAMING);
     out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(kind);
     out.extend_from_slice(data);
@@ -1047,8 +1046,11 @@ pub fn jpeg_is_progressive(bytes: &[u8]) -> Option<bool> {
     (!segments.damaged()).then_some(false)
 }
 
-/// Where `needle` first is in `haystack`.
+/// Where `needle` first is in `haystack`. An empty needle is at 0, as in `str::find`.
 pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 

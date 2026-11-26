@@ -146,6 +146,9 @@ pub(crate) struct Hooks {
     pub wait: f64,
 }
 
+/// The `--wait` default, in seconds: the most to wait for the screenshot's window to settle.
+const DEFAULT_WAIT: f64 = 10.0;
+
 impl Default for Hooks {
     fn default() -> Hooks {
         Hooks {
@@ -163,7 +166,7 @@ impl Default for Hooks {
             viewer_keys: Vec::new(),
             grid_keys: Vec::new(),
             pseudo: false,
-            wait: 10.0,
+            wait: DEFAULT_WAIT,
         }
     }
 }
@@ -268,7 +271,7 @@ fn read_of(args: &[OsString], dev_env: Parsed) -> Read {
             if t == "pseudo" { Ok(()) } else { Err("is not a locale: pseudo is the only one".to_string()) }
         })
         .is_some(),
-        wait: typed(&parsed, "wait", &mut bad, |t| number(t).and_then(positive)).unwrap_or(10.0),
+        wait: typed(&parsed, "wait", &mut bad, |t| number(t).and_then(positive)).unwrap_or(DEFAULT_WAIT),
     };
     // Only a search's result can be shown at full size: without --find-similar, the option is named bad and dropped.
     if has_option(&parsed, "yandex-preview") && !has_option(&parsed, "find-similar") {

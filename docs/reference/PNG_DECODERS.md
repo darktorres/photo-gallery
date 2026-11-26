@@ -125,7 +125,7 @@ Runs and their load:
 - **Quiet pass 2** (17–40% load): all 23 files in one run, every decoder back to back on each file. This is the main
   table for the Rust and C decoders, with the scalar Wuffs build.
 - **Quiet pass 3** (7–27% load): 24 files, with Wuffs' scalar and AVX2 builds back to back on each file.
-- **Quiet pass 4** (load not checked during the run): eleven files, with the Rust harness (the fork, png 0.18, zune-png)
+- **Quiet pass 4** (load not checked during the run): ten files, with the Rust harness (the fork, png 0.18, zune-png)
   and the C harness (libpng, libspng, Wuffs AVX2) back to back on each file.
 - **Streamed-inflate runs** (7–28% load): the inflate of each file's stream alone, in fdeflate and zlib.
 - **A high-load pass** (83–99% load, other sessions running) was discarded. Its absolute times were 1.7–2.4× the quiet

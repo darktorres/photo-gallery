@@ -34,7 +34,7 @@
 //!
 //! **The inbox's own reads leave the GUI thread.** A ledger entry's list (its newest files, or its folders, with the
 //! counts read together), what Copy adds to an entry's words, and the folder a Reveal opens are read by the window's
-//! `Reader` (`pg_app::reader`, the kinds `FailedFiles`, `CopyDetails` and `RevealFolder`), which keeps only the newest
+//! `Reader` (the app's private `reader` module; kinds `FailedFiles`, `CopyDetails` and `RevealFolder`), which keeps only the newest
 //! request of each kind per session and cancels a stale one; each kind is its own, so none cancels another. Each caller
 //! asks, then goes on when its read is delivered: the list shows "loading", Copy copies, Reveal lists the folder or toasts
 //! `FileNoLongerInLibrary`. These reads are the user's, so waiting behind a listing that is running is acceptable. The rule: what the notifications added or use reads nothing on the GUI thread. The rest of the window's catalog work on that thread is left for a separate change.
@@ -89,7 +89,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use crate::pump::{Pending, lock};
+use crate::pump::Pending;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
@@ -308,39 +308,25 @@ impl qobject::Notices {
         // Subscribed before the listing is read, so a change meanwhile comes as an event.
         let events = inbox.subscribe();
         self.as_mut().show(&inbox.listing());
-        let thread = self.qt_thread();
-        let pending: Arc<Mutex<Pending<InboxChanges>>> = Arc::default();
-        let follower = std::thread::Builder::new().name("inbox view".into()).spawn(move || {
-            while let Some(event) = events.recv() {
-                let queue = {
-                    let mut pending = lock(&pending);
-                    match event {
-                        InboxEvent::Changed(listing) => pending.changes.listing = Some(listing),
-                        InboxEvent::Toast(notice) => pending.changes.toasts.push(notice),
-                    }
-                    !std::mem::replace(&mut pending.queued, true)
-                };
-                if queue {
-                    let pass = Arc::clone(&pending);
-                    // Fails only when the window is gone: the follower ends with it.
-                    if thread.queue(move |notices| notices.on_pass(pass)).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
+        // Without its thread the window isn't told the inbox's changes: the log says why.
+        let follower = crate::pump::start(
+            "inbox view",
+            self.qt_thread(),
+            move || events.recv(),
+            |changes: &mut InboxChanges, event: InboxEvent| match event {
+                InboxEvent::Changed(listing) => changes.listing = Some(listing),
+                InboxEvent::Toast(notice) => changes.toasts.push(notice),
+            },
+            |notices, pending| notices.on_pass(&pending),
+        );
         if let Err(e) = follower {
             pg_log::warn("inbox", &format!("the inbox view's follower didn't start: {e:#}"));
         }
     }
 
     /// One pass on the Qt thread: the latest listing, and the newest toast.
-    fn on_pass(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending<InboxChanges>>>) {
-        let (listing, toasts) = {
-            let mut pending = lock(&pending);
-            pending.queued = false;
-            (pending.changes.listing.take(), std::mem::take(&mut pending.changes.toasts))
-        };
+    fn on_pass(mut self: Pin<&mut Self>, pending: &Mutex<Pending<InboxChanges>>) {
+        let InboxChanges { listing, toasts } = Pending::take(pending);
         if let Some(listing) = listing {
             self.as_mut().show(&listing);
         }

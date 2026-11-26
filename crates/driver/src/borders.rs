@@ -50,31 +50,14 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
 mod tests {
     use super::*;
 
-    /// Photo-like content (blocks of hashed colours with fine noise) between black bars `bar` deep.
-    fn letterboxed(w: u32, h: u32, bar: u32) -> Vec<u8> {
-        let hash =
-            |a: u32, b: u32| (a.wrapping_mul(2_654_435_761) ^ b.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
-        let mut pixels = Vec::with_capacity(pg_model::num::index(w * h * 3));
-        for y in 0..h {
-            for x in 0..w {
-                if !(bar..h - bar).contains(&y) {
-                    pixels.extend([0, 0, 0]);
-                    continue;
-                }
-                let (block, noise) = (hash(x / 6, y / 6), hash(x, y) % 24);
-                pixels.extend([0, 8, 16].map(|s| u8::try_from(60 + (block >> s) % 150 + noise).unwrap()));
-            }
-        }
-        pixels
-    }
-
     fn frame(w: u32, h: u32, pixels: &[u8]) -> Vec<u8> {
         [&w.to_le_bytes()[..], &h.to_le_bytes(), pixels].concat()
     }
 
     #[test]
     fn piped_images_get_their_content_boxes() {
-        let input = [frame(320, 240, &letterboxed(320, 240, 40)), frame(32, 32, &[7; 32 * 32 * 3])].concat();
+        let input =
+            [frame(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40)), frame(32, 32, &[7; 32 * 32 * 3])].concat();
         let mut output = Vec::new();
         assert_eq!(serve(&input[..], &mut output).unwrap(), 2);
         let lines: Vec<Vec<u32>> = String::from_utf8(output)

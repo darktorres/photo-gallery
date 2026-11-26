@@ -52,11 +52,10 @@ impl Arg for usize {
     }
 }
 
-/// A count held as a `u64` (a catalog's): the same form as a `usize`; a count past `usize::MAX` is not a count a
-/// machine holds, so it saturates to it for the plural form.
+/// A count held as a `u64` (a catalog's, a notice's): the same form as a `usize`, through the same helper the notices use.
 impl Arg for u64 {
     fn set<'a>(&'a self, key: &'static str, a: &mut FluentArgs<'a>) {
-        a.set(key, pg_model::num::count(usize::try_from(*self).unwrap_or(usize::MAX)));
+        a.set(key, pg_model::num::size(*self));
         a.set("text", self.to_string());
     }
     #[cfg(test)]
@@ -770,6 +769,14 @@ mod tests {
             assert!(!line.is_empty(), "{} renders empty", message.id());
             assert_ne!(line, message.id(), "{} has no entry", message.id());
         }
+    }
+
+    #[test]
+    fn an_unset_value_is_worded_as_unset() {
+        // An open range end is no number: its place is empty, and the entry's text stays.
+        let dash = '\u{2013}';
+        assert_eq!(render(&Message::FilterRangeMb { from: None, to: None }), format!("{dash} MB"));
+        assert_eq!(render(&Message::FilterRangeMb { from: None, to: Some(20.0) }), format!("{dash}20 MB"));
     }
 
     #[test]

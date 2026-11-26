@@ -14,8 +14,9 @@ ffmpeg-next = { version = "9", default-features = false, features = ["codec", "f
 # Without rayon, so every decoder runs on one thread.
 jpeg-decoder = { version = "0.3", default-features = false }
 turbojpeg = { version = "1", features = ["cmake"] }
-zune-core = "0.5"
-zune-jpeg = "0.5"
+# The app's zune fork at the app's rev (the root Cargo.toml's [patch.crates-io] pins), the decoder the app uses.
+zune-core = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }
+zune-jpeg = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 gungraun = "0.20"

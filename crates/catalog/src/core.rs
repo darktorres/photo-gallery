@@ -1,6 +1,6 @@
 //! The catalog's lifecycle: `Catalog` prepared, opened and closed, its transaction `Tx` and the writers it hands out,
 //! and a walk's lease (`ScanLease`, which `Catalog::begin_scan` takes). Uses `lifecycle`, `rebuild`, `writers`,
-//! `lease`, `schema`, `transaction`, `types` and `error`. Every other concern's methods are in its own module's `impl Catalog`
+//! `lease`, `progress`, `classify`, `schema`, `transaction`, `types` and `error`. Every other concern's methods are in its own module's `impl Catalog`
 //! (`roots`, `lookup`, `work`, `borders`, `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); this calls none of
 //! them.
 
@@ -27,7 +27,7 @@ use crate::lifecycle::{
 use crate::progress::{FreeSpace, NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
 use crate::schema::{
-    Hooks, SCHEMA, SETTINGS, SchemaSet, bring_to, current_expected, current_version, expected_for, mismatch,
+    Hooks, SCHEMA, SchemaSet, apply_settings, bring_to, current_expected, current_version, expected_for, mismatch,
     version_in, version_of,
 };
 use crate::transaction::{WriteTx, write_transaction};
@@ -58,9 +58,9 @@ impl Catalog {
 
     /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
     /// to a file to close deletes its WAL; the merge keeps the file whole if the process ends before the others close.
+    /// A merge that another connection's pages kept from finishing is an error ([`Error::WalNotMerged`]).
     pub fn close(self) -> Result<()> {
-        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
-        Ok(())
+        checkpoint_truncate(&self.conn)
     }
 
     /// Move the WAL's finished pages into the file, without waiting for readers (PASSIVE). The thread that wrote the WAL
@@ -119,6 +119,18 @@ impl Catalog {
     pub fn preparing(path: &Path, versions: Versions, rules: PathRules) -> Prepare<'_> {
         Prepare { path, versions, rules, schemas: None, progress: &NO_PROGRESS, free_space: None }
     }
+}
+
+/// Merges the whole write-ahead log of `conn` into its file and empties the log (`TRUNCATE`). SQLite reports a merge that
+/// a reader's pages kept from finishing as a result row, not an error, so the row is read: a merge that did not finish is
+/// [`Error::WalNotMerged`], and the file is whole regardless (its changes stay in the log).
+pub(crate) fn checkpoint_truncate(conn: &Connection) -> Result<()> {
+    let busy: i64 = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+    if busy != 0 {
+        let path = conn.path().unwrap_or_default().to_string();
+        return Err(Error::WalNotMerged { path });
+    }
+    Ok(())
 }
 
 /// A preparation of a catalog ([`Catalog::preparing`]): the work [`Catalog::prepare`] does, with its options.
@@ -245,7 +257,7 @@ impl<'a> Prepare<'a> {
         if version == Some(0) && rebuilt.is_none() {
             conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
         }
-        conn.execute_batch(SETTINGS)?;
+        apply_settings(&conn)?;
         // What follows is one-off work over whole tables (the copy aside, a migration, its `VACUUM`, a mark's
         // recompute), which reads each page once or twice: on a small cache, so it does not fill the cache with the whole
         // file (a migration's peak commit was 438 MiB with it). `SETTINGS` restores the connection's at the end.
@@ -302,7 +314,7 @@ impl<'a> Prepare<'a> {
                 |e| Error::step(format!("catalog {}: recording the build that changed it", path.display()), e),
             )?;
         }
-        conn.execute_batch(SETTINGS)?;
+        apply_settings(&conn)?;
         conn.release_memory()?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
         // come in meanwhile, since the preparer's lock is still held).
@@ -340,7 +352,7 @@ impl Catalog {
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(db_file(path)?, flags)
             .map_err(|e| Error::step(format!("catalog {}: opening it", path.display()), e))?;
-        conn.execute_batch(SETTINGS)?;
+        apply_settings(&conn)?;
         let current = current_version()?;
         let version = pg_dbfile::user_version(&conn)?;
         // The conditions `prepare` refuses by, each with its one text (`Refusal`): this build's schema is opened as it is.
@@ -395,8 +407,8 @@ impl Catalog {
     }
 
     /// How long a statement on this connection waits for a lock another connection holds before it fails with
-    /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s (`SETTINGS`); a writer that retries on its
-    /// own, and checks for a stop between tries, sets a shorter one.
+    /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s ([`crate::schema::BUSY_TIMEOUT_MS`]); a writer
+    /// that retries on its own, and checks for a stop between tries, sets a shorter one.
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<()> {
         Ok(self.conn.busy_timeout(timeout)?)
     }
@@ -685,6 +697,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
 
     /// The one-time upgrade's log line says both versions and where the old file is kept.
     #[test]
@@ -934,6 +947,26 @@ mod tests {
             c.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| Ok((r.get(1)?, r.get(2)?))).unwrap();
         assert_eq!(done, log, "with the reader gone, every frame moves");
         drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A close with a reader holding pages of the file does not merge them all, and says so: the merge is an error, and
+    /// the changes stay in the WAL.
+    #[test]
+    fn a_close_with_a_reader_in_the_way_is_an_error_not_a_merge() {
+        let dir = pg_testkit::run_folder("scratch_catalog", "close-reader-in-the-way").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        c.set_busy_timeout(Duration::ZERO).unwrap();
+        let reader = rusqlite::Connection::open(&path).unwrap();
+        reader.execute_batch("BEGIN; SELECT count(*) FROM meta").unwrap();
+        for i in 0..200 {
+            c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'taken_zone'", [format!("zone {i}")]).unwrap();
+        }
+        let err = c.close().unwrap_err();
+        assert!(matches!(err, Error::WalNotMerged { .. }), "{err}");
+        reader.execute_batch("COMMIT").unwrap();
+        drop(reader);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

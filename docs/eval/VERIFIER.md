@@ -8,7 +8,7 @@ The verifier fix (PIL LANCZOS resampling, and the blur scaled by `ref_scale` / `
 and new figures from the same work dir: the pre-fix tree is 22ae0ff (`262004b^`), the post-fix tree is HEAD. The runs
 are in `D:\PhotoGallery\eval\archive-prefix-22ae0ff\` and `archive-postfix-262004b-HEAD\`. The pre-fix labeled run
 reproduces the recorded labeled baseline exactly. Sets: labeled (1043 pairs); cross-groups (4637 pairs, floor 0.3);
-k-NN (8,344 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
+k-NN (8,450 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
 
 | Set          | Pre-fix                                                                             | Post-fix                                                                    |
 |--------------|-------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
@@ -125,7 +125,7 @@ are therefore not the basis of the current `--max-noise`; the re-pick this secti
    the overlap) was removed 2026-11-21 (U-028): no verdict uses region size (`eval/verify.py` counts `interior_regions`
    only above a 0.0005 speck floor), and the variant measures are the moved and interior values below.
 
-Ran on all 702 labeled duplicate pairs + the 345 `similiar_but_not_dups` pairs with SSCD ≥ 0.4,
+Ran on all 702 labeled duplicate pairs (698 after the 2026-10-29 split) + the 345 `similiar_but_not_dups` pairs with SSCD ≥ 0.4,
 at 1.3 pairs/s:
 
 | Label               | → duplicate | → variant | → unrelated |
@@ -460,7 +460,7 @@ load and read 4.3–4.7 pairs/s):
   (4,632 pairs, floor 0.3): 8 false matches vs 7; the new one (groups 162 vs 572) has SSCD similarity 0.339, below
   the 0.4 k-NN floor, the rest are the known one-shoot pairs (670/671, 125/673). k-NN set (8,344 pairs): 52 decisions
   flip (0.006); duplicates 698 / 698, similar-folder 222 matches (224), unlabeled 3,000 (2,989). The gain is only ~0.09
-  on a quiet machine (labeled 169 s vs 185 s), because LightGlue and the comparison, not DISK, dominate.
+  on a quiet machine (labeled 163 s vs 179 s in the table above), because LightGlue and the comparison, not DISK, dominate.
 
 **Rotations.** New synthetic edits (`edits.py`, appended so the older edits keep their seeds): a 3–15° tilt cropped to
 the picture, and 30°, 45°, 135° and random 0–360° on an enlarged black canvas. 300 images each:

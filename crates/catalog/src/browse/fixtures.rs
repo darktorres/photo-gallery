@@ -84,7 +84,11 @@ pub(crate) fn ids(c: &crate::core::Catalog, folder: &str, recursive: bool, query
 
 /// A folder given as its path text (`""` for all folders), merged under the catalog's rules.
 pub(crate) fn folder_of(c: &crate::core::Catalog, text: &str) -> pg_model::rules::Merged {
-    let rules = c.rules();
+    merged_folder(c.rules(), text)
+}
+
+/// A folder given as its path text (`""` for all folders), merged under `rules`.
+pub(crate) fn merged_folder(rules: pg_model::rules::PathRules, text: &str) -> pg_model::rules::Merged {
     rules.merge(&rules.parse(text).unwrap())
 }
 

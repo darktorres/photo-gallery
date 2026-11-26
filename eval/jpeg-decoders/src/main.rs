@@ -25,6 +25,8 @@ fn main() -> Result<()> {
         secs = args.get(1).context("--secs wants a number")?.parse()?;
         args.drain(..2);
     }
+    // try_from keeps a negative, NaN or infinite --secs an error instead of a panic.
+    let budget = Duration::try_from_secs_f64(secs).context("--secs wants a finite, non-negative number")?;
     let files: Vec<(String, Vec<u8>)> = args
         .iter()
         .map(|p| {
@@ -34,7 +36,7 @@ fn main() -> Result<()> {
         .collect::<Result<_>>()?;
     let mut decoders = Decoders::new()?;
     match cmd.as_str() {
-        "time" => time(&mut decoders, &files, Duration::from_secs_f64(secs)),
+        "time" => time(&mut decoders, &files, budget),
         "compare" => compare(&mut decoders, &files),
         _ => bail!("unknown command {cmd}"),
     }

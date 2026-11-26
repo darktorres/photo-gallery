@@ -3,7 +3,7 @@
 
 use crate::{Error, Result};
 
-/// An empty buffer with room for `len` bytes (a size [`super::raster::decoded_size`] passed), allocated fallibly: too little
+/// An empty buffer with room for `len` bytes (a size [`crate::codecs::limits::decoded_size`] passed), allocated fallibly: too little
 /// memory is an error, not an abort.
 pub(super) fn reserved(len: usize) -> Result<Vec<u8>> {
     let mut buf = Vec::new();

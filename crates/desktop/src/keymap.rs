@@ -76,7 +76,8 @@ fn shown_of(kind: i32, has_borders: bool) -> Shown {
 }
 
 // The codes: `ViewerAction` in Viewer.qml and `PanelAction` in YandexPanel.qml list these
-// names in this order. Each action's argument is its rating (0 for the actions without one).
+// names in this order, and YandexPreview.qml switches on `PanelAction` by name. Each action's argument is its rating
+// (0 for the actions without one).
 
 /// The Yandex panels' action as its code.
 fn panel_code(action: Panel) -> i32 {

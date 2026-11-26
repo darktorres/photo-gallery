@@ -62,10 +62,19 @@ fn prepare(path: &Path, native: &NativePath, temp: &Path, bytes: &[u8], before: 
     let shown_temp = pg_platform::names::shown(temp);
     std::fs::write(temp, bytes).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
     sync(temp).map_err(|e| Error::io(format!("writing {shown_temp}"), e))?;
-    let file =
-        pg_platform::file::open_for_copy(native).map_err(|e| Error::io(format!("opening {shown} for writing"), e))?;
+    open_unchanged(native, &shown, before)
+}
+
+/// The original opened for the copy, denying other writers. Its error names the file as `shown` shows it.
+pub(crate) fn open_original(native: &NativePath, shown: &str) -> Result<File> {
+    pg_platform::file::open_for_copy(native).map_err(|e| Error::io(format!("opening {shown} for writing"), e))
+}
+
+/// [`open_original`], once the original is checked to be as it was read (`before`).
+pub(crate) fn open_unchanged(native: &NativePath, shown: &str, before: (u64, i64)) -> Result<File> {
+    let file = open_original(native, shown)?;
     let now = pg_platform::file::stat_of(&file).map_err(|e| Error::io(format!("reading {shown}"), e))?;
-    unchanged(&shown, before, now)?;
+    unchanged(shown, before, now)?;
     Ok(file)
 }
 

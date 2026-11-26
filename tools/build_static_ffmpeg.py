@@ -54,9 +54,12 @@ CONFIGURE_FLAGS = [
     "--disable-programs", "--disable-doc", "--disable-autodetect", "--disable-network",
     "--disable-avdevice", "--disable-avfilter", "--disable-everything",
     "--enable-protocol=file",
-    "--enable-demuxer=mov,matroska,avi,mpegts,image2",
-    "--enable-decoder=h264,hevc,vp9,mpeg4,mjpeg",
-    "--enable-parser=h264,hevc,vp9,mpeg4video,mjpeg",
+    # The containers of the player's scope (mp4, m4v, mov, 3gp: mov; webm, mkv: matroska; avi; wmv: asf; mpg, mpeg: mpeg),
+    # with the video and audio codecs they carry. Every audio codec the player mixes down (AAC, AC-3, E-AC-3, Opus) is here.
+    "--enable-demuxer=mov,matroska,avi,asf,mpeg,mpegts,image2",
+    "--enable-decoder=h264,hevc,vp9,vp8,mpeg4,mjpeg,mpeg1video,mpeg2video,wmv1,wmv2,wmv3,vc1,"
+    "aac,ac3,eac3,opus,vorbis,mp3float,flac",
+    "--enable-parser=h264,hevc,vp9,vp8,mpeg4video,mjpeg,mpegvideo,vc1,mpegaudio,aac,ac3,opus,vorbis",
     "--enable-swscale", "--enable-swresample",
     "--enable-d3d11va", "--enable-dxva2",
 ]  # fmt: skip
@@ -231,7 +234,9 @@ def main() -> None:
     disabled = re.findall(r"WARNING: Disabled [^\r\n]+", configure_log)
     license_line = re.search(r"License: [^\r\n]+", configure_log)
 
-    # 3. Build and install.
+    # 3. Build and install. An earlier run's staging folder would merge its files into this install, so it goes first.
+    if staged.exists():
+        shutil.rmtree(staged)
     build_sh = work / "build.sh"
     write_script(
         build_sh,
@@ -247,9 +252,12 @@ def main() -> None:
     staged_prefix = staged / "ffbuild" / "prefix"
     if not (staged_prefix / "lib").is_dir():
         sys.exit(f"install produced nothing under {staged_prefix}")
-    shutil.rmtree(prefix, ignore_errors=True)
+    # A prefix that survives the removal (its errors are not ignored, so a locked file stops here) would take the moved
+    # one inside it.
+    if prefix.exists():
+        shutil.rmtree(prefix)
     shutil.move(str(staged_prefix), str(prefix))
-    shutil.rmtree(staged, ignore_errors=True)
+    shutil.rmtree(staged)
 
     # 4. The CRT: the libraries must use the dynamic runtime (MSVCRT), never the static one (LIBCMT).
     libs = sorted((prefix / "lib").glob("*.lib"), key=lambda path: path.name)

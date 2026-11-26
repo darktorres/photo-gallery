@@ -46,8 +46,8 @@ pub struct Prefs {
     pub dev_mode: bool,
     /// Detect the borders of the files, in the background (on by default). Off: the pass waits; what it found stays.
     pub detect_borders: bool,
-    /// Detect the duplicates (on by default): the import hashes the files, and the pairing pass pairs them. Off: the
-    /// import leaves the hashes out (the Hashes pass makes them when it is back on), and the pairing waits.
+    /// Detect the duplicates (on by default): the Hashes pass hashes the files, and the pairing pass pairs them. Off: the
+    /// hashes are left out (the Hashes pass makes them when it is back on), and the pairing waits.
     pub detect_duplicates: bool,
     /// Keep the grid's thumbnails in the thumbnail cache (on by default). Off: nothing is kept or read from it, so every
     /// thumbnail is decoded from its original each time it is shown, the background thumbnail pass waits, and the

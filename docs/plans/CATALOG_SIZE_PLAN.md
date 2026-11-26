@@ -481,7 +481,8 @@ phase, then compile once. Never open the live catalog with a development build: 
 never changed; scratch databases deleted; 2026-11-19, schema v20):**
 
 - Earlier in-place design end to end (foreign keys on, real triggers and views): `integrity_check` ok, `foreign_key_check` 0,
-  sequences unchanged, 285.1 MiB after `VACUUM`; old and new order identical over all 715,051 files (0 rank mismatches, 0 name
+  sequences unchanged, 285.1 MiB file size after `VACUUM` (the table's dbstat figure for the same layout is 284.8 MiB);
+  old and new order identical over all 715,051 files (0 rank mismatches, 0 name
   ties); the key format of the time `folder key 00 lower 00 exact` confirmed, Rust lowercase == Python per-char `lower()` for
   all names (4,558 non-ASCII); reads as fast or faster (full ordered read 0.15 s both, DESC 0.17 -> 0.11 s, scope count
   0.15 -> 0.055 s, 502,858-file scope 92 -> 54 ms). Plain `VACUUM` of that layout: 428.3 MiB.

@@ -13,18 +13,13 @@ fn float(n: usize) -> f64 {
     f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
-/// A float rounded to whole units (the tests' own conversion, through its decimal text).
-fn whole(x: f64) -> u64 {
-    format!("{:.0}", x.max(0.0)).parse().unwrap_or(0)
-}
-
 /// A read-bound window of 3 s reading `mb_s` MB/s, 20 reads of `latency_ms` each.
 fn window(mb_s: f64, latency_ms: f64) -> Sample {
     Sample {
         elapsed: Duration::from_secs(3),
         reads: 20,
-        bytes: whole(mb_s * 3e6),
-        disk_ns: whole(latency_ms * 20e6),
+        bytes: pg_testkit::whole_units(mb_s * 3e6),
+        disk_ns: pg_testkit::whole_units(latency_ms * 20e6),
         work_wait_ns: 6_000_000_000,
         workers: 4,
         active_readers: 2.0,

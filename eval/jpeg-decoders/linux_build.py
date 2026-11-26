@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The CPU side of the JPEG decoder comparison, on Linux (it was wsl-build.sh): the decoders and encoders under PG_JPEG_EVAL
+"""The CPU side of the JPEG decoder comparison, on Linux: the decoders and encoders under PG_JPEG_EVAL
 (default ~/jpeg-eval), and the harness (harness/) with libjpeg-turbo, parajpeg, jpegli and Wuffs. Usage, from the
 repository: `just linux-eval eval/jpeg-decoders/linux_build.py [STEP...]` (the container, whose pg-eval volume keeps the
 builds), or natively:
@@ -42,6 +42,12 @@ def run_logged(command: list[str], log: Path, cwd: Path | None = None) -> None:
         raise BuildError("\n".join(lines[-30:]))
 
 
+def error_lines(log: Path) -> str:
+    """The error lines of a failed build's log (the compiler's, CMake's and make's), 20 at most."""
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join([line for line in lines if "error" in line or "FAILED" in line][:20])
+
+
 def ensure_ninja() -> None:
     if shutil.which("ninja") is None:
         sys.exit("ninja is missing: install ninja-build (docker/apt-packages-eval.txt), or run in the container")
@@ -66,10 +72,7 @@ def build(name: str, *targets: str) -> None:
     try:
         run_logged(["cmake", "--build", str(E / "build" / name), "-j", JOBS, "--target", *targets], log)
     except BuildError:
-        errors = [
-            line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if "error" in line or "FAILED" in line
-        ]
-        raise BuildError("\n".join(errors[:20])) from None
+        raise BuildError(error_lines(log)) from None
 
 
 def install(source: Path, destination: Path) -> None:
@@ -118,9 +121,7 @@ def build_guetzli() -> None:
             ["make", "-C", str(E / "src" / "guetzli"), "-j", JOBS, "config=release", "guetzli"], E / "build" / "guetzli.build.log"
         )
     except BuildError:
-        log = E / "build" / "guetzli.build.log"
-        errors = [line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if "error" in line]
-        raise BuildError("\n".join(errors[:20])) from None
+        raise BuildError(error_lines(E / "build" / "guetzli.build.log")) from None
     install(E / "src" / "guetzli" / "bin" / "Release" / "guetzli", E / "bin" / "guetzli")
 
 

@@ -124,7 +124,7 @@ fn counted(hooks: &TestHooks) -> Arc<AtomicUsize> {
 fn hide_window_for_100k_files() -> Result<()> {
     let base = match std::env::var_os(pg_testkit::inputs::OTHER_VOLUME) {
         Some(other) => PathBuf::from(other),
-        None => pg_testkit::run_folder("scratch_library", "hide_100k")?,
+        None => pg_testkit::run_folder("scratch_library", "hide-100k")?,
     };
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
     let dir = base.join(format!("pg-hide-100k-{}-{stamp}", std::process::id()));

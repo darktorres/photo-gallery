@@ -19,8 +19,6 @@ use pg_model::progress::Phase;
 #[cfg(feature = "fault")]
 pub mod fault;
 
-const BATCH: usize = pg_catalog::WRITE_BATCH;
-
 /// What the borders pass couldn't do: the detector failed on a file, the catalog failed, the pipeline failed, or the
 /// pass's own list didn't hold the item it was asked for.
 #[derive(Debug, thiserror::Error)]
@@ -190,7 +188,7 @@ pub fn find_while(
                 .borders(bytes, item.turns)
                 .map_err(|e| ItemError::File(Failed::new(Class::Data, Error::Analysis(e))))
         },
-        Batch { size: BATCH, every: None },
+        Batch { size: pg_catalog::WRITE_BATCH, every: None },
         (catalog, stats),
         |(catalog, stats), batch| flush(catalog, batch, stats).map(|()| still_wanted()),
     );

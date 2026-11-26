@@ -8,6 +8,9 @@ pub const MAX_ZOOM: f64 = 32.0;
 /// How far a zoom may be from fitting the picture, relative to the fit zoom (`fitted`), as a fraction of it.
 const FIT_TOLERANCE: f64 = 0.0001;
 
+/// How far the fit zoom may be from 1:1 (an absolute zoom) before Real Size shows the picture at 1:1, not fitted.
+const REAL_SIZE_TOLERANCE: f64 = 0.0001;
+
 /// The zoom at which a picture is shown at its own size (1:1), short of rounding: `pixels()` takes it so.
 const ONE_TO_ONE: f64 = 0.9999;
 
@@ -44,7 +47,8 @@ pub struct View {
     pub ox: f64,
     /// The vertical offset of the view, in logical pixels.
     pub oy: f64,
-    /// At the fit zoom (it follows window resizes): above 1 for an image smaller than the window, which is enlarged.
+    /// Whether the zoom is the fit zoom (it follows window resizes). The fit zoom is above 1 for an image smaller than the
+    /// window, which is enlarged to fill it.
     pub fitted: bool,
 }
 
@@ -126,7 +130,8 @@ impl View {
         self.still = still;
     }
 
-    /// A new image of this size. Returns whether the view was reset (it is, when fitted and the size changed).
+    /// A new image of this size. Returns whether the view was reset (it is, when fitted and the size changed). A zoomed
+    /// view keeps its place and is clamped to the new size, so its offsets stay on screen.
     pub fn set_media(&mut self, fw: f64, fh: f64, real_size: bool) -> bool {
         let resized = fw != self.fw || fh != self.fh;
         self.fw = fw;
@@ -135,6 +140,9 @@ impl View {
             self.reset(real_size);
             true
         } else {
+            if resized {
+                self.clamp();
+            }
             false
         }
     }
@@ -186,7 +194,7 @@ impl View {
 
     /// Show the image fitted, or at 1:1 in Real Size mode (when that differs from the fit).
     pub fn reset(&mut self, real_size: bool) {
-        self.fitted = !(real_size && self.zoomable() && (self.fit_zoom() - 1.0).abs() > FIT_TOLERANCE);
+        self.fitted = !(real_size && self.zoomable() && (self.fit_zoom() - 1.0).abs() > REAL_SIZE_TOLERANCE);
         self.zoom = if self.fitted { self.fit_zoom() } else { 1.0 };
         self.ox = (self.width - self.dw()) / 2.0;
         self.oy = (self.height - self.dh()) / 2.0;

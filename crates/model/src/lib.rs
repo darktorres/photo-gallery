@@ -15,6 +15,8 @@
 //!   failures of a ledger (`ledger`), the filter bar's counts (`facets`), a removal's outcome (`removal`), a job's
 //!   events and causes (`job`), a write's error (`write`), the thumbnail cache's size limit (`cache`), and
 //!   the reader counts the lanes learned per disk (`profile`).
+//! - The settings and limits every crate shares: the background features the owner can switch off (`features`), the
+//!   grid's and the thumbnail cache's size values (`size`), and the versions of the persisted artifacts (`versions`).
 
 // no_std: the model reads no clock, thread, file, socket, process or environment, by construction. The `specta` feature
 // (the web client's TypeScript types) needs std: its derive expands to `::std` paths.

@@ -21,7 +21,7 @@ def main() -> None:
     failed = False
     for crate, _ in library_packages():
         result = subprocess.run(
-            ["cargo", "rustc", "-p", crate, "--lib", "--profile", "check", "--", "-W", "unreachable_pub"],
+            ["cargo", "rustc", "-p", crate, "--lib", "--profile", "dev", "--", "-W", "unreachable_pub"],
             cwd=REPO,
             capture_output=True,
             text=True,

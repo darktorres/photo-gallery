@@ -1,7 +1,7 @@
 // Async image providers: each request becomes a job on a thread pool, which calls Rust's load_image and hands
 // the QImage back to the response on the GUI thread.
 //
-// Newest requests run first (LIFO by priority): while scrolling, the thumbnails now on screen are made before
+// Newest requests run first (LIFO): while scrolling, the thumbnails now on screen are made before
 // the ones that already scrolled past, and a request whose Image went away is dropped before it starts.
 
 #include "providers.h"
@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "pg-desktop/src/bridges/providers_bridge.cxx.h"
 
@@ -119,6 +120,19 @@ private:
     std::shared_ptr<Link> m_link;
 };
 
+class Provider;
+
+// One is queued on the pool for each request. When it runs, it takes the newest job that has not started yet, so the
+// jobs start newest first. The pool orders these runnables all alike, so it needs no priority number, and none can wrap.
+class Pump : public QRunnable {
+public:
+    explicit Pump(Provider* provider) : m_provider(provider) {}
+    void run() override;
+
+private:
+    Provider* m_provider;
+};
+
 class Provider : public QQuickAsyncImageProvider {
 public:
     explicit Provider(ImageKind kind) : m_kind(kind) {
@@ -138,16 +152,34 @@ public:
     QQuickImageResponse* requestImageResponse(const QString& id, const QSize&) override {
         auto link = std::make_shared<Link>();
         auto* response = new Response(link);
-        m_pool.start(new Job(m_kind, id, link), m_priority.fetch_add(1));
+        {
+            QMutexLocker lock(&m_mutex);
+            m_waiting.push_back(std::make_unique<Job>(m_kind, id, link));
+        }
+        m_pool.start(new Pump(this));
         return response;
+    }
+
+    // The newest job that has not started, or none when they have all started.
+    std::unique_ptr<Job> take_newest() {
+        QMutexLocker lock(&m_mutex);
+        if (m_waiting.empty()) return nullptr;
+        std::unique_ptr<Job> job = std::move(m_waiting.back());
+        m_waiting.pop_back();
+        return job;
     }
 
 private:
     ImageKind m_kind;
     QThreadPool m_pool;
-    // Rising priority = last in, first out. Wraps after 2^31 requests, harmlessly.
-    std::atomic<int> m_priority{0};
+    QMutex m_mutex;
+    // The requests not yet started, oldest first.
+    std::vector<std::unique_ptr<Job>> m_waiting;
 };
+
+void Pump::run() {
+    if (std::unique_ptr<Job> job = m_provider->take_newest()) job->run();
+}
 
 }  // namespace
 

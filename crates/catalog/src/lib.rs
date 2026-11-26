@@ -64,7 +64,8 @@ pub use types::{
     Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Versions, VolumeSet, WorkItem, WriteTarget,
 };
 pub use work::{CandidateRead, ThumbCandidate};
-// The writers are reached through `Tx`'s accessors, which name them in their signatures; no other crate names one.
+// The writers are reached through `Tx`'s accessors, which name them in their signatures. Two of their argument types are
+// re-exported because callers outside the crate build them (the import's hashes and pairs passes).
 pub use writers::{OwedHashes, PairsBatch};
 
 #[cfg(test)]

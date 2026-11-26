@@ -314,7 +314,11 @@ pub fn duration(secs: f64) -> String {
     render(&match s {
         0..60 => Message::EtaSeconds { seconds: s.to_string() },
         60..3600 => Message::EtaMinutes { minutes: s.div_ceil(60).to_string() },
-        _ => Message::EtaHours { hours: (s / 3600).to_string(), minutes: (s % 3600 / 60).to_string() },
+        _ => {
+            // Rounded up, as the minutes branch rounds them: the hours and the minutes come from one count.
+            let minutes = s.div_ceil(60);
+            Message::EtaHours { hours: (minutes / 60).to_string(), minutes: (minutes % 60).to_string() }
+        }
     })
 }
 
@@ -860,7 +864,7 @@ mod tests {
         use pg_client::keys::{self, Media, Shown};
         assert_eq!(
             hint(&keys::grid_hint()),
-            "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
+            "Click to select · double-click, Enter or Space to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
              B borders · N not a border · Ctrl+wheel or Ctrl+/− resize"
         );
         let still = Shown { has_borders: false, still: true, video: false };

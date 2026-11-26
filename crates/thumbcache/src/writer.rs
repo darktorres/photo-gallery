@@ -486,8 +486,6 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<ThumbHeight>) -> Res
     Ok(freed)
 }
 
-/// Drop the entry of `file_id` at `height`, and that height's watermark (`checked`), as an eviction does
-/// ([`crate::ThumbCache::forget_height`]). The entry's JPEG goes with it (the trigger on `entries`).
 /// Files per transaction of [`Op::ForgetMany`]: a file's thumbnails are a few JPEGs, so a chunk is a short write.
 pub(crate) const FORGET_CHUNK: usize = 256;
 
@@ -506,6 +504,8 @@ fn forget_many_entries(conn: &mut Connection, file_ids: &[FileId]) -> Result<()>
     Ok(())
 }
 
+/// Drop the entry of `file_id` at `height`, and that height's watermark (`checked`), as an eviction does
+/// ([`crate::ThumbCache::forget_height`]). The entry's JPEG goes with it (the trigger on `entries`).
 fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: ThumbHeight) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height.get()])?;

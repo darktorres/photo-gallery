@@ -172,7 +172,7 @@ its thumbnail cache (189,518 thumbnails at 220 px, 2 GB), release build, timesta
 | The job's `pending()`, holding the cache mutex the thumbnails need  | 1.7 s      | 1.6 s     | no, but it blocks them     |
 
   Note 2026-11-06: the names in this section have since changed. `state::init` is not in the tree, and the cache file is
-  `thumbs.sqlite` (`crates/thumbcache/src/lib.rs:130`), not `thumbs-v3.sqlite`. The measurements stand as recorded.
+  `thumbs.sqlite` (`crates/library/src/layout.rs:88`, `Layout::thumbs_path`), not `thumbs-v3.sqlite`. The measurements stand as recorded.
 
 - **The cache's layout made every metadata scan read the JPEGs' pages.** `thumbs` was one rowid table with each
   ~10.5 KB JPEG inline as its last column, so each row's start (with `bytes`, `mtime`, `last_used`) sat on its own

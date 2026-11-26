@@ -27,8 +27,8 @@ impl Format {
             [0x89, b'P', b'N', b'G', ..] => Format::Png,
             [b'G', b'I', b'F', b'8', ..] => Format::Gif,
             [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Format::Webp,
-            [b'B', b'M', ..] => Format::Bmp,
             [b'I', b'I', 0x2A, 0x00, ..] | [b'M', b'M', 0x00, 0x2A, ..] => Format::Tiff,
+            _ if is_bmp(bytes) => Format::Bmp,
             _ if is_bigtiff(bytes) => Format::Tiff,
             _ => return None,
         })
@@ -76,6 +76,18 @@ impl Format {
     }
 }
 
+/// Whether a BMP's header is one: `BM`, the file size, two reserved words that are zero, the pixel offset, then the size
+/// of the header after it, which names the variant (OS/2's 12, or Windows' 40 and the later ones). Two letters alone open
+/// many other files, so they are not enough.
+fn is_bmp(bytes: &[u8]) -> bool {
+    match bytes {
+        [b'B', b'M', _, _, _, _, 0, 0, 0, 0, _, _, _, _, a, b, c, d, ..] => {
+            matches!(u32::from_le_bytes([*a, *b, *c, *d]), 12 | 16 | 40 | 52 | 56 | 64 | 108 | 124)
+        }
+        _ => false,
+    }
+}
+
 /// Whether a TIFF's header is a BigTIFF's: 43 after the byte order, where a classic TIFF has 42, then 8 (the offset
 /// size) and 0.
 pub fn is_bigtiff(bytes: &[u8]) -> bool {
@@ -94,7 +106,7 @@ pub fn can_hold_rating(format: Format) -> bool {
 /// Whether a file of `kind` and analyzed `format` (`None` when it isn't analyzed yet) may hold a rating of its own: an
 /// image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold one
 /// ([`can_hold_rating`]) or isn't known yet. The writer decides for an unknown format once it has read the file
-/// (`pg_writeback`).
+/// (`pg-writeback`).
 pub fn rating_in_file_possible(kind: crate::media::Kind, format: Option<Format>) -> bool {
     kind == crate::media::Kind::Image && format.is_none_or(can_hold_rating)
 }
@@ -105,6 +117,15 @@ mod tests {
     use strum::IntoEnumIterator;
 
     use super::*;
+
+    #[test]
+    fn sniffs_bmp_by_its_header_not_its_first_two_bytes() {
+        // "BM", the file size, zero reserved words, the pixel offset (54), then a 40-byte header.
+        let header = b"BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00\x28\x00\x00\x00";
+        assert_eq!(Format::sniff(header), Some(Format::Bmp));
+        assert_eq!(Format::sniff(b"BMhello, this is a text file"), None);
+        assert_eq!(Format::sniff(b"BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00\x29\x00\x00\x00"), None);
+    }
 
     #[test]
     fn sniffs_classic_tiff_and_bigtiff() {

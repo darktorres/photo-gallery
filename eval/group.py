@@ -27,7 +27,6 @@ import csv
 import heapq
 import json
 from collections import Counter, defaultdict, deque
-from itertools import combinations
 
 import numpy as np
 
@@ -129,13 +128,19 @@ def score(groups: list[list[str]], files: list[str]) -> dict:
     folder_of = {files[i]: g for g, members in enumerate(gt.groups) for i in members}
     group_of = {p: g for g, members in enumerate(groups) for p in members}
 
-    tp = fp = fn = 0
-    for a, b in combinations(list(folder_of), 2):
-        same_true = folder_of[a] == folder_of[b]
-        same_pred = a in group_of and group_of.get(a) == group_of.get(b)
-        tp += same_true and same_pred
-        fp += same_pred and not same_true
-        fn += same_true and not same_pred
+    # Pairs counted from the sizes of the groups and folders, not by visiting every pair of labeled images: a pair is
+    # predicted together when both images sit in one group, true together when both sit in one folder.
+    def pair_count(n: int) -> int:
+        return n * (n - 1) // 2
+
+    both = Counter((group_of[p], folder_of[p]) for p in folder_of if p in group_of)
+    in_group: Counter = Counter()
+    for (g, _), c in both.items():
+        in_group[g] += c
+    in_folder = Counter(folder_of.values())
+    tp = sum(pair_count(c) for c in both.values())
+    fp = sum(pair_count(c) for c in in_group.values()) - tp
+    fn = sum(pair_count(c) for c in in_folder.values()) - tp
 
     # Labeled folder -> number of predicted groups (or singletons) its images end up in.
     spread = [len({group_of.get(files[i], files[i]) for i in members}) for members in gt.groups]

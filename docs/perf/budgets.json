@@ -27,7 +27,7 @@
     },
     "pending_thumbs": {
       "max": 0.18,
-      "why": "the pass's ATTACH parses the catalog's schema, which versions 8 and 9 grew by their tables, indexes and triggers: a fixed cost per pass, not per file"
+      "why": "the pass's ATTACH parses the catalog's schema, which the notifications work grew by its tables, indexes and triggers: a fixed cost per pass, not per file"
     }
   }
 }

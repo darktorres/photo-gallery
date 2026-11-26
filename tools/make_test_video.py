@@ -1,5 +1,5 @@
 """The video reader's test input (crates/video/tests/sample.mp4): a short synthetic clip, made by the FFmpeg on PATH (or
-FFMPEG, when set).
+PG_FFMPEG, when set).
 
     python tools/make_test_video.py crates/video/tests/sample.mp4
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("out", type=Path)
     args = parser.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)

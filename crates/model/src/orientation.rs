@@ -94,16 +94,18 @@ impl Orientation {
     /// The stored pixel of a `w` × `h` stored picture that is shown at (`x`, `y`) of the upright picture: the inverse
     /// of [`Orientation::shown_pixel`], which the decoder reads its pixels by.
     pub fn source_pixel(self, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
-        match self.0 {
-            2 => (w - 1 - x, y),
-            3 => (w - 1 - x, h - 1 - y),
-            4 => (x, h - 1 - y),
-            5 => (y, x),
-            6 => (y, h - 1 - x),
-            7 => (w - 1 - y, h - 1 - x),
-            8 => (w - 1 - y, x),
-            _ => (x, y),
-        }
+        let (upright_w, upright_h) = if self.swaps_axes() { (h, w) } else { (w, h) };
+        shown(self.inverse(), (x, y), (upright_w, upright_h), 1)
+    }
+
+    /// The orientation that undoes this one: a map of the upright picture back to the stored one. The mirrors, the
+    /// half turn and the two diagonal flips are their own inverses; the quarter turns are each other's.
+    fn inverse(self) -> Orientation {
+        Orientation(match self.0 {
+            6 => 8,
+            8 => 6,
+            tag => tag,
+        })
     }
 
     /// Where the point (`u`, `v`), as fractions of the stored picture's width and height, is shown.
@@ -131,16 +133,17 @@ fn shown<T>(o: Orientation, (x, y): (T, T), (w, h): (T, T), last: T) -> (T, T)
 where
     T: Copy + Sub<Output = T>,
 {
-    match o.0 {
-        2 => ((w - last) - x, y),
-        3 => ((w - last) - x, (h - last) - y),
-        4 => (x, (h - last) - y),
-        5 => (y, x),
-        6 => ((h - last) - y, x),
-        7 => ((h - last) - y, (w - last) - x),
-        8 => (y, (w - last) - x),
-        _ => (x, y),
+    // The mirror first, then the quarter turns, as `parts` gives them: the one table of the orientations.
+    let (mirrored, turns) = o.parts();
+    let (mut x, mut y) = if mirrored { ((w - last) - x, y) } else { (x, y) };
+    let (mut w, mut h) = (w, h);
+    for _ in 0..turns.get() {
+        // A clockwise quarter turn of a `w` × `h` picture: the point's row from the bottom becomes its column, and the
+        // picture is `h` × `w` after it.
+        (x, y) = ((h - last) - y, x);
+        (w, h) = (h, w);
     }
+    (x, y)
 }
 
 #[cfg(test)]

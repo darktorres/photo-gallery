@@ -293,7 +293,7 @@ mod tests {
         let found = accepted(&d);
         assert_eq!(found.len(), 2, "{:?}", d.sides);
         // The seam is found where the detail below the row jumps, which a few lines of content already make; the
-        // exact depth is pinned by the parity check against borders.py, not here.
+        // test accepts a range of depths rather than one row.
         assert!(found.iter().all(|&(_, k, depth)| k == Kind::Blur && (100..=113).contains(&depth)), "{found:?}");
         assert_eq!(found[0].2, found[1].2);
     }
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn nested_borders_peel_off() {
         // Black letterbox bars, and inside them a white frame around the content. Above and below, the run of
-        // border lines bridges the colour change (as borders.py's run_length does): one side each.
+        // border lines bridges the colour change (a run of lines, not one line, bridges it): one side each.
         let (w, h) = (400, 400);
         let mut img = content(w, h, 9);
         fill(&mut img, 0, 0, w, h, |x, y| {

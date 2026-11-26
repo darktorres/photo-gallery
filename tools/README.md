@@ -1,8 +1,9 @@
 # The repository's tools
 
-Every script here is Python (standard library, except where a row says otherwise; `gen_player_media.sh` is the one
-POSIX sh script, run with Git Bash on Windows), and runs the same way on Windows and
-Linux unless its row says Windows only. The Justfile calls most of them through `{{ py }}` (`PG_PYTHON` in `.env`, else
+Every script here is Python (standard library, except where a row says otherwise), with two exceptions:
+`gen_player_media.sh` is the one POSIX sh script, run with Git Bash on Windows, and the sweeps in `profiling/pairing/`
+are PowerShell (`*.ps1`, listed under the profiling folder below). The Python scripts run the same way on Windows and
+Linux unless their row says Windows only. The Justfile calls most of them through `{{ py }}` (`PG_PYTHON` in `.env`, else
 `python` on Windows and `python3` elsewhere); `just --list` names the recipes. Run a script with `--help` to see its
 arguments, where it has any.
 
@@ -74,6 +75,8 @@ tests (`just test-eval`).
 - `crate-layers.txt`: each crate's allowed normal dependencies on the workspace's crates, bottom layer first
   (`boundaries.py`).
 - `profiling/`, `modgraph/`: as in the table.
+- `profiling/pairing/*.ps1` (`sweep.ps1`, `few_sweep.ps1`, `peak_mem.ps1`, `keep.ps1`, `oracle.ps1`, `cpu_load.ps1`): the
+  PowerShell measurement scripts of the pairing pass, run on Windows by hand (`docs/reference/PROFILING.md`, "Pairing pass").
 
 ## PowerShell originals
 

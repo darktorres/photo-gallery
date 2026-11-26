@@ -2,7 +2,7 @@
 """Restart markers and progressive -> baseline, both lossless (jpegtran),
 on the 7 decoder inputs: size, pixel identity (djpeg, full and 1/2), and libjpeg-turbo's cost
 (the vendored 3.1, through the eval harness): callgrind instructions per decode (3 decodes minus 1, halved) and wall ms per
-decode (best of 3 runs of N decodes). It was restart.sh. Run after `linux.py inputs` and `linux.py time`
+decode (best of 3 runs of N decodes). Run after `linux.py inputs` and `linux.py time`
 (which copy the inputs and build the decoder binary), in the container (`just linux-eval eval/jpeg-decoders/restart.py`) or
 natively:
     python3 eval/jpeg-decoders/restart.py      (natively, needs libjpeg-turbo-progs, for jpegtran and djpeg)

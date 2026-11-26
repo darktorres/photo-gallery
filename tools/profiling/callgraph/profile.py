@@ -68,7 +68,12 @@ def main() -> None:
         groups.setdefault(re.sub(r"-\d+$", "", path.name), []).append(path)
     # The group whose first file is the latest (Group-Object's order, then the last of its groups).
     newest = list(groups.values())[-1] if groups else []
-    subprocess.run([sys.executable, str(HERE / "symbolize.py"), "--path", f"{qt}/bin", *[str(p) for p in newest]], check=False)
+    symbolized = subprocess.run(
+        [sys.executable, str(HERE / "symbolize.py"), "--path", f"{qt}/bin", *[str(p) for p in newest]], check=False
+    )
+    # A failed Pin run or symbolize is the script's failure too: the profile may be partial or unnamed.
+    if result.returncode or symbolized.returncode:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

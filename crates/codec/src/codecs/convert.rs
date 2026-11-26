@@ -144,7 +144,8 @@ fn flatten<const CH: usize>(v: [u8; CH]) -> [u8; 3] {
 }
 
 /// The decoders give at least the size the image takes: less is a decoder's bug. `image` would panic where the lengths
-/// differ at its `copy_from_slice` (tiff.rs:417–444), or leave pixels unwritten (tiff.rs:396, 402, 410). A longer
+/// differ at the `copy_from_slice` in `image` 0.25's TIFF decoder, or leave pixels unwritten (its `write_all` and
+/// `chunks_exact` writes). A longer
 /// buffer is read only up to that size, by the chunks and zips that consume it. The sites stay errors: a panic would
 /// end a worker.
 pub(super) fn check_len(len: usize, expected: usize) -> ImageResult<()> {

@@ -120,13 +120,22 @@ ToolBar {
                 }
             }
             Timer {
+                id: toastTimer
                 objectName: "toastTimer"
                 interval: 6000
                 running: bar.toast.length > 0 && bar.toastLevel === 0 && !bar.toastHeld
                 onTriggered: bar.toastExpired()
             }
+            // A new info toast replaces the shown one while the timer runs: it goes by its own interval, not the old one's.
+            Connections {
+                target: bar
+                function onToastChanged() {
+                    if (bar.toast.length > 0 && bar.toastLevel === 0 && !bar.toastHeld)
+                        toastTimer.restart();
+                }
+            }
             Button {
-                text: words.phrase("ui-inbox", bar.unread, "" + bar.unread, "")
+                text: words.phrase("ui-inbox", bar.unread, words.count(bar.unread), "")
                 Accessible.name: text
                 flat: true
                 highlighted: bar.unread > 0

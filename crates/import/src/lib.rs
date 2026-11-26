@@ -14,16 +14,17 @@ pub mod hashes;
 pub mod pairs;
 
 use pg_analysis::analyze::Analyzer;
-use pg_catalog::{Catalog, WorkItem};
+use pg_catalog::{Catalog, Tx, WorkItem};
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
+use pg_model::num::count_u64;
+use pg_model::path::{FilePath, WorkList};
+use std::path::PathBuf;
 
 use pg_jobs::control::Control;
 use pg_jobs::failure::{Class, Failed};
 use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::progress::Phase;
-
-const BATCH: usize = pg_catalog::WRITE_BATCH;
 
 /// What the import couldn't do: the analysis of a file failed, the catalog failed, the pipeline failed, or the pass's own
 /// list didn't hold the item it was asked for.
@@ -61,7 +62,7 @@ impl From<Error> for Failed {
 }
 
 /// The admission a JPEG takes before it is read: its header's first block (`pg_container::jpeg_import_bytes` reads 16 KiB,
-/// then on to the header's end; the median header of a wallpaper set is under 1 KiB, the 99th percentile under 100). A
+/// then on to the header's end; the median header of a wallpaper set is under 1 KiB, the 99th percentile under 100 KiB). A
 /// JPEG no longer than this is read whole.
 const JPEG_HINT: usize = 16 << 10;
 
@@ -128,7 +129,7 @@ pub fn import_while(
     }
 
     // The phase ends when this is dropped, however the pass leaves.
-    let _phase = ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    let _phase = ctl.begin(Phase::Import, count_u64(items.len()));
 
     let (state, result) = pipeline::batched(
         pipeline::Pass { items, opts, ctl },
@@ -156,15 +157,13 @@ pub fn import_while(
             // pipeline's passes (section 10, D4).
             let refused = |e| ItemError::File(Failed::new(Class::Data, Error::Analysis(e)));
             if item.kind == Kind::Video {
-                // FFmpeg opens the file by its disk path: the plain one would lose a trailing dot or space in a folder's
-                // name, and open a sibling's file.
-                let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
+                let disk = video_disk_path(&work, item.path, sep);
                 analyzer.video(&disk, item.turns).map_err(refused)
             } else {
                 analyzer.analyze(bytes, item.turns).map_err(refused)
             }
         },
-        Batch { size: BATCH, every: None },
+        Batch { size: pg_catalog::WRITE_BATCH, every: None },
         (catalog, Counts::default()),
         |(catalog, counts), batch| store(catalog, counts, batch, ctl).map(|()| still_wanted()),
     );
@@ -173,8 +172,8 @@ pub fn import_while(
     stats.files = counts.files;
     stats.failed = counts.failed;
     stats.changed = counts.changed;
-    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
-    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    pass.items(count_u64(stats.files));
+    pass.failed(count_u64(stats.failed));
     pass.field("pending", stats.pending);
     pass.field("changed", stats.changed);
     pass.attach_since(&STORE, stored_at);
@@ -202,44 +201,61 @@ fn store(
     ctl: &Control,
 ) -> Result<()> {
     let mut store = STORE.timer();
-    store.items(u64::try_from(batch.len()).unwrap_or(u64::MAX));
-    let tx = catalog.tx()?;
-    let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
-    for (item, result) in batch.drain(..) {
-        let result = match result {
-            Ok(a) => Ok(a),
-            Err(ItemError::File(failed)) => Err(failed),
-            // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
-            Err(ItemError::Pass(e)) => return Err(e),
-        };
-        match result {
-            Ok(a) => {
-                if !writer.store_analysis(item, &a)? {
+    store.items(count_u64(batch.len()));
+    in_batch_tx(catalog, ctl, |tx| {
+        let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
+        for (item, result) in batch.drain(..) {
+            let result = match result {
+                Ok(a) => Ok(a),
+                Err(ItemError::File(failed)) => Err(failed),
+                // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
+                Err(ItemError::Pass(e)) => return Err(e),
+            };
+            match result {
+                Ok(a) => {
+                    if !writer.store_analysis(item, &a)? {
+                        counts.changed += 1;
+                        continue;
+                    }
+                }
+                // Changed while it was read whole (section 7): its bytes are no version of the file, so nothing is stored,
+                // and the file stays pending (its next scan sees the new size and time as well).
+                Err(e) if e.is_changed() => {
                     counts.changed += 1;
                     continue;
                 }
-            }
-            // Changed while it was read whole (section 7): its bytes are no version of the file, so nothing is stored, and
-            // the file stays pending (its next scan sees the new size and time as well).
-            Err(e) if e.is_changed() => {
-                counts.changed += 1;
-                continue;
-            }
-            Err(e) => {
-                if !writer.store_failure(item, e.text())? {
-                    counts.changed += 1;
-                    continue;
+                Err(e) => {
+                    if !writer.store_failure(item, e.text())? {
+                        counts.changed += 1;
+                        continue;
+                    }
+                    counts.failed += 1;
                 }
-                counts.failed += 1;
             }
+            counts.files += 1;
         }
-        counts.files += 1;
-    }
-    drop(writer);
+        Ok(())
+    })
+}
+
+/// The disk path a video of `work` is opened by, for the analysis and the hash alike. FFmpeg opens the file by its disk
+/// path: the plain one would lose a trailing dot or space in a folder's name, and open a sibling's file.
+pub(crate) fn video_disk_path(work: &WorkList<WorkItem>, path: FilePath, sep: u8) -> PathBuf {
+    pg_platform::names::disk_path_of(&work.path(path, sep))
+}
+
+/// Runs `store` in one write transaction, which commits once `store` returns Ok (a `store` that fails commits nothing),
+/// then tells the failure ledger it may have moved. The import's failure ledger is kept by the catalog's triggers on the
+/// analyses, whose changes don't show in a statement's count: every batch committed may have moved it, so whoever shows
+/// it reads it again (cheap, and the reads coalesce). Shared by the import and the hashes passes.
+pub(crate) fn in_batch_tx<T>(
+    catalog: &mut Catalog,
+    ctl: &Control,
+    store: impl FnOnce(&Tx<'_>) -> Result<T>,
+) -> Result<T> {
+    let tx = catalog.tx()?;
+    let out = store(&tx)?;
     tx.commit()?;
-    // The import's failure ledger is kept by the catalog's triggers on the analyses, whose changes don't show in a
-    // statement's count: every batch committed may have moved it, so whoever shows it reads it again (cheap, and
-    // the reads coalesce).
     ctl.ledger_changed();
-    Ok(())
+    Ok(out)
 }

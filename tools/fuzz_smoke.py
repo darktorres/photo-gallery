@@ -46,8 +46,12 @@ def main() -> None:
     for target in targets:
         print(f"== {target}: {seconds}s", flush=True)
         if run(["cargo", "fuzz", "run", target, "--", f"-max_total_time={seconds}"], fuzz).returncode != 0:
-            shutil.copytree(TREE / "fuzz" / "artifacts", REPO / "fuzz" / "artifacts", dirs_exist_ok=True)
-            print("crash: the input is in fuzz/artifacts/ in the checkout", file=sys.stderr)
+            artifacts = TREE / "fuzz" / "artifacts"
+            if artifacts.is_dir():
+                shutil.copytree(artifacts, REPO / "fuzz" / "artifacts", dirs_exist_ok=True)
+                print("crash: the input is in fuzz/artifacts/ in the checkout", file=sys.stderr)
+            else:
+                print(f"crash: cargo fuzz wrote no artifact under {artifacts}; see the output above", file=sys.stderr)
             sys.exit(1)
     print(f"fuzz-smoke: every target ran for {seconds}s with no crash")
 

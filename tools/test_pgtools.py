@@ -54,6 +54,11 @@ class LoadEnvFile(unittest.TestCase):
         load_env_file()
         self.assertEqual(os.environ.get("TEST_PG_KEY"), "from-file")
 
+    def test_a_variable_already_set_keeps_its_value(self):
+        os.environ["TEST_PG_KEY"] = "from-shell"
+        load_env_file()
+        self.assertEqual(os.environ.get("TEST_PG_KEY"), "from-shell")
+
     def test_a_container_reads_no_file(self):
         os.environ["PG_CONTAINER"] = "1"
         load_env_file()

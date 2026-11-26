@@ -4,20 +4,19 @@
 //! failure ledger, and leaves it once its borders are found, in the transaction that stores the borders: a batch that
 //! can't be written stores neither.
 
-use std::path::Path;
+mod common;
+
+use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
+use common::{Result, opts, scanned};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
-use pg_jobs::pipeline::Options;
 use pg_model::notice::FilePass;
 use pg_platform::testing::held::{Access, hold};
 
 use pg_testkit::ONE_PASS;
-
-/// The tests' result: any error of the crates they use.
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// The bytes of a 96 × 80 gradient PNG: the pictures these tests scan.
 fn gradient_png() -> pg_codec::Result<Vec<u8>> {
@@ -26,24 +25,11 @@ fn gradient_png() -> pg_codec::Result<Vec<u8>> {
 
 /// A run folder with `images/a.png` (96x80, a gradient), scanned and imported into a catalog beside it: the image's path,
 /// its bytes, and the catalog.
-fn imported(prefix: &str) -> Result<(std::path::PathBuf, Vec<u8>, Catalog)> {
-    let dir = pg_testkit::run_folder("scratch_library", prefix)?;
-    let images = dir.join("images");
-    std::fs::create_dir_all(&images)?;
-    let a = images.join("a.png");
-    std::fs::write(&a, gradient_png()?)?;
-    let good = std::fs::read(&a)?;
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
-    let ctl = Control::new();
-    let root = pg_platform::names::normalize_path(&images)?;
-    c.add_root(&root)?;
-    pg_scan::scan(&mut c, &root, &ctl)?;
+fn imported(prefix: &str) -> Result<(PathBuf, Vec<u8>, Catalog)> {
+    let png = gradient_png()?;
+    let (mut c, ctl, dir) = scanned(prefix, |images| Ok(std::fs::write(images.join("a.png"), &png)?))?;
     pg_import::import(&mut c, &opts(), &pg_catalog::VolumeSet::All, &ctl)?;
-    Ok((a, good, c))
-}
-
-fn opts() -> Options {
-    Options::new(pg_platform::priority::Priority::Normal)
+    Ok((dir.join("images").join("a.png"), png, c))
 }
 
 /// `a` rewritten in place with `bytes`, keeping its time: at the same size, the catalog has the file as it was.
@@ -76,7 +62,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() -> Result<()> {
     let root = pg_platform::names::normalize_path(&images).unwrap();
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    let opts = opts();
     pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     assert_eq!((state::borders_due(&c, "a.png").unwrap(), state::borders_due(&c, "b.png").unwrap()), (1, 1));
 
@@ -121,7 +107,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() -> Result
     let root = pg_platform::names::normalize_path(&images).unwrap();
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    let opts = opts();
     pg_import::import(&mut c, &opts, &pg_catalog::VolumeSet::All, &ctl).unwrap();
     // Damaged in place after the import, at the same size and time: the catalog has the file as it was.
     let mtime = std::fs::metadata(&a).unwrap().modified().unwrap();

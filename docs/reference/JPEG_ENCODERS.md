@@ -162,7 +162,7 @@ with the vips metadata (573 Pinterest files, 39 camera files carry ICC or EXIF) 
   (`mainwindow.cpp` line 114) before encoding, so jpegli never sees it.
 
 To rerun (Windows, native, not the container): set `PG_IMAGEREDUCE_VIPS_BIN` to ImageReduce's `vips-dev-8.18\bin`,
-`PG_JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `CAMERA_ROOT` to the library and camera folders, then
+`PG_JPEGLI_BUILD` to jpegli's build folder, and `PG_DATA_ROOT` and `PG_CAMERA_ROOT` to the library and camera folders, then
 
 ```sh
 python eval/jpeg-decoders/imagereduce_switch.py run library --out WORK/library.csv
@@ -193,6 +193,6 @@ just linux-eval eval/jpeg-decoders/encoders.py score     # scores (cached in PG_
 ```
 
 The GPU encoders run on Windows in between `encode` and `score`, writing into the same folder:
-`D:\PhotoGallery\tools\jpeg-eval\venv\Scripts\python.exe eval\jpeg-decoders\gpu_encoders.py
---gpujpeg D:\PhotoGallery\tools\jpeg-eval\build\GPUJPEG\gpujpegtool.exe`. The inputs are library photos and stay
+`$PG_ROOT\tools\jpeg-eval\venv\Scripts\python.exe eval\jpeg-decoders\gpu_encoders.py
+--gpujpeg $PG_ROOT\tools\jpeg-eval\build\GPUJPEG\gpujpegtool.exe` (the folder is `PG_JPEG_EVAL`, which defaults to `PG_ROOT\tools\jpeg-eval`). The inputs are library photos and stay
 in `PG_JPEG_ENC_DIR`, never in the repo. (The figures above were measured in WSL, before the container.)

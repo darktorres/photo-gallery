@@ -216,8 +216,8 @@ mod tests {
 
     #[test]
     fn jpeg_perfect_or_tag() {
-        let jpeg = |w: usize, h: usize| {
-            let pixels = pg_testkit::rgb_pattern(w, h);
+        let jpeg = |w: u32, h: u32| {
+            let pixels = pg_testkit::rgb_pattern(pg_model::num::index(w), pg_model::num::index(h));
             fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap()
         };
         // MCU-aligned: the pixels turn. Decoding the turned coefficients matches turning the decoded image up
@@ -257,7 +257,7 @@ mod tests {
     fn jpeg_byte_and_long_orientations_turn_once() {
         let (w, h) = (64, 32);
         let pixels = pg_testkit::rgb_pattern(w, h);
-        let plain = fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap();
+        let plain = fixtures::jpeg_rgb(64, 32, &pixels, 95, Chroma::Half).unwrap();
         // A little-endian EXIF block with one orientation entry: (type, count, value field, data after the IFD).
         let entry = |kind: u16, count: u32, field: [u8; 4], data: &[u8]| {
             let mut t = b"II*\0\x08\0\0\0".to_vec();

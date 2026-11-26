@@ -123,21 +123,26 @@ def main() -> None:
         sys.exit("no callgrind outputs to archive")
     archive = REPO / "docs" / "perf" / "callgrind" / f"{sha}.tar.zst"
     archive.parent.mkdir(parents=True, exist_ok=True)
+    # Written beside the archive and moved over it only once it is whole, so a failed write keeps the commit's previous one.
+    partial = archive.with_name(archive.name + ".part")
     listing = gungraun / "archive-list.txt"
     listing.write_text("\n".join(outputs) + "\n", encoding="utf-8")
     try:
         packed = subprocess.run(
-            ["tar", "--zstd", "-cf", str(archive), "-C", str(gungraun), "-T", str(listing)],
+            ["tar", "--zstd", "-cf", str(partial), "-C", str(gungraun), "-T", str(listing)],
             env={**os.environ, "ZSTD_CLEVEL": "19"},
             check=False,
         )
     finally:
         listing.unlink(missing_ok=True)
     if packed.returncode != 0:
+        partial.unlink(missing_ok=True)
         sys.exit(f"bench.py: tar could not write {archive} (exit {packed.returncode})")
-    count = subprocess.run(["tar", "--zstd", "-tf", str(archive)], capture_output=True, text=True, check=False)
+    count = subprocess.run(["tar", "--zstd", "-tf", str(partial)], capture_output=True, text=True, check=False)
     if count.returncode != 0:
+        partial.unlink(missing_ok=True)
         sys.exit(f"bench.py: tar could not list {archive} (exit {count.returncode})")
+    partial.replace(archive)
     size = archive.stat().st_size / (1024 * 1024)
     print(f"profiles: {len(count.stdout.splitlines())} files in {archive.relative_to(REPO)} ({size:.1f} MiB)")
 

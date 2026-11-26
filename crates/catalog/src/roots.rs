@@ -36,17 +36,18 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use pg_model::ids::{FileIdentity, RootId, ScanId};
+use pg_model::num::count_u64;
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::convert::{identity_to_sql, progress_count};
+use crate::convert::identity_to_sql;
 use crate::core::{Catalog, ScanLease};
 use crate::error::{Error, Result};
-use crate::ledger::failure::tidy;
+use crate::ledger::failure::kept_error;
 use crate::removal::overlapping_marker;
 use crate::transaction::write_transaction;
 use crate::types::{
     FOLDER_FAILED, FolderRow, FolderRows, Prior, Root, SCAN_LEASE_SECS, Skip, SkipReason, Subtree, WRITE_BATCH,
-    covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, under_params,
+    covering_root, ext_at, folders_under, kind_at, roots_on, skipped_folders, stored_path, under_params,
 };
 use pg_model::ledger::FolderFailure;
 use pg_model::removal::Begun;
@@ -89,7 +90,7 @@ impl Catalog {
     }
 
     /// Take a folder out of the library, and its files out of the catalog for good: the removal run to its end
-    /// (`begin_removal`, `hide_pages`, `drive_removals`) without thumbnails (the caller forgets them). Returns
+    /// (`begin_removal`, `hide_pages`, `drive_removal`, for this folder's marker alone) without thumbnails (the caller forgets them). Returns
     /// how many files went; `None`, with nothing changed, when `root` is not a library folder. A file with an unfinished
     /// write is kept, and so is its folder, and the marker stays for the write (or a discard) to finish.
     ///
@@ -100,7 +101,7 @@ impl Catalog {
         match self.begin_removal(root, &path)? {
             Begun::Started { path, .. } => {
                 self.hide_pages(&path)?;
-                Ok(Some(self.drive_removals(&mut |_| true)?.files))
+                Ok(Some(self.drive_removal(&path, &mut |_| true)?.files))
             }
             Begun::NotFound | Begun::Changed | Begun::Pending(_) => Ok(None),
         }
@@ -127,17 +128,12 @@ impl Catalog {
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
         for (other, holder) in held {
-            let other = rules.parse_bytes(&other).ok_or(Error::Stored { what: "a scan lease's folder has a NUL" })?;
+            let other = stored_path(rules, &other)?;
             if rules.is_under(root, &other) || rules.is_under(&other, root) {
                 return Err(Error::ScanBusy { root: other, holder });
             }
         }
-        tx.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [&bytes])?;
-        let scan = ScanId::new(tx.last_insert_rowid());
-        tx.execute(
-            "INSERT INTO scan_leases(id, root, holder, heartbeat) VALUES (?1, ?2, ?3, unixepoch())",
-            params![scan.get(), bytes, lease_holder()],
-        )?;
+        let scan = open_walk(&tx, &bytes, &lease_holder())?;
         // A walk starts with no rows seen (the set is the walk's, and a walk that ended emptied it already).
         tx.execute("DELETE FROM temp.scan_seen", [])?;
         tx.commit()?;
@@ -215,7 +211,7 @@ impl ScanLease<'_> {
                     not_seen!()
                 ))?;
                 for &(id, folder) in batch {
-                    marked += progress_count(mark.execute(params![id, folder])?);
+                    marked += count_u64(mark.execute(params![id, folder])?);
                 }
             }
             tx.commit()?;
@@ -254,7 +250,7 @@ impl Catalog {
                 self.rules.join(path),
                 self.rules.path_key(path),
                 FolderFailure::Refused.key(),
-                tidy(error),
+                kept_error(error),
                 walk
             ],
         )?;
@@ -310,9 +306,6 @@ impl Catalog {
     }
 }
 
-/// The walk's set of the rows it has seen (`temp.scan_seen`): a temporary table of this connection, made by the first walk
-/// on it and kept. Its partial index holds the unpaired rows, which the pairing reads. Emptied when a walk begins and when
-/// its lease is given back.
 /// The rows of `folder` on `conn`, read in one snapshot with the change number as their mark ([`Catalog::folder_rows`]).
 pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RulePath) -> Result<FolderRows> {
     let snapshot = conn.unchecked_transaction()?;
@@ -384,6 +377,9 @@ impl FolderRowReader {
     }
 }
 
+/// The walk's set of the rows it has seen (`temp.scan_seen`): a temporary table of this connection, made here by the first
+/// walk on it and kept. Its partial index holds the unpaired rows, which the pairing reads. Emptied when a walk begins and
+/// when its lease is given back.
 pub(crate) fn ensure_seen(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS scan_seen(id INTEGER PRIMARY KEY, unpaired INTEGER NOT NULL);
@@ -414,6 +410,18 @@ impl ScanLease<'_> {
 /// Who holds a lease this process takes, for the words of another's refusal.
 fn lease_holder() -> String {
     format!("process {}", std::process::id())
+}
+
+/// Opens a walk of the folder `bytes` (as stored): its `scans` row, and its lease held by `holder`, on `conn` (a
+/// transaction, for `begin_scan`, or the connection in a test). Returns the walk's id.
+pub(crate) fn open_walk(conn: &Connection, bytes: &[u8], holder: &str) -> rusqlite::Result<ScanId> {
+    conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [bytes])?;
+    let scan = ScanId::new(conn.last_insert_rowid());
+    conn.execute(
+        "INSERT INTO scan_leases(id, root, holder, heartbeat) VALUES (?1, ?2, ?3, unixepoch())",
+        params![scan.get(), bytes, holder],
+    )?;
+    Ok(scan)
 }
 
 /// The folder ledger's sweep at the end of a complete walk of `root` (`scan`), on `conn` ([`ScanLease::mark_missing`]).

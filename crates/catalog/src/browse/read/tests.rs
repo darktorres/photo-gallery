@@ -1,7 +1,7 @@
 use super::grid::{FILE_JOINS, grid_sql};
 use super::tree::FOLDER_COUNTS;
 use crate::browse::fixtures::{
-    by, folder_of, ids, library, mixed_library, sorted_by_sqlite, spelled, under_both_rules,
+    by, folder_of, ids, library, merged_folder, mixed_library, sorted_by_sqlite, spelled, under_both_rules,
 };
 use crate::fixture;
 use crate::fixture::raw;
@@ -32,8 +32,7 @@ use rusqlite::params_from_iter;
 
 /// A folder given as its Windows path text, merged: the spelling the Windows-only tests use.
 fn folder(text: &str) -> Merged {
-    let rules = PathRules::Windows;
-    rules.merge(&rules.parse(text).unwrap())
+    merged_folder(PathRules::Windows, text)
 }
 
 /// The sort key of the file `name` in the folder at `folder_text` (a Windows path), as the grid orders by it: its merged
@@ -496,8 +495,7 @@ fn order_keys_sort_as_the_reference() {
 
 /// Folder keys are made per UTF-16 unit: each part upcased unit by unit through the table (σ is Σ, ς is ς), escaped,
 /// then 0x01. The writer stores these keys and the scope reads them, so the two agree. A name's key is its upcase, as
-/// WTF-8.
-// Windows-only: the folder key upcases as Windows does (a POSIX key holds the exact bytes).
+/// WTF-8. Windows-only: the folder key upcases as Windows does (a POSIX key holds the exact bytes).
 #[test]
 fn folder_keys_are_made_per_unit() {
     let rules = PathRules::Windows;
@@ -990,7 +988,7 @@ under_both_rules!(
 );
 
 /// A folder whose name ends in Σ lists its files: the writer keys it unit by unit, and the scope reads that same key.
-/// (In an older build the scope lower-cased the name whole, to ς, and listed nothing.) `ας` is another folder under
+/// `ας` is another folder under
 /// both rules: on Windows the final ς keeps its own name, as on NTFS (Σ lowercases to σ, and NTFS folds only what
 /// round-trips), and `ασ` is the same folder; on POSIX names are exact.
 fn a_folder_ending_in_sigma_lists_its_files(rules: PathRules) {

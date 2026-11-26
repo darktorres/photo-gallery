@@ -222,7 +222,8 @@ fn typed_path(path: &Path) -> Option<RulePath> {
 /// on Windows without the verbatim prefix.
 #[cfg(windows)]
 pub fn real_path(root: &Path) -> io::Result<PathBuf> {
-    let real = std::fs::canonicalize(root)?;
+    // Opened in its verbatim form: Win32 drops a plain path's trailing dot, so `a.` would resolve to the sibling `a`.
+    let real = std::fs::canonicalize(verbatim(root))?;
     Ok(path_buf(&without_verbatim(canonical_of(&real))))
 }
 

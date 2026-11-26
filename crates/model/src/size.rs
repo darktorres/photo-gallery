@@ -160,95 +160,59 @@ const fn positive(v: f64) -> Result<f64, PositiveError> {
     if v.is_finite() && v > 0.0 { Ok(v) } else { Err(PositiveError::NotPositive(v)) }
 }
 
-/// A screen's scale (its device pixel ratio): positive and finite.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub struct Scale(f64);
+/// Declares a positive finite float newtype: its constructor, getter and conversions are the same for each, and
+/// serde refuses a value out of range on read too.
+macro_rules! positive_float {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+        #[serde(try_from = "f64", into = "f64")]
+        pub struct $name(f64);
 
-impl Scale {
-    /// The scale `v`, or `None` if it is not positive and finite.
-    pub const fn new(v: f64) -> Option<Scale> {
-        if positive(v).is_ok() { Some(Scale(v)) } else { None }
-    }
+        impl $name {
+            /// The value `v`, or `None` if it is not positive and finite.
+            pub const fn new(v: f64) -> Option<$name> {
+                match positive(v) {
+                    Ok(v) => Some($name(v)),
+                    Err(_) => None,
+                }
+            }
 
-    /// The scale as a number.
-    pub fn get(self) -> f64 {
-        self.0
-    }
+            /// The value as a number.
+            pub fn get(self) -> f64 {
+                self.0
+            }
+        }
+
+        impl TryFrom<f64> for $name {
+            type Error = PositiveError;
+            fn try_from(v: f64) -> Result<$name, PositiveError> {
+                positive(v).map($name)
+            }
+        }
+
+        impl From<$name> for f64 {
+            fn from(value: $name) -> f64 {
+                value.0
+            }
+        }
+    };
 }
 
-impl TryFrom<f64> for Scale {
-    type Error = PositiveError;
-    fn try_from(v: f64) -> Result<Scale, PositiveError> {
-        positive(v).map(Scale)
-    }
+positive_float! {
+    /// A screen's scale (its device pixel ratio): positive and finite.
+    Scale
 }
 
-impl From<Scale> for f64 {
-    fn from(scale: Scale) -> f64 {
-        scale.0
-    }
+positive_float! {
+    /// A multiplier of the row height (a pinch or a wheel step): positive and finite.
+    Factor
 }
 
-/// A multiplier of the row height (a pinch or a wheel step): positive and finite.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub struct Factor(f64);
-
-impl Factor {
-    /// The factor `v`, or `None` if it is not positive and finite.
-    pub fn new(v: f64) -> Option<Factor> {
-        positive(v).ok().map(Factor)
-    }
-
-    /// The factor as a number.
-    pub fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl TryFrom<f64> for Factor {
-    type Error = PositiveError;
-    fn try_from(v: f64) -> Result<Factor, PositiveError> {
-        positive(v).map(Factor)
-    }
-}
-
-impl From<Factor> for f64 {
-    fn from(factor: Factor) -> f64 {
-        factor.0
-    }
-}
-
-/// The grid's width in pixels: positive and finite. A width of zero or less is not a width (the list has none yet), so it
-/// is `None` at the shell, not a value here.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub struct GridWidth(f64);
-
-impl GridWidth {
-    /// The width `v`, or `None` if it is not positive and finite.
-    pub fn new(v: f64) -> Option<GridWidth> {
-        positive(v).ok().map(GridWidth)
-    }
-
-    /// The width as a number.
-    pub fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl TryFrom<f64> for GridWidth {
-    type Error = PositiveError;
-    fn try_from(v: f64) -> Result<GridWidth, PositiveError> {
-        positive(v).map(GridWidth)
-    }
-}
-
-impl From<GridWidth> for f64 {
-    fn from(width: GridWidth) -> f64 {
-        width.0
-    }
+positive_float! {
+    /// The grid's width in pixels: positive and finite. A width of zero or less is not a width (the list has none yet), so it
+    /// is `None` at the shell, not a value here.
+    GridWidth
 }
 
 #[cfg(test)]

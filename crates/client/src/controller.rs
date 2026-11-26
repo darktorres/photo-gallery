@@ -76,9 +76,9 @@ impl Start {
     }
 }
 
-/// What the desktop reports.
-// The listing's events carry a whole saved view, which is larger than the rest, so they are boxed: each event is the size
-// of its largest variant, and the listing's are rare (a user's choice). A box serialises as its contents.
+/// What the desktop reports. The listing's events carry a whole saved view, which is larger than the rest, so they are
+/// boxed: each event is the size of its largest variant, and the listing's are rare (a user's choice). A box serialises
+/// as its contents.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// The folder tree was loaded (at the start, and after each scan).

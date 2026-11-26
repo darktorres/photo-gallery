@@ -273,12 +273,12 @@ pub struct Prior {
 }
 
 impl Prior {
-    /// The prior of a drive kind, with no profile: 2 readers on a spinning disk, 4 on a flash disk, 3 when unknown.
+    /// The prior of a drive kind, with no profile: 2 readers on a spinning disk, 4 on a flash disk. A drive whose kind is
+    /// unknown is taken as a spinning disk (the slower assumption), so it starts at 2 too.
     pub fn of_kind(kind: Kind) -> Prior {
         let start = NonZeroUsize::MIN.saturating_add(match kind {
-            Kind::Rotational => 1,
+            Kind::Rotational | Kind::Unknown => 1,
             Kind::Solid => 3,
-            Kind::Unknown => 2,
         });
         Prior { start, expected: None, fallback: start }
     }
@@ -740,19 +740,14 @@ mod tests {
         Sample {
             elapsed,
             reads,
-            bytes: bytes_of(bytes),
-            disk_ns: bytes_of(latency_ms * 1e6 * 20.0),
+            bytes: pg_testkit::whole_units(bytes),
+            disk_ns: pg_testkit::whole_units(latency_ms * 1e6 * 20.0),
             work_wait_ns: 6_000_000_000,
             workers: 4,
             active_readers: 2.0,
             files: reads,
             ..Sample::default()
         }
-    }
-
-    /// A positive float as whole units (the tests' own conversion, through its decimal text).
-    fn bytes_of(x: f64) -> u64 {
-        format!("{:.0}", x.max(0.0)).parse().unwrap_or(0)
     }
 
     /// Runs `tuner` on windows whose throughput (MB/s) and latency (ms) the curve gives at the tuner's target, for
@@ -948,7 +943,7 @@ mod tests {
     fn the_kind_priors_are_two_four_and_three() {
         assert_eq!(Prior::of_kind(Kind::Rotational).start.get(), 2);
         assert_eq!(Prior::of_kind(Kind::Solid).start.get(), 4);
-        assert_eq!(Prior::of_kind(Kind::Unknown).start.get(), 3);
+        assert_eq!(Prior::of_kind(Kind::Unknown).start.get(), 2, "an unknown kind is taken as a spinning disk");
     }
 
     #[test]

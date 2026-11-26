@@ -72,8 +72,8 @@ fn field<T: TryInto<u16>>(value: T) -> u16 {
     value.try_into().unwrap_or(u16::MAX)
 }
 
-/// Milliseconds since the process was created (on Windows). Elsewhere, since the first call, which the startup trace
-/// makes at its first stage.
+/// Milliseconds since the process was created, where the system reports the creation time (Windows). Elsewhere, and on
+/// Windows when that time can't be read, since the first call (see [`age_origin`]).
 #[cfg(windows)]
 pub fn process_age_ms() -> f64 {
     use windows_sys::Win32::Foundation::FILETIME;
@@ -83,12 +83,29 @@ pub fn process_age_ms() -> f64 {
     let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
     let (mut created, mut exited, mut kernel, mut user, mut now) = (zero, zero, zero, zero, zero);
     // SAFETY: both only write the FILETIMEs they are given; the pseudo-handle of this process needs no closing.
-    unsafe {
-        GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user);
+    let known = unsafe {
+        let known = GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user);
         GetSystemTimePreciseAsFileTime(&mut now);
+        known
+    };
+    // Without the creation time, the age would be the system's whole clock: the first call's origin stands in for it.
+    if known == 0 {
+        return since_first_call_ms();
     }
     // FILETIME counts 100 ns.
     pg_model::num::size(ticks(now).saturating_sub(ticks(created))) / 1e4
+}
+
+/// What [`process_age_ms`] counts from, for the records that name it: the process's creation, or the first call.
+pub fn age_origin() -> &'static str {
+    if cfg!(windows) { "process start" } else { "first call" }
+}
+
+/// Milliseconds since the first call, which the startup trace makes at its first stage.
+fn since_first_call_ms() -> f64 {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1e3
 }
 
 /// The CPU cycles this process's threads have run, user and kernel (on Windows; `None` elsewhere). Unlike the wall
@@ -109,10 +126,8 @@ pub fn process_cycles() -> Option<u64> {
     None
 }
 
-/// Elsewhere, since the first call (see above).
+/// Elsewhere, since the first call (see [`age_origin`]).
 #[cfg(not(windows))]
 pub fn process_age_ms() -> f64 {
-    use std::sync::OnceLock;
-    static START: OnceLock<std::time::Instant> = OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1e3
+    since_first_call_ms()
 }

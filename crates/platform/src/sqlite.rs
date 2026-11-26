@@ -102,7 +102,8 @@ mod windows {
 
     /// The junction at `root\<hash of folder>` to `folder`, made or reused. `root` must have a UTF-8 path (the link's
     /// name is ASCII, and SQLite is given `root\...`). Links in `root` whose folder is gone are removed first. A folder
-    /// that holds the name but isn't a junction is an error, not replaced.
+    /// that holds the name but isn't a junction is an error, not replaced, unless it is empty: an interrupted make leaves
+    /// one (`make_link` makes the folder before it sets the link), and that one is removed and made again.
     pub(super) fn alias_under(root: &Path, folder: &Path) -> io::Result<PathBuf> {
         if root.to_str().is_none() {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "the alias folder has no UTF-8 path"));
@@ -114,13 +115,16 @@ mod windows {
         let units: Vec<u16> = target.as_os_str().encode_wide().collect();
         let substitute: Vec<u16> = NT_PREFIX.iter().copied().chain(units.iter().copied()).collect();
         std::fs::create_dir_all(root)?;
-        sweep(root)?;
+        sweep(root);
         let link = root.join(format!("{:016x}", fnv1a(&units)));
         match read_mount_point(&link)? {
             Some(existing) if existing == substitute => return Ok(link),
             Some(_) => remove_link(&link)?,
+            // Only an empty folder is removed (`remove_dir` refuses one that holds anything, which is then an error).
             None if link.symlink_metadata().is_ok() => {
-                return Err(io::Error::other(format!("{}: is not an alias", link.display())));
+                std::fs::remove_dir(&link).map_err(|e| {
+                    io::Error::new(e.kind(), format!("{}: is not an alias ({e})", link.display()))
+                })?;
             }
             None => {}
         }
@@ -129,16 +133,18 @@ mod windows {
     }
 
     /// Removes the junctions in `root` whose folder is gone (a junction is removed as a link: its folder is not touched).
-    fn sweep(root: &Path) -> io::Result<()> {
-        for entry in std::fs::read_dir(root)? {
-            let link = entry?.path();
-            let Some(substitute) = read_mount_point(&link)? else { continue };
+    /// Best-effort: the junctions are other folders' aliases, so one that can't be read or removed is left for a later
+    /// sweep, and its error does not fail the request for a folder of its own.
+    fn sweep(root: &Path) {
+        let Ok(entries) = std::fs::read_dir(root) else { return };
+        for entry in entries.flatten() {
+            let link = entry.path();
+            let Ok(Some(substitute)) = read_mount_point(&link) else { continue };
             let Some(target) = substitute.strip_prefix(&NT_PREFIX[..]) else { continue };
             if !Path::new(&OsString::from_wide(target)).exists() {
-                remove_link(&link)?;
+                let _ = remove_link(&link);
             }
         }
-        Ok(())
     }
 
     /// A junction's substitute name (its `\??\` prefix included), or None when `link` is not a junction (or doesn't
@@ -339,6 +345,22 @@ mod windows {
             let kept = odd_folder(&dir, b"kept\xED\xA0\x80");
             alias_under(&root, &kept).unwrap();
             assert!(stale.symlink_metadata().is_err(), "{} is still there", stale.display());
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        // An empty folder left where the alias goes (an interrupted make: the folder made, the link not yet set) is removed
+        // and made into the alias.
+        #[test]
+        fn an_empty_folder_an_interrupted_make_left_is_made_into_the_alias() {
+            let dir = crate::testing::run_folder("scratch_platform", "interrupted").unwrap();
+            let folder = odd_folder(&dir, b"half\xED\xA0\x80");
+            let root = dir.join("aliases");
+            let link = alias_under(&root, &folder).unwrap();
+            std::fs::remove_dir(&link).unwrap();
+            std::fs::create_dir(&link).unwrap();
+            assert_eq!(alias_under(&root, &folder).unwrap(), link, "the leftover is made into the alias");
+            std::fs::write(link.join("made.txt"), b"x").unwrap();
+            assert!(folder.join("made.txt").exists());
             let _ = std::fs::remove_dir_all(&dir);
         }
 

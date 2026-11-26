@@ -4,19 +4,24 @@
 //! requested, and the peak above where the decode started.
 //! `png-decoders dump DIR FILE...`: the app's output as DIR/NAME.raw, and DIR/NAME.txt with "width height channels
 //! bytes-per-sample", for the Pillow bench (pillow_bench.py) and the C harness to check their output against.
+//! `png-decoders profile [--secs S] FILE...`: the fork alone, decoding each file for S seconds, for a profiler.
+//! `png-decoders inflate [--secs S] FILE...`: fdeflate alone on each file's IDAT stream, into its scanlines.
+//! `png-decoders inflate-stream [--secs S] FILE...`: the same inflate, streamed in pieces into a rolled window.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use png_decoders::{Dec, Decoders, Dims};
 
-/// Counts every heap call of the process: the decoders' allocations are the only ones made while `allocs` measures.
+/// Counts every heap call of the process while the `allocs` command runs. Counting is off otherwise, so the timed
+/// commands make no counting calls.
 struct Counting;
 
+static COUNTING: AtomicBool = AtomicBool::new(false);
 static CALLS: AtomicUsize = AtomicUsize::new(0);
 static REQUESTED: AtomicUsize = AtomicUsize::new(0);
 static LIVE: AtomicUsize = AtomicUsize::new(0);
@@ -33,7 +38,7 @@ fn grow(bytes: usize) {
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let p = unsafe { System.alloc(layout) };
-        if !p.is_null() {
+        if !p.is_null() && COUNTING.load(Relaxed) {
             grow(layout.size());
         }
         p
@@ -41,7 +46,7 @@ unsafe impl GlobalAlloc for Counting {
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let p = unsafe { System.alloc_zeroed(layout) };
-        if !p.is_null() {
+        if !p.is_null() && COUNTING.load(Relaxed) {
             grow(layout.size());
         }
         p
@@ -49,17 +54,18 @@ unsafe impl GlobalAlloc for Counting {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { System.dealloc(ptr, layout) };
-        LIVE.fetch_sub(layout.size(), Relaxed);
+        if COUNTING.load(Relaxed) {
+            LIVE.fetch_sub(layout.size(), Relaxed);
+        }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let p = unsafe { System.realloc(ptr, layout, new_size) };
-        if !p.is_null() {
-            CALLS.fetch_add(1, Relaxed);
-            REQUESTED.fetch_add(new_size, Relaxed);
-            let live = LIVE.fetch_add(new_size, Relaxed) + new_size;
+        if !p.is_null() && COUNTING.load(Relaxed) {
+            // The old block leaves the count first, then the block that replaces it is counted as a new one, as
+            // alloc_count.cpp's realloc does, so the peak never includes both.
             LIVE.fetch_sub(layout.size(), Relaxed);
-            PEAK.fetch_max(live, Relaxed);
+            grow(new_size);
         }
         p
     }
@@ -71,9 +77,12 @@ static GLOBAL: Counting = Counting;
 fn main() -> Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        bail!("usage: png-decoders time [--secs S] FILE... | compare FILE... | allocs FILE... | dump DIR FILE... | profile [--secs S] FILE...");
+        bail!(
+            "usage: png-decoders time [--secs S] FILE... | compare FILE... | allocs FILE... | dump DIR FILE... | profile [--secs S] FILE... | inflate [--secs S] FILE... | inflate-stream [--secs S] FILE..."
+        );
     }
     let cmd = args.remove(0);
+    COUNTING.store(cmd == "allocs", Relaxed);
     if cmd == "dump" {
         return dump(&args);
     }
@@ -82,15 +91,17 @@ fn main() -> Result<()> {
         secs = args.get(1).context("--secs wants a number")?.parse()?;
         args.drain(..2);
     }
+    // try_from keeps a negative, NaN or infinite --secs an error instead of a panic.
+    let budget = Duration::try_from_secs_f64(secs).context("--secs wants a finite, non-negative number")?;
     let files = read_files(&args)?;
     let mut decoders = Decoders::new();
     match cmd.as_str() {
-        "time" => time(&mut decoders, &files, Duration::from_secs_f64(secs)),
-        "profile" => profile(&mut decoders, &files, Duration::from_secs_f64(secs)),
+        "time" => time(&mut decoders, &files, budget),
+        "profile" => profile(&mut decoders, &files, budget),
         "compare" => compare(&mut decoders, &files),
         "allocs" => allocs(&mut decoders, &files),
-        "inflate" => inflate(&files, Duration::from_secs_f64(secs)),
-        "inflate-stream" => inflate_stream(&files, Duration::from_secs_f64(secs)),
+        "inflate" => inflate(&files, budget),
+        "inflate-stream" => inflate_stream(&files, budget),
         _ => bail!("unknown command {cmd}"),
     }
 }
@@ -226,7 +237,6 @@ fn compare(decoders: &mut Decoders, files: &[(String, Vec<u8>)]) -> Result<()> {
     Ok(())
 }
 
-/// The IDAT chunks' data, joined: the zlib stream of the image.
 /// A fresh decompressor. PNG_INFLATE_NO_CHECKSUM=1 ignores the zlib checksum, as the app's fork does by default.
 fn decompressor() -> fdeflate::Decompressor {
     let mut d = fdeflate::Decompressor::new();
@@ -236,6 +246,7 @@ fn decompressor() -> fdeflate::Decompressor {
     d
 }
 
+/// The IDAT chunks' data, joined: the zlib stream of the image.
 fn idat_stream(png: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut pos = 8;

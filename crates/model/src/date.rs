@@ -1,6 +1,6 @@
 //! Civil dates as the files and the catalog write them (model-shaped: pure arithmetic over calendar fields, no
 //! time zone): an ISO 8601 date or date and time, and the Unix seconds of a wall-clock time (an EXIF date's text is
-//! the metadata's, `pg_metadata`'s `exif`). The times are wall-clock: a zone in the text is dropped, as the camera's clock showed it. A calendar day
+//! the metadata's, `pg-metadata`'s `exif`). The times are wall-clock: a zone in the text is dropped, as the camera's clock showed it. A calendar day
 //! ([`Day`]) is the same count of days, for a query's date bounds.
 
 use alloc::format;

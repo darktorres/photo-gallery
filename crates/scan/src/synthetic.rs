@@ -83,7 +83,7 @@ impl Listing for SyntheticTree {
     type Dir = usize;
 
     fn open(&mut self, path: &[Unit]) -> io::Result<usize> {
-        self.folders.get(path).copied().ok_or_else(|| io::Error::new(io::ErrorKind::PermissionDenied, "unreadable"))
+        self.folders.get(path).copied().ok_or_else(crate::unopenable)
     }
 
     fn device(&self, _dir: &usize) -> Option<u64> {

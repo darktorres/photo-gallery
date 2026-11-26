@@ -57,9 +57,10 @@ From PowerShell, with `$env:PG_ROOT` set (PowerShell doesn't read `.env`):
     python eval\png-decoders\make_variants.py
     python eval\png-decoders\make_real16.py --zip PATH\rgb16bit.zip
 
-`dump` writes the app's output for each file (DIR/NAME.raw, and DIR/NAME.txt with "width height channels
-bytes-per-sample"). The C harness, the Pillow bench and `compare` check their output against that DIR; the reference
-is made from the same file stems, so the text-free library copies use the same reference as the originals. The inputs
+The Rust `dump` writes the app's output for each file (DIR/NAME.raw, and DIR/NAME.txt with "width height channels
+bytes-per-sample"). The C `dump` writes each decoder's output instead, as DIR/NAME.DECODER.raw, with no .txt. The
+Pillow bench and the C `compare` check their output against the Rust dump's DIR; the reference is made from the same
+file stems, so the text-free library copies use the same reference as the originals. The inputs
 are library files and generated files, so they are read where they are and never copied into the repo.
 
 Timings should be taken on a quiet machine. The harnesses run the decoders back to back on each file, so a file's

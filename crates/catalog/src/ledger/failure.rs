@@ -22,20 +22,15 @@ pub struct Failure {
     pub turns: Turns,
     /// The error the pass recorded, as text.
     pub error: String,
-    /// Whether the pass tries the file again by itself (a decode error, which a pass tries until the file changes), or
-    /// not until it changes or the user retries it (a panic).
+    /// Whether the pass tries the file again by itself. `false` is kept until the file changes or the user retries it:
+    /// a decode error and a panic are both recorded that way (the thumbnails' writer does so), and no failure is
+    /// recorded with `true` today.
     pub retry: bool,
 }
 
 /// `error` as kept: on one line (a control character is a space), at most [`ERROR_BYTES`].
-pub(crate) fn tidy(error: &str) -> String {
-    let mut out: String = error.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
-    if out.len() > ERROR_BYTES {
-        let cut = out.char_indices().map(|(i, _)| i).take_while(|&i| i <= ERROR_BYTES - 3).last().unwrap_or(0);
-        out.truncate(cut);
-        out.push('…');
-    }
-    out
+pub(crate) fn kept_error(error: &str) -> String {
+    pg_model::notice::tidy(error, ERROR_BYTES)
 }
 
 /// The thumbnails' panicked files are listed again for their pass when the thumbnailer's version changes

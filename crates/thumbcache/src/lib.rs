@@ -63,7 +63,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use crate::config::TOUCH_AGE;
 use crate::maintenance::unix_now;
 use crate::reader::ReaderPool;
-use crate::schema::{BUSY_TIMEOUT, Writing, hold_shared, open_writer};
+use crate::schema::{BUSY_TIMEOUT, OpenedWriter, hold_shared, open_writer};
 use crate::writer::{Inbox, Op, Store, write_loop};
 
 #[cfg(test)]
@@ -108,7 +108,7 @@ impl ThumbCache {
         thumbs_version: i64,
         events: Arc<Bus<Event>>,
     ) -> Result<ThumbCache> {
-        let Writing { conn, started_over, drift, live } =
+        let OpenedWriter { conn, started_over, drift, live } =
             open_writer(path, catalog_id, cap.map(ThumbCap::bytes), thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });

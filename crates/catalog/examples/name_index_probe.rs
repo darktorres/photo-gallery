@@ -31,6 +31,11 @@ fn main() -> Result<()> {
     let dir = pg_testkit::run_folder("scratch_catalog", "name-index-probe")?;
     let db = dir.join("catalog.sqlite");
     std::fs::copy(&source, &db)?;
+    // A WAL-mode catalog keeps its newest pages in its log until a checkpoint: the copy takes the log too.
+    let log = format!("{source}-wal");
+    if std::path::Path::new(&log).exists() {
+        std::fs::copy(&log, format!("{}-wal", db.display()))?;
+    }
     let conn = Connection::open(&db)?;
     pg_query::register_functions(&conn, rules_of(&conn)?)?;
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA cache_size = -262144; PRAGMA foreign_keys = OFF;")?;

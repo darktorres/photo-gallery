@@ -78,7 +78,7 @@ pub struct Program(OsString);
 impl Program {
     /// The program the environment names, read now (see [`Program`]).
     pub fn from_env() -> Program {
-        Program(pg_platform::env::read(pg_platform::env::Var::Exiftool).unwrap_or_else(|| "exiftool".into()))
+        Program(pg_platform::env::exiftool_program())
     }
 
     /// The program at `path`.
@@ -107,11 +107,14 @@ pub struct ExifTool {
 }
 
 impl ExifTool {
-    /// The running ExifTool in `slot`, starting one if the slot is empty or its process has failed. A failed
-    /// command is an error for that write only: the next one gets a new process.
+    /// The running ExifTool in `slot`, starting one if the slot is empty, its process has failed, or its process has
+    /// exited while idle. A failed command is an error for that write only: the next one gets a new process.
     pub fn running<'a>(slot: &'a mut Option<ExifTool>, program: &OsStr) -> Result<&'a mut ExifTool> {
         let tool = match slot.take() {
-            Some(t) if !t.broken => t,
+            Some(mut t) if !t.broken => match t.child.try_wait() {
+                Ok(None) => t,
+                _ => ExifTool::start(program)?,
+            },
             _ => ExifTool::start(program)?,
         };
         Ok(slot.insert(tool))
@@ -280,17 +283,72 @@ fn needs_argv(args: &[&OsStr]) -> bool {
 }
 
 /// One ExifTool run with `args` as its process arguments (the names exact, on Unix). Its own process: the kept one is
-/// not touched, so a failure here is the write's only.
+/// not touched, so a failure here is the write's only. It has the kept process's deadline: a run that hasn't finished
+/// by then is killed.
 fn oneshot(program: &OsStr, args: &[&OsStr]) -> Result<(String, String)> {
     let mut cmd = Command::new(program);
-    cmd.args(["-charset", "filename=utf8"]).args(args).stdin(Stdio::null());
+    cmd.args(["-charset", "filename=utf8"])
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     pg_platform::process::hide_console_window(&mut cmd);
-    let out = cmd.output().map_err(|source| Error::Start {
+    let mut child = cmd.spawn().map_err(|source| Error::Start {
         program: program.to_string_lossy().into_owned(),
         what: "ExifTool",
         source,
     })?;
-    Ok((String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned()))
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    let answer = collect(&mut child, deadline).and_then(|answer| wait_until(&mut child, deadline).map(|()| answer));
+    if answer.is_err() {
+        let _ = child.kill();
+    }
+    // Reaps the process: it has exited already when the answer is Ok.
+    let _ = child.wait();
+    answer
+}
+
+/// The output of a run's two pipes, each read to its end by `deadline`.
+fn collect(child: &mut Child, deadline: Instant) -> Result<(String, String)> {
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(Error::failed("ExifTool's output pipes weren't opened"));
+    };
+    let out = pump(stdout)?;
+    let err = pump(stderr)?;
+    Ok((until_closed(&out, deadline)?, until_closed(&err, deadline)?))
+}
+
+/// The lines of a pipe up to the pipe's end, which the process closes when it exits, by `deadline`.
+fn until_closed(lines: &Receiver<String>, deadline: Instant) -> Result<String> {
+    let mut out = String::new();
+    loop {
+        let wait = deadline.checked_duration_since(Instant::now()).unwrap_or_default();
+        match lines.recv_timeout(wait) {
+            Ok(line) => {
+                out.push_str(&line);
+                out.push('\n');
+            }
+            Err(RecvTimeoutError::Disconnected) => return Ok(out),
+            Err(RecvTimeoutError::Timeout) => return Err(timed_out()),
+        }
+    }
+}
+
+/// Waits for the process to exit, by `deadline`.
+fn wait_until(child: &mut Child, deadline: Instant) -> Result<()> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => return Err(timed_out()),
+            Err(source) => return Err(Error::pipe(source)),
+        }
+    }
+}
+
+/// The failure of a command that ExifTool didn't answer by its deadline.
+fn timed_out() -> Error {
+    Error::failed(format!("ExifTool didn't answer within {}s", COMMAND_TIMEOUT.as_secs()))
 }
 
 /// A pipe's lines, read by a thread of its own. ExifTool's stdout and stderr fill as it runs: read in turn, a full
@@ -333,9 +391,7 @@ fn read_until(lines: &Receiver<String>, marker: &str, deadline: Instant) -> Resu
         let wait = deadline.checked_duration_since(Instant::now()).unwrap_or_default();
         let line = match lines.recv_timeout(wait) {
             Ok(line) => line,
-            Err(RecvTimeoutError::Timeout) => {
-                return Err(Error::failed(format!("ExifTool didn't answer within {}s", COMMAND_TIMEOUT.as_secs())));
-            }
+            Err(RecvTimeoutError::Timeout) => return Err(timed_out()),
             Err(RecvTimeoutError::Disconnected) => return Err(Error::failed("ExifTool exited")),
         };
         if line.trim_end() == marker {
@@ -421,15 +477,16 @@ mod tests {
             .any(|(i, w)| w == b"Rating" && bytes[i + 6..(i + 40).min(bytes.len())].contains(&b'4'))
     }
 
-    /// The names the file tests write a file as: spaces, a leading space, a `#` or `-`, a quote, a `[CSTR]` look-alike
-    /// and a lone surrogate (its bytes are raw bytes on Unix); and, on Unix only, a raw non-UTF-8 byte, a line break (the
-    /// argument route), a carriage return inside a name, and a double quote, which Windows can't hold in a name. A name
-    /// ending in whitespace is refused instead (`a_name_whose_extension_ends_in_whitespace_is_refused`).
     /// The name the system holds for the stored bytes `name`.
     fn file_name(name: &[u8]) -> OsString {
         pg_platform::names::os_name(&pg_model::name::Name::from_raw(name))
     }
 
+    /// The names the file tests write a file as: spaces, a leading space, a `#` or `-`, a quote, a `[CSTR]` look-alike
+    /// and a lone surrogate (its bytes are raw bytes on Unix); and, on Unix only, a raw non-UTF-8 byte, a line break (the
+    /// argument route), a carriage return inside a name, and a double quote, which Windows can't hold in a name. A name
+    /// ending in whitespace is refused instead
+    /// (`a_name_whose_extension_ends_in_whitespace_is_refused_and_leaves_no_copy`).
     fn names() -> Vec<Vec<u8>> {
         let common = [
             b"plain.png".to_vec(),
@@ -491,7 +548,7 @@ mod tests {
     // ExifTool; skipped without it.
     #[test]
     fn a_dead_exiftool_is_replaced() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(tool) = start_or_skip(&program) else { return };
         let mut slot = Some(tool);
         ExifTool::running(&mut slot, &program).unwrap();
@@ -507,12 +564,30 @@ mod tests {
         assert!(tool.run(&[b"-ver".as_slice()]).is_ok());
     }
 
+    // A process that exits while idle (no command failed) is not handed out: the next command runs on a new one.
+    // Needs ExifTool; skipped without it.
+    #[test]
+    fn an_exiftool_that_exited_while_idle_is_replaced() {
+        let program = pg_platform::env::exiftool_program();
+        let Some(tool) = start_or_skip(&program) else { return };
+        let mut slot = Some(tool);
+        ExifTool::running(&mut slot, &program).unwrap();
+        let tool = slot.as_mut().unwrap();
+        tool.child.kill().unwrap();
+        tool.child.wait().unwrap();
+        assert!(!tool.broken);
+
+        let tool = ExifTool::running(&mut slot, &program).unwrap();
+        assert!(!tool.broken);
+        assert!(tool.run(&[b"-ver".as_slice()]).is_ok());
+    }
+
     // A rating is written into a copy of a file of each name, the names' own bytes: the spaces, a leading `#` or `-`,
     // a quote (Unix), a lone surrogate (Windows) or raw non-UTF-8 bytes (Unix), and a line break (Unix; the argument route).
     // The original is left as it was. Needs ExifTool; skipped without it.
     #[test]
     fn a_rating_is_written_into_a_file_of_each_name() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "names").unwrap();
         let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();
@@ -533,7 +608,7 @@ mod tests {
     // left as it was. Needs ExifTool; skipped without it.
     #[test]
     fn a_rating_is_written_over_a_stale_percent() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "stale").unwrap();
         let source = pg_codec::fixtures::jpeg_rgb(2, 2, &[0; 12], 90, pg_codec::encode::Chroma::Half).unwrap();
@@ -583,7 +658,7 @@ mod tests {
     #[test]
     fn a_rating_is_written_over_the_fields_each_format_holds() {
         use pg_model::format::Format;
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "formats").unwrap();
         let px = [0u8; 12];
@@ -651,7 +726,7 @@ mod tests {
     // would keep the old rating, since the reader takes the first field the file holds. Needs ExifTool; skipped without it.
     #[test]
     fn a_clear_is_written_over_stale_fields_and_reads_back_unrated() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "clear").unwrap();
         let source = pg_codec::fixtures::jpeg_rgb(2, 2, &[0; 12], 90, pg_codec::encode::Chroma::Half).unwrap();
@@ -705,7 +780,7 @@ mod tests {
     // and so are the file-system tags' values, but for the file's own name and dates. Needs ExifTool; skipped without it.
     #[test]
     fn a_rating_write_keeps_every_other_tag() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "keeps").unwrap();
         let path = dir.join("in.jpg");
@@ -754,7 +829,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_name_whose_extension_ends_in_whitespace_is_refused_and_leaves_no_copy() {
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "refused").unwrap();
         let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();
@@ -777,7 +852,7 @@ mod tests {
         use pg_model::format::Format;
         use pg_model::orientation::Orientation;
 
-        let program = OsString::from("exiftool");
+        let program = pg_platform::env::exiftool_program();
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::run_folder("scratch_exiftool", "orientation-tags").unwrap();
         let source = pg_codec::fixtures::png_rgb(2, 2, &[0; 12]).unwrap();

@@ -1,5 +1,5 @@
 //! The drive's vocabulary: what a drive is, and how it is asked about. A leaf module: the probes of each platform
-//! (`facts`, `windows_facts`, `win`, `linux`) import these types from here, and the drive module re-exports them, so
+//! (`facts`, `windows_facts`, `windows`, `linux`) import these types from here, and the drive module re-exports them, so
 //! no probe needs the drive module itself (which calls the probes).
 
 use std::io;

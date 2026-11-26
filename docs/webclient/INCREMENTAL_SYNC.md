@@ -47,8 +47,9 @@ changes since the client's last seq. A client that has been away for any length 
 
 ## Recommendation
 
-Approach 7, with key-addressed deltas, if the owner agrees to (6). The only full transfer is the first load and recovery
-from a restored catalog.
+No approach is recommended as final. Approach 7 is withdrawn (see Status). Key-addressed deltas (approach 6) are
+recommended, pending the owner's confirmation (Open, item 1). The window-fetch proposal (Later decisions, item 1) is the
+candidate under validation. The only full transfer is the first load and recovery from a restored catalog.
 
 ## Decisions so far
 
@@ -76,7 +77,7 @@ from a restored catalog.
 6. **Bulk changes.** Full resync (rare), or digests catch them (approach 4)?
 7. **Stamping coverage.** Gaps listed in `WEB_CLIENT_DESIGN.md` (around line 473) and `WEB_CLIENT_RECONCILED.md` (lines
    85–86): `ratings.rating`, `file_writes.value`, `border_marks`, `analysis.error`, and UPDATEs of `created`, `folder_id`,
-   `name`, `ext`, `order_key`. Delete paths `pair.rs:345` and `pair.rs:434` need a tombstone trigger.
+   `name`, `ext`, `order_key`. Delete paths `pair.rs:601` (`rebind`) and `pair.rs:686` (`replace`) need a tombstone trigger.
 8. **FileId reuse.** `files.id` is `INTEGER PRIMARY KEY` with no AUTOINCREMENT (`crates/catalog/src/schema.rs`, around
    line 549). A deleted id can be reused, which would confuse a replica. Migration 10 fixes it if approved.
 9. **`listing_key` build scope.** Derived from the serialised Listing, any serde change orphans every replica on upgrade.
@@ -119,7 +120,7 @@ Findings that change the picture:
 - Restore is not detected by catalog_id: rebuild and backup keep it (rebuild.rs:159-161, 204-208).
 - Tombstone scope defect: a row moved out of a listing and then deleted is never reported as left. Not reachable today;
   reachable once user deletes land.
-- Stamp gap list was stale. Missing: unpaired 1 to 0 (pair.rs:204), kind, the bulk pending flip (lifecycle.rs:74-86),
+- Stamp gap list was stale. Missing: unpaired 1 to 0 (pair.rs:303), kind, the bulk pending flip (lifecycle.rs:74-86),
   analysis width, height, taken, orientation, frames, duration_ms.
 - Key-addressed deltas need sort values in the record; client memory for id plus order_key is 9 GB at 70M, 129 GB at 1B.
 - Client memory for the index replica: 1.12 GB at 70M, 16 GB at 1B, per listing.
@@ -203,10 +204,10 @@ The agent's findings above are kept as written. These are the later decisions, a
 Each task has an acceptance test. The Python model in the validation (`scratchpad\semantics\model.py`) is the spec for the
 replica-equals-fresh-read check until the Rust model test exists (`WEB_CLIENT_DESIGN.md` around line 530).
 
-- **A1. Stamp unpaired 1 to 0.** `crates/catalog/src/pair.rs:227` (`UPDATE files SET unpaired = 0`; line 204 is a SELECT) has no stamp. Add
+- **A1. Stamp unpaired 1 to 0.** `crates/catalog/src/pair.rs:303` (the batch's `UPDATE files SET unpaired = 0`) has no stamp. Add
   `changed` and `seq`. Test: model S1 converges.
 - **A2. Stamp the identity upserts.** `writers.rs:113-116` (scanner upsert: folder_id, name, ext, kind, order_key),
-  `writers.rs:101` (created backfill), `pair.rs:355-360` (take_identity). A stamp trigger on `UPDATE OF folder_id, name,
+  `writers.rs:101` (created backfill), `pair.rs:609-616` (the take_identity statements). A stamp trigger on `UPDATE OF folder_id, name,
   ext, order_key, created` **must carry `WHEN old.x IS NOT new.x`** (the scanner's upsert sets these columns on every unchanged
   rescan, and an unconditional trigger would stamp every file on every rescan). The design's form at `WEB_CLIENT_DESIGN.md:466-468` has the WHEN. Test: rename through upsert reaches the replica (model S2).
 - **A3. Stamp kind.** `files_changed` (`schema.rs:766-773`) sets `pending` only. Add the stamp. Test: a kind change
@@ -216,8 +217,8 @@ replica-equals-fresh-read check until the Rust model test exists (`WEB_CLIENT_DE
 - **A5. Stamp analysis shape.** `analysis_changed` (`schema.rs:802-817`) omits width, height, taken, orientation, frames
   and duration_ms. `queue.rs:262` swaps width and height on a turn and is covered only by the same transaction's file
   trigger. Add them to the trigger. Test: a turn that changes shape reaches the replica.
-- **A6. Tombstone on every delete.** No `AFTER DELETE ON files` trigger exists. The deletes are `pair.rs:342` and
-  `pair.rs:431`. Add a tombstone trigger, with a cascade test (`TRIGGER_TESTS`, `schema.rs:873`). Test: model S3 (a
+- **A6. Tombstone on every delete.** No `AFTER DELETE ON files` trigger exists. The deletes are `pair.rs:601` and
+  `pair.rs:686`. Add a tombstone trigger, with a cascade test (`TRIGGER_TESTS`, `schema.rs:402`). Test: model S3 (a
   deleted row that left a listing still reaches the replica).
 - **A7. Tombstones are not scoped by listing.** The design tests a tombstone against the deletion-time `order_key` (step 4
   of the Delta). Proposed rule: a tombstone removes the id from any replica holding it, with no scope test. A replica
@@ -593,7 +594,7 @@ Citation errors found by the validator:
 - REC:969 is wrong for the O(N) claim. The O(N) pass is REC:958.
 - DES:466-468 is the digest text. It has no trigger WHEN. My earlier A2 correction said it did; that was wrong. The WHEN has to be
   written, not cited.
-- `pair.rs:204` is a comment, not a SELECT (my earlier A1 note was wrong). The UPDATE at `pair.rs:227` is correct.
+- `pair.rs:204` is a comment, not a SELECT. The batch's UPDATE is at `pair.rs:303` (it was `pair.rs:227` when this was written).
 - `relayout` is not in `grid.rs`.
 - `rebuild.rs` has no `catalog_id` text; survival is through the meta copy at rebuild.rs:204-208.
 - The `rusqlite` entry in `[patch.crates-io]` overrides rusqlite with a git fork (the features are still those of the `rusqlite` entry in `[workspace.dependencies]`).

@@ -31,7 +31,7 @@ impl From<SourceError> for RequestError {
 }
 
 /// Where a search or a save gets its Yandex calls: the real client, or a recorded session that stands in for it.
-/// Each search and each save makes its own, on its thread.
+/// Each search makes its own, on its thread. A save makes none: it takes its files from the search on screen.
 pub trait Source {
     /// Uploads `image`, and says what Yandex made of it.
     fn upload(&mut self, image: &[u8]) -> Result<Upload, SourceError>;

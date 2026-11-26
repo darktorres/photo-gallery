@@ -36,7 +36,7 @@ use crate::bridges::log_model_bridge::qobject;
 use core::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use crate::pump::{Pending, lock};
+use crate::pump::Pending;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
@@ -47,6 +47,11 @@ const ROLE_TARGET: i32 = 258;
 const ROLE_MESSAGE: i32 = 259;
 const ROLE_DETAIL: i32 = 260;
 const ROLE_SEQ: i32 = 261;
+
+/// The warning for a reader thread that couldn't be spawned.
+fn reader_didnt_start(e: &std::io::Error) {
+    pg_log::warn("log", &format!("the log view's reader didn't start: {e:#}"));
+}
 
 impl qobject::LogModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
@@ -100,7 +105,7 @@ impl qobject::LogModel {
                 let _ = thread.queue(move |model| model.show_all(records));
             });
             if let Err(e) = reader {
-                pg_log::warn("log", &format!("the log view's reader didn't start: {e:#}"));
+                reader_didnt_start(&e);
             }
             return;
         }
@@ -117,23 +122,20 @@ impl qobject::LogModel {
             if thread.queue(move |model| model.show_all(all)).is_err() {
                 return;
             }
-            let pending: Arc<Mutex<Pending<Vec<pg_log::Record>>>> = Arc::default();
-            while let Ok(record) = feed.new.recv() {
-                let queue = {
-                    let mut pending = lock(&pending);
-                    pending.changes.push(record);
-                    !std::mem::replace(&mut pending.queued, true)
-                };
-                if queue {
-                    let pass = Arc::clone(&pending);
-                    if thread.queue(move |model| model.append(pass)).is_err() {
-                        break;
-                    }
-                }
+            // The records logged from here on are gathered by the pump and appended after the rows just queued.
+            let pump = crate::pump::start(
+                "log changes",
+                thread,
+                move || feed.new.recv().ok(),
+                |records: &mut Vec<pg_log::Record>, record: pg_log::Record| records.push(record),
+                |model, pending| model.append(pending),
+            );
+            if let Err(e) = pump {
+                pg_log::warn("log", &format!("the log view's pump didn't start: {e:#}"));
             }
         });
         if let Err(e) = reader {
-            pg_log::warn("log", &format!("the log view's reader didn't start: {e:#}"));
+            reader_didnt_start(&e);
         }
     }
 
@@ -150,11 +152,7 @@ impl qobject::LogModel {
 
     /// The records logged since the last pass, added at the end; the oldest rows go past the cap.
     fn append(mut self: Pin<&mut Self>, pending: Arc<Mutex<Pending<Vec<pg_log::Record>>>>) {
-        let records = {
-            let mut pending = lock(&pending);
-            pending.queued = false;
-            std::mem::take(&mut pending.changes)
-        };
+        let records = Pending::take(&pending);
         if records.is_empty() {
             return;
         }

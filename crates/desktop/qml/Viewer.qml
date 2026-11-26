@@ -1,5 +1,5 @@
 // Full-window viewer and triage (a rating app's): fit to the window, up or down, with an antialiased
-// (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch, + −) and pan by dragging; the wheel
+// (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch) or the window's centre (+ −) and pan by dragging; the wheel
 // steps to the previous or next picture. Between
 // fit and 1:1 Rust renders the visible part with Lanczos as the view moves, and the last part shown stays until the
 // next is ready, so the picture stays sharp; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a

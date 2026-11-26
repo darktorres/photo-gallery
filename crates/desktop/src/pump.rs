@@ -1,6 +1,6 @@
 //! The change pump: a thread that takes a bus's changes and queues a run of a QObject's handler onto the Qt thread for
 //! them. What came in is gathered while a run is queued, so at most one is queued at a time, and the Qt thread runs one
-//! per event-loop turn at most. The library's model and the Yandex panel each start one.
+//! per event-loop turn at most. The library's model, the Yandex panel, the log view and the inbox view each start one.
 
 use core::pin::Pin;
 use std::io;

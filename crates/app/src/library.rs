@@ -549,8 +549,15 @@ impl LibraryService {
         }
         // The thumbnails of the files the discard dropped (section 10, D11). A sweep that fails is said as its own state,
         // not as this discard's failure: the files are gone, and a later sweep drops their thumbnails.
-        let swept = self.catalogs.with_catalog(|c| Ok(pg_library::removals::sweep_orphans(&self.thumbs, c)))?;
-        self.swept(&swept);
+        // The catalog is opened again for the sweep, after the discard has committed: a sweep that cannot run is told the same
+        // way, and the discard still reports success.
+        match self.catalogs.with_catalog(|c| Ok(pg_library::removals::sweep_orphans(&self.thumbs, c))) {
+            Ok(swept) => self.swept(&swept),
+            Err(e) => {
+                let error = pg_model::notice::error_text(&pg_model::error::chain(&e));
+                self.inbox.post(Notice::CacheNotSwept { error });
+            }
+        }
         Ok(true)
     }
 

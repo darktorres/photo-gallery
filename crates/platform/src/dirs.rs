@@ -21,13 +21,17 @@ pub fn user_folder(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
 /// [`user_folder`] for the named OS, so both are tested on every host.
 fn user_folder_for(windows: bool, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     let name = if windows { "USERPROFILE" } else { "HOME" };
+    absolute_var(windows, &var, name)
+}
+
+/// The variable `name` as a folder, when its value is absolute in the named OS's form.
+fn absolute_var(windows: bool, var: &impl Fn(&str) -> Option<OsString>, name: &str) -> Option<PathBuf> {
     var(name).filter(|value| is_absolute_for(windows, &value.to_string_lossy())).map(PathBuf::from)
 }
 
 /// [`default_home`] for the named OS, so both are tested on every host.
 fn home_for(windows: bool, var: impl Fn(&str) -> Option<OsString>) -> Result<PathBuf, String> {
-    let absolute =
-        |name: &str| var(name).filter(|value| is_absolute_for(windows, &value.to_string_lossy())).map(PathBuf::from);
+    let absolute = |name: &str| absolute_var(windows, &var, name);
     if windows {
         return absolute("LOCALAPPDATA").map(|local| local.join("PhotoGallery")).ok_or_else(|| {
             "LOCALAPPDATA is not set to a folder, so there is no default folder for the library: set PG_HOME"

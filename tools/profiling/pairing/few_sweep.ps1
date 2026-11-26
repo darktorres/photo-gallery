@@ -22,7 +22,17 @@ param(
 $ErrorActionPreference = 'Stop'
 $setOwed = Join-Path $PSScriptRoot 'set_owed.py'
 . (Join-Path $PSScriptRoot 'cpu_load.ps1')
-New-Item -ItemType Directory $Work -Force | Out-Null
+# -Work is scratch these scripts own: it is removed only when it carries this marker, which the script writes into the
+# folder it makes. A folder the caller named that lacks it is refused, not deleted.
+$scratchMarker = '.pairing-scratch'
+function Clear-Work {
+    if (-not (Test-Path $Work)) { return }
+    if (-not (Test-Path (Join-Path $Work $scratchMarker))) { throw "-Work $Work is not a scratch folder of these scripts: name a folder that does not exist" }
+    Remove-Item -LiteralPath $Work -Recurse -Force
+}
+Clear-Work
+New-Item -ItemType Directory $Work | Out-Null
+New-Item -ItemType File (Join-Path $Work $scratchMarker) | Out-Null
 $copy = Join-Path $Work 'catalog.sqlite'
 function Median([double[]] $v) {
     $s = $v | Sort-Object
@@ -39,6 +49,7 @@ foreach ($w in $Workers) {
                 Copy-Item $Catalog $copy -Force
                 Remove-Item "$copy-wal", "$copy-shm" -ErrorAction SilentlyContinue
                 python -I $setOwed $copy $n | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "set_owed.py failed (exit $LASTEXITCODE) with $n owed" }
                 $env:PG_PROBE_KEEP_OWED = '1'
                 $env:PG_PROBE_WORKERS = "$w"
                 $env:PG_PROBE_FEW = if ($path -eq 'few') { '1000000000' } else { '0' }
@@ -56,4 +67,4 @@ foreach ($w in $Workers) {
     }
 }
 Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_WORKERS, Env:PG_PROBE_FEW -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $Work -Recurse -Force
+Clear-Work

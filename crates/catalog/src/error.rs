@@ -130,11 +130,21 @@ pub enum Error {
         /// What was being done, in words.
         what: &'static str,
     },
+    /// The write-ahead log of the catalog at `path` could not be merged into the file on close, because another connection
+    /// has pages of it open. Its changes stay in the log, which a later checkpoint merges.
+    #[error(
+        "catalog {path}: its write-ahead log could not be merged into the file (another connection has it open): its \
+         changes stay in the log"
+    )]
+    WalNotMerged {
+        /// The catalog's path.
+        path: String,
+    },
     /// A migration of the catalog at `path` needs `needed` MB free on its drive (a copy aside and the migration's log), and
     /// `free` MB are.
     #[error(
         "catalog {path}: bringing it to this build's version needs {needed} MB free on its drive (a copy aside and the \
-         migration's log), and {free} MB are: free some space and start again"
+         migration's log), but only {free} MB are free; free some space and start again"
     )]
     MigrationRoom {
         /// The catalog's path.

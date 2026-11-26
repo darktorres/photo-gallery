@@ -74,10 +74,8 @@ impl qobject::GalleryModel {
         crate::viewport::full_url(key, pg_model::image::View::Full)
     }
 
-    /// The URL of a file's thumbnail at a device-pixel height (`image://thumb/<key>/<height>`), or empty when the key
-    /// doesn't read.
-    /// The URL of a file's thumbnail at `height`, or empty when there is no height yet or the key doesn't read (the row
-    /// then shows its thumbhash).
+    /// The URL of a file's thumbnail at `height` (`image://thumb/<key>/<height>`), or empty when there is no height yet or
+    /// the key doesn't read (the row then shows its thumbhash).
     pub(super) fn thumb_url(&self, key: &QString, height: Option<ThumbHeight>) -> QString {
         match (ImageKey::parse(&key.to_string()), height) {
             (Some(key), Some(height)) => QString::from(&ImageRequest::thumb(key, height).url()),

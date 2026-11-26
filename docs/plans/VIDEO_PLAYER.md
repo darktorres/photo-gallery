@@ -33,7 +33,7 @@ libraries (Option A uses the raw `ffmpeg-sys-next` bindings); they differ in who
 - Correct colours: BT.601/709/2020 matrices, limited and full range, 8- and 10-bit. HDR tone-mapped to
   SDR. The output stays SDR in v1: an HDR swapchain is per window, so it would change the whole gallery UI.
 - Open fast when stepping through a folder. Ideally the neighbouring videos are opened ahead of time.
-- Licence: the FFmpeg we test is BtbN's GPL shared build (`gpl-shared`, see `.github/workflows/ci.yml`),
+- Licence: the FFmpeg we test is BtbN's GPL shared build (`gpl-shared`, pinned in the `Justfile`'s `ffmpeg_url`),
   linked dynamically. The pinned build must not be distributed (zvbi, see "Research → Licences"); re-pin before
   shipping. The licence texts and the source must ship with the DLLs (none are shipped yet, for FFmpeg
   or Qt). Nothing of ours on C:.
@@ -577,9 +577,10 @@ cache is set, and its loop needs display-resample with a fixed display fps. Neit
 
 ## Videos and animations (M2)
 
-Our FFmpeg is BtbN's `gpl-shared` build, n9.0.2-39-g7adfbe40dc, at `D:\PhotoGallery\tools\ffmpeg-9.0`. It is the
-only FFmpeg on this machine's tools path:
-the app and the video test use one copy, and the test's x264 clips need the GPL encoders.
+Our FFmpeg is BtbN's `gpl-shared` build, n9.0.2-39-g7adfbe40dc. A copy is at `D:\PhotoGallery\tools\ffmpeg-9.0`. The app
+and the video test take FFmpeg from `FFMPEG_DIR` when it is set, and from the pinned build in `.deps/ffmpeg` (which
+`just setup` fills) when it is not (`crates/video/build.rs`). Whether that copy and `.deps/ffmpeg` are the same build is
+not checked here. The test's x264 clips need the GPL encoders.
 
 ### Measured here
 

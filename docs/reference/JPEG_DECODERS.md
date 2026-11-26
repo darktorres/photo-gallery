@@ -401,7 +401,8 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 ## nvImageCodec and debesheedas
 
 - **nvImageCodec 0.10.0.9** (`nvimgcodec_bench.py`; this run had 2.8–4.1 cores of other load, so read it as rough;
-  0.10.0.9 is the version the numbers were measured with, and `eval/jpeg-decoders/requirements.txt` pins it):
+  0.10.0.9 is the version the numbers were measured with, and `eval/jpeg-decoders/requirements.txt` pins it, with
+  nvJPEG 13.3.2.43 beside it; the 13.2.3 DLL of the `nvjpeg.py` and `gpu.py` figures is a different library):
   - **One image per call** costs about what nvJPEG does with its default backend: 3.4–7.6 ms on the Pinterest files,
     20–53 ms on camera files. The CPU time equalled the wall time in the spinning run; with blocking sync
     (`blocking_sync()` in `nvimgcodec_bench.py`) the CPU time at batch 1 fell from 16.8 to 13.3 ms, so the spin
@@ -706,7 +707,7 @@ otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full
   inputs are library photos, so they're copied into the `pg-eval` volume (`/eval/jpeg-inputs`) and never into the repo.
   Natively on Linux, `python3 eval/jpeg-decoders/linux.py ...` with the packages of `docker/apt-packages-eval.txt`.
   `PG_JPEG_NAMES` (comma-separated, from the names in `linux.py`) runs a subset.
-- **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
+- **GPU through Python:** `$PG_ROOT\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
   (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
   backends).
 - **Restart markers and baseline conversion:** `just linux-eval eval/jpeg-decoders/restart.py`. It keeps the variants in
@@ -714,7 +715,7 @@ otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full
 - **The C++ harness:**
   - Build: `python eval\jpeg-decoders\win_build.py` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
     `win_env.py` sets them up) and `just linux-eval eval/jpeg-decoders/linux_build.py` in the container. Both clone the
-    third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or the `pg-eval` volume's
+    third-party code at pinned commits into `PG_JPEG_EVAL` (default `$PG_ROOT\tools\jpeg-eval`) or the `pg-eval` volume's
     `/eval/jpeg-eval` and apply `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for
     parajpeg, its GCC flags kept off nvcc and MSVC equivalents of two builtins.
   - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with CUDA

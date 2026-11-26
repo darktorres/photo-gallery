@@ -3,9 +3,10 @@
 use pg_client::controller::size::{Change, Event, GridSize};
 use pg_model::size::{Factor, RowHeight, Scale, ThumbHeight};
 
+use super::common::ROW_200;
+
 const ROW_100: RowHeight = RowHeight::new(100).expect("a row height in range");
 const ROW_101: RowHeight = RowHeight::new(101).expect("a row height in range");
-const ROW_200: RowHeight = RowHeight::new(200).expect("a row height in range");
 const ROW_230: RowHeight = RowHeight::new(230).expect("a row height in range");
 const SCALE_1_5: Scale = Scale::new(1.5).expect("a positive scale");
 

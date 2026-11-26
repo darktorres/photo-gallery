@@ -30,7 +30,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use pg_model::rules::PathRules;
+use pg_platform::native::PATH_RULES;
 use rusqlite::{Connection, OpenFlags};
 
 /// The probe's result: any error, its words kept as text (a probe has no caller that matches on its errors).
@@ -124,9 +124,14 @@ fn main() -> Result<()> {
     let dir = pg_testkit::run_folder("scratch_catalog", "pairs-load-probe")?;
     let db = dir.join("catalog.sqlite");
     std::fs::copy(source, &db).context("copy the catalog")?;
+    // A WAL-mode catalog keeps its newest pages in its log until a checkpoint: the copy takes the log too.
+    let log = format!("{source}-wal");
+    if Path::new(&log).exists() {
+        std::fs::copy(&log, format!("{}-wal", db.display())).context("copy the catalog's log")?;
+    }
     show_plans(&open(&db, cache_kib()?)?)?;
     // The pass opens it as the app's catalog: held open (untimed) while the variants run, as during a pass.
-    let catalog = pg_catalog::Catalog::open(&db, PathRules::Windows)?;
+    let catalog = pg_catalog::Catalog::open(&db, PATH_RULES)?;
 
     let mut times: BTreeMap<&str, Vec<Run>> = BTreeMap::new();
     for run in 0..runs {

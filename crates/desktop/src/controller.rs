@@ -170,13 +170,13 @@ pub(crate) fn with<T>(read: impl FnOnce(&Controller) -> T) -> T {
     CORE.with(|core| read(&core.borrow().controller))
 }
 
-/// The listing as it is now.
 /// Whether the start left out what it was given because border detection is off (`start_refused`): the window says so
 /// once the start is over.
 pub(crate) fn options_refused() -> bool {
     CORE.with(|core| core.borrow().options_refused)
 }
 
+/// The listing as it is now.
 pub(crate) fn listing() -> Listing {
     with(|c| c.listing().clone())
 }

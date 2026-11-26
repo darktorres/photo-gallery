@@ -12,17 +12,14 @@ import json
 import numpy as np
 
 from ann import exact, metrics
-from ann.data import MAIN, MODEL, OUT, Base
+from ann.data import MAIN, MODEL, OUT, Base, read_jsonl
 from common import WORK_DIR
 
 TARGETS = (0.99, 0.995, 0.999)
 
 
 def load(stage: str) -> list[dict]:
-    p = OUT / f"results_{stage}.jsonl"
-    if not p.exists():
-        return []
-    return [ln for ln in map(json.loads, p.read_text(encoding="utf-8").splitlines()) if "error" not in ln]
+    return [ln for ln in read_jsonl(OUT / f"results_{stage}.jsonl") if "error" not in ln]
 
 
 def describe(ln: dict) -> str:
@@ -55,7 +52,7 @@ def true_duplicate_recall(base: Base) -> dict:
     with csv_path.open(newline="", encoding="utf-8") as f:
         decision = {int(r["id"]): r["decision"] for r in csv.DictReader(f)}
     sub = base.subset(MAIN)
-    t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
+    t = metrics.truth(base, sub, exact.knn_truth(base, MAIN))
 
     def band_of(s):
         return int(np.digitize(s, metrics.BANDS) - 1)
@@ -67,13 +64,24 @@ def true_duplicate_recall(base: Base) -> dict:
             strata.setdefault((m["kind"], band_of(m["sim"])), []).append(decision[pid] == "match")
     kind = metrics.kind_of(t, t.required)
     band = np.digitize(t.required_sim, metrics.BANDS) - 1
+    # Every stratum that holds required pairs counts. One with no decided sample has no estimate: it adds nothing to
+    # the point total (so the total and the recall are withheld) and nothing to the lower bound, which stays valid.
     total = total_lo = 0.0
-    for (k, b), v in strata.items():
-        count = int(((kind == metrics.KINDS.index(k)) & (band == b)).sum())
+    unsampled = 0
+    for ki, b in sorted(set(zip(kind.tolist(), band.tolist()))):
+        count = int(((kind == ki) & (band == b)).sum())
+        v = strata.get((metrics.KINDS[ki], b))
+        if not v:
+            unsampled += count
+            continue
         total += count * np.mean(v)
         total_lo += count * metrics.clopper_pearson(int(sum(v)), len(v))[0]
+    complete = unsampled == 0
 
-    out: dict = {"true_duplicates_estimated": round(total, 1)}
+    out: dict = {
+        "true_duplicates_estimated": round(total, 1) if complete else None,
+        "required_pairs_without_sample": unsampled,
+    }
     for p in sorted(OUT.glob("misses_*.npy")):
         fam = p.stem[len("misses_") :]
         miss = np.load(p)
@@ -92,7 +100,7 @@ def true_duplicate_recall(base: Base) -> dict:
             "verified_sample": len(sample),
             "match_rate_of_misses": round(rate, 4),
             "true_duplicates_lost": round(lost, 1),
-            "true_duplicate_recall": round(1 - lost / total, 5) if total else None,
+            "true_duplicate_recall": round(1 - lost / total, 5) if total and complete else None,
             "conservative_bound": round(1 - lost_hi / total_lo, 5) if total_lo else None,
         }
     return out

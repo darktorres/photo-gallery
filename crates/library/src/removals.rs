@@ -33,7 +33,8 @@ impl std::ops::Deref for Finished {
 /// Finishes every removal not finished. `progress` is told how many files each batch is about to delete, before the
 /// batch goes, and returns `false` to stop (the removal then waits for the next call). The batch's thumbnails are
 /// forgotten first; a thumbnail that could not be forgotten is not a reason to keep the removal from going on, so the
-/// first such failure is returned after the rest is done, and the sweep at the end drops what it can.
+/// first such failure is told as the sweep's (`Finished::swept`) after the rest is done, and the sweep at the end drops
+/// what it can.
 pub fn finish(catalog: &Catalog, thumbs: &ThumbCache, progress: &mut dyn FnMut(usize) -> bool) -> Result<Finished> {
     for marker in catalog.removal_markers()? {
         catalog.hide_pages(&marker.path)?;
@@ -60,11 +61,14 @@ pub fn drive(catalog: &Catalog, thumbs: &ThumbCache, progress: &mut dyn FnMut(us
     let swept = sweep_orphans(thumbs, catalog);
     // The forgotten thumbnails' pages go back to the file system too (the cache keeps a little free space, as its own
     // maintenance does, and gives the rest back).
-    thumbs.shrink_all()?;
-    match forget_failed {
+    let shrunk = thumbs.shrink_all();
+    // A thumbnail the cache could not forget or give its pages back is the cache's failure, not the removal's: the folder
+    // is hidden and its files deleted already, so it is told as the sweep's (`CacheNotSwept`), not as a failed removal.
+    let swept = match forget_failed.or(shrunk.err()) {
         Some(e) => Err(Error::Cache(e)),
-        None => Ok(Finished { driven, swept }),
-    }
+        None => swept,
+    };
+    Ok(Finished { driven, swept })
 }
 
 /// Drops the thumbnails of the files the catalog no longer has (section 10, D11): what a removal left behind, or an entry of

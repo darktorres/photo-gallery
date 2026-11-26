@@ -15,9 +15,10 @@ Windows only, run from the eval's venv (pyvips installed). Settings come from th
 - PG_JPEGLI_BUILD: jpegli's build folder, with tools\\cjpegli.exe and tools\\ssimulacra2.exe, and lib\\ for their DLLs.
   Default PG_ROOT\\tools\\jpeg-eval\\build\\jpegli.
   warning.
-- PG_DATA_ROOT: the Pinterest library (default PG_ROOT\\datasets\\pinterest). Its originals are the files without
-  "mozjpeg" in the name: ImageReduce never reprocesses its own outputs.
-- CAMERA_ROOT: the camera originals (default E:\\Cameras).
+- PG_DATA_ROOT: the datasets folder, as in `eval/common.py` (default PG_ROOT\\datasets). The Pinterest library is its
+  `pinterest` folder. Its originals are the files without "mozjpeg" in the name: ImageReduce never reprocesses its own
+  outputs.
+- PG_CAMERA_ROOT: the camera originals (default PG_ROOT\\cameras).
 """
 
 import argparse
@@ -58,7 +59,8 @@ def _setup_paths() -> tuple[Path, Path, Path]:
     vips = _env_path("PG_IMAGEREDUCE_VIPS_BIN", None)
     jpegli = _env_path("PG_JPEGLI_BUILD", root and root / "tools" / "jpeg-eval" / "build" / "jpegli")
     os.environ["PATH"] = os.pathsep.join([str(vips), str(jpegli / "lib"), os.environ["PATH"]])
-    pinterest = _env_path("PG_DATA_ROOT", root and root / "datasets" / "pinterest")
+    datasets = _env_path("PG_DATA_ROOT", root and root / "datasets")
+    pinterest = datasets and datasets / "pinterest"
     return jpegli / "tools" / "cjpegli.exe", jpegli / "tools" / "ssimulacra2.exe", pinterest
 
 
@@ -161,7 +163,7 @@ def population(which: str) -> list[Path]:
     if which == "library":
         root, exts = PINTEREST, {".jpg", ".jpeg", ".png", ".webp"}
     else:
-        root, exts = _env_path("CAMERA_ROOT", Path(r"E:\Cameras")), {".jpg", ".jpeg"}
+        root, exts = _env_path("PG_CAMERA_ROOT", _root() and _root() / "cameras"), {".jpg", ".jpeg"}
     files = [
         Path(dp) / f
         for dp, _, names in os.walk(root)
@@ -226,20 +228,17 @@ def summarize(path: Path) -> None:
     def fl(r: dict, key: str) -> float:
         return float(r[key])
 
-    def med(xs) -> float:
-        return statistics.median(list(xs))
-
     vips_kept = [r for r in ok if fl(r, "vips_bytes") > fl(r, "in_bytes")]
     print(
         f"  thumbnail path: {sum(r['thumb'] == '1' for r in ok)}; with metadata beyond JFIF: "
         f"{sum(int(r['vips_meta']) > 190 for r in ok)}"
     )
     print(
-        f"  input median {med(fl(r, 'in_bytes') for r in ok):.0f} bytes; vips output median "
-        f"{med(fl(r, 'vips_bytes') for r in ok):.0f}"
+        f"  input median {statistics.median(fl(r, 'in_bytes') for r in ok):.0f} bytes; vips output median "
+        f"{statistics.median(fl(r, 'vips_bytes') for r in ok):.0f}"
     )
     print(f"  today: output bigger than input (kept as original): {len(vips_kept)}/{len(ok)}")
-    print(f"  SSIMULACRA2 of vips Q{REF_Q}: median {med(fl(r, 's_vips') for r in ok):.2f}")
+    print(f"  SSIMULACRA2 of vips Q{REF_Q}: median {statistics.median(fl(r, 's_vips') for r in ok):.2f}")
 
     ratios, flags = [], {"": 0, ">": 0, "<": 0}
     for r in ok:
@@ -247,7 +246,7 @@ def summarize(path: Path) -> None:
         flags[flag] += 1
         ratios.append(b / (fl(r, "vips_bytes") - int(r["vips_meta"])))
     print(
-        f"  matched score, image bytes jpegli/vips: median {med(ratios):.3f}; outside the grid: "
+        f"  matched score, image bytes jpegli/vips: median {statistics.median(ratios):.3f}; outside the grid: "
         f"{flags['>']} above, {flags['<']} below"
     )
 
@@ -266,7 +265,7 @@ def summarize(path: Path) -> None:
                 total += fl(r, "in_bytes")
             else:
                 total += jt
-        print(f"    {q:>4} {med(ds):>+14.2f} {med(rs):>17.3f} {kept:>6} {total:>14,.0f} {100 * (total / base_total - 1):>+8.1f}%")
+        print(f"    {q:>4} {statistics.median(ds):>+14.2f} {statistics.median(rs):>17.3f} {kept:>6} {total:>14,.0f} {100 * (total / base_total - 1):>+8.1f}%")
 
 
 def main() -> None:

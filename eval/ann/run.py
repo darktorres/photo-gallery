@@ -5,7 +5,7 @@ Usage (from eval/, with PG_DATA_ROOT=<datasets folder> PG_WORK_DIR=<run folder>)
 
 Stages, each cached in CACHE_DIR/ann (results_*.jsonl lines are skipped when present):
 - validate: the harness checks itself; tune refuses to run until every gate passes (validate.json):
-  1. SIFT1M: FAISS reproduces its published recall (benchs/bench_hnsw.py settings), USearch is in range;
+  1. SIFT1M: FAISS reproduces its published recall (benchs/bench_hnsw.py settings); USearch's recall is recorded, not gated;
   2. ceiling: at 25k (VALIDATE), every non-quantized method's widest setting finds >= 0.999 of the required pairs;
   3. the GPU exact join equals float64 on 1,000 random and the 1,000 densest rows.
 - charact: data structure, base vs a Gaussian control (charact.py).
@@ -32,8 +32,8 @@ from pathlib import Path
 import numpy as np
 
 from ann import charact, exact, methods, metrics
-from ann.data import KMAX, MAIN, MODEL, OUT, SIZES, VALIDATE, Base, load_base, size_tag
-from common import WORK_DIR
+from ann.data import KMAX, MAIN, MODEL, OUT, SIZES, VALIDATE, Base, append_jsonl, load_base, read_jsonl, size_tag
+from common import WORK_DIR, save_atomic
 
 KPRIMES = (10, 20, 40, 80)
 EFS = (16, 32, 64, 128, 256, 512, 1024, 2048, 4096)
@@ -135,14 +135,14 @@ def base_file(base: Base, size: int | None, pca_dim: int = 0) -> Path:
     path = OUT / f"base_{size_tag(size)}{f'_pca{pca_dim}' if pca_dim else ''}.npy"
     if not path.exists():
         x = base.x[base.subset(size)]
-        np.save(path, methods.pca(x, pca_dim) if pca_dim else x.astype(np.float16))
+        save_atomic(path, lambda f: np.save(f, methods.pca(x, pca_dim) if pca_dim else x.astype(np.float16)))
     return path
 
 
 def centroids_file(base: Base, size: int | None, nlist: int) -> Path:
     path = OUT / f"centroids_{size_tag(size)}_{nlist}.npy"
     if not path.exists():
-        np.save(path, methods.kmeans(base.x[base.subset(size)], nlist))
+        save_atomic(path, lambda f: np.save(f, methods.kmeans(base.x[base.subset(size)], nlist)))
     return path
 
 
@@ -203,18 +203,16 @@ def results_path(stage: str) -> Path:
 
 
 def done_names(stage: str) -> set[str]:
-    p = results_path(stage)
-    return {json.loads(line)["name"] for line in p.read_text(encoding="utf-8").splitlines()} if p.exists() else set()
+    # A recorded failure is not done: a rerun retries that configuration.
+    return {ln["name"] for ln in load_results(stage) if "error" not in ln}
 
 
 def append(stage: str, lines: list[dict]) -> None:
-    with results_path(stage).open("a", encoding="utf-8") as f:
-        f.writelines(json.dumps(line) + "\n" for line in lines)
+    append_jsonl(results_path(stage), lines)
 
 
 def load_results(stage: str) -> list[dict]:
-    p = results_path(stage)
-    return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines()] if p.exists() else []
+    return read_jsonl(results_path(stage))
 
 
 # --- stages --------------------------------------------------------------------------------------------------
@@ -230,7 +228,7 @@ def stage_validate(base: Base) -> None:
     out: dict = {}
     # Gate 1: SIFT1M.
     sift = OUT / "sift"
-    if not (sift / "sift_base.npy").exists():
+    if not all((sift / f"sift_{name}.npy").exists() for name in ("base", "query", "learn", "gt")):
         sift.mkdir(parents=True, exist_ok=True)
         tgz = sift / "sift.tar.gz"
         if not tgz.exists():
@@ -239,10 +237,10 @@ def stage_validate(base: Base) -> None:
         with tarfile.open(tgz) as tf:
             tf.extractall(sift, filter="data")
         for name in ("base", "query", "learn"):
-            np.save(sift / f"sift_{name}.npy", fvecs(sift / "sift" / f"sift_{name}.fvecs"))
-        np.save(
-            sift / "sift_gt.npy", np.fromfile(sift / "sift" / "sift_groundtruth.ivecs", dtype=np.int32).reshape(-1, 101)[:, 1:]
-        )
+            vectors = fvecs(sift / "sift" / f"sift_{name}.fvecs")
+            save_atomic(sift / f"sift_{name}.npy", lambda f, a=vectors: np.save(f, a))
+        gt = np.fromfile(sift / "sift" / "sift_groundtruth.ivecs", dtype=np.int32).reshape(-1, 101)[:, 1:]
+        save_atomic(sift / "sift_gt.npy", lambda f: np.save(f, gt))
     gt1 = np.load(sift / "sift_gt.npy")[:, 0]
     common = {"queries": sift / "sift_query.npy", "metric": "l2"}
     gate1 = {}
@@ -272,7 +270,7 @@ def stage_validate(base: Base) -> None:
     # Gate 2: the ceiling at 25k.
     size = VALIDATE
     sub = base.subset(size)
-    t = metrics.truth(base, sub, exact.ground_truth(base, size))
+    t = metrics.truth(base, sub, exact.knn_truth(base, size))
     x = base.x[sub]
     nl = nlists(len(sub))[0]
     widest = [
@@ -294,7 +292,7 @@ def stage_validate(base: Base) -> None:
     print(json.dumps(gate2, indent=2), flush=True)
 
     # Gate 3: exact vs float64.
-    gt = exact.ground_truth(base, MAIN)
+    gt = exact.knn_truth(base, MAIN)
     xa = base.x[base.subset(MAIN)]
     rng = np.random.default_rng(0)
     rows = np.unique(np.concatenate([rng.choice(len(xa), 1000, replace=False), np.argsort(-gt["sims"][:, -1])[:1000]]))
@@ -312,14 +310,14 @@ def require_validation() -> None:
 
 
 def stage_charact(base: Base) -> None:
-    out = charact.characterize(base, exact.ground_truth)
+    out = charact.characterize(base, exact.knn_truth)
     (OUT / "charact.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(json.dumps(out, indent=2), flush=True)
 
 
 def stage_exact(base: Base) -> None:
     for size in SIZES:
-        gt = exact.ground_truth(base, size)
+        gt = exact.knn_truth(base, size)
         print(
             f"exact {size_tag(size)}: {len(gt['ids']):,} rows in {float(gt['seconds']):.1f} s; {len(gt['hub_rows'])} hubs",
             flush=True,
@@ -333,7 +331,7 @@ def stage_exact(base: Base) -> None:
 def stage_tune(base: Base, configs: list[dict] | None = None, stage: str = "tune", pca_dim: int = 0) -> None:
     require_validation()
     sub = base.subset(MAIN)
-    t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
+    t = metrics.truth(base, sub, exact.knn_truth(base, MAIN))
     x = base.x[sub]
     done = done_names(stage)
     configs = configs if configs is not None else grid(len(sub))
@@ -385,6 +383,13 @@ def stage_pca(base: Base) -> None:
 def stage_finalists(base: Base) -> None:
     lines = ok_lines("tune")
     done = done_names("finalists")
+    truths: dict[int, metrics.Truth] = {}  # per nested size: shared by every family, target and rebuild
+
+    def truth_at(size: int) -> metrics.Truth:
+        if size not in truths:
+            truths[size] = metrics.truth(base, base.subset(size), exact.knn_truth(base, size))
+        return truths[size]
+
     families = sorted({ln["family"] for ln in lines} - {"exact"})
     for fam in families:
         for target in TARGETS:
@@ -403,7 +408,7 @@ def stage_finalists(base: Base) -> None:
                     job["order"] = "shuffled"
                 build, runs = run_config(base, MAIN, c, **job)
                 sub = base.subset(MAIN)
-                t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
+                t = truth_at(MAIN)
                 ls = [
                     ln
                     for ln in score_runs(
@@ -421,7 +426,7 @@ def stage_finalists(base: Base) -> None:
                 if name in done:
                     continue
                 sub = base.subset(size)
-                t = metrics.truth(base, sub, exact.ground_truth(base, size))
+                t = truth_at(size)
                 scaled = scale_config(sweep, n_full, len(sub))
                 build, runs = run_config(base, size, scaled)
                 extra = {"target": target, "size": size_tag(size)}
@@ -461,7 +466,7 @@ def stage_verify(base: Base) -> None:
 
 def prepare_verify(base: Base) -> None:
     sub = base.subset(MAIN)
-    t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))
+    t = metrics.truth(base, sub, exact.knn_truth(base, MAIN))
     x = base.x[sub]
     rng = np.random.default_rng(0)
     kind = metrics.kind_of(t, t.required)
@@ -481,7 +486,8 @@ def prepare_verify(base: Base) -> None:
         _, runs = run_config(base, MAIN, c)
         ids, sims = metrics.rescore(x, runs[0]["ids"])
         miss = metrics.missed(t, ids, sims, best["kprime"])
-        np.save(OUT / f"misses_{fam}.npy", miss)  # all of them: the report scales the verified sample up
+        # all of them: the report scales the verified sample up
+        save_atomic(OUT / f"misses_{fam}.npy", lambda f: np.save(f, miss))
         for key in rng.choice(miss, min(len(miss), VERIFY_MISSES), replace=False):
             chosen.setdefault(int(key), []).append(f"miss:{fam}")
         print(f"{fam}: {len(miss)} required pairs missed at its 0.999 setting", flush=True)
@@ -498,7 +504,7 @@ def prepare_verify(base: Base) -> None:
         {"key": int(k), "sources": chosen[int(k)], "kind": metrics.KINDS[int(pk[i])], "sim": float(sims_ab[i])}
         for i, k in enumerate(keys)
     ]
-    (OUT / "verify_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    save_atomic(OUT / "verify_meta.json", lambda f: f.write(json.dumps(meta, indent=2).encode("utf-8")))
     tmp = WORK_DIR / f"pairs_knn.csv.{uuid.uuid4().hex}.tmp"
     with tmp.open("w", encoding="utf-8") as f:
         f.write("a,b,label\n")

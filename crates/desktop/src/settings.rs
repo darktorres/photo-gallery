@@ -26,6 +26,17 @@ pub(crate) fn save_prefs(prefs: &pg_app::PrefStore, change: impl FnOnce(&mut pg_
     });
 }
 
+/// Saves a detection choice, when it differs from the stored one (`stored`), and tells the job, which ends the pass that
+/// it turns off (after its batch). False when the choice is already `value`.
+fn save_detect(stored: bool, value: bool, change: impl FnOnce(&mut pg_app::Prefs)) -> bool {
+    if stored == value {
+        return false;
+    }
+    change_prefs(change);
+    app::get().library().set_features(app::get().prefs().get().features());
+    true
+}
+
 impl qobject::Settings {
     pub(crate) fn read_write_back(&self) -> bool {
         app::get().prefs().get().write_back
@@ -57,20 +68,14 @@ impl qobject::Settings {
         app::get().prefs().get().detect_duplicates
     }
 
-    /// Saves the choice and tells the job, which ends the pass that it turns off (after its batch).
     pub(crate) fn set_detect_borders_saved(self: Pin<&mut Self>, value: bool) {
-        if app::get().prefs().get().detect_borders != value {
-            change_prefs(|p| p.detect_borders = value);
-            app::get().library().set_features(app::get().prefs().get().features());
+        if save_detect(app::get().prefs().get().detect_borders, value, |p| p.detect_borders = value) {
             self.detect_borders_changed();
         }
     }
 
-    /// Saves the choice and tells the job, which ends the pass that it turns off (after its batch).
     pub(crate) fn set_detect_duplicates_saved(self: Pin<&mut Self>, value: bool) {
-        if app::get().prefs().get().detect_duplicates != value {
-            change_prefs(|p| p.detect_duplicates = value);
-            app::get().library().set_features(app::get().prefs().get().features());
+        if save_detect(app::get().prefs().get().detect_duplicates, value, |p| p.detect_duplicates = value) {
             self.detect_duplicates_changed();
         }
     }

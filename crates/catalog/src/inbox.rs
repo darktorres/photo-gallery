@@ -50,9 +50,9 @@ use rusqlite::{Connection, params};
 
 use pg_model::inbox::{InboxCounts as Counts, InboxEntry as Entry, InboxEntryId as EntryId};
 use pg_model::notice::{Key, Level, Lifecycle, Notice, Part, Trigger, resolves};
+use pg_model::num::count_u64;
 use pg_model::rules::PathRules;
 
-use crate::convert::progress_count;
 use crate::core::Catalog;
 use crate::error::{Error, Result};
 use crate::ledger::{dismiss_ledger_on, ledger_entries_on, mark_ledger_read_on};
@@ -117,9 +117,7 @@ impl Catalog {
         };
         let part = scope.part.map(part_text);
         let stale = |conn: &Connection| -> Result<Vec<String>> {
-            let mut stmt = conn.prepare_cached(
-                "SELECT key FROM notices WHERE kind = ?1 AND root IS ?2 AND key IS NOT NULL AND (?3 IS NULL OR part = ?3)",
-            )?;
+            let mut stmt = conn.prepare_cached(KEYS_IN_SCOPE)?;
             let keys = stmt.query_map(params![scope.code, root, part], |r| r.get(0))?;
             Ok(keys.collect::<rusqlite::Result<_>>()?)
         };
@@ -317,7 +315,7 @@ impl Catalog {
 
     /// How many entries are listed and not read.
     pub fn unread(&self) -> Result<u64> {
-        Ok(progress_count(self.inbox_marks()?.iter().filter(|m| !m.read).count()))
+        Ok(count_u64(self.inbox_marks()?.iter().filter(|m| !m.read).count()))
     }
 
     /// Dismissed states older than [`DISMISSED_FOR_SECS`] go (events are bounded by `notices_uid`, and deleted when
@@ -329,7 +327,7 @@ impl Catalog {
             [now - DISMISSED_FOR_SECS],
         )?;
         tx.commit()?;
-        Ok(progress_count(n))
+        Ok(count_u64(n))
     }
 }
 
@@ -353,9 +351,10 @@ fn upsert(rules: PathRules, tx: &Connection, notice: &Notice, times: u64, now: i
     let key = state.map(|k| key_text(k.code, root, part.as_deref()));
     let data = serde_json::to_string(notice).map_err(Error::bare)?;
     let times = if key.is_some() { i64::try_from(times).unwrap_or(i64::MAX) } else { 1 };
-    // A repeat keeps the row's latest text (`data`), but it is news, and counts again, only when the stored bytes differ: a
-    // same-bytes refailure keeps its count, its revision and its read or dismissed marks. In the SET clause the column
-    // references are the old row's, so `data IS excluded.data` compares the stored and the new bytes.
+    // A repeat takes the new level, text (`data`) and update time. Its count, revision and read or dismissed marks are
+    // kept only when the stored bytes are the same: a same-bytes refailure is not news. Changed bytes are news: the count
+    // rises, the revision rises, and both marks are cleared. In the SET clause the column references are the old row's,
+    // so `data IS excluded.data` compares the stored and the new bytes.
     tx.prepare_cached(
         "INSERT INTO notices(key, part, root, level, source, kind, data, created, updated, count)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)
@@ -385,6 +384,14 @@ fn key_text(code: &str, root: Option<i64>, part: Option<&str>) -> String {
     let root = root.map(|r| r.to_string()).unwrap_or_default();
     format!("{code}\u{1f}{root}\u{1f}{}", part.unwrap_or(""))
 }
+
+/// The keys of a scope's kind and folder, and its part when it has one: the state rows [`Catalog::replace_notices`] may
+/// replace or remove (bound as the kind's code, the folder's id or none, and the part or none). Its plan reads the
+/// `notices(kind, root)` index.
+const KEYS_IN_SCOPE: &str = concat!(
+    "SELECT key FROM notices WHERE kind = ?1 AND root IS ?2 AND key IS NOT NULL ",
+    "AND (?3 IS NULL OR part = ?3)"
+);
 
 /// A key's part as stored: its code.
 fn part_text(part: Part) -> String {
@@ -797,7 +804,7 @@ mod tests {
         let c = catalog(PathRules::Posix);
         let plan = raw::query_plan(
             &c,
-            "SELECT key FROM notices WHERE kind = ?1 AND root IS ?2 AND key IS NOT NULL AND (?3 IS NULL OR part = ?3)",
+            KEYS_IN_SCOPE,
             params!["scan-note", Option::<i64>::None, Option::<String>::None],
         );
         assert!(plan.contains("notices_kind_root"), "{plan}");

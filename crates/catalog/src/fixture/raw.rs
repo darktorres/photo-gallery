@@ -324,7 +324,7 @@ pub(crate) fn start_thumbs_version(c: &Catalog) {
 
 /// The rating the catalog holds for a file (`ratings`), unrated as `None`.
 pub(crate) fn rating(c: &Catalog, id: i64) -> Option<u8> {
-    c.conn.query_row("SELECT rating FROM ratings WHERE file_id = ?1", [id], |r| r.get(0)).optional().unwrap()
+    super::state::rating_of(c, FileId::new(id)).unwrap()
 }
 
 /// What the file holds, as the import read it (`file_ratings`): the writer's own record of it.

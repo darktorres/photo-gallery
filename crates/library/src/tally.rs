@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use pg_jobs::NoticeSink;
 use pg_model::notice::{ERROR_CAP, FilePass, Notice, Op, Trigger, tidy};
+use pg_model::num::count_u64;
 use pg_model::size::ThumbHeight;
 use pg_thumbs::LedgerOutcome;
 
@@ -48,16 +49,15 @@ struct State {
     full: BTreeMap<usize, (ThumbHeight, usize)>,
     /// The lanes whose failure ledger couldn't be written, each with its error.
     ledger: BTreeMap<usize, String>,
+    /// The lanes retired. A lane that outlives its retirement's wait still reports, and its reports are not kept: nothing
+    /// would settle them (lane numbers are never reused).
+    retired: BTreeSet<usize>,
 }
 
 /// The lanes' reports, and what the user is told of them.
 pub(crate) struct Tally {
     notices: Arc<dyn NoticeSink>,
     state: Mutex<State>,
-}
-
-fn count(n: usize) -> u64 {
-    u64::try_from(n).unwrap_or(u64::MAX)
 }
 
 impl Tally {
@@ -74,6 +74,9 @@ impl Tally {
     /// one and every lane that ran the pass ended it.
     pub(crate) fn files_read(&self, lane: usize, drive: &str, pass: FilePass, unreadable: usize, complete: bool) {
         let mut state = self.state();
+        if state.retired.contains(&lane) {
+            return;
+        }
         let reads = Reads { unreadable, complete, drive: drive.to_string() };
         state.reads.entry(pass).or_default().insert(lane, reads);
         self.settle_reads(&state, pass);
@@ -91,7 +94,7 @@ impl Tally {
                 .map(|reads| reads.drive.clone())
                 .collect();
             let drives: Vec<String> = drives.into_iter().collect();
-            self.notices.post(Notice::UnreadableFiles { pass, count: count(unreadable), drives });
+            self.notices.post(Notice::UnreadableFiles { pass, count: count_u64(unreadable), drives });
         } else if lanes.values().all(|reads| reads.complete) {
             self.notices.resolve(Trigger::Pass(pass));
         }
@@ -103,6 +106,9 @@ impl Tally {
     /// and clears nothing.
     pub(crate) fn round(&self, lane: usize, end: RoundEnd) {
         let mut state = self.state();
+        if state.retired.contains(&lane) {
+            return;
+        }
         match end {
             RoundEnd::Failed(error) => {
                 let error = tidy(&error, ERROR_CAP);
@@ -127,9 +133,12 @@ impl Tally {
     /// Lane `lane`'s thumbnail cache is full at `height`, after it made `made` thumbnails.
     pub(crate) fn cache_full(&self, lane: usize, height: ThumbHeight, made: usize) {
         let mut state = self.state();
+        if state.retired.contains(&lane) {
+            return;
+        }
         state.full.insert(lane, (height, made));
         let total: usize = state.full.values().map(|(_, n)| *n).sum();
-        self.notices.post(Notice::CacheFull { height, made: count(total) });
+        self.notices.post(Notice::CacheFull { height, made: count_u64(total) });
     }
 
     /// Lane `lane`'s thumbnails pass ended without the cache being full: its own full-cache notice is no longer true.
@@ -144,6 +153,9 @@ impl Tally {
     /// notice once no lane's failed.
     pub(crate) fn ledger(&self, lane: usize, outcome: LedgerOutcome) {
         let mut state = self.state();
+        if state.retired.contains(&lane) {
+            return;
+        }
         match outcome {
             LedgerOutcome::Failed(error) => {
                 let error = tidy(&error, ERROR_CAP);
@@ -162,6 +174,7 @@ impl Tally {
     /// Lane `lane` was retired: it holds nothing any more, so the notices that it alone held are settled as the others are.
     pub(crate) fn lane_retired(&self, lane: usize) {
         let mut state = self.state();
+        state.retired.insert(lane);
         let passes: Vec<FilePass> = state.reads.keys().copied().collect();
         for pass in passes {
             if let Some(lanes) = state.reads.get_mut(&pass) {
@@ -298,6 +311,21 @@ mod tests {
         said(&sink);
         tally.lane_retired(0);
         assert_eq!(said(&sink), vec!["resolve Pass(Import)".to_string()]);
+    }
+
+    /// A lane that outlives its retirement's wait reports on, and what it reports is not kept: nothing would ever settle
+    /// it, so the user is not told of it either.
+    #[test]
+    fn a_report_from_a_retired_lane_is_not_kept() {
+        let (tally, sink) = tally();
+        tally.lane_retired(0);
+        said(&sink);
+        tally.files_read(0, "", FilePass::Import, 2, false);
+        tally.round(0, RoundEnd::Failed("late".to_string()));
+        tally.ledger(0, LedgerOutcome::Failed("late".to_string()));
+        assert!(said(&sink).is_empty(), "a retired lane's late reports are dropped");
+        tally.files_read(1, "", FilePass::Import, 1, false);
+        assert_eq!(said(&sink), vec![unreadable(1)], "only the lane that is left counts");
     }
 
     #[test]

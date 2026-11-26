@@ -1,6 +1,6 @@
 //! Times the JPEG decode that the duplicate hashes take, for the turbojpeg fork's measurement (`vendor/README.md`,
 //! `## rust-turbojpeg`; `docs/reference/JPEG_DECODERS.md`). It decodes each JPEG of a folder at the size `analyze` hashes
-//! at (`MinSize::Sides(512, 320)`, the thumbnail minimum), through the same `Decoder` the app uses, and prints the mean
+//! at (`MinSize::Sides` with `pg_model::analysis`'s `DECODE_MIN_LONG` and `DECODE_MIN_SHORT`), through the same `Decoder` the app uses, and prints the mean
 //! time per decode over the timed rounds, after one warm-up round.
 //!
 //! The files are the first `count` JPEGs of the folder in depth-first, name-sorted order, so the set is the same on every
@@ -17,13 +17,10 @@ use std::time::Instant;
 
 use pg_codec::decode::{Decoder, MinSize, Request};
 use pg_codec::pixels::Rgb;
+use pg_model::analysis::{DECODE_MIN_LONG, DECODE_MIN_SHORT};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
 use pg_model::turns::Turns;
-
-/// The hashing decode's least size: `analyze`'s `DECODE_MIN_LONG` and `DECODE_MIN_SHORT`.
-const MIN_LONG: usize = 512;
-const MIN_SHORT: usize = 320;
 
 /// The first `count` JPEGs under `folder`, depth-first: at each level the entries are taken in name order, folders and
 /// files together, and a folder's JPEGs come before the next entry's.
@@ -67,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut decode_all = |decoder: &mut Decoder| -> Result<(), Box<dyn Error>> {
         for file in &files {
             let format = Format::sniff(file).ok_or("a file is not a known image")?;
-            let min = MinSize::Sides(MIN_LONG, MIN_SHORT);
+            let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
             let request = Request { format, exif: Orientation::UPRIGHT, min, turns: Turns::NONE };
             decoder.decode_into(file, request, &mut image, &mut spare)?;
         }

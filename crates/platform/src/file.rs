@@ -252,6 +252,9 @@ pub fn player_handle(path: &Path) -> io::Result<i64> {
     Ok(i64::from(File::open(path)?.into_raw_fd()))
 }
 
+/// The suffix of a lock file, beside the file it locks (`beside(path, LOCK_SUFFIX)`).
+pub const LOCK_SUFFIX: &str = ".lock";
+
 /// `path` with `suffix` added to its file name, in the name's own units (`gallery.json` and `.bad` give
 /// `gallery.json.bad`; a database and `-wal` its WAL).
 pub fn beside(path: &Path, suffix: &str) -> PathBuf {
@@ -305,25 +308,47 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     link_then_unlink(from, to)
 }
 
+/// The move as a hard link of `to` to `from`'s file, then the removal of `from`. When that removal fails the new name is
+/// taken back, so an error means the move did not happen: `from` still names the file, and `to` is as it was.
 #[cfg(unix)]
 fn link_then_unlink(from: &Path, to: &Path) -> io::Result<()> {
     std::fs::hard_link(from, to)?;
-    std::fs::remove_file(from)
+    if let Err(error) = std::fs::remove_file(from) {
+        // The link was made just above (a hard link never replaces a name), so `to` is the name this call took.
+        let _ = std::fs::remove_file(to);
+        return Err(error);
+    }
+    Ok(())
 }
 
-/// Move `path` aside to the first free name beside it, never replacing a file: `<name><mark>`, then `<name><mark>.1`,
-/// and so on. Returns the new path. (A preferences file that can't be read is kept so for the user, and an earlier one
-/// kept is never lost.)
-pub fn keep_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
-    for n in 0..=u32::MAX {
-        let to = beside(path, &if n == 0 { mark.to_string() } else { format!("{mark}.{n}") });
-        match rename_no_replace(path, &to) {
-            Ok(()) => return Ok(to),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
+/// Move `path` and each of its `parts` (suffixes beside it, such as `-wal`; `""` is `path` itself) aside together, to the
+/// first free name beside `path`: `<name><mark>`, then `<name><mark>.1`, and so on. Returns the new path of `path`. The
+/// parts move in the order given, so the sidecars go first. A part that isn't there is not moved. A name is taken when
+/// any part's name beside it exists. Each move never replaces a file (see [`rename_no_replace`]), so a file another
+/// program makes between that check and its move fails the move, and the error names the part. (A preferences file that
+/// can't be read is kept so for the user, and an earlier one kept is never lost.) When a move fails, the parts already
+/// moved go back to their names, so `path` is never left without the sidecars its changes are in.
+pub fn move_aside(path: &Path, parts: &[&str], mark: &str) -> io::Result<PathBuf> {
+    let base = (0..=u32::MAX)
+        .map(|n| if n == 0 { mark.to_string() } else { format!("{mark}.{n}") })
+        .find(|base| parts.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::AlreadyExists, format!("no free name beside {}", path.display())))?;
+    let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for part in parts {
+        let from = beside(path, part);
+        if from.exists() {
+            let to = beside(path, &format!("{base}{part}"));
+            if let Err(e) = rename_no_replace(&from, &to) {
+                // Each name moved back is free (its file was just moved off it), so the move back never replaces.
+                for (back_from, back_to) in moved.iter().rev() {
+                    let _ = rename_no_replace(back_to, back_from);
+                }
+                return Err(io::Error::new(e.kind(), format!("can't move {} aside: {e}", from.display())));
+            }
+            moved.push((from, to));
         }
     }
-    Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("no free name beside {}", path.display())))
+    Ok(beside(path, &base))
 }
 
 #[cfg(test)]
@@ -354,7 +379,7 @@ mod tests {
         let path = dir.join("gallery.json");
         for (n, want) in [(1, "gallery.json.bad"), (2, "gallery.json.bad.1"), (3, "gallery.json.bad.2")] {
             std::fs::write(&path, format!("{n}")).unwrap();
-            assert_eq!(keep_aside(&path, ".bad").unwrap(), dir.join(want));
+            assert_eq!(move_aside(&path, &[""], ".bad").unwrap(), dir.join(want));
             assert!(!path.exists());
         }
         assert_eq!(std::fs::read_to_string(dir.join("gallery.json.bad")).unwrap(), "1", "the first one kept is kept");

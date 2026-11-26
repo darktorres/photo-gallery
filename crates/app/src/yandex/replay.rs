@@ -15,7 +15,7 @@
 //! Nothing is read from the network. The files are read once, when the session is opened.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::Arc;
 
 use pg_model::format::Format;
@@ -53,7 +53,7 @@ impl Recording {
         if let Ok(list) = std::fs::read_to_string(file("downloads.tsv")) {
             for line in list.lines().filter(|line| !line.trim().is_empty()) {
                 let (url, name) = line.split_once('\t').ok_or_else(|| format!("downloads.tsv: no tab in {line:?}"))?;
-                if name.contains("..") || name.chars().any(|c| c == '/' || c == '\\') {
+                if !is_session_file_name(name) {
                     return Err(format!("downloads.tsv: {name:?} is not a file name in the session folder"));
                 }
                 let bytes = std::fs::read(file(name)).map_err(|e| format!("{}: {e}", file(name).display()))?;
@@ -62,6 +62,16 @@ impl Recording {
         }
         Ok(Recording { upload, other_sizes, similar, downloads })
     }
+}
+
+/// Whether `name` is a file name that stays in the session folder: one plain component, with no separator, colon (a drive
+/// prefix such as `C:name`, which `Path::join` resolves against that drive's own folder), root or `..` in it.
+fn is_session_file_name(name: &str) -> bool {
+    if name.contains(['/', '\\', ':']) {
+        return false;
+    }
+    let mut parts = Path::new(name).components();
+    matches!((parts.next(), parts.next()), (Some(Component::Normal(_)), None))
 }
 
 /// The source that answers from a recorded session. Its calls are the client's, in the same order.
@@ -203,6 +213,15 @@ mod tests {
         assert_eq!(written, b"\xFF\xD8\xFF other size a");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_name_stays_in_the_session_folder() {
+        assert!(is_session_file_name("one.png"));
+        let escapes = ["", "..", "../x.png", "sub/x.png", "sub\\x.png", "C:x.png", "C:\\x.png", "\\\\server\\x.png", "/x.png"];
+        for name in escapes {
+            assert!(!is_session_file_name(name), "{name:?} would leave the session folder");
+        }
     }
 
     #[test]

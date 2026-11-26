@@ -13,21 +13,24 @@ FILES = [
     ("sony-base422-7mp", 7.500),
     ("a6000-base422-24mp", 24.0),
 ]
+# Bench name -> display name, as the Rust harness prints it (Dec::name in src/lib.rs).
 DECS = [
     ("turbo", "libjpeg-turbo"),
-    ("turbo_fast", "turbo fast"),
+    ("turbo_fast", "libjpeg-turbo fast"),
     ("zune", "zune-jpeg"),
     ("jpeg_decoder", "jpeg-decoder"),
-    ("ffmpeg", "FFmpeg"),
+    ("ffmpeg", "FFmpeg mjpeg"),
     ("vips", "libvips"),
 ]
+# Only these benches are this table's decoders: other library names in the target folder are left out.
+DEC_KEYS = "|".join(re.escape(key) for key, _ in DECS)
 
 root = Path(sys.argv[1])
 ir = {}
 threads = {}
 for out in root.rglob("callgrind.*.out"):
     # One file per thread (.t1.p1, .t2.p1, ...) for decoders that start threads: summed.
-    m = re.match(r"callgrind\.(full|scaled)_(.+)\.file_(\d+)(\.t\d+\.p\d+)?\.out$", out.name)
+    m = re.match(rf"callgrind\.(full|analyze)_({DEC_KEYS})\.file_(\d+)(\.t\d+\.p\d+)?\.out$", out.name)
     if not m:
         continue
     key = (m.group(1), m.group(2), int(m.group(3)))
@@ -37,7 +40,7 @@ for out in root.rglob("callgrind.*.out"):
             ir[key] = ir.get(key, 0) + int(line.split()[1])
             break
 
-for mode in ("full", "scaled"):
+for mode in ("full", "analyze"):
     print(f"\n{mode}: M instructions per decode (instructions per pixel of the full image)")
     print(f"{'':20}" + "".join(f"{label:>22}" for _, label in DECS))
     for i, (name, mp) in enumerate(FILES):

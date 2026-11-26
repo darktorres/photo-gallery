@@ -37,17 +37,22 @@ fn has_drive_or_share(_: &Path) -> bool {
 }
 
 /// The folder the dialog opens in, from the one requested: given in its real form (`canonicalize`), which the shell takes
-/// where the path as given may not. It refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is
-/// only spaces; a folder under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path
-/// as given is kept. The shell also normalizes every path it parses, which drops a folder's trailing dot or space, so
-/// a folder with such a name (or under one) starts the dialog at its nearest ancestor without one: the shell would
-/// otherwise open a sibling (`a` for `a.`), or refuse the verbatim form. Without a folder that is one now, the user's
-/// own, under the environment `var` gives (`dirs::user_folder`; the callers pass [`crate::env::process`]).
+/// where the path as given may not. The path is canonicalized in its verbatim form, so a plain name that the system
+/// normalizes (a folder `a.` that the plain `a.` would name `a`) is taken as the folder it is, not its sibling. It refuses
+/// (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is only spaces; a folder under a volume with
+/// no drive letter canonicalizes to a volume path the shell refuses, so its path as given is kept. The shell also
+/// normalizes every path it parses, which drops a folder's trailing dot or space, so a folder with such a name (or under
+/// one) starts the dialog at its nearest ancestor without one: the shell would otherwise open a sibling (`a` for `a.`),
+/// or refuse the verbatim form. Without a folder that is one now, the user's own, under the environment `var` gives
+/// (`dirs::user_folder`; the callers pass [`crate::env::process`]).
 pub fn start_folder(requested: Option<PathBuf>, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     requested
-        .map(|folder| match std::fs::canonicalize(&folder) {
-            Ok(real) if has_drive_or_share(&real) => real,
-            _ => folder,
+        .map(|folder| {
+            let folder = crate::native::verbatim(&folder);
+            match std::fs::canonicalize(&folder) {
+                Ok(real) if has_drive_or_share(&real) => real,
+                _ => folder,
+            }
         })
         .filter(|folder| folder.is_dir())
         .map(|folder| reachable_by_shell(&folder))
@@ -91,12 +96,11 @@ fn pick_with(
 }
 
 #[cfg(windows)]
-use native::Dialog;
+use ffi::Dialog;
 
 /// The system's folder dialog, opened in `start` and owned by the window `owner` (its handle; None: unowned): the folder
 /// the user chose, exactly, or None when they cancelled. It runs its own message loop while it is open, so the caller
-/// holds no borrow of its state across the call. `Unsupported` off Windows, where the app's own picker is used
-/// ([`NATIVE`]).
+/// holds no borrow of its state across the call.
 #[cfg(windows)]
 pub fn pick(start: Option<&Path>, owner: Option<usize>) -> io::Result<Option<PathBuf>> {
     let mut dialog = Dialog::new()?;
@@ -114,7 +118,7 @@ pub fn pick(_start: Option<&Path>, _owner: Option<usize>) -> io::Result<Option<P
 pub fn failed_call(error: &io::Error) -> Option<&'static str> {
     #[cfg(windows)]
     {
-        error.get_ref()?.downcast_ref::<native::CallError>().map(|e| e.call)
+        error.get_ref()?.downcast_ref::<ffi::CallError>().map(|e| e.call)
     }
     #[cfg(not(windows))]
     {
@@ -124,7 +128,7 @@ pub fn failed_call(error: &io::Error) -> Option<&'static str> {
 }
 
 #[cfg(windows)]
-mod native {
+mod ffi {
     use std::ffi::c_void;
     use std::io;
 
@@ -278,7 +282,7 @@ mod tests {
     fn a_failed_call_is_named_for_the_log_and_not_in_the_message() {
         // ERROR_INVALID_PARAMETER (87), the "Parâmetro incorreto" of the dialog's failure: 0x80070057.
         let system = windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(87));
-        let error = super::native::step("SetFolder", system);
+        let error = super::ffi::step("SetFolder", system);
         assert_eq!(super::failed_call(&error), Some("SetFolder"));
         let message = error.to_string();
         assert!(message.contains("0x80070057"), "the system's error: {message}");
@@ -353,7 +357,7 @@ mod tests {
         std::fs::create_dir_all(verbatim(&dotted.join("inner"))).unwrap();
         std::fs::create_dir_all(&sibling).unwrap();
         let real = std::fs::canonicalize(&dir).unwrap();
-        for asked in [verbatim(&dotted), verbatim(&dotted.join("inner"))] {
+        for asked in [verbatim(&dotted), verbatim(&dotted.join("inner")), dotted.clone(), dotted.join("inner")] {
             assert_eq!(super::start_folder(Some(asked.clone()), |_| None), Some(real.clone()), "{}", asked.display());
         }
         assert_eq!(

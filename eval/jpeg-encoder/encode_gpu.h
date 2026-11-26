@@ -24,11 +24,12 @@ extern "C" {
 
 typedef enum EgpuStatus {
     EGPU_OK = 0,
-    EGPU_ERR_ARG = 1,     /* null pointer, zero count, bad option, index out of range */
+    EGPU_ERR_ARG = 1,     /* null pointer, zero count, index out of range, no completed batch, or coefficients not kept */
     EGPU_ERR_SIZE = 2,    /* a width or height is outside 1..65535 */
     EGPU_ERR_RANGE = 3,   /* an image's pixels fall outside the device RGB buffer */
     EGPU_ERR_MEMORY = 4,  /* a device or host allocation failed */
-    EGPU_ERR_CUDA = 5     /* a CUDA runtime call failed; see egpu_last_error() */
+    EGPU_ERR_CUDA = 5,    /* a CUDA runtime call failed; see egpu_last_error() */
+    EGPU_ERR_INTERNAL = 6 /* an unexpected host exception; see egpu_last_error() */
 } EgpuStatus;
 
 typedef struct EgpuContext EgpuContext;
@@ -68,15 +69,17 @@ void egpu_destroy(EgpuContext* ctx);
 const char* egpu_last_error(void);
 
 /* Encodes count images from the device buffer d_rgb (d_rgb_bytes long). Validates every
- * descriptor before any device work. Replaces the outputs of the previous call. */
+ * descriptor before any device work. Replaces the outputs of the previous call. A call that
+ * fails leaves no completed batch: egpu_output and egpu_coefficients then fail until the next
+ * call succeeds. */
 int egpu_encode_batch(EgpuContext* ctx, const uint8_t* d_rgb, uint64_t d_rgb_bytes,
                       const EgpuImage* images, uint32_t count);
 
-/* Output JPEG of image index from the last call. The pointer is valid until the next
- * egpu_encode_batch or egpu_destroy. */
+/* Output JPEG of image index from the last successful call. The pointer is valid until the
+ * next egpu_encode_batch or egpu_destroy. */
 int egpu_output(const EgpuContext* ctx, uint32_t index, const uint8_t** data, uint64_t* size);
 
-/* Quantized coefficients of image index from the last call (requires keep_coefficients).
+/* Quantized coefficients of image index from the last successful call (requires keep_coefficients).
  * Blocks are in scan order (MCU raster order, then the block order of the chroma mode);
  * each block is 64 int16 values in natural (row-major) order. */
 int egpu_coefficients(const EgpuContext* ctx, uint32_t index, const int16_t** coef, uint64_t* blocks);

@@ -136,13 +136,22 @@ impl Analysis {
     }
 }
 
-/// The version of a placeholder's definition (`pg_render::thumbhash_of`): a placeholder made at another version is owed
+/// The version of a placeholder's definition (`pg_render::maker::Maker::thumbhash_of_image`): a placeholder made at another version is owed
 /// again. The fit into the placeholder's size is MKS2021 on the sRGB bytes, which is what changes the ThumbHash of a
 /// picture resized to fit: the rule is the registry's (`pg_model::versions`).
 pub const PLACEHOLDER_VERSION: i64 = crate::versions::PLACEHOLDER_VERSION;
 
+/// The hashing decode keeps at least this many pixels on the upright long side (the import's decode rule, shared by
+/// the analysis and the tools that time it)…
+pub const DECODE_MIN_LONG: usize = 512;
+/// …and on the short side, so the later SSCD input (320 px, tier 2) can come from the same decode rule.
+pub const DECODE_MIN_SHORT: usize = 320;
+/// PDQ input: fitted into 512 px by the resizer (MKS2021 on sRGB bytes, sRGB bytes out), which PDQ's luminance step
+/// reads as its spec says (hashing.pdf pp. 10-11).
+pub const PDQ_SIDE: usize = 512;
+
 /// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the
-/// encoder is not a dependency of the model); the `analyze` tests in pg-analysis check the two are equal.
+/// encoder is not a dependency of the model); the `thumbhash_max_is_the_encoders_longest` test in pg-render checks the two are equal.
 pub const THUMBHASH_MAX: usize = 25;
 
 /// A ThumbHash (a placeholder's `hash`, `placeholders`), held inline: the grid's placeholder.

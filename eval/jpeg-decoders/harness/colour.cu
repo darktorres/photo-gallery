@@ -1,5 +1,5 @@
-// The colour stage after jpeggpu's planes: libjpeg-turbo's default ("fancy") chroma upsampling, jdsample.c's h2v1 and
-// h2v2 triangle filters, and its YCbCr -> RGB fixed-point tables (jdcolor.c, SCALEBITS 16). With the same planes it
+// The colour stage after jpeggpu's planes: libjpeg-turbo's default ("fancy") chroma upsampling, jdsample.c's h1v2, h2v1
+// and h2v2 triangle filters, and its YCbCr -> RGB fixed-point tables (jdcolor.c, SCALEBITS 16). With the same planes it
 // reproduces libjpeg-turbo's RGB to the level, so its output can be compared with the reference decode directly.
 //
 // The filters are written per output pixel. For h2v2, a chroma column sum is 3 * (this row) + (the row above or below),
@@ -24,6 +24,11 @@ __device__ __forceinline__ uint8_t clamp8(int v) { return uint8_t(v < 0 ? 0 : (v
 // Chroma value at luma pixel (x, y) of a plane of cw x ch samples.
 __device__ __forceinline__ int chroma_at(const uint8_t* p, int pitch, int cw, int ch, int x, int y, int hs, int vs) {
     if (hs == 1 && vs == 1) return p[y * pitch + x];
+    if (hs == 1) {  // h1v2 (4:4:0): (3 * this row + the row above or below + bias) >> 2, bias 1 on a pair's top row, 2 on the bottom
+        const int j = y >> 1, b = y & 1;
+        const int jn = clampi(b ? j + 1 : j - 1, 0, ch - 1);
+        return (3 * p[j * pitch + x] + p[jn * pitch + x] + (b ? 2 : 1)) >> 2;
+    }
     int i = x >> 1, a = x & 1;
     if (vs == 1) {  // h2v1: (3 * this + neighbour + bias) >> 2, bias 1 on the left, 2 on the right
         int self = 3 * p[y * pitch + i];

@@ -28,7 +28,8 @@ REPO = Path(__file__).resolve().parents[2]
 FREE = re.compile(
     r"^(?:pub(?:\([a-z]+\))? )?(?:const |static |unsafe |async )*(fn|struct|enum|const|static|type|trait)\s+([A-Za-z_]\w*)"
 )
-IMPL = re.compile(r"^impl(?:<[^>]*>)?\s+(?:[\w:<>', ]+?\s+for\s+)?([A-Za-z_]\w*)")
+IMPL = re.compile(r"^impl(?=[<\s])")  # the start of an impl header; its generics are skipped by skip_generics
+IMPL_TYPE = re.compile(r"\s+(?:[\w:<>', ]+?\s+for\s+)?([A-Za-z_]\w*)")
 METHOD = re.compile(r"^    (?:pub(?:\([\w:]+\))? )?(?:const )?(?:unsafe )?fn\s+([A-Za-z_]\w*)")
 
 # Common method names that many types share. A reference through one of these is not seen (see the module docstring).
@@ -64,6 +65,29 @@ SKIP = {
 }
 
 
+def skip_generics(line, i):
+    """The index just past the generics `<...>` that follow the `impl` keyword ending at `i`, or `i` when there are none.
+    Nested brackets count, and the `->` of a bound such as `Fn(u8) -> u8` is not a bracket."""
+    j = i
+    while j < len(line) and line[j] == " ":
+        j += 1
+    if j >= len(line) or line[j] != "<":
+        return i
+    depth = 0
+    while j < len(line):
+        if line.startswith("->", j):
+            j += 2
+            continue
+        if line[j] == "<":
+            depth += 1
+        elif line[j] == ">":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return i
+
+
 def parse(path):
     """Return (items, lines): items = [(name, start, end, type)], 0-based line indices, end exclusive.
 
@@ -77,14 +101,10 @@ def parse(path):
     impl_type = None
     for i in range(stop):
         line = lines[i]
-        if line.startswith("impl"):
-            m = IMPL.match(line)
+        if IMPL.match(line):
+            m = IMPL_TYPE.match(line, skip_generics(line, len("impl")))
             if m:
                 impl_type = m.group(1)
-                continue
-            if line.startswith("impl Default"):
-                m = re.search(r"for\s+(\w+)", line)
-                impl_type = m.group(1) if m else None
                 continue
         if line.startswith("}"):
             impl_type = None

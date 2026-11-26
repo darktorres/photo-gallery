@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fetches the pinned FFmpeg build for `just setup`: downloads the archive once (into .deps/downloads), checks its SHA-256
-against the pin, and unpacks it to --destination. The folder is skipped when its headers are already there. The Justfile
+against the pin, and unpacks it to --destination. The folder is skipped only when it holds a build at this pin (the headers
+and the `.pin` record the unpack writes); a build there at another pin, or one without the record, is replaced. The Justfile
 holds the URL and the hash; CI runs the same recipe.
 
 A download that does not match the hash is deleted and the script fails, so a bad archive is never unpacked or cached.
@@ -8,7 +9,6 @@ Windows only: Linux gets FFmpeg's development packages from apt, which crates/vi
 """
 
 import argparse
-import hashlib
 import shutil
 import sys
 import urllib.error
@@ -18,22 +18,13 @@ import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from pgtools import REPO
+from pgtools import REPO, sha256
 
 # A shared FFmpeg build has these headers; the check that the archive is one.
 HEADER = Path("include") / "libavcodec" / "avcodec.h"
 # The pin the build was fetched at, written beside it. The header alone says only that a build is there, not which.
 PIN_FILE = ".pin"
 CHUNK = 1 << 20
-
-
-def sha256_of(path: Path) -> str:
-    """The SHA-256 of a file, as lowercase hex."""
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(CHUNK), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def download(url: str, target: Path) -> None:
@@ -62,9 +53,9 @@ def installed_pin(dest: Path) -> str | None:
     return record.read_text(encoding="utf-8").strip() if record.is_file() else None
 
 
-def is_installed(dest: Path, sha256: str) -> bool:
-    """Whether `dest` holds a usable build fetched at `sha256`."""
-    return (dest / HEADER).is_file() and installed_pin(dest) == sha256
+def is_installed(dest: Path, pin: str) -> bool:
+    """Whether `dest` holds a usable build fetched at `pin`."""
+    return (dest / HEADER).is_file() and installed_pin(dest) == pin
 
 
 def entry_parts(name: str) -> tuple[str, ...]:
@@ -94,6 +85,12 @@ def main() -> None:
     args = parser.parse_args()
 
     dest = (REPO / args.destination).resolve()
+    # A folder that is replaced is removed whole: a non-empty folder is replaced only when it is an FFmpeg build's.
+    if dest.exists() and not (dest / HEADER).is_file() and not (dest / PIN_FILE).is_file():
+        if not dest.is_dir() or any(dest.iterdir()):
+            sys.exit(
+                f"refusing to replace {dest}: it is not an FFmpeg build (no {HEADER} and no {PIN_FILE}); name another folder"
+            )
     wanted = args.sha256.lower()
     if is_installed(dest, wanted):
         print(f"FFmpeg is already in {dest} at this pin: nothing to do.")
@@ -107,10 +104,10 @@ def main() -> None:
     downloads.mkdir(parents=True, exist_ok=True)
     zip_path = downloads / PurePosixPath(urllib.parse.urlsplit(args.url).path).name
     # A download left from an earlier run is used if it is intact; otherwise it is fetched again.
-    if not (zip_path.is_file() and sha256_of(zip_path) == wanted):
+    if not (zip_path.is_file() and sha256(zip_path).lower() == wanted):
         zip_path.unlink(missing_ok=True)
         download(args.url, zip_path)
-        actual = sha256_of(zip_path)
+        actual = sha256(zip_path).lower()
         if actual != wanted:
             zip_path.unlink()
             sys.exit(
@@ -119,7 +116,8 @@ def main() -> None:
             )
 
     extract = REPO / ".deps" / "extract"
-    shutil.rmtree(extract, ignore_errors=True)
+    if extract.exists():
+        shutil.rmtree(extract)
     with zipfile.ZipFile(zip_path) as archive:
         names = archive.namelist()
         unsafe = [name for name in names if unsafe_name(name)]
@@ -135,7 +133,7 @@ def main() -> None:
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(extract / top), str(dest))
-    shutil.rmtree(extract, ignore_errors=True)
+    shutil.rmtree(extract)
 
     if not (dest / HEADER).is_file():
         sys.exit("the archive has no include/libavcodec/avcodec.h: it is not a shared FFmpeg build")

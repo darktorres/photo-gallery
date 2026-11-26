@@ -59,7 +59,7 @@ the listing workers; none was built (no `IOCTL_STORAGE_QUERY_PROPERTY` in `crate
   code; `unsafe` needs a SAFETY comment; stored paths reach the disk only through `names::disk_path` (R-2); outcomes a front
   end words are `pg-model` data (R-1).
 - **The working tree holds the user's uncommitted work** in `crates/jobs/src/pipeline.rs` (+273: `Read::Gather`, `Timing`,
-  `LAST_REPORT`), `crates/import`, `crates/cli/src/lib.rs`, `crates/container`. Phases 3 and 5 edit `pipeline.rs` and the
+  `LAST_REPORT`), `crates/import`, `crates/driver/src/lib.rs`, `crates/container`. Phases 3 and 5 edit `pipeline.rs` and the
   CLI: start them only after that work is committed, or merge onto it; never overwrite it.
 - Measure with the keep rule (A/B at 6 pairs, turbo off, `keep.py --part time --rule bounded --margin 0.10`; cycles are
   diagnostic only). Trace a failure to its exact cause before fixing it; read the library source (Qt's is in
@@ -207,8 +207,8 @@ that result goes to the user before any code is written.
   - Memory: each lane keeps its own `Pool` (no cross-pool byte account: `Pool::take` grants strictly in list order, and a
     shared account could deadlock it), but the budget becomes resizable (`Pool::set_budget`) and the governor sets it: the
     measured knee per lane up to a cap (a share of RAM), split evenly when the cap binds, rebalanced when a lane starts or
-    retires. It also sets the page cache of each lane's connections, which take a parameter instead of the fixed 256 MB
-    (`schema.rs:595`).
+    retires. It also sets the page cache of each lane's connections, which take a parameter instead of the fixed 8 MiB
+    of `SETTINGS` (`crates/catalog/src/schema.rs:125`).
   - Scan listing workers: `Pacing.workers` per lane from `Kind` (today a fixed `WORKERS = 4`, `scan/src/lib.rs:486`).
 - `LAST_REPORT` (a process-global static) becomes a value in `Stats`, so concurrent passes don't overwrite each other's
   `PG_PIPELINE_STATS` report (after the user's `pipeline.rs` work is committed).
@@ -278,7 +278,7 @@ that result goes to the user before any code is written.
   topology refresh moves them to the right lane. On Windows a root is exactly one volume (`refusal.rs:41-64`).
 - **Memory** is the governor's (Phase 3): a lane has its catalog, `thumbs::run_while`'s own `Catalog::open`
   (`thumbs/src/lib.rs:229`) and `pending_in`'s 128 MB (`reader.rs:27`), plus the coordinator's, and all of them take their
-  page-cache size from it, so the total is a stated cap (the lanes' pools plus their page caches), not lanes × 256 MB.
+  page-cache size from it, so the total is a stated cap (the lanes' pools plus their page caches), not lanes × a fixed cache.
   Verified by RSS with two lanes.
 - Tests (extend the in-file runner tests, which build `Inner` as a literal at `runner.rs:959`; add `tests/lanes.rs`), with a
   fake `Drives` mapping scratch folders to keys:
@@ -446,7 +446,7 @@ per-lane pause reaches only its lane (L7, partly).
 |----|---------------------------|-----------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
 | D1 | Status table, phase 3     | Lists the pool's live budget and the governor as built; neither has the tests in T1                             | done: T1's tests are written and pass                                              |
 | D2 | Status table, phase 2     | Lists the work lists as index-served; T3 and T4 are what would show it                                          | done: T3 and T4 pass; T4's caveat is in its row                                    |
-| D3 | Status table, phase 4     | Presents `tests/lanes.rs` as covering the lanes; it has 7 of the 12 planned lane tests (see L1 to L7)           | done: the table now says 8 tests (one added for L7); L1, L2, L4 and L6 remain open |
+| D3 | Status table, phase 4     | Presents `tests/lanes.rs` as covering the lanes; it has 7 of the 12 planned lane tests (see L1 to L7)           | done: the table now says 9 tests, matching `tests/lanes.rs`; L1, L2, L4 and L6 remain open |
 | D4 | Commit `79e3010f` message | Says the lanes are built with the listed exceptions, without naming the untested items (T1 to T6, L1 to L7, C1) | open (history: correct in the ledger, not by amending)                             |
 
 ### Found while verifying (not in the original ledger)

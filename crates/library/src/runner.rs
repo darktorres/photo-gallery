@@ -164,19 +164,9 @@ impl Runner {
         root.on_ledger_change(move || ledger.poke());
         let lanes = Lanes::start(shared, root, drives)?;
         // A new height or a change of features wakes every lane; the passes they concern end after their batch, and the next
-        // round reads the new values. Weak references: the cells (held by the library) must not keep the job alive.
-        let weak = Arc::downgrade(&lanes);
-        heights.listen(move || {
-            if let Some(lanes) = weak.upgrade() {
-                lanes.wake_all(false);
-            }
-        });
-        let weak = Arc::downgrade(&lanes);
-        features.listen(move || {
-            if let Some(lanes) = weak.upgrade() {
-                lanes.wake_all(false);
-            }
-        });
+        // round reads the new values.
+        heights.listen(wake_all_lanes(&lanes));
+        features.listen(wake_all_lanes(&lanes));
         Ok(Runner { lanes })
     }
 
@@ -254,7 +244,8 @@ impl Runner {
     /// can't be read.
     pub fn quiescent(&self) -> bool {
         let scans = self.passes().contains(PassKind::Scans);
-        let lanes_quiet = self.lanes.all().iter().all(|lane| {
+        let retiring = self.lanes.retiring();
+        let lanes_quiet = self.lanes.all().iter().chain(&retiring).all(|lane| {
             !lane.inner.is_active() && (!scans || (lane.inner.scans().is_empty() && lane.inner.busy().is_empty()))
         });
         if !lanes_quiet || !self.lanes.unrouted(scans) {
@@ -330,6 +321,17 @@ impl Runner {
     /// Rounds finished so far, for the app to count them as stages: every lane's.
     pub fn rounds(&self) -> u64 {
         self.lanes.shared.rounds.load(Ordering::Relaxed)
+    }
+}
+
+/// The listener of a cell whose change wakes every lane. The lanes are held weakly: the cell (held by the library) must not
+/// keep the job alive.
+fn wake_all_lanes(lanes: &Arc<Lanes>) -> impl Fn() + Send + Sync + 'static {
+    let weak = Arc::downgrade(lanes);
+    move || {
+        if let Some(lanes) = weak.upgrade() {
+            lanes.wake_all(false);
+        }
     }
 }
 

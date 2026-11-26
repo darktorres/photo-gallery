@@ -97,21 +97,12 @@ fn pseudo(english: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::entries_in_file;
-
-    /// The ids of the entries in `ui.ftl`, the same way as `entries_in_file`.
-    fn ui_entries() -> Vec<&'static str> {
-        ENGLISH_UI
-            .lines()
-            .filter(|line| !line.starts_with(' ') && !line.starts_with('#'))
-            .filter_map(|line| line.split_once(" =").map(|(id, _)| id))
-            .collect()
-    }
+    use crate::test_support::{entries_in_file, entries_of};
 
     #[test]
     fn the_ui_file_parses_and_names_each_id_once() {
         assert!(FluentResource::try_new(ENGLISH_UI.to_string()).is_ok(), "ui.ftl has a syntax error");
-        let mut ids = ui_entries();
+        let mut ids = entries_of(ENGLISH_UI);
         let count = ids.len();
         ids.sort_unstable();
         ids.dedup();

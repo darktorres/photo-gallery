@@ -10,7 +10,7 @@ baseline. Each phase is measured against its parent commit (see **Measurement pr
 
 Scope: the scan step of import (`pg_scan::scan`). The identity pairing at the end of a scan (`pair_after_scan`,
 `pg_catalog::pair`) is out of scope, except where its queries read what this plan changes, or where it takes the write
-lock on a scan that changed nothing. It is not the duplicate pairing pass of `PAIRING_PASS_PLAN.md`.
+lock on a scan that changed nothing. It is not the duplicate pairing pass (its plan, `16f5fa6f^:docs/plans/PAIRING_PASS_PLAN.md`, is deleted).
 
 The brief is the most proper design, with churn free. Each item is the right fix, not the smallest one, and correct
 first. Every design choice is decided here, with its reason. A measurement decides only two kinds of thing:
@@ -87,7 +87,7 @@ The main anchors now:
 | Anchor                                                        | Now                                                                                         |
 |---------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | `files_added` trigger; `files` table; `files_fresh` index     | `schema.rs:859`; `schema.rs:653`; `schema.rs:372`                                           |
-| `SETTINGS` (`temp_store = MEMORY`)                            | `schema.rs:529`                                                                             |
+| `SETTINGS` (`temp_store = MEMORY`)                            | `schema.rs:128`                                                                             |
 | `ScanWriter::new` (`stamp_held_exts` at line 91)              | `writers.rs:84`                                                                             |
 | `ScanWriter::upsert_file`; `seen_identity`                    | `writers.rs:169`; `writers.rs:228`                                                          |
 | `remove_root`; `begin_scan`; `mark_missing`                   | `roots.rs:91`; `roots.rs:124`; `roots.rs:170`                                               |
@@ -141,8 +141,9 @@ Each phase is written in full, then built and tested once (no build between its 
   `files`/`links` split rebuilds `files` anyway. The MFT plan says all of this: its Catalog section, its `ScanWriter`
   rules and its steps' preconditions (updated 2026-11-15).
 - **Migrations.** The pairing work took migrations 13 to 15 (`TO_13_PAIRS_OWED`, `TO_14_PAIRING_EPOCH`,
-  `TO_15_HASHES_OWED`). This plan's schema changes are one migration, the next free number (16).
-  - Phase 1 adds it, and Phase 3 extends it in place.
+  `TO_15_HASHES_OWED`). Those steps were folded into the baseline before the first release, and the code has no migrations
+  now (`MIGRATIONS` is empty, `crates/catalog/src/schema.rs`), so the numbers are history. This plan's schema changes are
+  edits to the baseline (`crates/catalog/src/baseline.sql`), not a migration: Phase 1 makes the change, and Phase 3 extends it in place.
   - No real catalog runs the builds in between. A scratch catalog made by one of them differs from the final schema at
     its version, so `Catalog::prepare` rebuilds it with its rows, as it rebuilds any mismatched catalog.
 - **The pairing plan's `held_exts` stamp** (its Part 3, item 3) runs in every scan batch's transaction
@@ -623,7 +624,7 @@ A 200k rescan costs 41k instructions per file. `write_batch` is 32k of that:
     again. That is exact and bounded by the scan.
     - A partial index on `files` would not be: unpaired rows with children are never paired or cleared (`fresh_rows`
       leaves them out, `pair.rs:316-317`), and it would hold every other root's unpaired rows too.
-  - **`rebind` and `replace`** delete a fresh row (`pair.rs:344`, `:433`). They delete its id from the set in the same
+  - **`rebind` and `replace`** delete a fresh row (`pair.rs:601`, `:686`). They delete its id from the set in the same
     transaction. That is not strictly needed, since the remaining readers are limited to the root, but it keeps the set
     exact.
   - **`seen_volumes` comes from the walk**, as the volumes of the rows recorded as seen: not of `Foreign` hits, reparse

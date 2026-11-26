@@ -113,6 +113,8 @@ def main() -> None:
         )
     ]
     have = len(originals)
+    if not originals:
+        sys.exit(f"{args.src} holds no pictures with stored hashes and a file identity to copy")
     if args.total <= have:
         sys.exit(f"the source holds {have} pictures already")
     next_id = dst.execute("SELECT max(id) FROM files").fetchone()[0] + 1

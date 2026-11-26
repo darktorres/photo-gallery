@@ -6,6 +6,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtCore/QStringList>
 #include <QtGui/QFont>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImageReader>
@@ -17,13 +18,37 @@ namespace pg {
 
 namespace {
 
+#ifdef Q_OS_WIN
+// The platform Qt will pick for this run: a -platform or --platform argument (in either its separate or its `=` form),
+// else QT_QPA_PLATFORM. Qt reads the arguments first, so an argument wins over the variable. The name is what precedes
+// any `:` option.
+QString requested_platform(int argc, char** argv) {
+    QStringList args;
+    for (int i = 1; i < argc; ++i)
+        args.append(QString::fromLocal8Bit(argv[i]));
+    QString name;
+    for (int i = 0; i < args.size() && name.isEmpty(); ++i) {
+        const QString& arg = args[i];
+        if (arg == "-platform" || arg == "--platform")
+            name = i + 1 < args.size() ? args[i + 1] : QString();
+        else if (arg.startsWith("-platform="))
+            name = arg.mid(QStringLiteral("-platform=").size());
+        else if (arg.startsWith("--platform="))
+            name = arg.mid(QStringLiteral("--platform=").size());
+    }
+    if (name.isEmpty())
+        name = qEnvironmentVariable("QT_QPA_PLATFORM");
+    return name.section(QLatin1Char(':'), 0, 0);
+}
+#endif
+
 // The offscreen platform (the test hooks) draws text with FreeType on Windows. FreeType reads the fonts from
 // QT_QPA_FONTDIR, or else from <Qt>/lib/fonts, which a Windows Qt install doesn't have: the text would draw as empty
 // boxes. So when the platform is offscreen and no font folder is given, the Windows fonts folder is used. It is set here
 // because Qt reads it when the application's font database is made, and only the C runtime's environment is read by Qt.
-void use_windows_fonts_for_offscreen() {
+void use_windows_fonts_for_offscreen(int argc, char** argv) {
 #ifdef Q_OS_WIN
-    if (qEnvironmentVariable("QT_QPA_PLATFORM") != "offscreen" || qEnvironmentVariableIsSet("QT_QPA_FONTDIR"))
+    if (requested_platform(argc, argv) != "offscreen" || qEnvironmentVariableIsSet("QT_QPA_FONTDIR"))
         return;
     QString windir = qEnvironmentVariable("WINDIR");
     if (windir.isEmpty())
@@ -77,8 +102,8 @@ std::unique_ptr<QGuiApplication> new_gui_application(rust::Slice<const std::uint
     // Qt's default image allocation limit (256 MB) rejects a full-size original over about 67 MP, such as a 10000 x 7514
     // JPEG that Yandex serves: its decode needs 4 bytes a pixel (287 MB). 1024 MB admits up to about 268 MP.
     QImageReader::setAllocationLimit(1024);
-    use_windows_fonts_for_offscreen();
     auto* arguments = new Arguments(args);
+    use_windows_fonts_for_offscreen(arguments->argc(), arguments->argv());
     auto app = std::make_unique<QGuiApplication>(arguments->argc(), arguments->argv());
     arguments->setParent(app.get());
     use_segoe_for_offscreen();

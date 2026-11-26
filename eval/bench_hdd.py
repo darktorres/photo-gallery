@@ -233,7 +233,15 @@ def main() -> None:
         rows.append(row)
         print(f"  {name}: {row['files_s']:.0f} files/s, {row['mb_s']:.0f} MB/s ({len(paths)} files, {seconds:.0f} s)", flush=True)
 
-    out = {"root": args.root, "files": len(files), "stride": args.stride, "dense": args.dense, "layout": layout, "rows": rows}
+    out = {
+        "root": args.root,
+        "files": len(files),
+        "library_size": LIBRARY_SIZE,
+        "stride": args.stride,
+        "dense": args.dense,
+        "layout": layout,
+        "rows": rows,
+    }
     name = f"bench_hdd_dense{args.dense}.json" if args.dense else "bench_hdd.json"
     (WORK_DIR / name).write_text(json.dumps(out, indent=2), encoding="utf-8")
     print("\n| order | files/s | MB/s | days for 70M files at this rate |")

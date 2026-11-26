@@ -71,8 +71,9 @@ pub(super) unsafe extern "C" fn seek_source(opaque: *mut c_void, offset: i64, wh
     .unwrap_or(-1)
 }
 
-/// The name FFmpeg's format probe reads: `pg-video`, with the file's extension when it is ASCII. The name is never a
-/// path (the file is read through the I/O), so the file's own name stays out of FFmpeg.
+/// The name FFmpeg's format probe reads: `pg-video`, with the file's extension when it is non-empty and ASCII
+/// alphanumeric. The name is never a path (the file is read through the I/O), so the file's own name stays out of
+/// FFmpeg.
 pub(super) fn hint_name(path: &Path) -> CString {
     let ext = path
         .extension()

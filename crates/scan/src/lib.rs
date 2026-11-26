@@ -88,6 +88,12 @@ mod refusal;
 #[cfg(feature = "bench")]
 pub mod synthetic;
 
+/// The error a fake listing gives for a folder it cannot open: one kind and text for every fake of the walk.
+#[cfg(any(test, feature = "bench"))]
+fn unopenable() -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, "the folder can't be opened")
+}
+
 /// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests. A listing runs on the walk's
 /// thread, and on the worker threads that list folders ahead of it, each with a lister of its own ([`Listing::fresh`]).
 pub trait Listing: Send {
@@ -1379,7 +1385,7 @@ fn checkpoint(
         renewal.renewed();
     }
     loop {
-        match ctl.checkpoint_within(RENEW_EVERY) {
+        match ctl.checkpoint_within(renewal.every) {
             Checkpoint::Go => {
                 pool.kick();
                 return Ok(true);
@@ -1463,7 +1469,6 @@ fn write_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_platform::native::Unit;
     use std::path::Path;
 
     #[test]
@@ -1575,7 +1580,7 @@ mod tests {
             self.tree
                 .iter()
                 .position(|(p, _, _)| p == path)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such fake folder"))
+                .ok_or_else(unopenable)
         }
 
         fn device(&self, _dir: &usize) -> Option<u64> {
@@ -1884,9 +1889,7 @@ mod tests {
     // The walk's transactions (the write-lock section of the module docs, W2): nothing holds the catalog's write lock across a listing or a
     // pause, overlapping walks are refused while one runs, and a batch changes only the rows still as it read them.
 
-    use std::sync::Arc;
     use std::sync::mpsc;
-    use std::time::Duration;
 
     use pg_catalog::Listed;
     use pg_catalog::fixture::{WriteHolds, state};

@@ -21,7 +21,7 @@ SKIPPED = re.compile(r"skipped: |: skipped$")
 
 def main() -> None:
     print(
-        "\n== Lint (tools/lint.py: formatting, clippy, docs, lockfiles, supply chain, crate boundaries, Python and Markdown)",
+        "\n== Lint (tools/lint.py: formatting, clippy, docs, lockfiles, crate boundaries, Python and Markdown)",
         flush=True,
     )
     lint = [sys.executable, str(REPO / "tools" / "lint.py")]

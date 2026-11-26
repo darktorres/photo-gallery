@@ -128,7 +128,7 @@ pub const VARS: &[Spec] = &[
         name: "PG_PERF_LOG",
         kind: Kind::Path,
         reader: Reader::App,
-        doc: "A file the perf log is appended to; `-` echoes each step to stderr instead.",
+        doc: "A file the perf log is appended to, read back by `pg-driver perf`.",
     },
     Spec {
         name: "PG_THUMB_CAP_GIB",
@@ -257,6 +257,12 @@ pub fn value(lookup: impl Fn(&str) -> Option<OsString>, var: Var) -> Option<OsSt
 /// The value of `var` in the process's environment, with an empty value read as unset.
 pub fn read(var: Var) -> Option<OsString> {
     value(process, var)
+}
+
+/// The ExifTool program the process's environment names (`PG_EXIFTOOL`), or `exiftool` on PATH when it is unset. Every
+/// ExifTool run and every test that starts one takes this program, so they all run the same one.
+pub fn exiftool_program() -> OsString {
+    read(Var::Exiftool).unwrap_or_else(|| "exiftool".into())
 }
 
 /// `var`'s value as a path, when it has one (see [`value`]).

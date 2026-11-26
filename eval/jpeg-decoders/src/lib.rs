@@ -303,7 +303,7 @@ fn ffmpeg_rgb(mut src: ffmpeg::frame::Video) -> Result<Rgb> {
 /// libvips through its C API (the `vips` crate needs a newer libvips than Ubuntu's for its build).
 mod vips {
     use std::ffi::{CStr, c_char, c_int, c_void};
-    use std::sync::Once;
+    use std::sync::OnceLock;
 
     use anyhow::{Result, bail, ensure};
 
@@ -335,18 +335,22 @@ mod vips {
         fn g_free(mem: *mut c_void);
     }
 
+    /// The first call's outcome, kept: every later call reports the same failure.
     pub fn init() -> Result<()> {
-        static INIT: Once = Once::new();
-        let mut ok = true;
-        // SAFETY: vips_init runs once per process, before any other libvips call; the settings are global.
-        INIT.call_once(|| unsafe {
-            ok = vips_init(c"jpeg-decoders".as_ptr()) == 0;
-            vips_concurrency_set(1);
-            // Without this, decoding the same buffer again is a cache hit.
-            vips_cache_set_max(0);
+        static INIT: OnceLock<Result<(), String>> = OnceLock::new();
+        let outcome = INIT.get_or_init(|| {
+            // SAFETY: vips_init runs once per process, before any other libvips call; the settings are global.
+            unsafe {
+                if vips_init(c"jpeg-decoders".as_ptr()) != 0 {
+                    return Err(error());
+                }
+                vips_concurrency_set(1);
+                // Without this, decoding the same buffer again is a cache hit.
+                vips_cache_set_max(0);
+            }
+            Ok(())
         });
-        ensure!(ok, "vips_init: {}", error());
-        Ok(())
+        outcome.as_ref().map(|_| ()).map_err(|e| anyhow::anyhow!("vips_init: {e}"))
     }
 
     pub fn decode(mode: Mode, bytes: &[u8]) -> Result<Rgb> {

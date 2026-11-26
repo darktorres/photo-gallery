@@ -27,6 +27,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $setOwed = Join-Path $PSScriptRoot 'set_owed.py'
+# -Work is scratch these scripts own: it is removed only when it carries this marker, which the script writes into the
+# folder it makes. A folder the caller named that lacks it is refused, not deleted.
+$scratchMarker = '.pairing-scratch'
+function Clear-Work {
+    if (-not (Test-Path $Work)) { return }
+    if (-not (Test-Path (Join-Path $Work $scratchMarker))) { throw "-Work $Work is not a scratch folder of these scripts: name a folder that does not exist" }
+    Remove-Item -LiteralPath $Work -Recurse -Force
+}
 $check = @'
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
@@ -46,8 +54,9 @@ $cases = @(
 )
 $failed = 0
 foreach ($case in $cases) {
-    if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
+    Clear-Work
     New-Item -ItemType Directory $Work | Out-Null
+    New-Item -ItemType File (Join-Path $Work $scratchMarker) | Out-Null
     $checkPy = Join-Path $Work 'check.py'
     $dropPy = Join-Path $PSScriptRoot 'drop_owed_pairs.py'
     Set-Content -LiteralPath $checkPy -Value $check
@@ -57,7 +66,9 @@ foreach ($case in $cases) {
     $dropped = ''
     if ($case.owed -ne 'all') {
         python -I $setOwed $db $case.owed | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "set_owed.py failed (exit $LASTEXITCODE) on case '$($case.name)': the case would not owe what it names" }
         $dropped = python -I $dropPy $db
+        if ($LASTEXITCODE -ne 0) { throw "drop_owed_pairs.py failed (exit $LASTEXITCODE) on case '$($case.name)'" }
         $env:PG_PROBE_KEEP_OWED = '1'
     }
     if ($case.slice -gt 0) { $env:PG_PROBE_SLICE = "$($case.slice)" } else { Remove-Item Env:PG_PROBE_SLICE -ErrorAction SilentlyContinue }
@@ -69,6 +80,6 @@ foreach ($case in $cases) {
     "    $($line -replace '^owed .*? in ', 'in ')"
 }
 Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE, Env:PG_PROBE_WORKERS -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $Work -Recurse -Force
+Clear-Work
 if ($failed -gt 0) { throw "$failed of $($cases.Count) cases differ from the oracle" }
 "all $($cases.Count) cases identical"

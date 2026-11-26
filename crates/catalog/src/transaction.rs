@@ -40,7 +40,7 @@ pub fn attach_tx(span: &mut pg_perf::Span, since: TxMark) {
 const RETRY_EVERY: Duration = Duration::from_millis(50);
 
 /// How long this thread's write transactions keep trying to begin while another connection holds the write lock, once
-/// the connection's own busy timeout (`SETTINGS`, 5 s) has run out: until `until`, and not once `stop` is set. A thread
+/// the connection's own busy timeout (`crate::schema::BUSY_TIMEOUT_MS`, 5 s) has run out: until `until`, and not once `stop` is set. A thread
 /// that sets no patience keeps the timeout alone.
 #[derive(Clone)]
 pub struct Patience {

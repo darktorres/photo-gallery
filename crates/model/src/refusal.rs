@@ -1,6 +1,6 @@
 //! Why a refusal happens, as data: the scanner refuses a folder (`RefusedReason`, which `pg-scan` decides from the
 //! platform's facts), and the catalog refuses a file (`CatalogRefusal`, which `prepare` decides from the file). The
-//! words are `pg_wording`'s and the catalog's own, so nothing here is English: a refusal is shown in the reader's
+//! words are `pg-wording`'s and the catalog's own, so nothing here is English: a refusal is shown in the reader's
 //! language, whichever one the program ran in.
 
 use alloc::string::String;
@@ -67,7 +67,8 @@ pub enum CatalogRefusal {
 }
 
 /// Why a folder can't be scanned for its identities, or walked into under a scanned root. A notice stores it as
-/// `{"reason": "<variant>", ...its fields}` (kebab-case); the words select on [`RefusedReason::key`].
+/// `{"reason": "<variant>", ...its fields}`: the variant's name is kebab-case, and its fields keep their Rust names
+/// (`file_system`), as a notice's fields do. The words select on [`RefusedReason::key`].
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "reason", rename_all = "kebab-case")]
 pub enum RefusedReason {

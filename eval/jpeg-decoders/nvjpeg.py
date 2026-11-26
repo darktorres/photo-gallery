@@ -33,7 +33,7 @@ import numpy as np
 import torch
 import torchvision
 from PIL import Image
-from timing import MAX_BATCH_BYTES, timed_s
+from timing import MAX_BATCH_BYTES, blocking_sync, max_batch, primary_ctx_flags, timed_s
 
 from common import analysis_denom
 
@@ -91,26 +91,14 @@ def load_nvjpeg():
 NV = load_nvjpeg()
 
 
-def blocking_sync():
-    """Make waits on the GPU sleep instead of spin, so process CPU time counts work, not waiting.
-
-    CUDA's default (cudaDeviceScheduleAuto) busy-waits in cudaStreamSynchronize, which would bill the whole GPU
-    decode as CPU time. Must run before the CUDA context exists (torch creates it lazily).
-
-    The runtime API's call for the flag. gpu.py and nvimgcodec_bench.py make the driver API's call
-    (cuDevicePrimaryCtxSetFlags) instead, because their venv has no torch and so no cudart DLL; both set the same flag.
-    """
-    cudart = C.CDLL(str(Path(torch.__file__).parent / "lib" / "cudart64_13.dll"))
-    ok(cudart.cudaSetDeviceFlags(0x04), "cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync)")
-    return cudart
-
-
 def ok(status, what):
     if status != 0:
         raise RuntimeError(f"{what}: returned an error (code {status})")
 
 
-CUDART = blocking_sync()
+# Waits on the GPU sleep instead of spin, so process CPU time counts work, not waiting (timing.blocking_sync). Before
+# the CUDA context exists: torch creates it lazily, on first use, which is after this import.
+blocking_sync()
 
 
 def new(fn, *args):
@@ -163,24 +151,31 @@ class Decoupled:
     """One image at a time through the decoupled API: host phase, transfer, device phase."""
 
     def __init__(self, backend, data, w, h, stream, flags=0):
-        self.handle = new("nvjpegCreateEx", backend, None, None, flags)
-        self.decoder = new("nvjpegDecoderCreate", self.handle, backend)
-        self.state = new("nvjpegDecoderStateCreate", self.handle, self.decoder)
-        self.pinned = new("nvjpegBufferPinnedCreate", self.handle, None)
-        self.device = new("nvjpegBufferDeviceCreate", self.handle, None)
-        ok(NV.nvjpegStateAttachPinnedBuffer(self.state, self.pinned), "AttachPinnedBuffer")
-        ok(NV.nvjpegStateAttachDeviceBuffer(self.state, self.device), "AttachDeviceBuffer")
-        self.jstream = new("nvjpegJpegStreamCreate", self.handle)
-        self.params = new("nvjpegDecodeParamsCreate", self.handle)
-        ok(NV.nvjpegDecodeParamsSetOutputFormat(self.params, RGBI), "SetOutputFormat")
-        self.src = (C.c_ubyte * len(data)).from_buffer_copy(data)
-        self.out = torch.empty((h, w, 3), dtype=torch.uint8, device="cuda")
-        self.dest = image_desc(self.out)
-        self.stream = stream
-        self.parse()
-        flag = C.c_int(-1)
-        ok(NV.nvjpegDecoderJpegSupported(self.decoder, self.jstream, self.params, C.byref(flag)), "JpegSupported")
-        self.supported = flag.value == 0  # nvjpeg.h: 0 means the decoder can handle the stream
+        # Each handle starts as None: a failure part-way closes the ones made so far, and no more.
+        self.handle = self.decoder = self.state = self.pinned = self.device = None
+        self.jstream = self.params = None
+        try:
+            self.handle = new("nvjpegCreateEx", backend, None, None, flags)
+            self.decoder = new("nvjpegDecoderCreate", self.handle, backend)
+            self.state = new("nvjpegDecoderStateCreate", self.handle, self.decoder)
+            self.pinned = new("nvjpegBufferPinnedCreate", self.handle, None)
+            self.device = new("nvjpegBufferDeviceCreate", self.handle, None)
+            ok(NV.nvjpegStateAttachPinnedBuffer(self.state, self.pinned), "AttachPinnedBuffer")
+            ok(NV.nvjpegStateAttachDeviceBuffer(self.state, self.device), "AttachDeviceBuffer")
+            self.jstream = new("nvjpegJpegStreamCreate", self.handle)
+            self.params = new("nvjpegDecodeParamsCreate", self.handle)
+            ok(NV.nvjpegDecodeParamsSetOutputFormat(self.params, RGBI), "SetOutputFormat")
+            self.src = (C.c_ubyte * len(data)).from_buffer_copy(data)
+            self.out = torch.empty((h, w, 3), dtype=torch.uint8, device="cuda")
+            self.dest = image_desc(self.out)
+            self.stream = stream
+            self.parse()
+            flag = C.c_int(-1)
+            ok(NV.nvjpegDecoderJpegSupported(self.decoder, self.jstream, self.params, C.byref(flag)), "JpegSupported")
+            self.supported = flag.value == 0  # nvjpeg.h: 0 means the decoder can handle the stream
+        except BaseException:
+            self.close()
+            raise
 
     def parse(self):
         ok(NV.nvjpegJpegStreamParse(self.handle, self.src, len(self.src), 0, 0, self.jstream), "JpegStreamParse")
@@ -197,13 +192,18 @@ class Decoupled:
         return [self.out]
 
     def close(self):
-        NV.nvjpegDecodeParamsDestroy(self.params)
-        NV.nvjpegJpegStreamDestroy(self.jstream)
-        NV.nvjpegJpegStateDestroy(self.state)
-        NV.nvjpegBufferDeviceDestroy(self.device)
-        NV.nvjpegBufferPinnedDestroy(self.pinned)
-        NV.nvjpegDecoderDestroy(self.decoder)
-        NV.nvjpegDestroy(self.handle)
+        """Destroys the handles that were made; the ones a failed constructor did not make are None."""
+        for destroy, handle in (
+            (NV.nvjpegDecodeParamsDestroy, self.params),
+            (NV.nvjpegJpegStreamDestroy, self.jstream),
+            (NV.nvjpegJpegStateDestroy, self.state),
+            (NV.nvjpegBufferDeviceDestroy, self.device),
+            (NV.nvjpegBufferPinnedDestroy, self.pinned),
+            (NV.nvjpegDecoderDestroy, self.decoder),
+            (NV.nvjpegDestroy, self.handle),
+        ):
+            if handle is not None:
+                destroy(handle)
 
 
 def pillow(data, d=1):
@@ -253,9 +253,8 @@ def main():
     )
     print(env.line())
     stream = torch.cuda.Stream()  # creates the context
-    flags = C.c_uint()
-    ok(CUDART.cudaGetDeviceFlags(C.byref(flags)), "cudaGetDeviceFlags")
-    assert flags.value & 0x07 == 0x04, f"context not in blocking sync: flags {flags.value:#x}"
+    flags = primary_ctx_flags()
+    assert flags & 0x07 == 0x04, f"context not in blocking sync: flags {flags:#x}"
     for path in args.files:
         data = Path(path).read_bytes()
         im = pillow(data)
@@ -273,7 +272,11 @@ def main():
 
         outputs = {}
         for name, backend in BACKENDS.items():
-            dec = Decoupled(backend, data, w, h, stream, hflags)
+            try:
+                dec = Decoupled(backend, data, w, h, stream, hflags)
+            except RuntimeError as e:
+                print(f"  {name}, decoupled: {e}")
+                continue
             try:
                 host = [torch.empty((h, w, 3), dtype=torch.uint8).pin_memory()]
                 dec.decode()
@@ -290,7 +293,7 @@ def main():
         if len(outputs) == 2:
             print(f"  GPU_HYBRID vs HYBRID: {diff(*outputs.values())}")
 
-        cap = max(1, int(MAX_BATCH_BYTES // (w * h * 3)))
+        cap = max_batch(w, h)
         for batch in [b for b in batches if b <= cap]:
             host = [torch.empty((h, w, 3), dtype=torch.uint8).pin_memory() for _ in range(batch)]
             for name, backend in BACKENDS.items():

@@ -21,7 +21,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::convert::identity_to_sql;
 use crate::error::{Error, Result};
-use crate::ledger::failure::{Failure, tidy};
+use crate::ledger::failure::{Failure, kept_error};
 use crate::types::PairingWork;
 use crate::types::{
     DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING,
@@ -219,7 +219,7 @@ impl<'tx> ScanWriter<'tx> {
                     unpaired, pending, seq, changed)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)",
             )?,
-            // A known row is updated only while it is as the walk read it when it listed the folder (`?11`, `?12`: NULL
+            // A known row is updated only while it is as the walk read it when it listed the folder (`?10`, `?11`: NULL
             // for none), and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule
             // (a listing has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and
             // retries, which change nothing on disk. The triggers that depend on size, mtime and missing keep the
@@ -230,7 +230,7 @@ impl<'tx> ScanWriter<'tx> {
                  WHERE id = ?1 AND size IS ?10 AND mtime IS ?11 AND ",
                 not_being_written!(files)
             ))?,
-            bump: tx.prepare_cached(concat!(next_seq!(), " RETURNING value"))?,
+            bump: tx.prepare_cached(BUMP_SEQ)?,
             folder_failed: tx.prepare_cached(FOLDER_FAILED)?,
             change: None,
             volumes: Volumes::new(tx)?,
@@ -251,7 +251,7 @@ impl<'tx> ScanWriter<'tx> {
             self.rules.join(path),
             self.rules.path_key(path),
             failure.key(),
-            tidy(error),
+            kept_error(error),
             self.scan
         ])?;
         Ok(written > 0)
@@ -965,7 +965,7 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
     let rows: Vec<serde_json::Value> = failures
         .iter()
         .map(|f| {
-            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.turns.get(), tidy(&f.error), i64::from(f.retry)])
+            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.turns.get(), kept_error(&f.error), i64::from(f.retry)])
         })
         .collect();
     let rows = serde_json::to_string(&rows).map_err(Error::bare)?;
@@ -1031,7 +1031,7 @@ mod tests {
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
     use pg_model::versions::IMPORT_VERSION;
-    use rusqlite::params;
+    use rusqlite::{OptionalExtension, params};
     use std::path::Path;
 
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed(rules: PathRules) {
@@ -1656,8 +1656,6 @@ mod tests {
         fixture::insert(c, &[fixture::File::new(FileId::new(id), FolderId::new(1), name, 10, 100)]).unwrap();
     }
 
-    /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all four kept orientations (the
-    /// writer does not check them).
     /// A picture as the import and the Hashes pass store it: its analysis, and its duplicate hashes (which the import
     /// no longer makes: `store_for` stores them after the analysis, as the Hashes pass does).
     struct Picture {
@@ -1665,6 +1663,8 @@ mod tests {
         hashes: ImageHashes,
     }
 
+    /// An image's analysis as the import stores it: its PDQ hash `hash` at `quality`, in all four kept orientations (the
+    /// writer does not check them).
     fn picture(hash: [u8; 32], quality: u8) -> Picture {
         let pdq =
             pg_model::pdq::Pdq { orientations: [pg_model::pdq::Hash(hash); pg_model::pdq::ORIENTATIONS], quality };
@@ -1722,7 +1722,10 @@ mod tests {
 
     /// The stored distance of the pair `a`, `b` (`a < b`), if there is one.
     fn pair_distance(c: &Catalog, a: i64, b: i64) -> Option<i64> {
-        c.conn.query_row("SELECT distance FROM pdq_pairs WHERE a = ?1 AND b = ?2", [a, b], |r| r.get(0)).ok()
+        c.conn
+            .query_row("SELECT distance FROM pdq_pairs WHERE a = ?1 AND b = ?2", [a, b], |r| r.get(0))
+            .optional()
+            .expect("the pairs are read")
     }
 
     fn an_analysis_owes_its_pairs_only_with_hashes_of_a_reliable_quality(rules: PathRules) {
@@ -1904,8 +1907,8 @@ mod tests {
         }
     }
 
-    /// Migration 14's triggers: `meta.pairing_epoch` moves on each change to an analysis the pairs are guarded by, and on
-    /// nothing else: not on owed rows, nor on the pass's own writes.
+    /// The baseline's pairing triggers: `meta.pairing_epoch` moves on each change to an analysis the pairs are guarded by,
+    /// and on nothing else: not on owed rows, nor on the pass's own writes.
     fn the_pairing_epoch_moves_with_what_the_pairs_are_made_from(rules: PathRules) {
         let mut c = pictures(rules, 4);
         add_file(&c, 5, "e.jpg");

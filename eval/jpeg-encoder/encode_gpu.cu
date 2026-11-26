@@ -20,6 +20,7 @@
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/scan.h>
+#include <thrust/system_error.h>
 
 #include <chrono>
 #include <cmath>
@@ -140,6 +141,12 @@ __device__ __forceinline__ uint32_t find_index(const uint64_t* base, uint32_t n,
     return lo;
 }
 
+// Blocks per MCU: 6 with 4:2:0 (four Y, then Cb and Cr), else 3. Used on both host and device.
+__host__ __device__ __forceinline__ uint32_t blocks_per_mcu(int c420) { return c420 ? 6u : 3u; }
+
+// This thread's index in a one-dimensional launch, in 64 bits: the counts and tables the kernels index are 64-bit.
+__device__ __forceinline__ uint64_t global_index() { return (uint64_t)blockIdx.x * blockDim.x + threadIdx.x; }
+
 // ---------------------------------------------------------------- stage 1: colour
 
 __device__ __forceinline__ void rgb_at(const uint8_t* rgb, const ImgInfo& m, uint32_t x, uint32_t y,
@@ -169,7 +176,7 @@ __device__ __forceinline__ uint8_t chroma_u8(uint32_t comp, float R, float G, fl
 __global__ void k_colour(const uint8_t* __restrict__ rgb, const ImgInfo* info, const uint64_t* pbase,
                          uint32_t n, uint8_t* planes, uint64_t total, int c420) {
     const uint64_t stride = (uint64_t)gridDim.x * blockDim.x;
-    for (uint64_t idx = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x; idx < total; idx += stride) {
+    for (uint64_t idx = global_index(); idx < total; idx += stride) {
         const uint32_t i = find_index(pbase, n, idx);
         const ImgInfo m = info[i];
         const uint64_t o = idx - pbase[i];
@@ -237,7 +244,7 @@ __global__ void k_dct(const uint8_t* __restrict__ planes, const ImgInfo* info, c
     const uint32_t i = find_index(bbase, n, g);
     const ImgInfo m = info[i];
     const uint64_t local = g - bbase[i];
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
     const uint32_t mcu = (uint32_t)(local / bpm);
     const uint32_t k = (uint32_t)(local % bpm);
     const uint32_t mx = mcu % m.mcus_x, my = mcu / m.mcus_x;
@@ -308,7 +315,7 @@ __device__ __forceinline__ uint32_t comp_of(uint32_t k, int c420) {
 
 // Local index of the previous block of the same component in scan order, or kNone.
 __device__ __forceinline__ uint32_t prev_same_comp(uint32_t mcu, uint32_t k, int c420) {
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
     if (c420 && k < 4u && k > 0u) return mcu * bpm + k - 1u;
     if (mcu == 0u) return kNone;
     if (c420 && k < 4u) return (mcu - 1u) * bpm + 3u;
@@ -376,12 +383,12 @@ __device__ void encode_block(const int16_t* blk, uint32_t comp, int has_pred, in
 // order (libjpeg's convention), so their DC difference is zero. Reads only real blocks' DCs.
 __global__ void k_dummy_dc(int16_t* coef, const ImgInfo* info, const uint64_t* bbase, uint32_t n,
                            uint64_t nblocks, int c420) {
-    const uint64_t g = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t g = global_index();
     if (g >= nblocks) return;
     const uint32_t i = find_index(bbase, n, g);
     const ImgInfo& m = info[i];
     const uint64_t local = g - bbase[i];
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
     uint32_t mcu = (uint32_t)(local / bpm);
     uint32_t k = (uint32_t)(local % bpm);
     if (block_is_real(m, comp_of(k, c420), mcu, k, c420)) return;
@@ -401,11 +408,11 @@ __global__ void k_dummy_dc(int16_t* coef, const ImgInfo* info, const uint64_t* b
 
 __global__ void k_sizes(const int16_t* coef, const uint64_t* bbase, uint32_t n, uint64_t* bits,
                         uint64_t nblocks, int c420) {
-    const uint64_t g = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t g = global_index();
     if (g >= nblocks) return;
     const uint32_t i = find_index(bbase, n, g);
     const uint64_t local = g - bbase[i];
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
     const uint32_t mcu = (uint32_t)(local / bpm), k = (uint32_t)(local % bpm);
     const uint32_t comp = comp_of(k, c420);
     const uint32_t prev = prev_same_comp(mcu, k, c420);
@@ -418,11 +425,11 @@ __global__ void k_sizes(const int16_t* coef, const uint64_t* bbase, uint32_t n, 
 
 __global__ void k_pack(const int16_t* coef, const uint64_t* bbase, uint32_t n, const uint64_t* off,
                        const uint64_t* wbase, uint32_t* words, uint64_t nblocks, int c420) {
-    const uint64_t g = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t g = global_index();
     if (g >= nblocks) return;
     const uint32_t i = find_index(bbase, n, g);
     const uint64_t local = g - bbase[i];
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
     const uint32_t mcu = (uint32_t)(local / bpm), k = (uint32_t)(local % bpm);
     const uint32_t comp = comp_of(k, c420);
     const uint32_t prev = prev_same_comp(mcu, k, c420);
@@ -435,7 +442,7 @@ __global__ void k_pack(const int16_t* coef, const uint64_t* bbase, uint32_t n, c
 
 // Fills the padding bits of each image's last byte with 1s.
 __global__ void k_pad(uint32_t* words, const uint64_t* wbase, const uint64_t* ibits, uint32_t n) {
-    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t i = (uint32_t)global_index();
     if (i >= n) return;
     const uint64_t bits = ibits[i];
     const uint64_t end = (bits + 7u) & ~7ull;
@@ -446,7 +453,7 @@ __global__ void k_pad(uint32_t* words, const uint64_t* wbase, const uint64_t* ib
 
 // FF bytes in each word (bytes beyond an image's data are zero, so they never count).
 __global__ void k_wcount(const uint32_t* words, uint32_t* wff, uint64_t W) {
-    const uint64_t w = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t w = global_index();
     if (w >= W) return;
     const uint32_t v = words[w];
     uint32_t c = 0;
@@ -458,7 +465,7 @@ __global__ void k_wcount(const uint32_t* words, uint32_t* wff, uint64_t W) {
 }
 
 __global__ void k_gather64(const uint64_t* src, const uint64_t* idx, uint64_t cnt, uint64_t* dst) {
-    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;  // 64-bit, like the counts and tables it indexes
+    const uint64_t i = global_index();
     if (i < cnt) dst[i] = src[idx[i]];
 }
 
@@ -466,7 +473,7 @@ __global__ void k_gather64(const uint64_t* src, const uint64_t* idx, uint64_t cn
 // exclusive prefix sum of per-word FF counts, so no per-byte scan is needed.
 __global__ void k_stuff(const uint32_t* words, const uint64_t* wpref, const uint64_t* wbase, uint32_t n,
                         const uint64_t* nbytes, const uint64_t* outent, uint64_t W, uint8_t* out) {
-    const uint64_t w = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t w = global_index();
     if (w >= W) return;
     const uint32_t i = find_index(wbase, n, w);
     const uint64_t k = w - wbase[i];
@@ -488,7 +495,7 @@ __global__ void k_stuff(const uint32_t* words, const uint64_t* wpref, const uint
 }
 
 __global__ void k_eoi(uint8_t* out, const uint64_t* eoi, uint32_t n) {
-    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t i = (uint32_t)global_index();
     if (i >= n) return;
     out[eoi[i]] = 0xFF;
     out[eoi[i] + 1] = 0xD9;
@@ -547,17 +554,27 @@ struct Span {
     cudaEvent_t a, b;
 };
 
-// Timing events only; a failure to create them leaves the stage time at zero rather than failing the batch.
+// Timing events only. A failed event create, record or elapsed-time read leaves that stage's time at zero and
+// never fails the batch; the failure is cleared so the batch's own CUDA calls report only their own errors.
+cudaEvent_t make_timing_event() {
+    cudaEvent_t e = nullptr;
+    if (cudaEventCreate(&e) != cudaSuccess) {
+        cudaGetLastError();
+        return nullptr;
+    }
+    return e;
+}
+
 int open_span(std::vector<Span>& v, int stage) {
-    Span s{stage, nullptr, nullptr};
-    cudaEventCreate(&s.a);
-    cudaEventCreate(&s.b);
-    cudaEventRecord(s.a);
+    Span s{stage, make_timing_event(), make_timing_event()};
+    if (s.a && cudaEventRecord(s.a) != cudaSuccess) cudaGetLastError();
     v.push_back(s);
     return (int)v.size() - 1;
 }
 
-cudaError_t close_span(std::vector<Span>& v, int idx) { return cudaEventRecord(v[idx].b); }
+void close_span(std::vector<Span>& v, int idx) {
+    if (v[idx].b && cudaEventRecord(v[idx].b) != cudaSuccess) cudaGetLastError();
+}
 
 void destroy_spans(std::vector<Span>& v) {
     for (Span& s : v) {
@@ -609,6 +626,8 @@ struct EgpuContext {
     std::vector<Span> spans;
     EgpuTimings timings{};
 
+    // True only while the outputs above belong to a batch that completed; a failed call clears it.
+    bool batch_ok = false;
     std::vector<uint8_t> host_out;
     std::vector<uint64_t> out_begin, out_len;
     std::vector<std::vector<int16_t>> coef_host;
@@ -673,7 +692,7 @@ void build_header(const EgpuContext* c, uint32_t w, uint32_t h, std::vector<uint
 int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, uint32_t n, uint32_t gbase) {
     const int c420 = c->c420;
     const uint32_t mcu = c420 ? 16u : 8u;
-    const uint32_t bpm = c420 ? 6u : 3u;
+    const uint32_t bpm = blocks_per_mcu(c420);
 
     // Host geometry: plane and block bases per image.
     std::vector<ImgInfo> hinfo(n);
@@ -720,7 +739,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     k_colour<<<grid_colour(plane_total), kTpb>>>(d_rgb, dev<ImgInfo>(c->info), dev<uint64_t>(c->pbase), n,
                                                  dev<uint8_t>(c->planes), plane_total, c420);
     CUDA_TRY(cudaGetLastError());
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Stage 2: DCT and quantize.
     ALLOC(c->coef, nb * 64 * sizeof(int16_t));
@@ -731,7 +750,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     k_dummy_dc<<<grid_exact(nb), kTpb>>>(dev<int16_t>(c->coef), dev<ImgInfo>(c->info), dev<uint64_t>(c->bbase),
                                          n, nb, c420);
     CUDA_TRY(cudaGetLastError());
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Stage 3: per-block bit counts. bits[nb] is the zero sentinel for the scan.
     ALLOC(c->bits, (nb + 1) * sizeof(uint64_t));
@@ -741,7 +760,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     k_sizes<<<grid_exact(nb), kTpb>>>(dev<int16_t>(c->coef), dev<uint64_t>(c->bbase), n,
                                       dev<uint64_t>(c->bits), nb, c420);
     CUDA_TRY(cudaGetLastError());
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Stage 4: exclusive scan over the batch, then per-image bit counts read back.
     sp = open_span(c->spans, ST_SCAN);
@@ -766,7 +785,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     CUDA_TRY(cudaMemcpy(c->wbase.p, hwb.data(), (n + 1) * 8, cudaMemcpyHostToDevice));
     ALLOC(c->ibits, n * sizeof(uint64_t));
     CUDA_TRY(cudaMemcpy(c->ibits.p, hbits.data(), n * 8, cudaMemcpyHostToDevice));
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Stage 5: clear word buffers (finishes before the pack kernel), then pack.
     ALLOC(c->words, W * sizeof(uint32_t));
@@ -776,7 +795,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
                                      dev<uint64_t>(c->off), dev<uint64_t>(c->wbase),
                                      dev<uint32_t>(c->words), nb, c420);
     CUDA_TRY(cudaGetLastError());
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Stage 6: 1-bit padding, FF counts per word, prefix sum, per-image FF counts.
     sp = open_span(c->spans, ST_PAD);
@@ -796,7 +815,7 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
                                             dev<uint64_t>(c->tmp64));
     CUDA_TRY(cudaGetLastError());
     CUDA_TRY(cudaMemcpy(g1.data(), c->tmp64.p, (n + 1) * 8, cudaMemcpyDeviceToHost));
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
     // Host: output layout. Each image is header + entropy bytes + stuffing + EOI.
     std::vector<std::vector<uint8_t>> hdrs(n);
@@ -820,37 +839,38 @@ int encode_chunk(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* imgs, ui
     CUDA_TRY(cudaMemcpy(c->eoi.p, heoi.data(), n * 8, cudaMemcpyHostToDevice));
     ALLOC(c->out, out_total);
 
-    // Stage 7: headers, stuffed entropy, EOI.
+    // Stage 7: headers, stuffed entropy, EOI. The headers go up in one copy, each at its place in the output.
     sp = open_span(c->spans, ST_STUFF);
-    for (uint32_t i = 0; i < n; ++i) {
-        CUDA_TRY(cudaMemcpy(dev<uint8_t>(c->out) + hout_base[i], hdrs[i].data(), hdrs[i].size(),
-                            cudaMemcpyHostToDevice));
-    }
+    std::vector<uint8_t> hheaders(out_total, 0);
+    for (uint32_t i = 0; i < n; ++i) std::memcpy(hheaders.data() + hout_base[i], hdrs[i].data(), hdrs[i].size());
+    CUDA_TRY(cudaMemcpy(dev<uint8_t>(c->out), hheaders.data(), out_total, cudaMemcpyHostToDevice));
     k_stuff<<<grid_exact(W), kTpb>>>(dev<uint32_t>(c->words), dev<uint64_t>(c->wpref), dev<uint64_t>(c->wbase), n,
                                      dev<uint64_t>(c->nbytes), dev<uint64_t>(c->outent), W,
                                      dev<uint8_t>(c->out));
     CUDA_TRY(cudaGetLastError());
     k_eoi<<<(n + 63) / 64, 64>>>(dev<uint8_t>(c->out), dev<uint64_t>(c->eoi), n);
     CUDA_TRY(cudaGetLastError());
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
 
-    // Copy-out: outputs, and coefficients if requested.
+    // Copy-out: outputs, and coefficients if requested. Each is one copy for the whole sub-batch, sliced per image.
     sp = open_span(c->spans, ST_COPY);
     const size_t host_base = c->host_out.size();
     c->host_out.resize(host_base + out_total);
     CUDA_TRY(cudaMemcpy(c->host_out.data() + host_base, c->out.p, out_total, cudaMemcpyDeviceToHost));
+    std::vector<int16_t> hcoef;
+    if (c->keep) {
+        hcoef.resize(nb * 64);
+        CUDA_TRY(cudaMemcpy(hcoef.data(), dev<int16_t>(c->coef), nb * 64 * sizeof(int16_t), cudaMemcpyDeviceToHost));
+    }
     for (uint32_t i = 0; i < n; ++i) {
         c->out_begin[gbase + i] = host_base + hout_base[i];
         c->out_len[gbase + i] = hout_base[i + 1] - hout_base[i];
         if (c->keep) {
-            const uint64_t blocks = hbb[i + 1] - hbb[i];
-            std::vector<int16_t>& dst = c->coef_host[gbase + i];
-            dst.resize(blocks * 64);
-            CUDA_TRY(cudaMemcpy(dst.data(), dev<int16_t>(c->coef) + hbb[i] * 64, blocks * 64 * sizeof(int16_t),
-                                cudaMemcpyDeviceToHost));
+            const int16_t* first = hcoef.data() + hbb[i] * 64;
+            c->coef_host[gbase + i].assign(first, first + (hbb[i + 1] - hbb[i]) * 64);
         }
     }
-    CUDA_TRY(close_span(c->spans, sp));
+    close_span(c->spans, sp);
     return EGPU_OK;
 }
 
@@ -884,7 +904,10 @@ int encode_all(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* images, ui
 
     for (const Span& s : c->spans) {
         float ms = 0.f;
-        CUDA_TRY(cudaEventElapsedTime(&ms, s.a, s.b));
+        if (!s.a || !s.b || cudaEventElapsedTime(&ms, s.a, s.b) != cudaSuccess) {
+            cudaGetLastError();  // timing only: a stage whose events failed keeps a zero time
+            continue;
+        }
         float* f = nullptr;
         switch (s.stage) {
             case ST_COLOUR: f = &c->timings.colour_ms; break;
@@ -902,6 +925,7 @@ int encode_all(EgpuContext* c, const uint8_t* d_rgb, const EgpuImage* images, ui
     destroy_spans(c->spans);
     c->timings.total_ms =
         (float)std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    c->batch_ok = true;
     return EGPU_OK;
 }
 
@@ -996,6 +1020,7 @@ extern "C" int egpu_encode_batch(EgpuContext* c, const uint8_t* d_rgb, uint64_t 
         set_error("egpu_encode_batch: null context");
         return EGPU_ERR_ARG;
     }
+    c->batch_ok = false;  // until this call completes, the previous batch's outputs are not reported
     if (count == 0 || !images || !d_rgb) {
         set_error("egpu_encode_batch: empty batch or null buffer");
         return EGPU_ERR_ARG;
@@ -1020,15 +1045,23 @@ extern "C" int egpu_encode_batch(EgpuContext* c, const uint8_t* d_rgb, uint64_t 
     } catch (const std::bad_alloc&) {
         set_error("egpu_encode_batch: host allocation failed");
         return EGPU_ERR_MEMORY;
-    } catch (...) {
-        set_error("egpu_encode_batch: unexpected exception");
+    } catch (const thrust::system_error& e) {
+        // thrust reports a failed CUDA call by throwing, so its exceptions keep the CUDA status.
+        snprintf(g_error, sizeof g_error, "egpu_encode_batch: thrust failed: %s", e.what());
         return EGPU_ERR_CUDA;
+    } catch (...) {
+        set_error("egpu_encode_batch: unexpected host exception");
+        return EGPU_ERR_INTERNAL;
     }
 }
 
 extern "C" int egpu_output(const EgpuContext* c, uint32_t index, const uint8_t** data, uint64_t* size) {
     if (!c || !data || !size) {
         set_error("egpu_output: null argument");
+        return EGPU_ERR_ARG;
+    }
+    if (!c->batch_ok) {
+        set_error("egpu_output: no completed batch");
         return EGPU_ERR_ARG;
     }
     if (index >= c->out_begin.size()) {
@@ -1047,6 +1080,10 @@ extern "C" int egpu_coefficients(const EgpuContext* c, uint32_t index, const int
     }
     if (!c->keep) {
         set_error("egpu_coefficients: context was created without keep_coefficients");
+        return EGPU_ERR_ARG;
+    }
+    if (!c->batch_ok) {
+        set_error("egpu_coefficients: no completed batch");
         return EGPU_ERR_ARG;
     }
     if (index >= c->coef_host.size()) {

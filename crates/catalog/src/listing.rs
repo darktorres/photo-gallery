@@ -68,10 +68,19 @@ mod tests {
     fn a_stored_query_that_does_not_read_is_an_error_and_its_text_stays() {
         let rules = PathRules::Windows;
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE session(folder BLOB, recursive INTEGER, query TEXT, sort TEXT);").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(
+                id        INTEGER PRIMARY KEY CHECK (id = 1),
+                folder    BLOB NOT NULL,
+                recursive INTEGER NOT NULL,
+                query     TEXT NOT NULL,
+                sort      TEXT NOT NULL
+            );",
+        )
+        .unwrap();
         let folder = rules.join_merged(&Merged::from(vec![Name::from("p")]));
         conn.execute(
-            "INSERT INTO session VALUES (?1, 1, 'not json', '{\"key\":\"name\",\"descending\":false}')",
+            "INSERT INTO session VALUES (1, ?1, 1, 'not json', '{\"key\":\"name\",\"descending\":false}')",
             params![folder],
         )
         .unwrap();

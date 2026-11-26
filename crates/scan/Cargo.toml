@@ -13,7 +13,7 @@ workspace = true
 [features]
 bench = []
 
-# The scanner: walks a folder tree and records each media file's identity, size and mtime. Its dependencies are the catalog, the job's control, the model and the platform's listing: no analysis, no codec.
+# The scanner: walks a folder tree and records each media file's identity, size and mtime. Its dependencies are the catalog, the job's control, the model, the platform's listing and the perf log's spans and tallies: no analysis, no codec.
 [dependencies]
 pg-catalog = { path = "../catalog" }
 pg-jobs = { path = "../jobs" }

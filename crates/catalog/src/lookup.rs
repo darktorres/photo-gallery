@@ -18,8 +18,8 @@ use pg_model::turns::Turns;
 
 use crate::core::Catalog;
 use crate::current::{CURRENT_BATCH, CURRENT_ROWS, IS_CURRENT, query_current};
-use crate::error::{Error, Result};
-use crate::types::{CatalogCounts, CropSource, Listed, WriteTarget, under_params};
+use crate::error::Result;
+use crate::types::{CatalogCounts, CropSource, Listed, WriteTarget, stored_path, under_params};
 
 impl Catalog {
     /// Whether the file is still as it was listed, with no write of the app's into it in progress: only then is what
@@ -58,7 +58,8 @@ impl Catalog {
         )?)
     }
 
-    /// The folder the file is in, as the catalog has it; `None` if there is no such file. A failed query is an error.
+    /// The folder the file is in, as the catalog has it; `None` if there is no such file. A failed query is an error, and
+    /// so is a stored folder path that does not read (a damaged row), which is not the same as no folder.
     pub fn file_folder(&self, file_id: FileId) -> Result<Option<RulePath>> {
         let bytes: Option<Vec<u8>> = self
             .conn
@@ -68,7 +69,7 @@ impl Catalog {
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(bytes.and_then(|bytes| self.rules.parse_bytes(&bytes)))
+        bytes.map(|bytes| stored_path(self.rules, &bytes)).transpose()
     }
 
     /// The folder the file is in while the library shows it (present); `None` for a file gone, or missing.
@@ -81,7 +82,7 @@ impl Catalog {
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(bytes.and_then(|bytes| self.rules.parse_bytes(&bytes)))
+        bytes.map(|bytes| stored_path(self.rules, &bytes)).transpose()
     }
 
     /// Where a file is: its folder and name, exact. `None` when the catalog has no such file.
@@ -139,8 +140,7 @@ impl Catalog {
     }
 
     pub(crate) fn file_path_of(&self, folder: &[u8], name: &[u8]) -> Result<RulePath> {
-        let mut parts =
-            self.rules.parse_bytes(folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
+        let mut parts = stored_path(self.rules, folder)?;
         parts.parts.push(Name::from_raw(name));
         Ok(parts)
     }

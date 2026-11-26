@@ -145,7 +145,7 @@ Rectangle {
             onClicked: preview.pickRequested(preview.item)
         }
         Button {
-            text: preview.actual ? words.text("ui-fit") : "1:1"
+            text: preview.actual ? words.text("ui-fit") : words.text("ui-one-to-one")
             enabled: full.zoomable
             focusPolicy: Qt.NoFocus
             onClicked: preview.actual = !preview.actual

@@ -131,6 +131,11 @@ fn main() -> Result<()> {
     let dir = pg_testkit::run_folder("scratch_catalog", "pairs-write-probe")?;
     let db = dir.join("catalog.sqlite");
     std::fs::copy(source, &db).context("copy the catalog")?;
+    // A WAL-mode catalog keeps its newest pages in its log until a checkpoint: the copy takes the log too.
+    let log = wal_of(Path::new(source));
+    if log.exists() {
+        std::fs::copy(&log, wal_of(&db)).context("copy the catalog's log")?;
+    }
 
     let mut times: BTreeMap<&str, Vec<(Duration, Duration, u64)>> = BTreeMap::new();
     let mut plans_shown = false;

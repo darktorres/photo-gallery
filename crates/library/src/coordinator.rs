@@ -26,6 +26,7 @@ use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
 use pg_model::job::Change;
 use pg_model::notice::{ERROR_CAP, Notice, Op, Trigger, tidy};
+use pg_model::num::count_u64;
 use pg_model::progress::LaneProgress;
 use pg_model::progress::{Phase, Progress};
 use pg_model::removal::Volumes;
@@ -36,7 +37,7 @@ use pg_platform::priority::Priority;
 
 use crate::inner::Inner;
 use crate::lanes::{self, Place, probe_place};
-use crate::passes::{count, cut_done, error_text, file_failure};
+use crate::passes::{cap_error, cut_done, error_text};
 use crate::removals;
 use crate::shared::Shared;
 use crate::tally::RoundEnd;
@@ -47,6 +48,8 @@ const PROBE_DEADLINE: Duration = Duration::from_secs(5);
 const PLACE_TTL: Duration = Duration::from_secs(15);
 /// How long a retired lane gets to end its round.
 const RETIRE_WAIT: Duration = Duration::from_secs(10);
+/// How long the coordinator waits before it routes again after a round that failed.
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(15);
 /// The tally's key for the coordinator's own failures (a lane's number is never this).
 const COORDINATOR: usize = usize::MAX;
 
@@ -98,6 +101,8 @@ impl Probe {
 #[derive(Default)]
 struct Registry {
     lanes: Vec<Lane>,
+    /// The lanes asked to end, whose threads are still ending them (`retire`): not routed to, but they may be in a round.
+    retiring: Vec<Lane>,
     /// The number the next lane gets. Numbers are not reused: the tally keys its reports by them.
     next_number: usize,
     /// The folders asked for, not yet given to a lane (their root has none yet, or the request is new).
@@ -206,6 +211,11 @@ impl Lanes {
     /// The lanes now, in order.
     pub(crate) fn all(&self) -> Vec<Lane> {
         self.registry().lanes.clone()
+    }
+
+    /// The lanes being ended (retired, and not yet ended): not among [`Lanes::all`], but possibly still in a round.
+    pub(crate) fn retiring(&self) -> Vec<Lane> {
+        self.registry().retiring.clone()
     }
 
     /// Each lane's progress, with its drive's label: the probe's answer for the lane's first root.
@@ -359,7 +369,8 @@ impl Lanes {
             self.root.wake();
             stopped &= service.stop_within(deadline.saturating_duration_since(Instant::now()));
         }
-        let lanes = self.all();
+        let mut lanes = self.all();
+        lanes.extend(self.retiring());
         for lane in &lanes {
             lane.inner.ctl.request_stop();
             lane.service.quit();
@@ -393,11 +404,19 @@ impl Lanes {
         let turned = std::mem::take(&mut self.registry().turned);
         if !turned.is_empty() {
             // The volumes the turned files are on. A file with no volume (not in the catalog, or the lookup failed) wakes every
-            // lane: the safe answer, since no lane can be shown to be unaffected.
-            let volumes: BTreeSet<u64> = conn.volumes_of(&turned).unwrap_or_default();
+            // lane: the safe answer, since no lane can be shown to be unaffected. Each file is looked up on its own, so one such
+            // file among known ones still wakes them all.
+            let mut volumes = BTreeSet::new();
+            let mut unknown = false;
+            for id in &turned {
+                match conn.volumes_of(std::slice::from_ref(id)) {
+                    Ok(found) if !found.is_empty() => volumes.extend(found),
+                    _ => unknown = true,
+                }
+            }
             let reg = self.registry();
             let sets: Vec<VolumeSet> = reg.lanes.iter().map(|lane| lane.inner.volume_set()).collect();
-            let wake = if volumes.is_empty() { (0..sets.len()).collect() } else { lanes_with(&sets, &volumes) };
+            let wake = if unknown { (0..sets.len()).collect() } else { lanes_with(&sets, &volumes) };
             for (index, lane) in reg.lanes.iter().enumerate() {
                 if wake.contains(&index) {
                     lane.inner.ctl.request_stop();
@@ -523,9 +542,10 @@ impl Lanes {
         requeue(&mut self.registry().scans, pending);
     }
 
-    /// Stops and ends the retired lanes. Their queued and refused scans go back to the coordinator, to be routed to the
-    /// lanes that hold their roots now.
-    fn retire(&self, retiring: Vec<Lane>) {
+    /// Stops the retired lanes, and ends them on a thread of their own: the coordinator does not wait for a lane's round.
+    /// Their queued and refused scans go back to the coordinator once they have ended, to be routed to the lanes that hold
+    /// their roots now. Until then they are in the registry's retiring list.
+    fn retire(self: &Arc<Self>, retiring: Vec<Lane>) {
         if retiring.is_empty() {
             return;
         }
@@ -534,29 +554,22 @@ impl Lanes {
             for lane in &retiring {
                 reg.lanes.retain(|kept| kept.inner.number != lane.inner.number);
             }
+            reg.retiring.extend(retiring.iter().cloned());
         }
         for lane in &retiring {
             lane.inner.ctl.request_stop();
             lane.service.quit();
             lane.inner.ctl.wake();
         }
-        let deadline = Instant::now() + RETIRE_WAIT;
-        for lane in retiring {
-            // A lane that doesn't end in time is left to its own end: its walk stops by its lease (`Busy`) if another
-            // lane takes its folder meanwhile.
-            lane.service.stop_within(deadline.saturating_duration_since(Instant::now()));
-            // What the lane learned of its drive is kept for the next lane on it.
-            lane.inner.save_profiles();
-            let moved = lane.inner.take_scans();
-            self.shared.tally.lane_retired(lane.inner.number);
-            let mut reg = self.registry();
-            for path in moved {
-                if !reg.scans.contains(&path) {
-                    reg.scans.push_back(path);
-                }
-            }
+        let weak = Arc::downgrade(self);
+        let ending = retiring.clone();
+        let spawned = std::thread::Builder::new()
+            .name("lane retire".into())
+            .spawn(move || finish_retired(&weak, ending));
+        // No thread to end them on: they are ended here, which waits as the coordinator's own round would.
+        if spawned.is_err() {
+            finish_retired(&Arc::downgrade(self), retiring);
         }
-        self.wake_coordinator();
     }
 
     /// A new lane: its state (a child of the root's control), and its thread, which waits for its first round.
@@ -659,10 +672,10 @@ impl Lanes {
                 Ok(s) => {
                     self.shared.notices.post(Notice::Cropped {
                         folder: folder.display().to_string(),
-                        saved: count(s.saved),
-                        skipped: count(s.skipped),
-                        failed: count(s.failed),
-                        failures: s.failures.into_iter().map(file_failure).collect(),
+                        saved: count_u64(s.saved),
+                        skipped: count_u64(s.skipped),
+                        failed: count_u64(s.failed),
+                        failures: s.failures.into_iter().map(cap_error).collect(),
                     });
                     Done::Finished
                 }
@@ -685,11 +698,11 @@ impl Lanes {
                     cut_done(&self.shared, &s.cut);
                     if s.remaining.is_empty() {
                         self.shared.notices.post(Notice::BordersCut {
-                            saved: count(s.saved),
-                            skipped: count(s.skipped),
-                            unsupported: count(s.unsupported),
-                            failed: count(s.failed),
-                            failures: s.failures.into_iter().map(file_failure).collect(),
+                            saved: count_u64(s.saved),
+                            skipped: count_u64(s.skipped),
+                            unsupported: count_u64(s.unsupported),
+                            failed: count_u64(s.failed),
+                            failures: s.failures.into_iter().map(cap_error).collect(),
                         });
                         Done::Finished
                     } else {
@@ -724,8 +737,9 @@ impl Lanes {
                 }
             };
             let is_cut = matches!(next, Job::Cut(_));
-            match panics::catch(AssertUnwindSafe(|| self.job(conn, next))) {
-                Ok(Ok(Done::Finished)) => {}
+            // The job's failure, as the text of its notice: none when it finished or was stopped.
+            let failure = match panics::catch(AssertUnwindSafe(|| self.job(conn, next))) {
+                Ok(Ok(Done::Finished)) => None,
                 Ok(Ok(Done::Stopped(rest))) => {
                     let mut reg = self.registry();
                     match rest {
@@ -734,23 +748,15 @@ impl Lanes {
                     }
                     return;
                 }
-                Ok(Err(e)) => {
-                    let error = error_text(&e);
-                    if is_cut {
-                        self.shared.notices.post(Notice::CutFailed { error });
-                    } else {
-                        self.shared.notices.post(Notice::CropFailed { error });
-                    }
-                }
+                Ok(Err(e)) => Some(error_text(&e)),
                 Err(panic) => {
                     *conn = None;
-                    let error = tidy(panics::message(&*panic), ERROR_CAP);
-                    if is_cut {
-                        self.shared.notices.post(Notice::CutFailed { error });
-                    } else {
-                        self.shared.notices.post(Notice::CropFailed { error });
-                    }
+                    Some(tidy(panics::message(&*panic), ERROR_CAP))
                 }
+            };
+            if let Some(error) = failure {
+                let notice = if is_cut { Notice::CutFailed { error } } else { Notice::CropFailed { error } };
+                self.shared.notices.post(notice);
             }
         }
     }
@@ -779,6 +785,32 @@ fn route_scans(reg: &mut Registry, rules: &PathRules, roots: &[RulePath], pendin
     }
 }
 
+/// Ends the retired lanes, in turn: each is waited for up to [`RETIRE_WAIT`], then what it learned of its drive is kept, and
+/// its queued and refused scans go back to the coordinator. A lane that doesn't end in time is left to its own end: its walk
+/// stops by its lease (`Busy`) if another lane takes its folder meanwhile.
+fn finish_retired(weak: &Weak<Lanes>, retiring: Vec<Lane>) {
+    let deadline = Instant::now() + RETIRE_WAIT;
+    for lane in retiring {
+        lane.service.stop_within(deadline.saturating_duration_since(Instant::now()));
+        // What the lane learned of its drive is kept for the next lane on it.
+        lane.inner.save_profiles();
+        let moved = lane.inner.take_scans();
+        lane.inner.shared.tally.lane_retired(lane.inner.number);
+        if let Some(lanes) = weak.upgrade() {
+            let mut reg = lanes.registry();
+            reg.retiring.retain(|kept| kept.inner.number != lane.inner.number);
+            for path in moved {
+                if !reg.scans.contains(&path) {
+                    reg.scans.push_back(path);
+                }
+            }
+        }
+    }
+    if let Some(lanes) = weak.upgrade() {
+        lanes.wake_coordinator();
+    }
+}
+
 /// Puts `pending` back at the front of `queue`, in its order, skipping a folder asked for again meanwhile.
 fn requeue(queue: &mut VecDeque<RulePath>, pending: VecDeque<RulePath>) {
     for path in pending.into_iter().rev() {
@@ -804,7 +836,7 @@ fn coordinate(weak: &Weak<Lanes>, waker: &Waker<'_>) {
             }
             Err(e) => {
                 lanes.shared.tally.round(COORDINATOR, RoundEnd::Failed(error_text(&e)));
-                Some(PLACE_TTL)
+                Some(RETRY_AFTER_FAILURE)
             }
         };
         drop(lanes);
@@ -910,7 +942,7 @@ impl Lanes {
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
         let finished = removals::drive(catalog, &self.shared.thumbs, &mut |files| {
-            done = done.saturating_add(u64::try_from(files).unwrap_or(u64::MAX));
+            done = done.saturating_add(count_u64(files));
             self.removal_ctl.set_done(done);
             self.removal_ctl.checkpoint()
         });

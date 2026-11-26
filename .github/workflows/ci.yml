@@ -1,8 +1,8 @@
 # CI. Two jobs: `windows` (the app: lint, the module cycles, tests, the QML tests, the screenshot comparison),
 # and `linux` (the whole workspace on Linux, with Qt for Linux: the same recipes as the Windows job, lint, the module
 # cycles, tests and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
-# recipes are the setup. The first step of each job (`github_files.py pins`) writes the Justfile's pins to the environment, so
-# the Justfile is the one place a version is written. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit
+# recipes are the setup. The pins step (`github_files.py pins`) writes the Justfile's pins to the environment, right after
+# checkout (on Windows, after the pinned Python), so the Justfile is the one place a version is written. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit
 # SHAs with the tag in the comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
 #
 # Inputs from outside the repository, and what each one is pinned to:
@@ -387,3 +387,14 @@ jobs:
 
       - name: Python tools tests (stdlib unittest, tools/test_*.py)
         run: just test-tools
+
+      # The same pinned Python as the Windows job, for the eval tests' packages (the pins are read from eval/requirements.txt).
+      - name: Python for the eval tests (the pinned version)
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12.10"
+
+      - name: Eval tools tests (stdlib unittest; the viewer imports Pillow, the bench tests import numpy)
+        run: |
+          python3 tools/ci/eval_pins.py install
+          just test-eval

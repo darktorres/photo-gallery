@@ -2,7 +2,8 @@
 
 > **Status (2026-11-23).** This replaces the 2026-11-21 version, whose designs were written for a single-thread runner,
 > a migration slice and a lease table that the code no longer has. Nothing here is built; no tests were run for this
-> revision. Claims are marked **verified** (read in the code, as of this date) or **predicted** (reasoned; the check that
+> revision. Line cites are as of this date and drift as the code changes: the file and the named symbol or test are the
+> reference, and a line that no longer holds it is stale. Claims are marked **verified** (read in the code, as of this date) or **predicted** (reasoned; the check that
 > settles it is named).
 >
 > Owned by other plans, not repeated here: read-error retry, the attempt counter and the failure ledger
@@ -304,7 +305,8 @@ come from a root list read too early. The app adds the folder and then asks for 
 **Decisions.**
 
 - **Isolation.** A pass's `Err` is recorded, the later passes still run, and the round returns the first error at its
-  end. This changes the contract that `an_error_ends_the_round_with_it` (`jobs/schedule.rs`) pins.
+  end. This changes the contract that `an_error_ends_the_round_with_it` (`jobs/schedule.rs`) pinned; the test now is
+  `an_error_is_kept_the_later_passes_run_and_the_round_returns_the_first`.
 - **One deadline per lane.** The lane waits until the earliest of: the busy retry (5 s, as now), the failure backoff,
   and the next retry-due work from `IMPORT_FAILURES_PLAN` item 5. That last term is not built, so until it is the deadline
   has the busy retry and the backoff only.
@@ -466,7 +468,7 @@ stores nothing for such a file (its `IS_CURRENT` check fails). The file stays pe
   completes, so no analysis is made against turns the file does not have yet.
 - Completing a turn adds the turns to the catalog (`WriteEffect::KeptInCatalog`, `queue.rs:258-282`) and records it
   (`turned_once`, `writeback/lib.rs:190-193`). That publishes `Change::Turned`, and the desktop calls `wake_turned` on it
-  (`desktop/library.rs:190-198`, `app/library.rs:204-206`). The lanes of the file's volume then re-analyse it.
+  (`desktop/src/library.rs:190-198`, `app/src/library.rs:279`). The lanes of the file's volume then re-analyse it.
 - A rating rewrites the file (`FileRating`, `file_rewritten`). Its analysis is kept only when the file's bytes hash to the
   same value as before, so a metadata-only change does not re-analyse (`queue.rs`, `file_rewritten`, `metadata_only`).
   Otherwise the analysis is left stale, and the import redoes it.
@@ -546,7 +548,7 @@ lanes.
 - `CacheNotStored` is a state, cleared by `StoreRecovered` (`model/src/notice.rs:1366`). Its words are the title "A
   thumbnail couldn't be kept" and the body "{error}. It was shown all the same." (`wording/locales/en/text.ftl:269-270`).
   `RoundFailed` is a state cleared by the next `Done` round (`notice.rs:1362`).
-- `rebind` and `replace` delete a fresh row with `DELETE FROM files` (`catalog/src/pair.rs:476`, `:560`). No sweep
+- `rebind` and `replace` delete a fresh row with `DELETE FROM files` (`catalog/src/pair.rs:601`, `:686`). No sweep
   follows them.
 - Passes on `pipeline::batched` that map a non-file error to a per-file `Other` today: borders
   (`borders/src/lib.rs:53`), import (`import/src/lib.rs:58`), crop (`crop/src/lib.rs:72`, with its own pipeline pass at
@@ -652,7 +654,7 @@ Notices:
 
 Pair writes and orphans:
 
-- **D14. Pair writes forget their thumbnails.** `rebind` (`catalog/src/pair.rs:476`) and `replace` (`:560`) return the ids
+- **D14. Pair writes forget their thumbnails.** `rebind` (`catalog/src/pair.rs:601`) and `replace` (`:686`) return the ids
   of the fresh rows they delete. The pass forgets those thumbnails after the commit, in the same `forget_replaced` call
   that handles replaced thumbnails (`passes.rs:88`, over `pairing.replaced_ids`). No sweep is needed for them.
 - **D15. The sweep is the orphan prune; nothing more is built.** Orphans from a removal are swept (`removals.rs:36`, and
@@ -760,7 +762,7 @@ The migration question in the earlier version does not arise.
 
 ## Tests
 
-**Changed.** `an_error_ends_the_round_with_it` (new isolation contract). `a_failed_round_is_said_and_the_next_round_clears_it`
+**Changed.** `an_error_is_kept_the_later_passes_run_and_the_round_returns_the_first` (new isolation contract; it replaced `an_error_ends_the_round_with_it`). `a_failed_round_is_said_and_the_next_round_clears_it`
 (retries without a wake; cleared by a `Done` round, not a preempted one).
 
 **New.**

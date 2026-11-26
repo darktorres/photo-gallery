@@ -1,7 +1,7 @@
 //! What the job's lanes and its runner share: the catalog's path, the thumbnail cache, the cells the app sets, the notices
-//! and the change bus, the tally of the lanes' notices, the pairing gate, and the job's counts. The cells, the generation
-//! and the lanes' progress are public types of the runner (`runner` re-exports them); they live here, so that the lanes and
-//! the coordinator name them without naming the runner, which names the coordinator.
+//! and the change bus, the tally of the lanes' notices, the pairing gate, and the job's counts. The cells and the generation
+//! are public types the app names from here (`pg_library::shared`); the runner takes them as arguments. They live here, so
+//! that the lanes and the coordinator name them without naming the runner, which names the coordinator.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;

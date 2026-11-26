@@ -89,14 +89,16 @@ fn one(strategy: &str, path: &Path) -> io::Result<()> {
         "check" => {
             let gathered = pg_container::png_import_bytes(&mut file)?;
             let of_whole = pg_container::png_import_bytes_of(&whole(&mut file)?);
+            // A file the gather gives up on is read whole by the import, so only the whole file's own result may say so: the
+            // gather's none is a difference when the whole file has bytes to gather.
             match gathered {
-                None => {
+                None if of_whole.is_none() => {
                     WHOLE.fetch_add(1, Relaxed);
                 }
                 Some(bytes) if Some(&bytes) == of_whole.as_ref() => {
                     GATHERED.fetch_add(1, Relaxed);
                 }
-                Some(_) => return Err(io::Error::other("DIFFER: the gather is not the whole file's")),
+                None | Some(_) => return Err(io::Error::other("DIFFER: the gather is not the whole file's")),
             }
         }
         other => return Err(io::Error::other(format!("no strategy {other}"))),

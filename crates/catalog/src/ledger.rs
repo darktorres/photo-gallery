@@ -103,6 +103,7 @@ use pg_model::ledger::{FailedFile, FailedFolder, FolderFailure};
 use crate::core::Catalog;
 use crate::error::{Error, Result};
 use crate::transaction::write_transaction;
+use crate::types::stored_path;
 use crate::writers::{clear_failures_on, failures_held, record_failures_on};
 
 pub(crate) mod failure;
@@ -264,8 +265,7 @@ impl Catalog {
         let rules = self.rules();
         let mut out = Vec::with_capacity(rows.len());
         for (id, folder, name, error, retry, first_seen, new) in rows {
-            let mut path =
-                rules.parse_bytes(&folder).ok_or(Error::Stored { what: "a stored folder path has a NUL" })?;
+            let mut path = stored_path(rules, &folder)?;
             path.parts.push(pg_model::name::Name::from_raw(&name));
             out.push(FailedFile { file_id: FileId::new(id), path, error, retry, first_seen, new });
         }
@@ -296,9 +296,7 @@ impl Catalog {
             })?
             .collect::<rusqlite::Result<_>>()?;
         let rules = self.rules();
-        let parse = |bytes: &[u8]| -> Result<RulePath> {
-            rules.parse_bytes(bytes).ok_or(Error::Stored { what: "a stored folder path has a NUL" })
-        };
+        let parse = |bytes: &[u8]| -> Result<RulePath> { stored_path(rules, bytes) };
         let mut out = Vec::with_capacity(rows.len());
         for (root, root_path, path, reason, error, first_seen, new) in rows {
             let failure = FolderFailure::from_key(&reason)
@@ -389,7 +387,7 @@ pub(crate) const FILE_LEDGER_COUNTS: &str = concat!(
 );
 
 /// The scans' ledger's counts (`?2` seen to, `?3` dismissed to, or NULL; `?1` unused), as [`FILE_LEDGER_COUNTS`]'s.
-const FOLDER_LEDGER_COUNTS: &str = "SELECT (SELECT count(*) FROM folder_failures WHERE ?1 IS NOT NULL),
+const FOLDER_LEDGER_COUNTS: &str = "SELECT (SELECT count(*) FROM folder_failures),
      (SELECT count(*) FROM folder_failures WHERE serial > ?2),
      (SELECT count(*) FROM folder_failures WHERE ?3 IS NOT NULL AND serial > ?3)";
 
@@ -653,8 +651,8 @@ mod tests {
         a_ledger_is_one_entry_new_again_with_a_new_failure_posix
     );
 
-    // A dismissal is the serial it was made at: reading the entry once it is back never hides it again (it used to
-    // vanish on open), and it says how many came since.
+    // A dismissal is the serial it was made at: reading the entry once it is back never hides it again, and it says how
+    // many came since.
     #[test]
     fn a_dismissed_entry_that_comes_back_stays_when_read() {
         let c = catalog(PathRules::Posix);
@@ -1108,9 +1106,9 @@ mod tests {
 
     #[test]
     fn an_error_is_kept_on_one_line_and_bounded() {
-        assert_eq!(super::failure::tidy("a\nb\tc"), "a b c");
+        assert_eq!(super::failure::kept_error("a\nb\tc"), "a b c");
         let long = "é".repeat(ERROR_BYTES);
-        let kept = super::failure::tidy(&long);
+        let kept = super::failure::kept_error(&long);
         assert!(kept.len() <= ERROR_BYTES && kept.ends_with('…'), "{}", kept.len());
     }
 }

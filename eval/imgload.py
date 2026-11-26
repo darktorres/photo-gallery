@@ -46,6 +46,15 @@ class FileSource:
 DRIVER = Path(os.environ.get("PG_DRIVER", Path(__file__).resolve().parents[1] / "target" / "release" / exe_name("pg-driver")))
 
 
+class DetectorError(RuntimeError):
+    """The gallery's detector cannot run at all. A setup problem, so it is not turned into a failed image load."""
+
+
+def require_detector() -> None:
+    if not DRIVER.is_file():
+        raise DetectorError(f"{DRIVER} is missing (build it: cargo build --release -p pg-driver)")
+
+
 class _Detector:
     """Its process in this worker: started on first use, and again if it ended."""
 
@@ -56,8 +65,12 @@ def content_box(im: Image.Image) -> tuple[int, int, int, int]:
     """What is left of `im` without its solid or blurred padding borders, as (left, top, right, bottom): the
     gallery's detector, one process per worker, kept running."""
     if _Detector.process is None or _Detector.process.poll() is not None:
+        require_detector()
         args = [str(DRIVER), "borders"]
-        _Detector.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        try:
+            _Detector.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        except OSError as e:
+            raise DetectorError(f"{DRIVER} borders did not start: {e}") from e
     process = _Detector.process
     assert process.stdin is not None and process.stdout is not None
     rgb = im.convert("RGB")
@@ -80,6 +93,7 @@ class TrimmedSource:
     """Another source's images with their borders trimmed (picklable, like the sources it wraps)."""
 
     def __init__(self, source: ImageSource):
+        require_detector()  # before any image is read, in the caller's process
         self.source = source
 
     def __len__(self) -> int:
@@ -103,6 +117,8 @@ class ImageDataset(Dataset):
     def __getitem__(self, i: int):
         try:
             return self.transform(self.source(i)), True
+        except DetectorError:
+            raise
         except Exception:  # noqa: BLE001 (a bad file yields a blank tensor, flagged False, not a crash)
             return torch.zeros(3, self.size, self.size), False
 

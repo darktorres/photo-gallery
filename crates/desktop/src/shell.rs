@@ -59,11 +59,6 @@ impl Default for ShellRust {
     }
 }
 
-/// A list index as QML takes it (-1 for none).
-fn to_i32(index: usize) -> i32 {
-    i32::try_from(index).unwrap_or(-1)
-}
-
 /// A size value the window sent that is not a valid one: logged and dropped, never applied.
 fn refused(what: &str, value: f64) {
     pg_log::warn("size", &format!("{what} {value} isn't a valid value; ignored"));
@@ -78,6 +73,12 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
         folders::RowKind::DriveRoots => ListingEvent::OpenRoots,
         folders::RowKind::Folder(folder) => ListingEvent::OpenFolder(folder),
     }
+}
+
+/// Saves a session listing: the one place a session is saved, so a test runs the same code the window does. The window
+/// runs it on the worker (`execute`), and reports a failure as a notice there.
+fn save_session(views: &pg_app::Views, listing: &pg_model::view::Listing) -> pg_app::Result<()> {
+    views.save_listing(listing)
 }
 
 /// The preferences a command saves, carried out: the one place a save is made, so a test runs the same code the window
@@ -164,7 +165,7 @@ impl qobject::Shell {
 
     pub(crate) fn viewer_step(&self, from: i32, d: i32) -> i32 {
         let from = usize::try_from(from).unwrap_or(0);
-        to_i32(controller::with(|c| c.viewer_step(from, d)))
+        qt_int(controller::with(|c| c.viewer_step(from, d)))
     }
 
     /// The grid's width. A width of zero or less is a list with no width yet (the grid's margins can make one): no width,
@@ -499,7 +500,7 @@ impl qobject::Shell {
             // The selection is the model's, set on the model's lane. Select then asks the grid to show the item;
             // RestoreSelection only sets it (the grid is placed on the list when it is shown, `listShown`).
             Command::Select(i) => {
-                let item = to_i32(i);
+                let item = qt_int(i);
                 gallery::post(move |model| {
                     if model.is_item(item) {
                         model.set_current_item(item);
@@ -564,7 +565,7 @@ impl qobject::Shell {
                 });
             }
             Command::ShowViewer(i) => {
-                let i = to_i32(i);
+                let i = qt_int(i);
                 self.as_mut().later(move |shell| shell.viewer_requested(i));
             }
             Command::OpenList { listing, keep, generation } => {
@@ -575,25 +576,25 @@ impl qobject::Shell {
                 gallery::post(move |model| model.set_rating(item, rating));
             }
             Command::Turn { item, turns } => {
-                let item = to_i32(item);
+                let item = qt_int(item);
                 gallery::post(move |model| model.rotate(item, turns));
             }
             Command::ToggleBorderMark(item) => {
-                let item = to_i32(item);
+                let item = qt_int(item);
                 gallery::post(move |model| {
                     let marked = !model.border_marked(item);
                     model.set_border_marked(item, marked);
                 });
             }
             Command::SetBorderMark { item, marked } => {
-                let item = to_i32(item);
+                let item = qt_int(item);
                 gallery::post(move |model| model.set_border_marked(item, marked));
             }
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
                 worker::run(move || {
-                    app::observe(Op::Session, app::get().views().save_listing(&listing), |e| Notice::SessionNotSaved {
-                        error: app::error_text(&format!("{e:#}")),
+                    app::observe(Op::Session, save_session(app::get().views(), &listing), |e| Notice::SessionNotSaved {
+                        error: app::error_text(e),
                     });
                 });
             }
@@ -760,7 +761,7 @@ mod tests {
         let carry = |command: &Command| {
             prefs_effect(command, app.prefs());
             if let Command::SaveSession(listing) = command {
-                app.views().save_listing(listing).unwrap();
+                save_session(app.views(), listing).unwrap();
             }
         };
         let start_events = [

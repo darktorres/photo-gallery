@@ -1,6 +1,7 @@
 # GPU batch decode: feasibility of the four decoder options
 
-Status: evaluation, 2026-11-17. Nothing is implemented. Reads with the batched encoder plan
+Status: evaluation, 2026-11-17. None of the four decoder options is implemented. The encoder is a separate harness, in
+`eval/jpeg-encoder/` (see `GPU_BATCHED_ENCODER_PLAN.md`). Reads with the batched encoder plan
 (`GPU_BATCHED_ENCODER_PLAN.md`) and the decoder notes in `JPEG_DECODERS.md`.
 
 ## Decisions this rests on
@@ -9,7 +10,7 @@ Status: evaluation, 2026-11-17. Nothing is implemented. Reads with the batched e
   libjpeg-turbo's, so nothing needs to be bit-exact against it.
 - The GPU is used for import only. The viewer decodes one image at a time with parajpeg's CPU threaded decode
   (`parajpeg-t12`).
-- DCT scaling is removed from the decode path, so GPU decoders' lack of scaling is not a cost.
+- DCT scaling stays in the decode path. The hashing decode is scaled to at least 512x320 (`crates/analysis/src/analyze.rs:142`), so a GPU decoder's lack of scaling is a cost for that decode; this evaluation does not price it yet.
 - The licence can change if needed.
 - Effort is not a constraint. The bottleneck is correctness and throughput at millions of files.
 
@@ -112,8 +113,9 @@ lower than the alternatives'.
 (`:567`), and synchronizes several times (`:607, 668, 691, 709, 725`). Batching needs stream and buffer reuse plus a
 multi-image path.
 
-**Measured.** About 5–8 ms per Pinterest file, which is slower than the CPU decoder. Our docs (`docs/gpu.md`) say the
-CUDA backend has never run on hardware, which conflicts with the timings in `JPEG_DECODERS.md`. That conflict needs
+**Measured.** About 5–8 ms per Pinterest file, which is slower than the CPU decoder. An earlier note (`docs/gpu.md`,
+which is no longer in the repository) said the CUDA backend had never run on hardware. `JPEG_DECODERS.md` records
+measured timings for parajpeg's CUDA backend, which conflicts with that note. The conflict needs
 resolving before any decision rests on it.
 
 **Licence.** MIT.
@@ -152,6 +154,6 @@ the fallback, and the colour stage is the only extra piece it needs.
 - nvJPEG batched decode into device memory: not yet measured.
 - The fork's MKS2021 arithmetic against upstream.
 - The exact nvJPEG redistribution clause in the EULA.
-- The parajpeg CUDA "never run on hardware" conflict.
+- The parajpeg CUDA "never run on hardware" note, which is no longer in the repository, against the timings in `JPEG_DECODERS.md`.
 - Whether the viewer's parajpeg calls are serialized in the app (the serializing shim lives in the fork, commit
   `8e2c53a`, and isn't in this checkout).

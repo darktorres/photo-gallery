@@ -27,6 +27,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $setOwed = Join-Path $PSScriptRoot 'set_owed.py'
 . (Join-Path $PSScriptRoot 'cpu_load.ps1')
+# -Work is scratch these scripts own: it is removed only when it carries this marker, which the script writes into the
+# folder it makes. A folder the caller named that lacks it is refused, not deleted.
+$scratchMarker = '.pairing-scratch'
+function Clear-Work {
+    if (-not (Test-Path $Work)) { return }
+    if (-not (Test-Path (Join-Path $Work $scratchMarker))) { throw "-Work $Work is not a scratch folder of these scripts: name a folder that does not exist" }
+    Remove-Item -LiteralPath $Work -Recurse -Force
+}
 function Get-Median([double[]] $xs) {
     $s = $xs | Sort-Object
     if ($s.Count -eq 0) { return [double]::NaN }
@@ -37,12 +45,14 @@ function Get-Median([double[]] $xs) {
 $runs = @()
 foreach ($rep in 1..$Reps) {
     foreach ($w in $Workers) {
-        if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
+        Clear-Work
         New-Item -ItemType Directory $Work | Out-Null
+        New-Item -ItemType File (Join-Path $Work $scratchMarker) | Out-Null
         Copy-Item -LiteralPath $Catalog (Join-Path $Work 'catalog.sqlite')
         Remove-Item Env:PG_PROBE_KEEP_OWED -ErrorAction SilentlyContinue
         if ($Owed -ne 'all') {
             python -I $setOwed (Join-Path $Work 'catalog.sqlite') $Owed | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "set_owed.py failed (exit $LASTEXITCODE): the run would not owe what -Owed says" }
             $env:PG_PROBE_KEEP_OWED = '1'
         }
         if ($Slice -gt 0) { $env:PG_PROBE_SLICE = "$Slice" } else { Remove-Item Env:PG_PROBE_SLICE -ErrorAction SilentlyContinue }
@@ -60,7 +70,7 @@ foreach ($rep in 1..$Reps) {
         "rep $rep workers $w cpu $load%$(if ($run.busy) { ' busy' }) :: $line"
     }
 }
-if (Test-Path $Work) { Remove-Item -LiteralPath $Work -Recurse -Force }
+Clear-Work
 Remove-Item Env:PG_PROBE_KEEP_OWED, Env:PG_PROBE_SLICE, Env:PG_PROBE_CACHE_KIB, Env:PG_PROBE_WORKERS -ErrorAction SilentlyContinue
 
 ''

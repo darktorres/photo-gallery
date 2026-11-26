@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -111,20 +111,15 @@ fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
     pg_platform::names::disk_path(c.rules(), path)
 }
 
-fn wait_for_queue(c: &Catalog) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if state::writes_still_tried(c)? == 0 {
-            return Ok(());
-        }
-        assert!(start.elapsed() < Duration::from_secs(60), "writes still queued");
-        std::thread::sleep(Duration::from_millis(200));
-    }
+fn wait_for_queue(c: &Catalog) {
+    pg_testkit::wait_until(Duration::from_secs(60), || "writes still queued", || {
+        state::writes_still_tried(c).unwrap() == 0
+    });
 }
 
 #[test]
 fn ratings_and_turns_reach_the_files() {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
@@ -152,17 +147,7 @@ fn ratings_and_turns_reach_the_files() {
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), files.len());
 
-    let (events, quiet) = Quiet::bus();
-    let thumbs = Arc::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_model::cache::ThumbCap::from_bytes(1 << 30),
-            pg_model::versions::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    );
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer =
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
 
@@ -172,7 +157,7 @@ fn ratings_and_turns_reach_the_files() {
         c.set_rating(FileId::new(*id), rating, true).unwrap();
     }
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     for (n, (path, format)) in files.iter().enumerate() {
         let expected = if *format == Format::Bmp { None } else { Some(u8::try_from(n % 5 + 1).unwrap()) };
@@ -195,9 +180,9 @@ fn ratings_and_turns_reach_the_files() {
         c.queue_rotation(FileId::new(*id), Turns::new(1)).unwrap();
     }
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
-    for ((path, format), original) in files.iter().zip(originals) {
+    for (n, ((path, format), original)) in files.iter().zip(originals).enumerate() {
         let turned = orient(original, pg_model::orientation::Orientation::new(6).unwrap());
         let rotation = state::file_rotation(&c, &Path::new(path).file_name().unwrap().to_string_lossy()).unwrap();
         let bytes = std::fs::read(path).unwrap();
@@ -207,9 +192,14 @@ fn ratings_and_turns_reach_the_files() {
         if matches!(format, Format::Png | Format::Gif | Format::Bmp | Format::Tiff) {
             assert_eq!(now.pixels, turned.pixels, "{path}: lossless");
         }
-        // Ratings survive turning.
+        // Ratings survive turning: each file keeps the value it was given above (n % 5 + 1).
         if *format != Format::Bmp {
-            assert!(Meta::read(&bytes, *format, &mut MetaScratch::default()).rating.is_some(), "{path}: rating kept");
+            let expected = u8::try_from(n % 5 + 1).unwrap();
+            assert_eq!(
+                Meta::read(&bytes, *format, &mut MetaScratch::default()).rating.map(Rating::get),
+                Some(expected),
+                "{path}: rating kept"
+            );
         }
     }
     let dims = |c: &Catalog| state::analysis_sizes(c).unwrap();
@@ -241,7 +231,7 @@ fn ratings_and_turns_reach_the_files() {
 
     // Another program rates the JPEG: the next scan and import adopt it.
     let jpg = &files[0].0;
-    let out = std::process::Command::new("exiftool")
+    let out = std::process::Command::new(pg_platform::env::exiftool_program())
         .args(["-overwrite_original_in_place", "-XMP:Rating=2", jpg])
         .output()
         .unwrap();
@@ -262,14 +252,14 @@ fn ratings_and_turns_reach_the_files() {
 /// skipped without it.
 #[test]
 fn a_rating_reaches_a_jpeg_that_holds_a_stale_percent() {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "stale", &["images"]).unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let path = dir.join("images").join("stale.jpg");
     std::fs::write(&path, pattern(64, 48, Encoding::Jpeg).unwrap()).unwrap();
-    let out = std::process::Command::new("exiftool")
+    let out = std::process::Command::new(pg_platform::env::exiftool_program())
         .args(["-overwrite_original_in_place", "-XMP:Rating=4", "-EXIF:RatingPercent=75"])
         .arg(&path)
         .output()
@@ -291,7 +281,7 @@ fn a_rating_reaches_a_jpeg_that_holds_a_stale_percent() {
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     c.set_rating(FileId::new(id), Rating::new(2), true).unwrap();
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     let written = std::fs::read(&path).unwrap();
     assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(2));
@@ -307,7 +297,7 @@ fn a_rating_reaches_a_jpeg_that_holds_a_stale_percent() {
 /// folder holds no other file. Needs ExifTool; skipped without it.
 #[test]
 fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return;
     }
     let dir = pg_testkit::run_folder_with("scratch_library", "odd-names", &["images"]).unwrap();
@@ -338,17 +328,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     assert_eq!(before.len(), 2, "both imported: {before:?}");
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
 
-    let (events, quiet) = Quiet::bus();
-    let thumbs = Arc::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_model::cache::ThumbCap::from_bytes(1 << 30),
-            pg_model::versions::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    );
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
     let sixty_four = pg_model::size::ThumbHeight::new(64).expect("a height in range");
     let made = pg_thumbs::run(&thumbs, &catalog_path, sixty_four, &opts, &ctl).unwrap();
@@ -357,7 +337,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     c.set_rating(FileId::new(jpeg_id), Rating::new(4), true).unwrap();
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     assert_eq!(
         Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get),
@@ -373,7 +353,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     // left as they were (a video's turn stays in the catalog).
     c.queue_rotation(FileId::new(jpeg_id), Turns::new(1)).unwrap();
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     let turned = std::fs::read(&jpeg).unwrap();
     let now =
@@ -470,7 +450,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
 /// ExifTool (skipped without it).
 #[test]
 fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
-    if !pg_platform::testing::require_tool("ExifTool", "exiftool", "-ver") {
+    if !pg_testkit::require_exiftool() {
         return;
     }
     let (dir, files, catalog_path, c) = imported("later").unwrap();
@@ -484,7 +464,7 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     let writer =
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     let bytes = std::fs::read(&files[1].0).unwrap();
     assert_eq!(
@@ -605,7 +585,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     let writer =
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     let written = std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap();
     assert_eq!(
@@ -981,29 +961,14 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     state::set_analysis_rotation(&c, id, Turns::new(1)).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
-    let (events, quiet) = Quiet::bus();
-    let thumbs = Arc::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_model::cache::ThumbCap::from_bytes(1 << 30),
-            pg_model::versions::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    );
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer =
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
 
-    let start = Instant::now();
-    loop {
-        if state::writes_queued(&c, id).unwrap() == 0 {
-            break;
-        }
-        assert!(start.elapsed() < Duration::from_secs(60), "the finished copy is still queued");
-        std::thread::sleep(Duration::from_millis(200));
-    }
+    pg_testkit::wait_until(Duration::from_secs(60), || "the finished copy is still queued", || {
+        state::writes_queued(&c, id).unwrap() == 0
+    });
     let rotation = state::analysis_rotation(&c, id).unwrap();
     assert_eq!(rotation, Turns::NONE, "the turn is in the file, so the analysis no longer shows it pending");
     quiet.check();
@@ -1028,7 +993,7 @@ fn rapid_turns_of_one_file_are_all_made_once() {
         }
     }
     writer.wake();
-    wait_for_queue(&c).unwrap();
+    wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     let turned = orient(original, pg_model::orientation::Orientation::new(3).unwrap());
     let rotation = state::file_rotation(&c, &name).unwrap();
@@ -1069,17 +1034,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
         c.queue_rotation(id, Turns::new(1)).unwrap();
     }
 
-    let (events, quiet) = Quiet::bus();
-    let thumbs = Arc::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_model::cache::ThumbCap::from_bytes(1 << 30),
-            pg_model::versions::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    );
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start_with_fault(
         catalog_path.clone(),
         thumbs,
@@ -1090,16 +1045,17 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     .unwrap();
     writer.wake();
 
-    let start = Instant::now();
-    loop {
-        let healthy_left = state::writes_queued(&c, healthy).unwrap();
-        let attempts = state::write_row(&c, poisoned).unwrap().attempts;
-        if healthy_left == 0 && attempts >= 1 {
-            break;
-        }
-        assert!(start.elapsed() < Duration::from_secs(60), "healthy turn queued {healthy_left}, attempts {attempts}");
-        std::thread::sleep(Duration::from_millis(200));
-    }
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || {
+            format!(
+                "healthy turn queued {}, attempts {}",
+                state::writes_queued(&c, healthy).unwrap(),
+                state::write_row(&c, poisoned).unwrap().attempts
+            )
+        },
+        || state::writes_queued(&c, healthy).unwrap() == 0 && state::write_row(&c, poisoned).unwrap().attempts >= 1,
+    );
     let error = state::write_row(&c, poisoned).unwrap().error;
     assert!(error.as_deref().is_some_and(|e| e.contains("a panic in the job of file")), "the failure: {error:?}");
     assert!(writer.is_running(), "the panic ended the writer");
@@ -1125,17 +1081,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     c.queue_rotation(state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
-    let (events, quiet) = Quiet::bus();
-    let thumbs = Arc::new(
-        ThumbCache::open(
-            &dir.join("thumbs.sqlite"),
-            &c.catalog_id().unwrap(),
-            pg_model::cache::ThumbCap::from_bytes(1 << 30),
-            pg_model::versions::THUMBS_VERSION,
-            events,
-        )
-        .unwrap(),
-    );
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start_with_fault(
         catalog_path.clone(),
         thumbs,
@@ -1144,11 +1090,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
         RecordingSink::new(),
     )
     .unwrap();
-    let start = Instant::now();
-    while writer.is_running() {
-        assert!(start.elapsed() < Duration::from_secs(60), "the writer is still running");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    pg_testkit::wait_until(Duration::from_secs(60), || "the writer is still running", || !writer.is_running());
     assert_eq!(c.left_to_write().unwrap(), 1, "the write is still queued");
     drop(writer);
     drop(c);

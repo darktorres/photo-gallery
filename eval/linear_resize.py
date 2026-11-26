@@ -1,15 +1,15 @@
-"""The app's resize, in numpy: Magic Kernel Sharp 2021 in linear light, sRGB bytes out.
+"""The app's resize, in numpy: Magic Kernel Sharp 2021 on the sRGB bytes, as the app's Resizer runs it.
 
-Mirrors crates/codec/src/resize.rs (the resizer), kernel.rs (the kernel and fast_image_resize's window rule) and
-linear.rs (the sRGB transfer functions). PDQ's input is made here, so the eval hashes what the app hashes.
+Mirrors crates/codec/src/resize.rs (Resizer::fit_within, and the convolution with the MKS 2021 kernel) and
+crates/codec/src/kernel.rs (the kernel k(x) = sum over n of s_n m(x - n)). The resize takes the sRGB bytes as they are,
+with no conversion to linear light (the app's choice since commit 59d496ec). PDQ's input is made here, so the eval
+hashes what the app hashes.
 
-- Window (fork rule, kernel.rs `fork_rows`): an output sample's centre is (o + 0.5) * scale; its window is the input
-  samples within support * max(scale, 1) of the centre, clipped to the image; the kernel is evaluated at
-  (x - (centre - 0.5)) / max(scale, 1); each row is normalised to sum 1. It is one combined kernel, not the paper's
-  two-pass form (their edges differ by a few levels at the border).
-- Two passes, vertical then horizontal, in float64. The app works in float32; the difference is at most one level,
-  which the check in __main__ confirms against the app's own output.
-- Encode: clamp to 0-1, the sRGB OETF, and round half up once to 8 bits.
+- Window: an output sample's centre is (o + 0.5) * scale; its window is the input samples within support * max(scale, 1)
+  of the centre, clipped to the image; the kernel is evaluated at (x - (centre - 0.5)) / max(scale, 1); each row is
+  normalised to sum 1. This is the window rule the numpy mirror uses, and _check measures its difference from the app.
+- Two passes, vertical then horizontal, in float64, with the result rounded to bytes once (round half up, clamped to
+  0-255).
 
 Usage (a check against the app's 220 px outputs, given the inputs and the outputs of the Rust probe):
     python linear_resize.py <inputs_dir> <app_outputs_dir> [--height 220]
@@ -27,7 +27,7 @@ from scipy import sparse
 SUPPORT = 4.5
 # Sharp 2021 taps for |n| = 0..3 (Costella 2021, eqs. 33-35); zero beyond.
 TAPS = (17.0 / 12.0, -35.0 / 144.0, 1.0 / 24.0, -1.0 / 144.0)
-FIT_SIDE = 512  # PDQ's input (Meta's recommendation); the app's PDQ_SIDE
+FIT_SIDE = 512  # PDQ's input (Meta's recommendation); the app's PDQ_SIDE (crates/analysis/src/analyze.rs)
 
 
 def _m(x: np.ndarray) -> np.ndarray:
@@ -46,7 +46,7 @@ def _k(x: np.ndarray) -> np.ndarray:
 
 @functools.cache
 def _weights(n_in: int, n_out: int) -> sparse.csr_matrix:
-    """The (n_out, n_in) resampling matrix: row o holds the weights of output sample o, the fork's window rule."""
+    """The (n_out, n_in) resampling matrix: row o holds the weights of output sample o, the window rule above."""
     scale = n_in / n_out
     fs = max(scale, 1.0)
     radius = SUPPORT * fs
@@ -78,22 +78,11 @@ def _resize_axis1(a: np.ndarray, weights: sparse.csr_matrix) -> np.ndarray:
     return out.reshape(weights.shape[0], h, c).transpose(1, 0, 2)
 
 
-def _eotf(v: np.ndarray) -> np.ndarray:
-    return np.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4)
-
-
-def _oetf(v: np.ndarray) -> np.ndarray:
-    v = np.clip(v, 0.0, 1.0)
-    return np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
-
-
-def resize_linear(rgb: np.ndarray, out_h: int, out_w: int) -> np.ndarray:
+def resize_srgb(rgb: np.ndarray, out_h: int, out_w: int) -> np.ndarray:
     """An (H, W, 3) uint8 sRGB image resized to (out_h, out_w), returned as uint8 sRGB."""
-    lut = _eotf(np.arange(256, dtype=np.float64) / 255.0)
-    lin = lut[rgb]
     h, w = rgb.shape[:2]
-    z = _resize_axis1(_resize_axis0(lin, _weights(h, out_h)), _weights(w, out_w))
-    return np.floor(_oetf(z) * 255.0 + 0.5).astype(np.uint8)
+    z = _resize_axis1(_resize_axis0(rgb.astype(np.float64), _weights(h, out_h)), _weights(w, out_w))
+    return np.floor(np.clip(z, 0.0, 255.0) + 0.5).astype(np.uint8)
 
 
 def fit_within_size(w: int, h: int, side: int) -> tuple[int, int] | None:
@@ -112,11 +101,11 @@ def fit_within(rgb: np.ndarray, side: int = FIT_SIDE) -> np.ndarray:
     if size is None:
         return rgb
     out_w, out_h = size
-    return resize_linear(rgb, out_h, out_w)
+    return resize_srgb(rgb, out_h, out_w)
 
 
 def _check(inputs: Path, outputs: Path, height: int) -> int:
-    """Compare against the app's outputs (the Rust probe's f32 linear MKS2021 images at `height`): differences in levels."""
+    """Compare against the app's outputs (the Rust probe's MKS 2021 images at `height`): differences in levels."""
     from PIL import Image
 
     worst = 0
@@ -129,7 +118,7 @@ def _check(inputs: Path, outputs: Path, height: int) -> int:
         # The probe's size rule is Rust's f64::round (half away from zero, crates/codec/src/resize.rs); Python's round() is
         # half to even. For positive values, floor(x + 0.5) is half away from zero.
         out_w = int(src.width * height / src.height + 0.5)
-        mine = resize_linear(np.asarray(src), height, out_w).astype(np.int16)
+        mine = resize_srgb(np.asarray(src), height, out_w).astype(np.int16)
         if mine.shape != ref.shape:
             print(f"{out_path.name}: size {mine.shape} vs app {ref.shape}")
             return 1

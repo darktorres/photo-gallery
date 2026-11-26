@@ -2,13 +2,14 @@
 
 use std::io::Cursor;
 
+use crate::codecs::limits::decoded_size;
 use crate::{Error, Result};
 use pg_container::{riff, vp8x_with_canvas, webp_chunks, webp_lossless};
 use pg_model::num;
 
 use super::chunk::chunk_bytes;
 use super::op::Op;
-use super::raster::{decoded_size, zeroed};
+use super::raster::zeroed;
 
 /// A still WebP, written lossless (VP8L, alpha included): a lossy one becomes lossless, larger but with no
 /// generation loss. The caller checks that it is no animation.

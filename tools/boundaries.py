@@ -38,6 +38,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modgraph.testcut import TEST_CFG
 from pgtools import function_body
 
 REPO = Path(__file__).resolve().parents[1]
@@ -72,7 +73,7 @@ PUB_USE = re.compile(r"^\s*pub\s+use\s+([^;]+);", re.MULTILINE)
 # A child module declaration, with its visibility (`pub`, `pub(crate)`, or none) and its name.
 CHILD_MOD = re.compile(r"^\s*(pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*[;{]", re.MULTILINE)
 # An item compiled only in tests: `#[cfg(test)]`, or `#[cfg(all(test, ...))]`.
-CFG_TEST = re.compile(r"^[ \t]*#\[cfg\((?:test|all\(test\b[^\]]*\))\)\][ \t]*\n", re.MULTILINE)
+CFG_TEST = re.compile(r"^[ \t]*" + TEST_CFG + r"[ \t]*\n", re.MULTILINE)
 
 
 def short(package):

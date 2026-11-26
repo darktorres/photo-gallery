@@ -49,13 +49,15 @@ fn a_changed_command_is_reported_at_its_record() -> Result<(), String> {
 #[test]
 fn a_recording_of_another_format_is_refused_by_its_version() {
     use pg_client::controller::replay::REPLAY_FORMAT_VERSION;
-    // A start written before the format was recorded: its Init has no `format`, so it is format 1.
-    let missing = r#"{"kind":"Init","listing":{},"row_height":220,"saved_row":220}"#;
-    let error = parse(missing).expect_err("a recording with no format must be refused");
+    // The start as the recorder writes it, under the Init's `start` key.
+    const START: &str = r#"{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"row":220,"saved_row":220,"filters_open":false,"show_borders":false,"dev_mode":false,"last_file":null,"apply_view":false}"#;
+    // A start written before the format was recorded: its Init has no `format`, so it is refused.
+    let missing = format!(r#"{{"kind":"Init","start":{START}}}"#);
+    let error = parse(&missing).expect_err("a recording with no format must be refused");
     assert_eq!(error, format!("line 1: the Init has no format; this build reads format {REPLAY_FORMAT_VERSION}"));
     // Explicit other formats, below and above this build's, are refused by their own number.
     for format in [0, 2] {
-        let line = format!(r#"{{"kind":"Init","format":{format},"listing":{{}},"row_height":220,"saved_row":220}}"#);
+        let line = format!(r#"{{"kind":"Init","format":{format},"start":{START}}}"#);
         let error = parse(&line).expect_err("a recording of another format must be refused");
         assert_eq!(error, format!("line 1: recorded by format {format}, this build reads {REPLAY_FORMAT_VERSION}"));
     }

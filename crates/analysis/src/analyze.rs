@@ -14,7 +14,10 @@ use pg_codec::decode::{Decoder, MinSize, Request};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
-use pg_model::analysis::{Analysis, FileHash, ImageFacts, ImageHashes, Media, PixelHashes, Taken, VideoFacts};
+use pg_model::analysis::{
+    Analysis, DECODE_MIN_LONG, DECODE_MIN_SHORT, FileHash, ImageFacts, ImageHashes, Media, PDQ_SIDE, PixelHashes, Taken,
+    VideoFacts,
+};
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
 
@@ -24,14 +27,6 @@ use pg_model::format::Format;
 /// (`pg_model::versions`). Not bumped by the header-only import: the stored facts are the same values, read from the
 /// header instead of a decode.
 pub const IMPORT_VERSION: i64 = pg_model::versions::IMPORT_VERSION;
-
-/// The hashing decode keeps at least this many pixels on the upright long side…
-const DECODE_MIN_LONG: usize = 512;
-/// …and on the short side, so the later SSCD input (320 px, tier 2) can come from the same decode rule.
-const DECODE_MIN_SHORT: usize = 320;
-/// PDQ input: fitted into 512 px by the resizer (MKS2021 on sRGB bytes, sRGB bytes out), which PDQ's luminance step
-/// reads as its spec says (hashing.pdf pp. 10-11).
-const PDQ_SIDE: usize = 512;
 
 /// The chunk a video's hash reads at a time: a stop waits for one chunk at most (a few milliseconds at a disk's rate),
 /// not for the whole file (section 7: about 6 s per GB on a hard disk).

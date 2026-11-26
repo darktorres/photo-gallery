@@ -15,7 +15,7 @@
 {"kind":"cache-wal-not-merged","error":"access is denied"}
 {"kind":"cache-started-over","reason":"damaged","path":"D:\\Gallery\\thumbs.sqlite.bad","detail":"database disk image is malformed"}
 {"kind":"cache-disabled","error":"access is denied"}
-{"kind":"write-failed","error":"access is denied","panicked":false,"file":"D:\\Photos\\a.jpg","temp":"D:\\Photos\\a.jpg.rating.pg-write"}
+{"kind":"write-failed","error":"access is denied","panicked":false,"file":"D:\\Photos\\a.jpg","temp":"D:\\Photos\\.a.jpg.rating.pg-write"}
 {"kind":"write-stopped"}
 {"kind":"write-dropped","write":"rating","count":2}
 {"kind":"folder-already-added","folder":{"anchor":"D:","parts":["Photos"]}}
@@ -46,7 +46,7 @@
 {"kind":"session-not-read","error":"access is denied"}
 {"kind":"borders-cut","saved":4,"skipped":1,"unsupported":1,"failed":1,"failures":[{"path":{"anchor":"D:","parts":["Photos","c.png"]},"error":"may be incomplete","panicked":false}]}
 {"kind":"cut-failed","error":"access is denied"}
-{"kind":"folder-removal-unfinished","folder":{"anchor":"D:","parts":["Photos"]},"temp":{"anchor":"D:","parts":["Photos","a.jpg.pg-write"]}}
+{"kind":"folder-removal-unfinished","folder":{"anchor":"D:","parts":["Photos"]},"temp":{"anchor":"D:","parts":["Photos",".a.jpg.rating.pg-write"]}}
 {"kind":"changes-unseen","error":"access is denied"}
 {"kind":"cache-not-swept","error":"access is denied"}
 {"kind":"cache-not-read","error":"access is denied"}

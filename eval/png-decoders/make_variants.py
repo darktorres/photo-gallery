@@ -1,5 +1,5 @@
-"""Chunk-level variants of the inputs, for the PNG decoder comparison. The pixels are never re-encoded: each variant is its
-source file with one chunk added or removed.
+"""Variants of the inputs, for the PNG decoder comparison. Most keep their source's pixels: each is the source file with one
+chunk added or removed. The rest are re-encoded from decoded pixels: `gray16-2mp-trns` (from the 8-bit grey) and `*-filter0`.
 
     python make_variants.py [--out DIR]     (default: $PG_ROOT\\eval\\png-decoders\\inputs-variants)
 
@@ -12,6 +12,7 @@ source file with one chunk added or removed.
   grey). It is the only input that makes libspng decode to GA16, which is host-ordered like RGBA16.
 - `real-flower_foveon-16bit-trns`: the 16-bit photograph with a 16-bit colour key (the photo's pixel (0, 0)), read
   from the app's dump of it (`ref/`), so `dump` must have run on `inputs-real16` first.
+- `*-filter0`: two 8-bit RGB library images re-encoded with filter type 0 on every row, so a decode is nearly all inflate.
 """
 
 import argparse

@@ -8,8 +8,8 @@ cosine similarity = 1 - d/128 and every embedding tool (evaluate.py, verify.py, 
 it unchanged. Meta's recommended match threshold is d <= 31 (cosine >= 0.758).
 
 Images are hashed upright (EXIF applied) after downscaling to <= 512 px, as Meta's reference
-hasher recommends. The downscale is the app's (linear_resize.py: Magic Kernel Sharp 2021 in linear light, sRGB bytes
-out), so the eval hashes the same pixels as the app's PDQ; the hash itself downsamples to 64x64 internally.
+hasher recommends. The downscale is the app's (linear_resize.py: Magic Kernel Sharp 2021 on the sRGB bytes, no linear light),
+so the eval hashes the same pixels as the app's PDQ; the hash itself downsamples to 64x64 internally.
 """
 
 import argparse
@@ -34,7 +34,7 @@ DEFAULT_SEED = 0
 
 
 def prepare(im: Image.Image) -> np.ndarray:
-    """The pixels PDQ hashes: the app's resize to <= 512 px (linear light, sRGB bytes out), upright RGB."""
+    """The pixels PDQ hashes: the app's resize to <= 512 px (on the sRGB bytes), upright RGB."""
     return fit_within(np.asarray(im.convert("RGB")), FIT_SIDE)
 
 
@@ -45,8 +45,8 @@ def to_vector(bits: np.ndarray) -> np.ndarray:
 
 def hash_file(rel: str) -> tuple[np.ndarray, int] | None:
     try:
-        # The app's decode: a DCT-scaled decode keeping >= 512 px long and 320 short, as analyze.rs (DECODE_MIN_*).
-        # Moves the hash by 0 bits at the median and at most 6 on a 60-image sample (scratchpad eval_pdq/smoke.py).
+        # The app's decode: DCT-scaled, keeping the sides in common.ANALYSIS_DRAFT_SIDES (analyze.rs DECODE_MIN_*).
+        # Measured on a 60-image sample, the draft decode moves the hash by 0 bits at the median and at most 6 bits.
         bits, quality = pdqhash.compute(prepare(load_rgb(DATA_ROOT / rel, draft_sides=ANALYSIS_DRAFT_SIDES)))
         return bits, int(quality)
     except Exception:  # noqa: BLE001 (a file that will not hash is reported as None)
@@ -54,10 +54,11 @@ def hash_file(rel: str) -> tuple[np.ndarray, int] | None:
 
 
 def edited_hashes(job: tuple[str, str, int]) -> np.ndarray | None:
-    """The 8 dihedral hashes of one edited sample image (row 0 = as is)."""
+    """The 8 dihedral hashes of one edited sample image (row 0 = as is). The source decodes as hash_file's does, so the
+    queries and the database hashes start from the same pixels."""
     rel, transform, seed = job
     try:
-        im = TRANSFORMS[transform](load_rgb(DATA_ROOT / rel), random.Random(seed))
+        im = TRANSFORMS[transform](load_rgb(DATA_ROOT / rel, draft_sides=ANALYSIS_DRAFT_SIDES), random.Random(seed))
         hashes, _ = pdqhash.compute_dihedral(prepare(im))
         return np.stack(hashes)
     except Exception:  # noqa: BLE001 (a transform that fails is reported as None)
@@ -87,6 +88,30 @@ def hash_all(workers: int) -> None:
     )
 
 
+def dihedral_sims(q: np.ndarray, db: np.ndarray) -> np.ndarray:
+    """Each query's best similarity over its 8 variants: q is (queries, 8, 256), db is (index, 256). The variants are
+    folded in one at a time, so only one (queries, index) matrix is alive at once."""
+    best = q[:, 0] @ db.T
+    for v in range(1, q.shape[1]):
+        np.maximum(best, q[:, v] @ db.T, out=best)
+    return best
+
+
+def synth_metrics(sims: np.ndarray, orig: np.ndarray, t95: float | None) -> dict:
+    """Retrieval and distance metrics of one query form; sims is (queries, index) cosine similarity."""
+    top = np.argsort(-sims, axis=1)[:, :10]
+    hits = top == orig[:, None]
+    d = np.rint((1 - sims[np.arange(len(orig)), orig]) * 128)
+    return {
+        "r1": float(hits[:, 0].mean()),
+        "r10": float(hits.any(1).mean()),
+        "d_p50": float(np.quantile(d, 0.5)),
+        "d_p90": float(np.quantile(d, 0.9)),
+        "within_31": float((d <= MEANINGFUL_D).mean()),
+        **({"above_t95": float((1 - d / 128 >= t95).mean())} if t95 is not None else {}),
+    }
+
+
 def synth(count: int, seed: int, workers: int) -> None:
     files = image_list()
     ok = np.load(WORK_DIR / "ok_pdq.npy")
@@ -110,23 +135,8 @@ def synth(count: int, seed: int, workers: int) -> None:
             q = to_vector(np.stack([h for h in hashes if h is not None])).astype(np.float32)  # (m, 8, 256)
             orig = originals[keep]
             # Plain-query metrics at the top level (same fields as synth.py), dihedral nested.
-            row: dict = {"transform": name}
-            for variant, sims in (("plain", q[:, 0] @ db.T), ("dihedral", (q @ db.T).max(axis=1))):
-                top = np.argsort(-sims, axis=1)[:, :10]
-                hits = top == orig[:, None]
-                d = np.rint((1 - sims[np.arange(len(orig)), orig]) * 128)
-                metrics = {
-                    "r1": float(hits[:, 0].mean()),
-                    "r10": float(hits.any(1).mean()),
-                    "d_p50": float(np.quantile(d, 0.5)),
-                    "d_p90": float(np.quantile(d, 0.9)),
-                    "within_31": float((d <= MEANINGFUL_D).mean()),
-                    **({"above_t95": float((1 - d / 128 >= t95).mean())} if t95 is not None else {}),
-                }
-                if variant == "plain":
-                    row.update(metrics)
-                else:
-                    row["dihedral"] = metrics
+            row: dict = {"transform": name, **synth_metrics(q[:, 0] @ db.T, orig, t95)}
+            row["dihedral"] = synth_metrics(dihedral_sims(q, db), orig, t95)
             rows.append(row)
             print(f"  {name}: done", flush=True)
 

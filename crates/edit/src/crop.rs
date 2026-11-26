@@ -188,7 +188,7 @@ mod tests {
         let (w, h) = (100, 70);
         let (sw, sh) = (u32::try_from(w).unwrap(), u32::try_from(h).unwrap());
         let pixels = pg_testkit::rgb_pattern(w, h);
-        let file = fixtures::jpeg_rgb(w, h, &pixels, 95, Chroma::Half).unwrap();
+        let file = fixtures::jpeg_rgb(sw, sh, &pixels, 95, Chroma::Half).unwrap();
         // 16×16 MCUs: left 5 → 16, top 16 stays; right and bottom exact.
         let out = crop(&file, Format::Jpeg, sw, sh, [5, 16, 3, 9]).unwrap();
         assert_eq!(out.cut, [16, 16, 3, 9]);
@@ -213,7 +213,7 @@ mod tests {
         let pixels = photo(w, h);
         // Each quality with its chroma, and the MCU that chroma makes (the subsampling the source keeps).
         for (quality, chroma, mcu) in [(95, Chroma::Half, (16, 16)), (60, Chroma::Full, (8, 8))] {
-            let file = fixtures::jpeg_rgb(w, h, &pixels, quality, chroma).unwrap();
+            let file = fixtures::jpeg_rgb(sw, sh, &pixels, quality, chroma).unwrap();
             // Left 5, top 16, right 3, bottom 9: the DCT crop would move the left and top to 16.
             let borders = [5, 16, 3, 9];
             let out = cut(&file, Format::Jpeg, sw, sh, borders).unwrap();

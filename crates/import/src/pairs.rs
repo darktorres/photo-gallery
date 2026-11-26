@@ -19,7 +19,7 @@ use pg_catalog::{Catalog, PairingWork, PairsBatch};
 use pg_dedup::join::{JoinTimes, Joined, Joiner, Pair, Tuning};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_model::num::index;
+use pg_model::num::{count_u64, index};
 use pg_model::progress::Phase;
 use pg_platform::priority;
 
@@ -40,7 +40,7 @@ pub const WRITE: usize = 4_000;
 
 /// What a pass may be tuned by: the defaults are [`SLICE`], [`CACHE_KIB`], [`WRITE`], the join's own ([`Tuning`]), a
 /// load in as many parts as the join has threads, and no forced guard. The tests and the probe (`PG_PROBE_SLICE`,
-/// `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS`, `PG_PROBE_FEW`, `PG_PROBE_WIDTHS`, `PG_PROBE_GUARD`)
+/// `PG_PROBE_CACHE_KIB`, `PG_PROBE_WRITE`, `PG_PROBE_LOAD_PARTS`, `PG_PROBE_FEW`, `PG_PROBE_WIDTHS`, `PG_PROBE_BLOCK`, `PG_PROBE_GUARD`)
 /// set others: a small slice runs the multi-slice path, with its write overlap, on a small library. The probes, which
 /// live in pg-catalog's examples, take the cache and the write batch from `PG_PROBE_CACHE_KIB` and `PG_PROBE_WRITE`
 /// (they have no default, so a measurement names the values it used).
@@ -172,7 +172,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     // span), and analysed again: their owed rows go and their files are pending, so no pass loads them again as they are.
     stats.malformed = work.malformed.len();
     if !work.malformed.is_empty() {
-        pass.field("malformed", u64::try_from(stats.malformed).unwrap_or(u64::MAX));
+        pass.field("malformed", count_u64(stats.malformed));
         let tx = catalog.tx()?;
         stats.repended = tx.pairs_writer()?.repend_malformed(&work)?;
         tx.commit()?;
@@ -190,7 +190,7 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     stats.timings.store = building.elapsed();
 
     // The phase ends when this is dropped, however the pass leaves. Its progress is the owed pictures paired so far.
-    let _phase = ctl.begin(Phase::Pairing, u64::try_from(owed.len()).unwrap_or(u64::MAX));
+    let _phase = ctl.begin(Phase::Pairing, count_u64(owed.len()));
     // The joins stop for the user's stop and pause, and for the pass's own stop (`AbortOnDrop`).
     let abort = AtomicBool::new(false);
     let control = || ctl.checkpoint_until(&abort);
@@ -241,13 +241,13 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
         Ok(())
     })?;
     let t = &stats.timings;
-    pg_perf::record("pair.load", t.load, &[]);
-    pg_perf::record("pair.store", t.store, &[]);
-    pg_perf::record("pair.join", t.join, &[]);
-    pg_perf::record("pair.write", t.write, &[]);
-    pg_perf::record("pair.commit", t.commit, &[]);
-    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
-    pass.field("pairs", u64::try_from(stats.pairs).unwrap_or(u64::MAX));
+    pg_perf::record("pairing.load", t.load, &[]);
+    pg_perf::record("pairing.store", t.store, &[]);
+    pg_perf::record("pairing.join", t.join, &[]);
+    pg_perf::record("pairing.write", t.write, &[]);
+    pg_perf::record("pairing.commit", t.commit, &[]);
+    pass.items(count_u64(stats.files));
+    pass.field("pairs", count_u64(stats.pairs));
     pass.paused(ctl.paused_total().saturating_sub(paused_before));
     pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
@@ -294,7 +294,7 @@ fn write_slice(
         stats.pairs += written.pairs;
         stats.files += written.done;
         stats.guarded += usize::from(written.guarded);
-        ctl.set_done(u64::try_from(stats.files).unwrap_or(u64::MAX));
+        ctl.set_done(count_u64(stats.files));
     }
     Ok(true)
 }

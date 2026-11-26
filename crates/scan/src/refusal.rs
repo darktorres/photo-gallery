@@ -370,12 +370,23 @@ mod ntfs_tests {
         assert_eq!(f.calls.get(), 0, "the text is refused without asking the system");
     }
 
-    // A real call: the test binary's folder is on a fixed NTFS disk, a plain physical one.
+    // A real call on the test binary's folder. The check accepts a fixed NTFS disk, a plain physical one; a test run from
+    // a volume of another kind skips, since it has no such folder to check. Any other refusal is a failure.
     #[test]
     fn a_folder_on_a_fixed_ntfs_disk_is_accepted() {
         let dir = std::env::current_dir().unwrap();
         let path = pg_platform::names::canonical_of(&dir);
-        assert_eq!(check_root(&units_of(&path), &dir), Ok(()), "{}", dir.display());
+        match check_root(&units_of(&path), &dir) {
+            Ok(()) => {}
+            Err(
+                RefusedReason::NotNtfs { .. }
+                | RefusedReason::NetworkDrive
+                | RefusedReason::RemovableDrive
+                | RefusedReason::OtherDrive
+                | RefusedReason::OpaqueDisk,
+            ) => pg_platform::testing::skip(&format!("{} is not on a fixed NTFS disk", dir.display())),
+            Err(reason) => panic!("{}: refused as {reason:?}", dir.display()),
+        }
     }
 
     #[test]

@@ -15,6 +15,8 @@
 //! copied rows (`crate::rebuild::carry_rows`).
 
 use pg_dbfile::{Damage, Expected, Schema};
+use std::time::Duration;
+
 use pg_model::rules::PathRules;
 use rusqlite::{Connection, Transaction};
 
@@ -111,18 +113,26 @@ pub(crate) const APPLICATION_ID: i64 = 0x5047_4354;
 /// (its id, the marks it was made with), so only the keys are compared.
 const SEEDS: &[(&str, &str)] = &[("meta", "key")];
 
-/// How long a statement waits for another connection's lock, in ms: the `busy_timeout` in [`SETTINGS`] (its literal, which
-/// SQL cannot take from here), and the same wait `core.rs` gives a read-only open. Change both together.
+/// How long a statement waits for another connection's lock, in ms. It is the one source of the wait: [`apply_settings`]
+/// sets it on every connection it prepares, and the read-only open (`core.rs`, `read_only`) sets the same.
 pub(crate) const BUSY_TIMEOUT_MS: u64 = 5000;
 
-/// Every connection's settings. `busy_timeout`: a statement that finds the catalog locked by another connection (the
-/// background job's writer, a scan) waits up to this long for it, instead of failing at once with "database is locked".
-/// `cache_size` (8 MB) is the writers' and the thumbs' cache: the writes touch a batch's rows and their index pages, and
+/// Every connection's settings, run by [`apply_settings`]. The busy timeout is not in this batch: [`apply_settings`]
+/// sets it first, so a statement that finds the catalog locked by another connection (the background job's writer, a
+/// scan) waits up to [`BUSY_TIMEOUT_MS`] for it, including the journal-mode switch, instead of failing at once with
+/// "database is locked".
+/// `cache_size` (8 MiB) is the writers' and the thumbs' cache: the writes touch a batch's rows and their index pages, and
 /// keep no more. The grid reader raises its own (`Catalog::set_cache_kib`), since its reads touch most of the catalog.
 /// `wal_autocheckpoint = 0`: a commit never runs a checkpoint, so no writer's commit pays for one. The thread that wrote
 /// the WAL runs a PASSIVE checkpoint at the end of its work (`Catalog::checkpoint_passive`).
 pub(crate) const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-     PRAGMA cache_size = -8192; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000; PRAGMA wal_autocheckpoint = 0;";
+     PRAGMA cache_size = -8192; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;";
+
+/// Give `conn` the busy timeout ([`BUSY_TIMEOUT_MS`]), then run [`SETTINGS`] on it.
+pub(crate) fn apply_settings(conn: &Connection) -> rusqlite::Result<()> {
+    conn.busy_timeout(Duration::from_millis(BUSY_TIMEOUT_MS))?;
+    conn.execute_batch(SETTINGS)
+}
 
 /// The version this build's catalogs are at: the baseline, then each migration.
 pub(crate) fn current_version() -> Result<i64> {
@@ -291,7 +301,7 @@ pub(crate) fn current_expected() -> Result<&'static Schema> {
 /// a catalog as this build makes one.
 fn prepare_like_a_catalog(conn: &Connection) -> rusqlite::Result<()> {
     conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
-    conn.execute_batch(SETTINGS)
+    apply_settings(conn)
 }
 
 /// This build's layout at its current version, as `pg_dbfile::Expected` makes it.
@@ -523,18 +533,21 @@ mod tests {
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(current_expected().unwrap()), None);
     }
 
+    /// The rows every fixture of these tests hangs its files from: one scan, volume, `mfolders` row and folder, all id 1.
+    const ONE_FOLDER: &str = "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+         INSERT INTO volumes(id, serial) VALUES (1, 1);
+         INSERT INTO mfolders(id, key) VALUES (1, x'01');
+         INSERT INTO folders(id, path, path_key, mid) VALUES (1, x'01', x'01', 1);";
+
     /// A fresh catalog with two files (ids 1 and 2) in one folder, for the tests of the layout's own rules.
     fn fresh_with_two_files() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
-        conn.execute_batch(
-            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO volumes(id, serial) VALUES (1, 1);
-             INSERT INTO mfolders(id, key) VALUES (1, x'01');
-             INSERT INTO folders(id, path, path_key, mid) VALUES (1, x'01', x'01', 1);
+        conn.execute_batch(&format!(
+            "{ONE_FOLDER}
              INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
-                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1), (2, 1, 2, 1, 1, x'62', 0, 0, 1, 1);",
-        )
+                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1), (2, 1, 2, 1, 1, x'62', 0, 0, 1, 1);"
+        ))
         .unwrap();
         conn
     }
@@ -760,14 +773,11 @@ mod tests {
     fn a_placeholder_stamps_its_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
         bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
-        conn.execute_batch(
-            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO volumes(id, serial) VALUES (1, 1);
-             INSERT INTO mfolders(id, key) VALUES (1, x'01');
-             INSERT INTO folders(id, path, path_key, mid) VALUES (1, x'01', x'01', 1);
+        conn.execute_batch(&format!(
+            "{ONE_FOLDER}
              INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
-                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1);",
-        )
+                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1);"
+        ))
         .unwrap();
         let state = || -> (i64, i64) {
             conn.query_row("SELECT changed, seq FROM files WHERE id = 1", [], |r| {

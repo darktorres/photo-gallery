@@ -13,6 +13,8 @@ pairs a k-NN candidate stage would actually hand to this verifier; labeled dupli
   knn          - what the pipeline would really check: every image's --k nearest neighbors above
                  --floor, as unordered pairs. Labeled where the ground truth says something
                  (duplicate, cross_group, similar_folder), "unlabeled" otherwise. Writes verify_knn_<model>.*
+  listed       - the pairs listed in WORK_DIR/pairs_<--list>.csv (columns a, b, label: row indices into
+                 files.txt), by another script (e.g. eval/ann). Writes verify_<--list>_<model>.*
 Duplicates and variants (local edits of the same picture) are not told apart for now: both are
 a "match".
 
@@ -72,12 +74,15 @@ import numpy as np
 import torch
 
 from common import DATA_ROOT, DEFAULT_MODEL, WORK_DIR, WORK_SIDE, ground_truth, image_list, load_rgb
+from evaluate import pair_sims
 from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
 from verify_common import (
+    EXPECTED,
     Params,
     Prefetcher,
     add_decision_args,
     params_from,
+    score,
     work_image,
     write_outputs,
 )
@@ -92,7 +97,7 @@ import kornia.feature as KF
 MIRROR_SKIP_INLIERS = 200
 CANVAS_SIDE = 512  # comparison resolution (long side of the reference)
 NUM_FEATURES = 2048
-RANSAC_PX = 3.0  # reprojection threshold at WORK_SIDE
+REPROJ_PX = 3.0  # reprojection threshold at WORK_SIDE, for the homography's MAGSAC fit
 INTERIOR_MARGIN = 0.08  # edge band (fraction of the canvas's short side) excluded from "interior" changes
 # Map the reference's colors onto the other image (instead of the reverse) only if that fits this many times
 # better: grayscale / washed-out copies 2.7-35x; everything else <= 1.56x, where taking the better of two noisy
@@ -112,11 +117,6 @@ PAIR_SETS = {
     # files.txt), written to verify_<--list>_<model>.csv; e.g. the ANN bake-off's samples (eval/ann).
     "listed": ("verify", ()),
 }
-# The right decision per label; labels without one (similar_folder) aren't scored. Planted copies (plant.py) are
-# edits of their source, so they must match.
-EXPECTED = {"duplicate": "match", "cross_group": "unrelated", "planted": "match"}
-
-
 def decide(m: dict, params: Params) -> str:
     """match / unrelated from a pair's measurements (see the module docstring)."""
     if m.get("decision") == "error":
@@ -261,7 +261,7 @@ def fit_homography(pts_dst: np.ndarray, pts_src: np.ndarray) -> tuple[np.ndarray
     """Homography mapping src -> dst points, and its inlier count."""
     if len(pts_src) < 8:
         return None, 0
-    h, mask = cv2.findHomography(pts_src, pts_dst, cv2.USAC_MAGSAC, RANSAC_PX, maxIters=10000, confidence=0.9999)
+    h, mask = cv2.findHomography(pts_src, pts_dst, cv2.USAC_MAGSAC, REPROJ_PX, maxIters=10000, confidence=0.9999)
     if not sane(h):
         return None, 0
     return h, int(mask.sum())
@@ -335,13 +335,18 @@ def motion(ref: np.ndarray, other: np.ndarray, region: np.ndarray) -> np.ndarray
 
 @torch.inference_mode()
 def tolerant_diff(ref: np.ndarray, other: np.ndarray, radius: int = 2) -> np.ndarray:
-    """Per-pixel RGB distance to the best-matching pixel within +-radius: ignores sub-pixel misalignment."""
+    """Per-pixel RGB distance to the best-matching pixel within +-radius: ignores sub-pixel misalignment. Only candidates
+    on the canvas count (a torch.roll would wrap a candidate from the far edge, so edge pixels could match it)."""
     r, o = torch.from_numpy(ref).to(DEVICE), torch.from_numpy(other).to(DEVICE)
-    best = torch.full(r.shape[:2], float("inf"), device=DEVICE)
+    h, w = r.shape[:2]
+    best = torch.full((h, w), float("inf"), device=DEVICE)
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
-            shifted = torch.roll(o, (dy, dx), dims=(0, 1))
-            best = torch.minimum(best, torch.linalg.vector_norm(r - shifted, dim=2))
+            # Rows y and columns x whose candidate (y + dy, x + dx) is on the canvas.
+            y0, y1 = max(0, -dy), h - max(0, dy)
+            x0, x1 = max(0, -dx), w - max(0, dx)
+            d = torch.linalg.vector_norm(r[y0:y1, x0:x1] - o[y0 + dy : y1 + dy, x0 + dx : x1 + dx], dim=2)
+            best[y0:y1, x0:x1] = torch.minimum(best[y0:y1, x0:x1], d)
     return best.cpu().numpy()
 
 
@@ -504,7 +509,8 @@ def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int 
     in_areas = in_stats[1:, cv2.CC_STAT_AREA] if k > 1 else np.zeros(0)
     # Of what changed (dilated a little: a moved edge leaves change on both sides), how much moved?
     near_change = cv2.dilate(changed, np.ones((9, 9), np.uint8)).astype(bool) & valid
-    moved = motion(ref_cmp, other_cmp, near_change)
+    # Optical flow is only computed where something changed; with no change, nothing moved.
+    moved = motion(ref_cmp, other_cmp, near_change) if near_change.any() else np.zeros(valid.shape, dtype=bool)
     out.update(
         {
             "noise": noise,
@@ -626,9 +632,7 @@ def main() -> None:
         with scored_csv.open(newline="", encoding="utf-8") as f:
             results = [{k: v for k, v in r.items() if v != ""} for r in csv.DictReader(f)]
         for row in results:
-            row["decision"] = decide(row, params)
-            if row["label"] in EXPECTED:
-                row["correct"] = row["decision"] == EXPECTED[row["label"]]
+            score(row, {"decision": decide(row, params)}, EXPECTED.get(row["label"]))
         previous = json.loads((WORK_DIR / f"{prefix}_{args.model}.json").read_text(encoding="utf-8"))
         write_outputs(prefix, args, params, labels, results, previous["seconds"])
         return
@@ -642,7 +646,7 @@ def main() -> None:
     if args.pairs == "labeled":
         positives = [(a, b) for a, b in gt.positives if ok[a] and ok[b]]
         pool = np.array([i for i in gt.negative_pool if ok[i]])
-        rows, cols = np.nonzero(np.triu(emb[pool] @ emb[pool].T >= args.floor, k=1))
+        rows, cols, _ = pair_sims(torch.from_numpy(emb[pool]).to(DEVICE), floor=args.floor)
         similar = [(int(pool[r]), int(pool[c])) for r, c in zip(rows, cols, strict=True)]
         if args.limit:
             positives, similar = positives[: args.limit], similar[: args.limit]
@@ -680,9 +684,10 @@ def main() -> None:
     else:
         members = np.array([i for g in gt.groups for i in g if ok[i]])
         group = np.array([gi for gi, g in enumerate(gt.groups) for i in g if ok[i]])
-        sims = emb[members] @ emb[members].T
-        rows, cols = np.nonzero(np.triu((sims >= args.floor) & (group[:, None] != group[None, :]), k=1))
-        order = np.argsort(-sims[rows, cols])  # most similar (hardest) first
+        rows, cols, sims = pair_sims(
+            torch.from_numpy(emb[members]).to(DEVICE), groups=torch.from_numpy(group).to(DEVICE), floor=args.floor
+        )
+        order = np.argsort(-sims)  # most similar (hardest) first
         pairs = [("cross_group", int(members[rows[i]]), int(members[cols[i]])) for i in order]
         if args.limit:
             pairs = pairs[: args.limit]
@@ -703,13 +708,10 @@ def main() -> None:
 
     def done(row: dict, out: dict, diag) -> None:
         nonlocal verified
-        row.update(out)
+        # Only the labelled pairs have an expected decision (verify_synth.py scores its planted matches the same way).
+        score(row, out, EXPECTED.get(row["label"]))
         if diag is not None:
             cv2.imwrite(str(diag_dir / f"{row['id']}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        # Only the labelled pairs have an expected decision. An error decision is never the expected one, so it is not
-        # correct (verify_synth.py scores its planted matches the same way).
-        if row["label"] in EXPECTED:
-            row["correct"] = row["decision"] == EXPECTED[row["label"]]
         results[row["id"]] = row
         checkpoint.add(row)
         verified += 1

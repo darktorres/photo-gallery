@@ -1,6 +1,6 @@
 // The picture's layers, under the video and the overlays: the fitted image (fit), the visible part rendered at the zoom
 // between fit and 1:1 (region), and the original, nearest neighbour, at 1:1 and beyond and for the loupe (full). The
-// neighbours are preloaded, so stepping is instant (same URLs, so the pixmap cache serves them). The view's numbers
+// viewer preloads the neighbours, so stepping is instant (same URLs, so the pixmap cache serves them). The view's numbers
 // come from the Viewport facade (`viewport`, its numbers only); the URLs and the region are made by the viewer, which
 // has the Viewport and the gallery by their ids (Viewer.qml).
 pragma ComponentBehavior: Bound
@@ -14,7 +14,7 @@ Item {
     anchors.fill: parent
 
     required property Viewport viewport
-    // The URLs, made by the viewer: the fitted image, the original, and the neighbours' fitted images.
+    // The URLs, made by the viewer: the fitted image and the original.
     required property string fitSource
     required property string fullUrl
     // The viewer is shown (its index is 0 or more), and the shown item's key.
@@ -28,7 +28,7 @@ Item {
     required property real dpr
 
     readonly property alias fitImage: fit
-    // The parts' values over the picture (the Loupe, the frame, the HUD), read from the images.
+    // The parts' values over the picture (the Loupe, the frame, the Hud), read from the images.
     readonly property int fitStatus: fit.status
     readonly property bool fullReady: full.status === Image.Ready
     readonly property url fullSource: full.source

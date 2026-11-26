@@ -145,7 +145,7 @@ to it, on a `query_only` connection that it opens and drops for each call (`crat
   `store_analysis` does with `IS_CURRENT`. The transaction type has only writers today (`core.rs:209-237`); it gains the
   reads those checks need. Three writes pre-read on the connection today so as not to take the lock for nothing
   (`clear_failures`, `crates/catalog/src/ledger.rs:117-120`; `replace_notices`, `inbox.rs:97-113`; `set_mark`,
-  `lifecycle.rs:102`). Each keeps its pre-read, on the caller's read connection, and reads again inside the transaction.
+  `lifecycle.rs:179`). Each keeps its pre-read, on the caller's read connection, and reads again inside the transaction.
 
 ### The writer
 
@@ -600,7 +600,7 @@ item, so the harness's `findChildren` still finds the objects. The trace stages 
   means the command-line tool holds the lock.
   - *The wait.* The writer's connection has a busy handler in place of the 5 s timeout (rusqlite's `busy_handler` takes
     a closure, `src/busy.rs:55-57`). It sleeps and tries again, and gives up when the current call's stop is raised. It
-    is installed after `SETTINGS`, because `PRAGMA busy_timeout` replaces it (`crates/catalog/src/schema.rs:377-378`; so
+    is installed after `SETTINGS`, because `PRAGMA busy_timeout` replaces it (`crates/catalog/src/schema.rs:133-134`; so
     does `Catalog::set_busy_timeout`, `core.rs:190`). No write is lost to the busy timeout, and no caller has a busy
     loop of its own; a write ends unwritten only when its own stop is raised.
   - *The busy state.* A function is told when the process has waited 10 s on another process, for a write of any class
@@ -806,7 +806,7 @@ These run on a bare connection today and are converted:
   (`crates/catalog/src/queue.rs:283-309`), and `record_write_temp` (`queue.rs:214`), which sets the "being written"
   state that `IS_CURRENT` reads;
 - `finish_scan` (`crates/catalog/src/roots.rs:105`);
-- `set_mark` (`crates/catalog/src/lifecycle.rs:105`), which opens its own immediate transaction. It backs the
+- `set_mark` (`crates/catalog/src/lifecycle.rs:179`), which opens its own immediate transaction. It backs the
   preparation's marks, and rewrites `files.pending`, `seq` and `analysis.taken`;
 - the scan lease's direct renewal and release (`crates/catalog/src/core.rs:264-271`, `:302-308`);
 - the command-line tool's review import, which makes one bare write per row (`crates/cli/src/borders.rs:196`);

@@ -140,20 +140,24 @@ impl Maker {
 
     /// [`Maker::make`] of the file [`Maker::read_file`] read.
     fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
-        let file = std::mem::take(&mut self.file);
         let mut out = Vec::new();
-        let result = self.make_image(&file, height, turns, &mut out).map(drop);
-        self.file = file;
-        self.trim();
+        let result = self.then_trim(|maker| {
+            // The file is taken out while it is made, so the maker can be borrowed for the make.
+            let file = std::mem::take(&mut maker.file);
+            let result = maker.make_image(&file, height, turns, &mut out).map(drop);
+            maker.file = file;
+            result
+        });
         result.map(|()| out).map_err(MakeError::Undecodable)
     }
 
     /// A one-off decode of the file [`Maker::read_file`] read, for the viewer's `view` ([`display::min_size`]): its
     /// pixels go to new buffers.
     fn decode_file(&mut self, view: View, turns: Turns) -> Result<Shown, MakeError> {
-        let result = display::decode(&mut self.decoder, &self.file, display::min_size(view), turns);
-        release_over(&mut self.file, KEEP_BYTES);
-        result.map(Shown::from).map_err(MakeError::Undecodable)
+        let min = display::min_size(view);
+        self.then_trim(|maker| display::decode(&mut maker.decoder, &maker.file, min, turns))
+            .map(Shown::from)
+            .map_err(MakeError::Undecodable)
     }
 
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
@@ -166,17 +170,14 @@ impl Maker {
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
     /// given back by the cache's writer (`pg_thumbcache::ThumbCache::put_batch`).
     pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<(), MakeError> {
-        let result = self.make_image(bytes, height, turns, out).map(drop);
-        self.trim();
-        result.map_err(MakeError::Undecodable)
+        self.then_trim(|maker| maker.make_image(bytes, height, turns, out).map(drop)).map_err(MakeError::Undecodable)
     }
 
     /// [`Maker::make`], with the size of the full image, upright as `turns` and its orientation make it (width, height),
     /// as the decode read it from the file.
     pub fn make_sized(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<(Vec<u8>, (u32, u32)), MakeError> {
         let mut out = Vec::new();
-        let result = self.make_image(bytes, height, turns, &mut out);
-        self.trim();
+        let result = self.then_trim(|maker| maker.make_image(bytes, height, turns, &mut out));
         result.map(|size| (out, size)).map_err(MakeError::Undecodable)
     }
 
@@ -203,34 +204,43 @@ impl Maker {
     /// [`PLACEHOLDER_DECODE_SIDE`] px on the long side, fitted to [`THUMBHASH_SIDE`] and encoded.
     pub fn placeholder(&mut self, bytes: &[u8], turns: Turns) -> Result<ThumbHash, MakeError> {
         let min = MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0);
-        let decoded = {
-            let _decode = DECODE.timer();
-            display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)
-        };
-        let result = decoded.and_then(|_| self.thumbhash_of_image());
-        self.trim();
-        result.map_err(MakeError::Undecodable)
+        self.then_trim(|maker| {
+            let decoded = {
+                let _decode = DECODE.timer();
+                display::decode_into(&mut maker.decoder, bytes, min, turns, &mut maker.image, &mut maker.spare)
+            };
+            decoded.and_then(|_| maker.thumbhash_of_image())
+        })
+        .map_err(MakeError::Undecodable)
     }
 
     /// The placeholder of a thumbnail the cache holds (`jpeg`: upright already, so no turns), decoded whole: the same
     /// picture as [`Maker::placeholder`] of the file, at the thumbnail's size.
     pub fn placeholder_of_thumbnail(&mut self, jpeg: &[u8]) -> Result<ThumbHash, MakeError> {
-        let decoded = {
-            let _decode = DECODE.timer();
-            display::decode_into(&mut self.decoder, jpeg, MinSize::Full, Turns::NONE, &mut self.image, &mut self.spare)
-        };
-        let result = decoded.and_then(|_| self.thumbhash_of_image());
-        self.trim();
-        result.map_err(MakeError::Undecodable)
+        self.then_trim(|maker| {
+            let decoded = {
+                let _decode = DECODE.timer();
+                display::decode_into(
+                    &mut maker.decoder,
+                    jpeg,
+                    MinSize::Full,
+                    Turns::NONE,
+                    &mut maker.image,
+                    &mut maker.spare,
+                )
+            };
+            decoded.and_then(|_| maker.thumbhash_of_image())
+        })
+        .map_err(MakeError::Undecodable)
     }
 
     /// The placeholder of a video's frame at `at_ms` (its poster, `turns` the file's rotation), as [`Maker::load_frame`]
     /// decodes it.
     pub fn placeholder_of_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<ThumbHash, MakeError> {
-        self.decode_frame(path, at_ms, turns, MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0))?;
-        let result = self.thumbhash_of_image();
-        self.trim();
-        result.map_err(MakeError::Undecodable)
+        self.then_trim(|maker| -> Result<ThumbHash, MakeError> {
+            maker.decode_frame(path, at_ms, turns, MinSize::Sides(PLACEHOLDER_DECODE_SIDE, 0))?;
+            maker.thumbhash_of_image().map_err(MakeError::Undecodable)
+        })
     }
 
     /// The ThumbHash of the decoded image (`self.image`), fitted to [`THUMBHASH_SIDE`] through `small`. The encoder reads
@@ -275,9 +285,7 @@ impl Maker {
 
     /// [`Maker::encode_frame`] into `out`, as [`Maker::make_into`].
     pub fn encode_frame_into(&mut self, height: usize, out: &mut Vec<u8>) -> Result<(), MakeError> {
-        let result = self.encode_image(height, out);
-        self.trim();
-        result.map_err(MakeError::Undecodable)
+        self.then_trim(|maker| maker.encode_image(height, out)).map_err(MakeError::Undecodable)
     }
 
     /// The thumbnail of `image`: scaled to `height`, then encoded into `out`.
@@ -305,6 +313,14 @@ impl Maker {
         }
         let _encode = ENCODE.timer();
         self.encoder.encode_into(img, out).map_err(crate::Error::Codec)
+    }
+
+    /// Runs `make` on the maker and then trims what it grew (see [`Maker::trim`]), giving back its result: every method
+    /// that decodes or encodes ends this way, so none can skip the trim.
+    fn then_trim<T>(&mut self, make: impl FnOnce(&mut Self) -> T) -> T {
+        let result = make(self);
+        self.trim();
+        result
     }
 
     /// Free what one oversize image grew (see [`KEEP_BYTES`]).

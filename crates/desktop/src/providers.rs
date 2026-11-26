@@ -65,7 +65,7 @@ fn thumbnail(key: ImageKey, height: ThumbHeight) -> anyhow::Result<Pixels> {
             && pixels.is_err()
             && let Err(e) = app.images().forget_thumb(file, at)
         {
-            pg_log::warn("providers", &format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
+            pg_log::warn("thumbs", &format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
         }
         pixels
     })

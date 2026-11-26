@@ -20,7 +20,7 @@ const TIMEOUT: Duration = Duration::from_secs(30);
 /// bounds are per phase instead (`transfer_timeouts`): the name lookup and the connection, the wait for the answer's
 /// headers, and each read or write, which bounds a stalled transfer...
 const STEP_TIMEOUT: Duration = Duration::from_secs(30);
-/// ...and the body as a whole, which bounds one that trickles: 100 MB in 15 minutes is about 110 kB/s.
+/// ...and the body as a whole, which bounds one that trickles: 100 MiB in 15 minutes is about 117 kB/s.
 const BODY_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 /// The HTTP agent of the search and of the result files: statuses are handed back to the caller (a captcha page's

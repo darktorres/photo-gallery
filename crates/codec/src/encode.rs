@@ -342,13 +342,7 @@ mod tests {
             (1..3usize).flat_map(|y| all[(y * 7 + 2) * 4..(y * 7 + 5) * 4].to_vec()).collect()
         };
         for big in [false, true] {
-            let mut file = Cursor::new(Vec::new());
-            if big {
-                TiffEncoder::new_big(&mut file).unwrap().write_image::<CMYK8>(w, h, &cmyk8).unwrap();
-            } else {
-                TiffEncoder::new(&mut file).unwrap().write_image::<CMYK8>(w, h, &cmyk8).unwrap();
-            }
-            let file = file.into_inner();
+            let file = crate::fixtures::tiff_of::<CMYK8>(w, h, &cmyk8, big).unwrap();
             let out = cropped(&file, Format::Tiff, rect[0], rect[1], rect[2], rect[3]).unwrap();
             assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
@@ -357,13 +351,8 @@ mod tests {
             let all: Vec<u16> = cmyk8.iter().map(|&v| u16::from(v)).collect();
             assert_eq!(got.iter().map(|&v| u16::from(v)).collect::<Vec<_>>(), want(&all), "big {big}");
 
-            let mut file = Cursor::new(Vec::new());
-            if big {
-                TiffEncoder::new_big(&mut file).unwrap().write_image::<CMYK16>(w, h, &cmyk16).unwrap();
-            } else {
-                TiffEncoder::new(&mut file).unwrap().write_image::<CMYK16>(w, h, &cmyk16).unwrap();
-            }
-            let out = cropped(&file.into_inner(), Format::Tiff, rect[0], rect[1], rect[2], rect[3]).unwrap();
+            let file = crate::fixtures::tiff_of::<CMYK16>(w, h, &cmyk16, big).unwrap();
+            let out = cropped(&file, Format::Tiff, rect[0], rect[1], rect[2], rect[3]).unwrap();
             assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::CMYK(16), (3, 2)));
@@ -454,13 +443,8 @@ mod tests {
         let rgb: Vec<u16> = (0..w * h * 3).map(|i| u16::try_from(i * 2741 % 65536).unwrap()).collect();
         // Left 1, top 1, 4 × 2: rows 1 and 2, pixels 1 to 4.
         for big in [false, true] {
-            let mut file = Cursor::new(Vec::new());
-            if big {
-                TiffEncoder::new_big(&mut file).unwrap().write_image::<RGB16>(w, h, &rgb).unwrap();
-            } else {
-                TiffEncoder::new(&mut file).unwrap().write_image::<RGB16>(w, h, &rgb).unwrap();
-            }
-            let out = cropped(&file.into_inner(), Format::Tiff, 1, 1, 4, 2).unwrap();
+            let file = crate::fixtures::tiff_of::<RGB16>(w, h, &rgb, big).unwrap();
+            let out = cropped(&file, Format::Tiff, 1, 1, 4, 2).unwrap();
             assert_eq!(pg_model::format::is_bigtiff(&out), big);
             let (color, size, got) = samples(&out);
             assert_eq!((color, size), (tiff::ColorType::RGB(16), (4, 2)));

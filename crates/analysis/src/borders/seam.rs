@@ -101,7 +101,8 @@ pub(super) fn seam_straightness(v: &View, sums: &DetailSums, row: usize, k: usiz
         .zip(detail_above.zip(detail_below))
         .filter(|&((below, above), (a, b))| {
             let color = below.iter().zip(&above).any(|(&x, &y)| (x - y).abs() > p.seam_step);
-            // Detail below > 2 × detail above + 2, in sums of 3 × gray over k lines.
+            // Detail below > 2 × detail above + 2 gray per line. The sums hold 3 × gray over k lines, so the +2
+            // per line is 3 × 2 × k.
             let (a, b) = (i64::from(a), i64::from(b));
             color || b > 2 * a + 6 * k
         })

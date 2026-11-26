@@ -2,13 +2,15 @@
 registered there, and every registered one is read by its owner.
 
 A regex scan of the Rust sources, not a parser: a version constant is a `const NAME_VERSION` line at the start of a line
-(with an optional `pub` or `pub(crate)`), and an owner reads a registry constant as `versions::NAME`. Run with
-`just test-tools`.
+(with an optional `pub` or `pub(crate)`), and an owner reads a registry constant as `versions::NAME` in its production
+code: a read in a comment or in a test-only item does not count. Run with `just test-tools`.
 """
 
 import re
 import unittest
 from pathlib import Path
+
+import boundaries
 
 REPO = Path(__file__).resolve().parent.parent
 REGISTRY_FILE = REPO / "crates" / "model" / "src" / "versions.rs"
@@ -22,6 +24,12 @@ READ = r"versions::{name}\b"
 def registry_names(text):
     """The constants `versions.rs` declares: every `pub const NAME_VERSION`-style item."""
     return [m.group(1) for line in text.splitlines() if (m := CONST.match(line))]
+
+
+def code_only(text):
+    """`text` without its comments: the `/* */` blocks, then the rest of each `//` line."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return "\n".join(line.split("//")[0] for line in text.splitlines())
 
 
 def version_constants(text):
@@ -38,6 +46,12 @@ class VersionRegistry(unittest.TestCase):
     def setUp(self):
         self.registry = registry_names(REGISTRY_FILE.read_text(encoding="utf-8"))
         self.files = {path: path.read_text(encoding="utf-8", errors="replace") for path in sources()}
+        # The owners' reads are looked for in production code only, as the boundary rules read it.
+        self.owners = {
+            path: code_only(text)
+            for path, text in boundaries.production_files().items()
+            if path != REGISTRY_FILE
+        }
 
     def test_the_scan_finds_a_version_constant_and_skips_the_rest(self):
         self.assertEqual(version_constants("pub const IMPORT_VERSION: i64 = 3;"), ["IMPORT_VERSION"])
@@ -46,6 +60,9 @@ class VersionRegistry(unittest.TestCase):
         self.assertEqual(version_constants("pub const MAX: usize = 25;"), [])
         self.assertEqual(version_constants("let version = 2;"), [])
         self.assertEqual(version_constants('assert_eq!(x, "const A_VERSION: i64");'), [])
+
+    def test_a_read_in_a_comment_is_not_a_read(self):
+        self.assertEqual(code_only("// versions::IMPORT_VERSION\nlet x = 1; /* versions::PAIRING_VERSION */"), "\nlet x = 1; ")
 
     def test_the_registry_declares_the_known_versions(self):
         self.assertTrue(self.registry, "no version constants found in crates/model/src/versions.rs")
@@ -66,7 +83,7 @@ class VersionRegistry(unittest.TestCase):
         unread = []
         for name in self.registry:
             pattern = re.compile(READ.format(name=name))
-            if not any(pattern.search(text) for path, text in self.files.items() if path != REGISTRY_FILE):
+            if not any(pattern.search(text) for text in self.owners.values()):
                 unread.append(name)
         self.assertEqual(unread, [], "no owner reads these registry versions (versions::NAME)")
 

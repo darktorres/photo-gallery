@@ -6,10 +6,10 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use image::AnimationDecoder;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
+use image::{AnimationDecoder, ImageDecoder, Limits};
 
 use pg_model::format::Format;
 
@@ -29,16 +29,25 @@ pub struct Frame {
 const MIN_DELAY_MS: u32 = 20;
 const SHORT_DELAY_MS: u32 = 100;
 
+/// The decoder with the same limits as the still decodes (`convert::read_with`): its canvas is held to the cap for
+/// decoded buffers before anything that size is allocated, so a damaged header is an error, not an allocation failure.
+fn limited<D: ImageDecoder>(mut decoder: D) -> Result<D> {
+    let mut limits = Limits::default();
+    limits.reserve(decoder.total_bytes()).map_err(Error::decoder)?;
+    decoder.set_limits(limits).map_err(Error::decoder)?;
+    Ok(decoder)
+}
+
 /// One pass over the frames of the animation in `bytes` (a file's content). Loop by calling it again.
 pub fn frames(bytes: Arc<[u8]>) -> Result<impl Iterator<Item = Result<Frame>>> {
     let format = Format::sniff(&bytes);
     let cursor = Cursor::new(bytes);
     let frames = match format {
-        Some(Format::Gif) => GifDecoder::new(cursor).map_err(Error::decoder)?.into_frames(),
+        Some(Format::Gif) => limited(GifDecoder::new(cursor).map_err(Error::decoder)?)?.into_frames(),
         Some(Format::Png) => {
-            PngDecoder::new(cursor).map_err(Error::decoder)?.apng().map_err(Error::decoder)?.into_frames()
+            limited(PngDecoder::new(cursor).map_err(Error::decoder)?)?.apng().map_err(Error::decoder)?.into_frames()
         }
-        Some(Format::Webp) => WebPDecoder::new(cursor).map_err(Error::decoder)?.into_frames(),
+        Some(Format::Webp) => limited(WebPDecoder::new(cursor).map_err(Error::decoder)?)?.into_frames(),
         _ => return Err(Error::invalid("not a GIF, PNG or WebP file")),
     };
     Ok(frames.map(|frame| -> Result<Frame> {
@@ -91,5 +100,16 @@ mod tests {
         assert_eq!(summary, [(2, 2, 9, 40), (2, 2, 200, 40)]);
 
         assert!(frames(Arc::from(&b"not an image"[..])).is_err());
+    }
+
+    // A GIF whose logical screen (its canvas) is 40,000 x 40,000 is over the cap, and has no frames: it is refused
+    // before the canvas is allocated, not read as an animation of no frames.
+    #[test]
+    fn a_gif_canvas_over_the_cap_is_refused() {
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend_from_slice(&40_000u16.to_le_bytes());
+        gif.extend_from_slice(&40_000u16.to_le_bytes());
+        gif.extend_from_slice(&[0x00, 0x00, 0x00, 0x3B]);
+        assert!(frames(gif.into()).is_err());
     }
 }

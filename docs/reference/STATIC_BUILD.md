@@ -90,10 +90,14 @@ The configure line (the pilot's flags, with the reasons the recipe records):
 - `--disable-debug`: no `/Z7`, because its debug data embeds the source paths.
 - `--disable-programs --disable-doc --disable-autodetect --disable-network --disable-avdevice --disable-avfilter
   --disable-everything`
-- `--enable-protocol=file`; demuxers `mov,matroska,avi,mpegts,image2`; decoders `h264,hevc,vp9,mpeg4,mjpeg`;
-  parsers `h264,hevc,vp9,mpeg4video,mjpeg`; `--enable-swscale --enable-swresample`; `--enable-d3d11va --enable-dxva2`.
+- `--enable-protocol=file`; demuxers `mov,matroska,avi,asf,mpeg,mpegts,image2`; decoders
+  `h264,hevc,vp9,vp8,mpeg4,mjpeg,mpeg1video,mpeg2video,wmv1,wmv2,wmv3,vc1,aac,ac3,eac3,opus,vorbis,mp3float,flac`;
+  parsers `h264,hevc,vp9,vp8,mpeg4video,mjpeg,mpegvideo,vc1,mpegaudio,aac,ac3,opus,vorbis`;
+  `--enable-swscale --enable-swresample`; `--enable-d3d11va --enable-dxva2`.
 
-The demuxer, decoder and parser lists are the pilot's guess. They have not been checked against what pg-video needs.
+The demuxer, decoder and parser lists cover the containers the player scans (mp4, m4v, mov, 3gp, webm, mkv, avi, wmv,
+mpg, mpeg) and the codecs they carry, including the audio codecs the player mixes down. The lists are written from the
+player's scope, not from a build: a configure run has not yet confirmed that every name is accepted.
 
 Choices that follow from the configure line:
 
@@ -109,7 +113,7 @@ as the shipped DLLs, and no library references `LIBCMT`. The link check imports 
 Results, Python recipe (2026-11-23, with the exact-name `SYSTEM_DLLS` policy in place): all checks passed in 385 s. The
 link check's dependents are 15 DLLs: `KERNEL32`, `USER32`, `bcrypt`, twelve `api-ms-win-crt-*` API-set DLLs (system, by
 prefix) and `VCRUNTIME140.dll`, which is accepted only through `REDISTRIBUTED`. The unlisted set is empty, so the policy
-needed no name added. The manifest is `D:\PhotoGallery\static\ffmpeg\manifest.json`.
+needed no name added. The manifest is `$PG_HOME\static\ffmpeg\manifest.json`.
 
 Results, PowerShell recipe (run 1, 2026-11-08): all checks passed in 243 s. The link needs `user32.lib`
 (`GetDesktopWindow`, from the DXVA2 device code) and `bcrypt.lib` (`av_get_random_seed`). FFmpeg's `.pc` files list

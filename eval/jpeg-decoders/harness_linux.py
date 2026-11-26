@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The harness's CPU decoders, after linux_build.py (it was harness-wsl.sh), on Linux: in the
+"""The harness's CPU decoders, after linux_build.py, on Linux: in the
 container (`just linux-eval eval/jpeg-decoders/harness_linux.py STEP...`) or natively. Usage:
     python3 eval/jpeg-decoders/harness_linux.py STEP...
 Steps:

@@ -232,10 +232,17 @@ impl App {
     }
 }
 
-/// A front end that drops the app without [`App::shutdown`] still closes the cache, the inbox and the catalogs in their
-/// order. (One kept in a `static` is never dropped, and calls it itself.)
+/// A front end that drops the app without [`App::stop`] or [`App::shutdown`] still ends the background work, then closes
+/// the cache, the inbox and the catalogs in their order, so no service runs on a catalog that is already closed. (One
+/// kept in a `static` is never dropped, and calls [`App::shutdown`] itself.)
 impl Drop for App {
     fn drop(&mut self) {
+        if self.shut.load(Ordering::Acquire) {
+            return;
+        }
+        if let Err(e) = self.stop() {
+            pg_log::warn("app", &format!("{e}"));
+        }
         self.shutdown();
     }
 }

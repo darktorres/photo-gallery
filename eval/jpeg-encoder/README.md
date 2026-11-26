@@ -27,10 +27,11 @@ The script checks that every required file exists, then runs `vcvars64.bat` and 
 session (`/Zc:preprocessor` is required by CCCL under MSVC). Defaults, each overridable by parameter:
 
 - CUDA 13.4 at `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4`, `-arch=sm_75` on the RTX 2060 measured below (the arch follows the GPU, see `build.ps1`), `-O2`, no fast-math.
-- MSVC from `C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build`.
-- libjpeg-turbo 3.1.0 headers from `D:\PhotoGallery\tools\jpeg-eval\src\jpegli\third_party\libjpeg-turbo`,
-  with `jconfig.h` and the static libraries `jpeg-static.lib` and `turbojpeg-static.lib` from
-  `D:\PhotoGallery\tools\jpeg-eval\build\libjpeg-turbo`. These are reused, not rebuilt.
+- MSVC: the newest Visual Studio with the C++ tools, found with `vswhere` as `win_env.py` finds it.
+- libjpeg-turbo 3.1.0 headers from `PG_JPEG_EVAL\src\rust-turbojpeg\turbojpeg-sys\libjpeg-turbo` (the app's fork, as the
+  decoder build compiles it), with `jconfig.h` and the static libraries `jpeg-static.lib` and `turbojpeg-static.lib` from
+  `PG_JPEG_EVAL\build\libjpeg-turbo`. `PG_JPEG_EVAL` is set in `.env`, or defaults to `PG_ROOT\tools\jpeg-eval`. These are
+  reused, not rebuilt; `win_build.py` builds them.
 
 ## Run the tests
 
@@ -38,9 +39,11 @@ session (`/Zc:preprocessor` is required by CCCL under MSVC). Defaults, each over
     build\test_encoder.exe --tests 1,2,3         # selected tests
     build\test_encoder.exe --tests 6 --no-ssim   # quality test without SSIMULACRA2
 
-Options: `--sample DIR` (the 300 Pinterest JPEGs named `001.jpg`..`300.jpg`), `--work DIR` (scratch PPMs for
-SSIMULACRA2, deleted after each pair), `--ssim EXE` (default `D:\PhotoGallery\tools\jpeg-eval\build\jpegli\tools\ssimulacra2.exe`;
-the test prepends its sibling `..\lib` folder to PATH so `jpegli_cms.dll` loads).
+Options: `--sample DIR` (the 300 Pinterest JPEGs named `001.jpg`..`300.jpg`; default `pg_gpu_sample` in the OS temp folder),
+`--work DIR` (scratch PPMs for SSIMULACRA2, deleted after each pair; default `pg_jpeg_encoder_work` in the OS temp folder),
+`--ssim EXE` (default `PG_JPEG_EVAL\build\jpegli\tools\ssimulacra2.exe`, with PG_JPEG_EVAL, or PG_ROOT's `tools\jpeg-eval`, read
+from the environment or `.env`; empty when neither is set, so pass `--ssim`). The test prepends its sibling `..\lib` folder to PATH so
+`jpegli_cms.dll` loads.
 
 Test 7 measures throughput and should run with the GPU otherwise idle.
 
@@ -143,8 +146,7 @@ budget was not checked.
   bytes match.
 - **64-bit bit offsets above 2^32 bits.** The code uses 64-bit offsets, but no test reaches 2^32 bits. The
   largest test image is 65500x1, which needs far fewer bits.
-- **libjpeg-turbo header and library match.** The headers come from the vendored source tree
-  (`jpegli\third_party\libjpeg-turbo`), and the build uses the generated `jconfig.h` and the 3.1.0 static
-  libraries. Tests 1 and 2 exercise the struct layouts and the coefficient API, and they pass. The headers
-  were not byte-compared against the 3.1.0 source the library was built from.
+- **libjpeg-turbo header and library match.** The headers come from the source tree the static libraries are built
+  from (the app's fork, `src\rust-turbojpeg\turbojpeg-sys\libjpeg-turbo`), and the build uses its generated `jconfig.h`
+  and the 3.1.0 static libraries. Tests 1 and 2 exercise the struct layouts and the coefficient API, and they pass.
 - **Throughput on other GPUs or with a larger batch size budget.** Only the RTX 2060 was measured.

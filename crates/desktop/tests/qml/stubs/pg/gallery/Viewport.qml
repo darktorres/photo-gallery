@@ -46,6 +46,6 @@ QtObject {
     }
     // The fitted image's URL, with the size it is rendered at (the real one: pg_client::image); "" for no key.
     function fitSource(key, w, h) {
-        return key.length ? "image://full/" + key + "/fit/" + w + "x" + h : "";
+        return key.length ? "image://full/" + key + "/" + w + "x" + h : "";
     }
 }

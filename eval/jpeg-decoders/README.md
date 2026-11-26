@@ -13,3 +13,8 @@ upstream license text is saved next to the patch:
   License: GPL-3.0, text in `patches/LICENSE-jpeggpu.txt`.
 - `patches/parajpeg.patch`: [anniigr/parajpeg](https://github.com/anniigr/parajpeg), a parallel JPEG decoder.
   License: MIT, text in `patches/LICENSE-parajpeg.txt`.
+
+The other upstreams are not in this repository. `sources.py` (`PINS`) fetches each at its pinned commit when a build
+runs: mozjpeg, jpegli, guetzli, wuffs, GPUJPEG and GPU-JPEG-Decoder, and the rust-turbojpeg fork named by
+`tools/build_jpeg_turbo.py`. Nothing from them is copied here, and the licence each upstream publishes applies to its
+own checkout.

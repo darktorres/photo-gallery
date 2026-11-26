@@ -138,37 +138,10 @@ fn legacy_time(line: &str) -> Option<(String, String)> {
     shaped.then(|| (time.to_string(), rest.strip_prefix(' ').unwrap_or(rest).to_string()))
 }
 
-/// The mark a cut text ends in.
-const ELLIPSIS: char = '…';
-
-/// `text` cut to at most `cap` bytes, at a character's edge, ending in `…` when cut: the mark is within the cap, so the
-/// result is never more than `cap` bytes (under the mark's 3 bytes, a cut text is the characters that fit, with no
-/// mark).
-pub(crate) fn capped(text: &str, cap: usize) -> String {
-    if text.len() <= cap {
-        return text.to_string();
-    }
-    let Some(room) = cap.checked_sub(ELLIPSIS.len_utf8()) else {
-        return prefix(text, cap).to_string();
-    };
-    let mut out = prefix(text, room).to_string();
-    out.push(ELLIPSIS);
-    out
-}
-
-/// The longest start of `text` of at most `bytes` bytes that ends at a character's edge.
-fn prefix(text: &str, bytes: usize) -> &str {
-    let mut end = bytes.min(text.len());
-    // 0 is an edge, so this stops.
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.get(..end).unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::notice::cut_at_edge;
 
     fn record(seq: u64) -> Record {
         Record {
@@ -247,36 +220,36 @@ mod tests {
     }
 
     #[test]
-    fn a_capped_text_ends_at_a_character_with_its_mark_inside_the_cap() {
-        assert_eq!(capped("abc", 3), "abc");
-        assert_eq!(capped("abcd", 3), "…");
-        assert_eq!(capped("abcdef", 5), "ab…");
+    fn a_cut_text_ends_at_a_character_with_its_mark_inside_the_cap() {
+        assert_eq!(cut_at_edge("abc", 3), "abc");
+        assert_eq!(cut_at_edge("abcd", 3), "…");
+        assert_eq!(cut_at_edge("abcdef", 5), "ab…");
         // é is 2 bytes, € 3, the mark 3.
-        assert_eq!(capped("aéb", 4), "aéb");
-        assert_eq!(capped("aébc", 4), "a…");
-        assert_eq!(capped("aébcd", 5), "a…");
-        assert_eq!(capped("aébcde", 6), "aé…");
-        assert_eq!(capped("ééé", 5), "é…");
-        assert_eq!(capped("a€€", 6), "a…");
-        assert_eq!(capped("a€€", 7), "a€€");
+        assert_eq!(cut_at_edge("aéb", 4), "aéb");
+        assert_eq!(cut_at_edge("aébc", 4), "a…");
+        assert_eq!(cut_at_edge("aébcd", 5), "a…");
+        assert_eq!(cut_at_edge("aébcde", 6), "aé…");
+        assert_eq!(cut_at_edge("ééé", 5), "é…");
+        assert_eq!(cut_at_edge("a€€", 6), "a…");
+        assert_eq!(cut_at_edge("a€€", 7), "a€€");
         // Under the mark's bytes, the characters that fit.
-        assert_eq!(capped("aéb", 2), "a");
-        assert_eq!(capped("éa", 1), "");
+        assert_eq!(cut_at_edge("aéb", 2), "a");
+        assert_eq!(cut_at_edge("éa", 1), "");
     }
 
-    // At every cap, a capped text is at most the cap, and is the text's start (with the mark when cut).
+    // At every cap, a cut text is at most the cap, and is the text's start (with the mark when cut).
     #[test]
-    fn a_capped_text_is_never_past_its_cap() {
+    fn a_cut_text_is_never_past_its_cap() {
         for text in ["", "abc", "ééé€a", "a€é\nb", "€€€€", "😀a😀"] {
             for cap in 0..=text.len() + 1 {
-                let out = capped(text, cap);
+                let out = cut_at_edge(text, cap);
                 assert!(out.len() <= cap, "{text:?} at {cap}: {out:?}");
                 if text.len() <= cap {
                     assert_eq!(out, text);
                 } else {
-                    let start = out.strip_suffix(ELLIPSIS).unwrap_or(&out);
+                    let start = out.strip_suffix('…').unwrap_or(&out);
                     assert!(text.starts_with(start), "{text:?} at {cap}: {out:?}");
-                    assert_eq!(out.ends_with(ELLIPSIS), cap >= ELLIPSIS.len_utf8(), "{text:?} at {cap}: {out:?}");
+                    assert_eq!(out.ends_with('…'), cap >= '…'.len_utf8(), "{text:?} at {cap}: {out:?}");
                 }
             }
         }

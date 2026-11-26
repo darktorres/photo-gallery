@@ -6,8 +6,8 @@
 
 # The filter bar
 ui-any = Any
-ui-has-duplicates = Has duplicates
-ui-no-duplicates = No duplicates
+ui-with-duplicates = With duplicates
+ui-without-duplicates = Without duplicates
 ui-not-marked = Not marked
 ui-marked-not-a-border = Marked not a border
 ui-min = min
@@ -31,7 +31,7 @@ ui-name = Name
 ui-save-crops = Save cropped copies ({ $text })…
 ui-crop-tooltip = Copies of the listed files with their borders cut off, in a folder you choose (the originals stay as they are). JPEGs are cropped losslessly; their left and top cuts move inward to the next 8 or 16 px block.
 ui-cut-originals = Cut borders from originals…
-ui-cut-tooltip = Rewrites the listed originals with their borders cut off, in place. No backup is kept. JPEGs are re-encoded at their own quality; TIFFs are re-encoded losslessly with their metadata kept; lossy WebPs stay lossy. Files with nothing to cut, or a format that isn't cut, are skipped.
+ui-cut-tooltip = Rewrites the listed originals with their borders cut off, in place. No backup copy is kept. JPEGs are re-encoded at their own quality; TIFFs are re-encoded losslessly with their metadata kept; lossy WebPs stay lossy. Files with nothing to cut, or a format that isn't cut, are skipped.
 ui-cut-borders = Cut borders
 ui-cut-borders-title = Cut borders from the originals?
 ui-cut-borders-question = Cut the borders off { $text } { $count ->
@@ -113,6 +113,10 @@ ui-failed-not-recorded = Not recorded in the inbox yet
 # The log view (dev mode): its button in the status bar, which is also its title, and what it shows with no record
 ui-log = Log
 ui-log-empty = Nothing logged yet
+# The letters that mark a record's level in the log view: error, warning and info
+ui-log-level-error = E
+ui-log-level-warning = W
+ui-log-level-info = I
 
 # The window and its dialogs
 ui-app-name = Photo Gallery
@@ -207,11 +211,12 @@ ui-cannot-decode = Can't load or decode it; saving may still work.
 ui-picked = Picked ✓
 ui-pick = Pick
 ui-fit = Fit
+ui-one-to-one = 1:1
 ui-back = Back
 # The key hints: each label of the grid's and the viewer's hint line (`keys::Hint`), joined by the separator
 ui-hint-separator = { " · " }
 ui-hint-select = Click to select
-ui-hint-view = double-click or Enter to view
+ui-hint-view = double-click, Enter or Space to view
 ui-hint-rate = 0–5 rate
 ui-hint-turn = R / Shift+R turn
 ui-hint-arrows = arrows move

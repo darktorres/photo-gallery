@@ -3,16 +3,15 @@
 //! so its values are the import's own. The pairs they owe are the pairing pass's (`pairs_owed`, set by
 //! `AnalysisWriter::store_hashes`).
 
-use crate::{Error, Result};
+use crate::{Error, Result, in_batch_tx, video_disk_path};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, OwedHashes, WorkItem};
 use pg_jobs::control::Control;
 use pg_jobs::failure::{Class, Failed};
 use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::media::Kind;
+use pg_model::num::count_u64;
 use pg_model::progress::Phase;
-
-const BATCH: usize = pg_catalog::WRITE_BATCH;
 
 /// What the hashes pass did over its files: the counts its report states.
 #[derive(Clone, Copy, Debug)]
@@ -51,7 +50,7 @@ pub fn hash(
     }
     let sep = catalog.rules().sep_byte();
     // The phase ends when this is dropped, however the pass leaves.
-    let _phase = ctl.begin(Phase::Hashes, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    let _phase = ctl.begin(Phase::Hashes, count_u64(items.len()));
     let (state, result) = pipeline::batched(
         pipeline::Pass { items, opts, ctl },
         |item, wide| {
@@ -70,22 +69,22 @@ pub fn hash(
             if item.kind == Kind::Video {
                 // The hash opens the file by its disk path, as the import does. It is read in chunks, the stop looked for
                 // between them (section 7): a stop is "not hashed yet", not a failure.
-                let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
+                let disk = video_disk_path(&work, item.path, sep);
                 let stopped = || ctl.stop_requested();
                 analyzer.video_file_hash(&disk, &stopped).map(|h| h.map(OwedHashes::Video)).map_err(refused)
             } else {
                 analyzer.hash_image(bytes, item.turns).map(|h| Some(OwedHashes::Image(h))).map_err(refused)
             }
         },
-        Batch { size: BATCH, every: None },
+        Batch { size: pg_catalog::WRITE_BATCH, every: None },
         (catalog, stats),
         |(catalog, stats), batch| flush(catalog, batch, stats, ctl).map(|()| still_wanted()),
     );
     result.map_err(Halt::into_pass)?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
-    pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
-    pass.failed(u64::try_from(stats.failed).unwrap_or(0));
+    pass.items(count_u64(stats.files));
+    pass.failed(count_u64(stats.failed));
     pg_catalog::attach_tx(&mut pass, tx_at);
     Ok(stats)
 }
@@ -98,43 +97,41 @@ fn flush(
     stats: &mut Stats,
     ctl: &Control,
 ) -> Result<()> {
-    let tx = catalog.tx()?;
-    let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
     let mut done = *stats;
-    for (item, result) in batch.drain(..) {
-        done.files += 1;
-        let result = match result {
-            Ok(hashes) => Ok(hashes),
-            Err(ItemError::File(failed)) => Err(failed),
-            // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
-            Err(ItemError::Pass(e)) => return Err(e),
-        };
-        match result {
-            Ok(Some(hashes)) => {
-                if writer.store_hashes(item, &hashes)? {
-                    done.stored += 1;
+    in_batch_tx(catalog, ctl, |tx| {
+        let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
+        for (item, result) in batch.drain(..) {
+            done.files += 1;
+            let result = match result {
+                Ok(hashes) => Ok(hashes),
+                Err(ItemError::File(failed)) => Err(failed),
+                // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
+                Err(ItemError::Pass(e)) => return Err(e),
+            };
+            match result {
+                Ok(Some(hashes)) => {
+                    if writer.store_hashes(item, &hashes)? {
+                        done.stored += 1;
+                    }
+                }
+                // Stopped inside its hash (a video's, section 7): not hashed yet. It stays owed and is not counted as looked
+                // at, so the pass is not complete; the next round hashes it.
+                Ok(None) => done.files = done.files.saturating_sub(1),
+                // Changed while it was read: nothing is stored, and it stays owed, as the import leaves such a file pending.
+                Err(e) if e.is_changed() => {}
+                Err(e) if e.is_read() => {
+                    done.failed += 1;
+                    done.unreadable += 1;
+                }
+                Err(e) => {
+                    done.failed += 1;
+                    writer.store_failure(item, e.text())?;
                 }
             }
-            // Stopped inside its hash (a video's, section 7): not hashed yet. It stays owed and is not counted as looked
-            // at, so the pass is not complete; the next round hashes it.
-            Ok(None) => done.files = done.files.saturating_sub(1),
-            // Changed while it was read: nothing is stored, and it stays owed, as the import leaves such a file pending.
-            Err(e) if e.is_changed() => {}
-            Err(e) if e.is_read() => {
-                done.failed += 1;
-                done.unreadable += 1;
-            }
-            Err(e) => {
-                done.failed += 1;
-                writer.store_failure(item, e.text())?;
-            }
         }
-    }
-    drop(writer);
-    tx.commit()?;
+        Ok(())
+    })?;
     // Counted once the batch is in: a batch that failed stored nothing.
     *stats = done;
-    // The failure ledger is kept by the catalog's triggers, as the import's is: whoever shows it reads it again.
-    ctl.ledger_changed();
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! The query a view filters by and the order it sorts in: the data, and the edits a filter bar makes to it, as
 //! typed values. Facets combine with AND, the values inside one list facet with OR, and an empty facet filters nothing.
-//! The SQL is the query compiler's (`pg_query`), and so is the JSON the views and the session store: the serde names
+//! The SQL is the query compiler's (`pg-query`), and so is the JSON the views and the session store: the serde names
 //! kept here are the stored ones. Text typed into a filter is read by the client (`pg_client::input`), which gives this
 //! module values.
 
@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::date::Day;
 use crate::media::MediaType;
-use crate::rating::Rating;
+use crate::rating::{Rating, RatingError};
 
 /// Upright shape. Within 1% of square counts as square.
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -111,13 +111,13 @@ pub enum RatingFilter {
 }
 
 impl TryFrom<u8> for RatingFilter {
-    type Error = u8;
+    type Error = RatingError;
 
-    /// 0 is unrated; a rating from 1 to 5 is its stars; anything else is the value back.
-    fn try_from(n: u8) -> Result<RatingFilter, u8> {
+    /// 0 is unrated; a rating from 1 to 5 is its stars; anything else is refused as [`Rating`] refuses it.
+    fn try_from(n: u8) -> Result<RatingFilter, RatingError> {
         match n {
             0 => Ok(RatingFilter::Unrated),
-            n => Rating::new(n).map(RatingFilter::Stars).ok_or(n),
+            n => Rating::try_from(n).map(RatingFilter::Stars),
         }
     }
 }
@@ -451,11 +451,26 @@ impl Query {
         }
     }
 
+    fn range(&self, facet: RangeFacet) -> &Range {
+        match facet {
+            RangeFacet::SizeMb => &self.size_mb,
+            RangeFacet::Megapixels => &self.megapixels,
+            RangeFacet::DurationS => &self.duration_s,
+        }
+    }
+
     fn range_mut(&mut self, facet: RangeFacet) -> &mut Range {
         match facet {
             RangeFacet::SizeMb => &mut self.size_mb,
             RangeFacet::Megapixels => &mut self.megapixels,
             RangeFacet::DurationS => &mut self.duration_s,
+        }
+    }
+
+    fn day_range(&self, facet: DateFacet) -> &DateRange {
+        match facet {
+            DateFacet::Taken => &self.taken,
+            DateFacet::Modified => &self.modified,
         }
     }
 
@@ -468,11 +483,7 @@ impl Query {
 
     /// One end of a range facet; `None` when it is open.
     pub fn number(&self, facet: RangeFacet, end: End) -> Option<f64> {
-        let range = match facet {
-            RangeFacet::SizeMb => self.size_mb,
-            RangeFacet::Megapixels => self.megapixels,
-            RangeFacet::DurationS => self.duration_s,
-        };
+        let range = self.range(facet);
         match end {
             End::Min => range.min,
             End::Max => range.max,
@@ -490,10 +501,7 @@ impl Query {
 
     /// One end of a day facet; `None` when it is open.
     pub fn day(&self, facet: DateFacet, end: DayEnd) -> Option<Day> {
-        let range = match facet {
-            DateFacet::Taken => self.taken,
-            DateFacet::Modified => self.modified,
-        };
+        let range = self.day_range(facet);
         match end {
             DayEnd::From => range.from,
             DayEnd::To => range.to,
@@ -550,7 +558,7 @@ mod tests {
     fn a_rating_filter_is_zero_or_stars() {
         assert_eq!(RatingFilter::try_from(0), Ok(RatingFilter::Unrated));
         assert_eq!(RatingFilter::try_from(5), Ok(stars(5)));
-        assert_eq!(RatingFilter::try_from(6), Err(6));
+        assert_eq!(RatingFilter::try_from(6), Err(RatingError::TooManyStars(6)));
         assert_eq!(u8::from(RatingFilter::Unrated), 0);
         assert_eq!(u8::from(stars(3)), 3);
     }

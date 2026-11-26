@@ -1,7 +1,7 @@
 # The C side's harness (harness.cpp): libpng, libspng and Wuffs, as static libraries from win_build.py.
 #   LIBPNG_INCLUDE, LIBPNG_LIB   (libpng's install: include/libpng16, lib/libpng16_static.lib)
 #   SPNG_INCLUDE, SPNG_LIB       (libspng's install, a static build: SPNG_STATIC is defined for it below)
-#   ZLIB_LIB, ZLIB_INCLUDE       (zlib's static libz.lib and its zlib.h; libpng and libspng both use it, and `inflate` calls it)
+#   ZLIB_LIB, ZLIB_INCLUDE       (zlib's static libzs.lib and its zlib.h; libpng and libspng both use it, and `inflate` calls it)
 #   WUFFS_SRC                    (the Wuffs repository; release/c/wuffs-unsupported-snapshot.c is compiled in)
 # Built with MSVC (CMAKE_CXX_COMPILER=cl) and Release, which the measurements need.
 cmake_minimum_required(VERSION 3.20)

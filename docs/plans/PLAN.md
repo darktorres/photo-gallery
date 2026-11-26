@@ -60,7 +60,7 @@ paper name are from that paper. Measured figures are as recorded when measured; 
    (Pinterest; High-Confidence NDD; Benchmarking NDD).
 2. **Use the big companies' pipeline shape, not their distributed infrastructure.** Pinterest needed LSH on
    Spark for billions of images. At 70M, a compressed ANN index on one machine is enough. LSH on dense
-   embeddings is a poor fit: about 10¹² candidate pairs at 10M (MMDS ch. 3, worked by the research reader).
+   embeddings is a poor fit: about 5 × 10¹³ pairs in all at 10M (n(n−1)/2, the all-pairs count that LSH's bands must cut down; MMDS ch. 3).
 3. **False positives grow with N².** Even a false-positive rate of 10⁻⁹ gives about 500 false pairs at 1M
    images, and about 2.5M at 70M (Benchmarking NDD §1). Thresholds must be calibrated on *this* library at
    very high precision, and every action stays review-first.
@@ -304,8 +304,8 @@ can be added later against the same crates.
   `crates/README.md`). The figures below were measured with the old one-pass import (decode, PDQ and resize in the
   import); the import has read headers only since 2026-11-17 (§4). Measured with
   GPU benchmarks running alongside, so the speeds are lower bounds:
-  - **Import:** 341 files/s on 12 workers (14 ms per image on one thread: decode 8.7, PDQ 2.3, Lanczos to 512 px
-    1.7, rest under 0.2). CPU-bound, as M0 predicted.
+  - **Import:** 341 files/s on 12 workers (14 ms per image on one thread: decode 8.7, PDQ 2.3, resize to 512 px
+    1.7 (Lanczos, before the Magic Kernel Sharp 2021 resize), rest under 0.2). CPU-bound, as M0 predicted.
   - **PDQ:** the Rust port is bit-exact with the `pdqhash` crate. Against M0's hashes, 74% are identical and 98%
     within 4 bits (max 14, from the DCT-scaled decode). Labeled-pair recall at d ≤ 0 / 8 / 16 / 22 / 31 is
     **30.8 / 66.0 / 75.4 / 80.4 / 83.2%** (M0: 32.6 / 65.7 / 74.8 / 80.1 / 82.8%). No cross-group pair at d ≤ 31.
@@ -324,7 +324,7 @@ can be added later against the same crates.
 - **Status (2026-10-30):** first version built (`gallery.exe`, from `crates/gallery`; the app is `crates/desktop`).
   Justified rows from Rust in a
   virtualized ListView. The row height is adjustable at runtime, with thumbnails made on demand at that size
-  (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
+  (newest request first) and ThumbHash placeholders. Viewer with a fit (the Magic Kernel Sharp 2021 resize), 1:1, 10× loupe and a frame to
   reveal black bars. Ratings 1–5 in the catalog (`file_ratings`; no row is unrated, so 0 clears), written into the
   files as `XMP:Rating` when write-back is on. The tree merges folders by their path below the drive.
 - **Built since:** border marks with a viewer overlay, border cropping (`pg-crop`), lossless rotation and MCU-grid

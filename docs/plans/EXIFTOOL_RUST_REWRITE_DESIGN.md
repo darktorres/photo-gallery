@@ -1,7 +1,7 @@
 # A standalone Rust reimplementation of ExifTool
 
-> **Status (2026-11-26).** Design only; nothing is built. Revised after an adversarial review the same day (its
-> corrections are folded in; the counts it rests on are in "ExifTool by the numbers"). It replaces the port plans
+> **Status (2026-11-26).** Design only; nothing is built. Revised after two adversarial reviews the same day (their
+> corrections are folded in; the counts they rest on are in "ExifTool by the numbers"). It replaces the port plans
 > (`EXIFTOOL_PORT_PLAN.md`, `EXIFTOOL_PORT_DESIGN.md`, removed), which ported ExifTool's Perl one-for-one into
 > photo-gallery. The engine is a standalone crate in a repository of its own; this file moves there when the
 > repository is made. Figures are marked **measured** (callgrind in photo-gallery's container, against the exiftool-rs
@@ -67,15 +67,19 @@ the figures are approximate:
 
 | Shape | Count | What it means for the engine |
 |---|---:|---|
-| `PrintConv` | 13,079 | 8,668 are inline hashes (value tables); the rest are strings, references and code |
-| `ValueConv` / `RawConv` | 2,421 / 1,124 | Of 2,411 one-line strings (914 distinct), 771 are pure arithmetic |
+| `PrintConv` | 13,079 | 8,668 are inline hashes (value tables, some with `BITMASK`, `PrintHex` or an `OTHER` code handler); the rest are strings, references and code |
+| `ValueConv` / `RawConv` | 2,421 / 1,124 | Of 2,411 one-line strings (914 distinct), 771 are arithmetic and numeric functions (`int`, `log`, `exp`) over `$val` |
 | `ValueConvInv` / `PrintConvInv` | 1,138 / 1,101 | Writing's inverses |
-| `Condition` | 2,222 | Of 2,146 one-line ones, 1,023 match a strict typed shape (Make/Model pattern, byte prefix, count, format) |
+| `Condition` | 2,222 | Of 2,146 one-line ones, 1,023 match a strict typed shape (a Make, Model, file-type or TIFF-type pattern, a byte prefix, a count, a format); 970 read per-file state other than Make and Model |
 | `$$self{Make}` / `{Model}` | 840 | Conditions and conversions that depend on other tags |
+| Assignments to `$$self{...}` | 638, to 354 distinct keys | Per-file state set while reading (saved data members, file and directory type, flags) and read by later conditions |
+| `$$self{OPTIONS}` | 110 | Extraction that depends on the options |
 | `$$valPt` | 497 | Byte sniffing of the value itself |
-| Sub references (`\&`) / anonymous subs | 1,764 / 177 | Code, not data |
-| `Process*` subs / `ProcessProc` | 488 / 157 | Processing procedures: the bulk of ExifTool's real code |
+| Sub definitions / subs referenced from tables | 1,439 / 331 (by 1,764 references) | Code, not data |
+| Anonymous subs in tables | 177 | Code, not data |
+| `Process*` subs / `ProcessProc` | about 500 / 157 | Processing procedures: the bulk of ExifTool's real code |
 | `DATAMEMBER` / variable formats | 258 / 127 | Binary tables whose layout depends on earlier values |
+| Tag IDs with a list of definitions | 126 | One ID, several definitions chosen by condition |
 | `Priority` / `Avoid` / `PRIORITY_DIR` | 334 / 106 / 18 | Which of several same-named tags wins |
 | `AddTagToTable` | 104 | Tags created at run time |
 | `Hook` | 54 | Code run while a binary table is read |
@@ -83,15 +87,19 @@ the figures are approximate:
 The largest modules are Nikon (14.2K lines), TagLookup (14.2K, writing's index), Canon (12.0K), Sony (11.8K),
 NikonCustom (11.4K), and the French language module (11.3K; `Lang/` has 18 language modules besides English).
 
-The tables convert mechanically; the code does not. Hand-ported code is the largest part of the work: hundreds of
-distinct expressions, more than 1,900 subs, and 488 processing procedures.
+The tables convert mechanically, except their `OTHER` handlers; the code does not. Hand-ported code is the largest
+part of the work: ExifTool's 1,439 subs (about 500 of them processing procedures, 331 referenced from tables), the
+177 anonymous subs, and the expressions the generator cannot classify (hundreds of distinct ones).
 
 ## Principles
 
 - **Ask, then read, but resolve like ExifTool.** The caller names tags, groups, or everything. A planner turns that
   into the directories to parse, including every directory that can hold a requested name (so the winner is chosen
-  from all candidates) and every directory a condition or conversion depends on (Make, Model, serial numbers). Maker
-  notes, thumbnails, ICC profiles and video sample tables are parsed only when something asked for needs them.
+  from all candidates) and every directory a condition or conversion depends on (Make, Model, serial numbers, saved
+  data members). The directories it reads are read in ExifTool's order, because the winner among equal priorities
+  depends on it. Maker notes, thumbnails, ICC profiles and video sample tables are parsed only when something asked
+  for needs them. How much this saves depends on how widely names are shared across tables, so it is measured, not
+  assumed (see Performance).
 - **Own the bytes read, decode late.** Values borrow from buffers the result owns, and the typed meaning is decoded
   when asked for.
 - **Numbers, not strings, for what is static.** Tag definitions, tables and fixed groups are numeric identifiers
@@ -102,8 +110,9 @@ distinct expressions, more than 1,900 subs, and 488 processing procedures.
   Generated code is never edited by hand; hand ports live in their own modules.
 - **Bounded and safe.** No panic, no unbounded loop or allocation on any input; limits on depth, sizes and counts;
   every parser fuzzed. Memory per file is bounded by that file's metadata.
-- **No unsafe.** `#![forbid(unsafe_code)]` in every crate. Memory-mapped sources are therefore left to the caller:
-  a consumer that maps a file passes the slice (see Byte sources).
+- **No unsafe.** `#![forbid(unsafe_code)]` in the library, the CLI, the generator and the harness. (The fuzz
+  targets are exempt: cargo-fuzz's `fuzz_target!` expands to `#[no_mangle]`, which the lint flags.) Memory-mapped
+  sources are therefore left to the caller: a consumer that maps a file passes the slice (see Byte sources).
 
 ## Repository and crates
 
@@ -159,10 +168,12 @@ Generated from `schema-data/`:
 - Per tag definition: identifier, table, ID within the table, name, format, count, groups (all families),
   writability, priority and avoid flags.
 - Its conversions (raw, value, print, and their inverses): a value table (a generated `match`, or a perfect-hash map
-  for large ones), a typed formula (`Scale(1, 10)`, `Log2Exposure`, `Ascii`), or a named Rust function.
-- Its condition: a typed predicate (`MakeMatches(..)`, `ModelIn(..)`, `CountIs(n)`, `FormatIs(..)`,
-  `BytesStartWith(..)`, combined with `And`, `Or`, `Not`), or a named Rust function. Each condition lists the tags it
-  reads, so the planner can fetch them.
+  for large ones, with its bitmask and hex forms), a typed formula (`Scale(1, 10)`, `Log2Exposure`, `Ascii`), or a
+  named Rust function. A value table's `OTHER` handler is a named Rust function.
+- Its condition: a typed predicate (`MakeMatches(..)`, `ModelIn(..)`, `FileTypeIs(..)`, `CountIs(n)`,
+  `FormatIs(..)`, `BytesStartWith(..)`, `ContextIs(field, ..)`, combined with `And`, `Or`, `Not`), or a named Rust
+  function. Each condition lists the tags and the context fields it reads, so the planner can fetch them.
+- The definitions of one tag ID, in ExifTool's order; the first whose condition holds is used, as in ExifTool.
 - Table selection (one maker-note layout per model family) is a `match` over predicates, decided once per directory.
 - Language tables (descriptions and printed values in ExifTool's 18 other languages) are generated with the rest.
 
@@ -178,6 +189,23 @@ Three levels, because ExifTool's identity of a tag is a name and a group, not a 
 
 ExifTool also creates tags at run time (`AddTagToTable`: unknown XMP properties, unknown EXIF and maker-note entries
 with the unknown option). These get a dynamic definition carrying the table, the ID and a generated name, the same way.
+
+### Per-file context and options
+
+ExifTool's conditions read more than tags: 970 of the one-line conditions read per-file state other than Make and
+Model, set by 638 assignments to 354 distinct keys while the file is read. The engine makes that state explicit:
+
+- **Context**: one typed struct per file. Fields for what ExifTool's core keeps (file type, TIFF type, the current
+  directory's name and path, byte order, Make, Model), and one generated field per saved data member (a binary
+  table's `DATAMEMBER`, or a value a `RawConv` stores, such as FacesDetected or ColorDataVersion), typed by its
+  format. Each field records which definitions set it, so the planner knows what to read before a condition that
+  needs it.
+- **Options**: a typed `Options` struct, read by the planner, the context and the conversions: unknown tags,
+  duplicates, character sets, embedded extraction (`-ee`), large-file support, missing values, and the rest of
+  ExifTool's options that change what is extracted or how. Output-only options (formats, separators) belong to the
+  CLI.
+
+Generated predicates name context fields and options, never ExifTool's keys.
 
 ### Semantic types
 
@@ -237,11 +265,13 @@ The tables convert mechanically; the code is ported by hand.
 1. **Dump.** A Perl script loads every ExifTool module with Perl ExifTool 13.64, lets each finish building its tables
    (`AddTagToTable`, `AddCompositeTags`, tables built in loops), and only then writes them to `schema-data/`: one
    record per tag definition, with its fields and value tables. Strings (conditions, conversions) are written as
-   their Perl source. A code reference is written as its sub's full name (`B::svref_2object`), or, for an anonymous
-   sub, as its deparsed source (`B::Deparse`) and its file and line.
+   their Perl source, with the package they run in. A code reference is written as its sub's full name
+   (`B::svref_2object`), or, for an anonymous sub, as its deparsed source (`B::Deparse`) and its file and line. The
+   dump runs on one pinned Perl version, because deparsed text differs between versions.
 2. **Classify.** The generator maps each condition and conversion to a typed form by its shape. Unmatched ones go to a
-   list of hand ports, each named by its source text's hash, so the same expression is ported once wherever it
-   appears. The counts above give the scale: about half of the one-line conditions and a third of the one-line
+   list of hand ports, each keyed by its source text together with the resolved names of the subs and package
+   variables it uses (an unqualified `PrintLens` or `%lensTypes` means a different thing in each package), so the
+   same expression is ported once wherever it means the same thing. The counts above give the scale: about half of the one-line conditions and a third of the one-line
    conversions match the simplest shapes; a richer classifier will match more, and the first dump measures how many.
 3. **Hand ports.** Expressions, subs and processing procedures become Rust functions in modules of their own, each
    with tests against ExifTool's results. The generator refers to them by name and fails the build on an unmapped one.
@@ -252,7 +282,9 @@ The tables convert mechanically; the code is ported by hand.
 
 - **Differential tests** against Perl ExifTool 13.64: raw (`-n`) and printed values, compared by name, group and
   sub-document, typed where the engine's type is known. On ExifTool's `t/images`, on files the tests generate, and on
-  a public corpus whose licences allow redistribution (for example raw.pixls.us). Every difference is fixed or
+  a public corpus whose licences allow redistribution (for example raw.pixls.us). Each file is read under a stated
+  matrix of options (the defaults, unknown tags, duplicates, embedded extraction, and the character-set options), on
+  both sides. Every difference is fixed or
   accepted with a recorded reason. Zero unexplained differences is each phase's bar. Tags outside a phase's scope
   (Composite before phase 4, maker notes before phase 2) are excluded by group, explicitly.
 - **exiftool-rs as a faster stand-in** for Perl only after it is re-based on 13.64 (it ports 13.60) and shown to
@@ -267,14 +299,21 @@ says the engine can be one to two orders of magnitude cheaper than exiftool-rs, 
 has not been built anywhere to measure. Phase 1 measures it and sets the budgets:
 
 - gungraun (callgrind) benches per container, per directory decoder and per full read, from the first phase;
+- the planner's saving: requested-tag reads against full reads on the same files, with the generator's report of
+  which tables define each name;
 - budgets per bench, set from phase 1's measurements; a regression beyond a budget fails CI.
 
 ## API stability
 
 Semantic versioning. Identifiers are stable across releases through `schema-ids`: the generator assigns an identifier
-to each new definition and never reuses one. A definition that ExifTool renames is recognized by its table and ID
-and keeps its identifier, gaining an alias; a definition removed from ExifTool is kept as deprecated for one major
-version. The generated schema's types are public; the generator's are not.
+to each new definition and never reuses one.
+
+A definition cannot be recognized by its table and ID alone: 126 IDs have a list of definitions chosen by condition,
+ExifTool inserts new variants in the middle of such lists, and XMP's IDs are property names, which a rename changes.
+So the generator matches a new release's definitions to the registry by a stated heuristic: the table, then the ID,
+the condition's text, the name and the format, in that order of weight. An exact match keeps its identifier; a
+renamed one keeps it and gains an alias; anything ambiguous fails the generation until a reviewer records the match
+in `schema-ids`. A definition removed from ExifTool is kept as deprecated for one major version. The generated schema's types are public; the generator's are not.
 
 ## Phases
 
@@ -282,9 +321,11 @@ Each phase ends with its differential tests at zero unexplained differences, its
 benches within budget.
 
 0. **The licence** (above).
-1. **Core.** The repository and crates; the dump, the identifier registry and the generator; byte sources;
-   containers JPEG, TIFF, PNG, GIF and WebP; EXIF, XMP and IPTC with their conversions and languages; reading only;
-   the differential harness; the CLI's basic output; the first benches and their budgets.
+1. **Core.** The repository and crates; the dump, the identifier registry and the generator; byte sources; the
+   context and options; containers JPEG, TIFF, PNG, GIF and WebP; EXIF, XMP, Photoshop IRB (where a JPEG's IPTC
+   lives) and IPTC, with their conversions and languages; JPEG's JFIF, Adobe and MPF segments; reading only; the
+   differential harness; the CLI's basic output; the first benches and their budgets. JPEG's other segments (ICC,
+   Ducky, FlashPix and the vendor ones) are excluded by group until they are ported.
 2. **Maker notes**, by how common they are: Canon, Nikon, Sony, Fujifilm, OM System/Olympus, Panasonic, Apple.
 3. **Video and modern containers:** ISOBMFF (MP4, QuickTime, HEIF, AVIF, CR3, JXL), Matroska.
 4. **Composites**, as the dependency graph.

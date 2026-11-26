@@ -1,0 +1,147 @@
+{"kind":"table","module":"PICT","name":"Image::ExifTool::PICT::Main","special":{"GROUPS":{"0":"PICT","1":"PICT","2":"Other"},"NOTES":"\nThe PICT format contains no true meta information, except for the possible\nexception of the LongComment opcode.  By default, only ImageWidth,\nImageHeight and X/YResolution are extracted from a PICT image.  Tags in the\nfollowing table represent image opcodes.  Extraction of these tags is\nexperimental, and is only enabled with the Verbose or Unknown options.\n    ","SHORT_NAME":"PICT::Main","TABLE_NAME":"Image::ExifTool::PICT::Main","TAG_PREFIX":"PICT","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Description":"No Operation","Format":"null","Name":"Nop"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Clipping Region","Format":"Rgn","Name":"ClipRgn"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Background Pattern","Format":"int8u[8]","Name":"BkPat"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Font Number","Format":"int16u","Name":"TxFont"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Text Font Style","Format":"int8u","Name":"TxFace"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Text Source Mode","Format":"int16u","Name":"TxMode"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Extra Space","Format":"fixed32s","Name":"SpExtra"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Pen Size","Format":"Point","Name":"PnSize"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Pen Mode","Format":"int16u","Name":"PnMode"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Pen Pattern","Format":"int8u[8]","Name":"PnPat"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Fill Pattern","Format":"int8u[8]","Name":"FillPat"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Oval Size","Format":"Point","Name":"OvSize"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"Origin"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Text Size","Format":"int16u","Name":"TxSize"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Foreground Color","Format":"int32u","Name":"FgColor"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Background Color","Format":"int32u","Name":"BkColor"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Text Ratio","Format":"Rect","Name":"TxRatio"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Version","Format":"int8u","Name":"VersionOp"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Background Pixel Pattern","Format":"PixPat","Name":"BkPixPat"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Pen Pixel Pattern","Format":"PixPat","Name":"PnPixPat"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Fill Pixel Pattern","Format":"PixPat","Name":"FillPixPat"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Fractional Pen Position","Format":"int16u","Name":"PnLocHFrac"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Added Width for NonSpace Characters","Format":"int16u","Name":"ChExtra"},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Unknown","Name":"Reserved"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Foreground Color","Format":"RGBColor","Name":"RGBFgCol"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Background Color","Format":"RGBColor","Name":"RGBBkCol"},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Highlight Mode Flag","Format":"null","Name":"HiliteMode"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Highlight Color","Format":"RGBColor","Name":"HiliteColor"},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Use Default Highlight Color","Format":"null","Name":"DefHilite"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"RGBColor","Name":"OpColor"},"id":"31","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"Line"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"LineFrom"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"ShortLine","Name":"ShortLine"},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[2]","Name":"ShortLineFrom"},"id":"35","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"PointText","Name":"LongText"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int8uText","Name":"DHText"},"id":"41","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int8uText","Name":"DVText"},"id":"42","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int8u2Text","Name":"DHDVText"},"id":"43","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"FontName","Name":"FontName"},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[10]","Name":"LineJustify"},"id":"45","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[8]","Name":"GlyphState"},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"47","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FrameRect"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"PaintRect"},"id":"49","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"EraseRect"},"id":"50","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"InvertRect"},"id":"51","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FillRect"},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"Reserved"},"id":"53","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FrameSameRect"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"PaintSameRect"},"id":"57","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"EraseSameRect"},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"InvertSameRect"},"id":"59","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FillSameRect"},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"61","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FrameRRect"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"PaintRRect"},"id":"65","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"EraseRRect"},"id":"66","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"InvertRRect"},"id":"67","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FillRRect"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"Reserved"},"id":"69","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FrameSameRRect"},"id":"72","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"PaintSameRRect"},"id":"73","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"EraseSameRRect"},"id":"74","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"InvertSameRRect"},"id":"75","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FillSameRRect"},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"77","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FrameOval"},"id":"80","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"PaintOval"},"id":"81","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"EraseOval"},"id":"82","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"InvertOval"},"id":"83","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"FillOval"},"id":"84","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rect","Name":"Reserved"},"id":"85","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FrameSameOval"},"id":"88","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"PaintSameOval"},"id":"89","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"EraseSameOval"},"id":"90","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"InvertSameOval"},"id":"91","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FillSameOval"},"id":"92","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"93","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"FrameArc"},"id":"96","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"PaintArc"},"id":"97","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"EraseArc"},"id":"98","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"InvertArc"},"id":"99","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"FillArc"},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Arc","Name":"Reserved"},"id":"101","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"FrameSameArc"},"id":"104","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"PaintSameArc"},"id":"105","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"EraseSameArc"},"id":"106","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"InvertSameArc"},"id":"107","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Point","Name":"FillSameArc"},"id":"108","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int32u","Name":"Reserved"},"id":"109","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"FramePoly"},"id":"112","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"PaintPoly"},"id":"113","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"ErasePoly"},"id":"114","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"InvertPoly"},"id":"115","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"FillPoly"},"id":"116","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Polygon","Name":"Reserved"},"id":"117","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FrameSamePoly"},"id":"120","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"PaintSamePoly"},"id":"121","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"EraseSamePoly"},"id":"122","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"InvertSamePoly"},"id":"123","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FillSamePoly"},"id":"124","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"125","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"FrameRgn"},"id":"128","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"PaintRgn"},"id":"129","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"EraseRgn"},"id":"130","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"InvertRgn"},"id":"131","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"FillRgn"},"id":"132","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Rgn","Name":"Reserved"},"id":"133","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FrameSameRgn"},"id":"136","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"PaintSameRgn"},"id":"137","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"EraseSameRgn"},"id":"138","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"InvertSameRgn"},"id":"139","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"FillSameRgn"},"id":"140","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"141","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"CopyBits with Clipped Rectangle","Format":"BitsRect#","Name":"BitsRect"},"id":"144","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"CopyBits with Clipped Region","Format":"BitsRgn#","Name":"BitsRgn"},"id":"145","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"146","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Packed CopyBits with Clipped Rectangle","Format":"BitsRect#","Name":"PackBitsRect"},"id":"152","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Packed CopyBits with Clipped Region","Format":"BitsRgn#","Name":"PackBitsRgn"},"id":"153","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"DirectBitsRect","Name":"DirectBitsRect"},"id":"154","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"DirectBitsRgn","Name":"DirectBitsRgn"},"id":"155","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"156","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"157","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"158","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"159","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int16u","Name":"ShortComment"},"id":"160","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"LongComment","Index":0,"Name":"LongComment","SubDirectory":{"TagTable":"Image::ExifTool::Photoshop::Main"}},"id":"161","index":0,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"LongComment","Index":1,"Name":"LongComment","SubDirectory":{"Start":"$valuePtr + 4","TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"161","index":1,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int16Data","Name":"Reserved"},"id":"162","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"176","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int32uData","Name":"Reserved"},"id":"208","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"End of picture","Format":"null","Name":"OpEndPic"},"id":"255","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int16u","Name":"Reserved"},"id":"256","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int32u","Name":"Reserved"},"id":"512","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Description":"Version number of picture","Format":"int16u","Name":"Version"},"id":"767","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int16u","Name":"Reserved"},"id":"768","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[22]","Name":"Reserved"},"id":"3071","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int16u[12]","Name":"HeaderOp"},"id":"3072","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[24]","Name":"Reserved"},"id":"3073","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"int8u[254]","Name":"Reserved"},"id":"32512","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"null","Name":"Reserved"},"id":"32768","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int32uData","Name":"Reserved"},"id":"33024","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"CompressedQuickTime","Name":"CompressedQuickTime"},"id":"33280","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int32uData","Name":"UncompressedQuickTime"},"id":"33281","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}
+{"fields":{"Format":"Int32uData","Name":"Reserved"},"id":"65535","index":null,"kind":"tag","table":"Image::ExifTool::PICT::Main"}

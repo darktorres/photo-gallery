@@ -1,0 +1,48 @@
+{"kind":"table","module":"Apple","name":"Image::ExifTool::Apple::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Apple","2":"Image"},"NOTES":"Tags extracted from the maker notes of iPhone images.","SHORT_NAME":"Apple::Main","TABLE_NAME":"Image::ExifTool::Apple::Main","TAG_PREFIX":"Apple","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"MakerNoteVersion","Writable":"int32s"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AEMatrix","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"RunTime","SubDirectory":{"TagTable":"Image::ExifTool::Apple::RunTime"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AEStable","PrintConv":{"0":"No","1":"Yes"},"Writable":"int32s"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AETarget","Writable":"int32s"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AEAverage","Writable":"int32s"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AFStable","PrintConv":{"0":"No","1":"Yes"},"Writable":"int32s"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Count":3,"Groups":{"2":"Camera"},"Name":"AccelerationVector","Notes":"\n            XYZ coordinates of the acceleration vector in units of g.  As viewed from\n            the front of the phone, positive X is toward the left side, positive Y is\n            toward the bottom, and positive Z points into the face of the phone\n        ","Writable":"rational64s"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"HDRImageType","PrintConv":{"3":"HDR Image","4":"Original Image"},"Writable":"int32s"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"BurstUUID","Notes":"unique ID for all images in a burst","Writable":"string"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Count":2,"Name":"FocusDistanceRange","PrintConv":"\n            my @a = split ' ', $val;\n            sprintf('%.2f - %.2f m', $a[0] <= $a[1] ? @a : reverse @a);\n        ","PrintConvInv":"$val =~ s/ - / /; $val =~ s/ ?m$//; $val","Writable":"rational64s"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"OISMode","Writable":"int32s"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ContentIdentifier","Notes":"called MediaGroupUUID when it appears as an XAttr","Writable":"string"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ImageCaptureType","PrintConv":{"1":"ProRAW","10":"Photo","11":"Manual Focus","12":"Scene","2":"Portrait"},"Writable":"int32s"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ImageUniqueID","Writable":"string"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"LivePhotoVideoIndex","Notes":"divide by RunTimeScale to get time in seconds"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ImageProcessingFlags","PrintConv":{"BITMASK":{}},"Unknown":1,"Writable":"int32s"},"id":"25","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"QualityHint","Unknown":1,"Writable":"string"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"LuminanceNoiseAmplitude","Writable":"rational64s"},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"PhotosAppFeatureFlags","Notes":"set if person or pet detected in image","Writable":"int32s"},"id":"31","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ImageCaptureRequestID","Unknown":1,"Writable":"string"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"HDRHeadroom","Writable":"rational64s"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Count":2,"Name":"AFPerformance","Notes":"\n            first number maybe related to focus distance, last number maybe related to\n            focus accuracy\n        ","PrintConv":"my @a=split \" \",$val; sprintf(\"%d %d %d\",$a[0],$a[1]>>28,$a[1]&0xfffffff)","PrintConvInv":"my @a=split \" \",$val; sprintf(\"%d %d\",$a[0],($a[1]<<28)+$a[2])","Writable":"int32s"},"id":"35","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SceneFlags","PrintConv":{"BITMASK":{}},"Unknown":1,"Writable":"int32s"},"id":"37","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SignalToNoiseRatioType","Unknown":1,"Writable":"int32s"},"id":"38","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SignalToNoiseRatio","Writable":"rational64s"},"id":"39","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"PhotoIdentifier","Writable":"string"},"id":"43","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ColorTemperature","Writable":"int32s"},"id":"45","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"CameraType","PrintConv":{"0":"Back Wide Angle","1":"Back Normal","6":"Front"},"Writable":"int32s"},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"FocusPosition","Writable":"int32s"},"id":"47","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"HDRGain","Writable":"rational64s"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AFMeasuredDepth","Notes":"from the time-of-flight-assisted auto-focus estimator","Writable":"int32s"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"AFConfidence","Writable":"int32s"},"id":"61","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"ColorCorrectionMatrix","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"62","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"GreenGhostMitigationStatus","Unknown":1,"Writable":"int32s"},"id":"63","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SemanticStyle","Notes":"_1=Tone, _2=Warm, _3=1.Std,2.Vibrant,3.Rich Contrast,4.Warm,5.Cool","ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SemanticStyleRenderingVer","ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"65","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"SemanticStylePreset","ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"66","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"Apple_0x004e","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"Apple_0x004f","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"79","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"Apple_0x0054","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"84","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"fields":{"Name":"Apple_0x005a","Unknown":1,"ValueConv":{"code":"&Image::ExifTool::Apple::ConvertPLIST"}},"id":"90","index":null,"kind":"tag","table":"Image::ExifTool::Apple::Main"}
+{"kind":"table","module":"Apple","name":"Image::ExifTool::Apple::RunTime","special":{"GROUPS":{"0":"MakerNotes","1":"Apple","2":"Image"},"NOTES":"\n        This PLIST-format information contains the elements of a CMTime structure\n        representing the amount of time the phone has been running since the last\n        boot, not including standby time.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::PLIST::ProcessBinaryPLIST"},"SHORT_NAME":"Apple::RunTime","TABLE_NAME":"Image::ExifTool::Apple::RunTime","TAG_PREFIX":"Apple_RunTime"}}
+{"fields":{"Name":"RunTimeEpoch"},"id":"epoch","index":null,"kind":"tag","table":"Image::ExifTool::Apple::RunTime"}
+{"fields":{"Name":"RunTimeFlags","PrintConv":{"BITMASK":{"0":"Valid","1":"Has been rounded","2":"Positive infinity","3":"Negative infinity","4":"Indefinite"}}},"id":"flags","index":null,"kind":"tag","table":"Image::ExifTool::Apple::RunTime"}
+{"fields":{"Name":"RunTimeScale"},"id":"timescale","index":null,"kind":"tag","table":"Image::ExifTool::Apple::RunTime"}
+{"fields":{"Name":"RunTimeValue"},"id":"value","index":null,"kind":"tag","table":"Image::ExifTool::Apple::RunTime"}

@@ -1,0 +1,8 @@
+{"kind":"table","module":"Opus","name":"Image::ExifTool::Opus::Header","special":{"GROUPS":{"0":"Opus","1":"Opus","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Opus::Header","TABLE_NAME":"Image::ExifTool::Opus::Header","TAG_PREFIX":"Opus_Header"}}
+{"fields":{"Name":"OpusVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Header"}
+{"fields":{"Name":"AudioChannels"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Header"}
+{"fields":{"Format":"int32u","Name":"SampleRate"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Header"}
+{"fields":{"Format":"int16u","Name":"OutputGain","ValueConv":"10 ** ($val/5120)"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Header"}
+{"kind":"table","module":"Opus","name":"Image::ExifTool::Opus::Main","special":{"GROUPS":{"0":"Opus","1":"Opus","2":"Other"},"NOTES":"\n        Information extracted from Ogg Opus files.  See\n        L<https://www.opus-codec.org/docs/> for the specification.\n    ","SHORT_NAME":"Opus::Main","TABLE_NAME":"Image::ExifTool::Opus::Main","TAG_PREFIX":"Opus"}}
+{"fields":{"Name":"Header","SubDirectory":{"TagTable":"Image::ExifTool::Opus::Header"}},"id":"OpusHead","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Main"}
+{"fields":{"Name":"Comments","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Comments"}},"id":"OpusTags","index":null,"kind":"tag","table":"Image::ExifTool::Opus::Main"}

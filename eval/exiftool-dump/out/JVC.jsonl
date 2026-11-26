@@ -1,0 +1,6 @@
+{"kind":"table","module":"JVC","name":"Image::ExifTool::JVC::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"JVC","2":"Camera"},"NOTES":"JVC EXIF maker note tags.","SHORT_NAME":"JVC::Main","TABLE_NAME":"Image::ExifTool::JVC::Main","TAG_PREFIX":"JVC","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"CPUVersions","ValueConv":"$_=$val; s/(\\s*\\0)+$//; s/(\\s*\\0)+/, /g; $_"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::JVC::Main"}
+{"fields":{"Name":"Quality","PrintConv":{"0":"Low","1":"Normal","2":"Fine"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::JVC::Main"}
+{"kind":"table","module":"JVC","name":"Image::ExifTool::JVC::Text","special":{"GROUPS":{"0":"MakerNotes","1":"JVC","2":"Camera"},"NOTES":"JVC/Victor text-based maker note tags.","PROCESS_PROC":{"code":"&Image::ExifTool::JVC::ProcessJVCText"},"SHORT_NAME":"JVC::Text","TABLE_NAME":"Image::ExifTool::JVC::Text","TAG_PREFIX":"JVC_Text"}}
+{"fields":{"Name":"Quality","PrintConv":{"FINE":"Fine","STD":"Normal","STND":"Normal"}},"id":"QTY","index":null,"kind":"tag","table":"Image::ExifTool::JVC::Text"}
+{"fields":{"Name":"MakerNoteVersion"},"id":"VER","index":null,"kind":"tag","table":"Image::ExifTool::JVC::Text"}

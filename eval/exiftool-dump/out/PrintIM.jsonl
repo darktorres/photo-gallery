@@ -1,0 +1,2 @@
+{"kind":"table","module":"PrintIM","name":"Image::ExifTool::PrintIM::Main","special":{"GROUPS":{"0":"PrintIM","1":"PrintIM","2":"Printing"},"PRINT_CONV":"sprintf(\"0x%.8x\", $val)","PROCESS_PROC":{"code":"&Image::ExifTool::PrintIM::ProcessPrintIM"},"SHORT_NAME":"PrintIM::Main","TABLE_NAME":"Image::ExifTool::PrintIM::Main","TAG_PREFIX":"PrintIM"}}
+{"fields":{"Description":"PrintIM Version","Name":"PrintIMVersion","PrintConv":null},"id":"PrintIMVersion","index":null,"kind":"tag","table":"Image::ExifTool::PrintIM::Main"}

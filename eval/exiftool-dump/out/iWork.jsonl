@@ -1,0 +1,7 @@
+{"kind":"table","module":"iWork","name":"Image::ExifTool::iWork::Main","special":{"GROUPS":{"0":"XML","1":"XML","2":"Document"},"NOTES":"\n        The Apple iWork '09 file format is a ZIP archive containing XML files\n        similar to the Office Open XML (OOXML) format.  Metadata tags in iWork\n        files are extracted even if they don't appear below.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::XMP::ProcessXMP"},"SHORT_NAME":"iWork::Main","TABLE_NAME":"Image::ExifTool::iWork::Main","TAG_PREFIX":"iWork","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"authors","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}
+{"fields":{"Name":"Comment"},"id":"comment","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"copyright","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}
+{"fields":{"Name":"Keywords"},"id":"keywords","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}
+{"fields":{"List":1,"Name":"Projects"},"id":"projects","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}
+{"fields":{"Name":"Title"},"id":"title","index":null,"kind":"tag","table":"Image::ExifTool::iWork::Main"}

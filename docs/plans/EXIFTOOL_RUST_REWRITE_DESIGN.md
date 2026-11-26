@@ -1,9 +1,9 @@
 # A standalone Rust reimplementation of ExifTool
 
 > **Status (2026-11-26).** Design; the engine is not built. Reviewed adversarially five times; the first dump of
-> ExifTool's tables and the classifier census have run (appendix). Their output is not committed until the licence is
-> settled (phase 0). The engine is a standalone crate in a repository of its own; this file moves there when the
-> repository is made. It replaces the port plans (`EXIFTOOL_PORT_PLAN.md`, `EXIFTOOL_PORT_DESIGN.md`, removed), which
+> ExifTool's tables and the classifier census have run (appendix) and are committed in photo-gallery's
+> `eval/exiftool-dump/`, with the licence deferred (phase 0). The engine is a standalone crate in a repository of its
+> own; this file and the dump move there when the repository is made. It replaces the port plans (`EXIFTOOL_PORT_PLAN.md`, `EXIFTOOL_PORT_DESIGN.md`, removed), which
 > ported ExifTool's Perl one-for-one into photo-gallery.
 >
 > The reference is Perl ExifTool 13.64. Figures are **measured** (callgrind in photo-gallery's container, against the
@@ -41,7 +41,9 @@ Settled before anything else, because it decides who can use the engine.
   and its `deny.toml` allows neither GPL nor Artistic: it could not depend on the engine under either of ExifTool's
   licences without changing both.
 
-Until this is settled, no dumped data is committed and no consumer plans around the engine.
+Until this is settled, no consumer plans around the engine and nothing is published. The first dump is committed in
+photo-gallery's `eval/exiftool-dump/` meanwhile: on 2026-11-26 the licence was deferred, not settled, so the
+question stands for that data as for the engine.
 
 ## Why a reimplementation
 
@@ -49,11 +51,11 @@ exiftool-rs runs ExifTool's own modules (dumped Perl data, Perl table code, port
 written in Rust. Its output is ExifTool's; its cost is ExifTool's design. **Measured** on warm reads (interpreter and
 modules already loaded), in instructions per read:
 
-| File | A purpose-built reader (photo-gallery's pg-metadata, six fields) | exiftool-rs, nine tags | exiftool-rs, all tags |
-|---|---:|---:|---:|
-| camera.jpg | 55.7K | 14.0M | 17.8M |
-| sample.jpg | 0.9K | 2.3M | 2.7M |
-| ExifTool.jpg | 253K | 31.2M | 35.7M |
+| File         | A purpose-built reader (photo-gallery's pg-metadata, six fields) | exiftool-rs, nine tags | exiftool-rs, all tags |
+| ------------ | ---------------------------------------------------------------: | ---------------------: | --------------------: |
+| camera.jpg   |                                                            55.7K |                  14.0M |                 17.8M |
+| sample.jpg   |                                                             0.9K |                   2.3M |                  2.7M |
+| ExifTool.jpg |                                                             253K |                  31.2M |                 35.7M |
 
 Four rounds of optimization in the fork took its write case from 17.45G to 6.79G instructions and its warm reads
 down 19–26%. The gap that remains is structural:
@@ -76,32 +78,32 @@ ExifTool 13.64's `lib/Image` is 225 modules and 320K lines. The largest are Niko
 writing's index), Canon (12.0K), Sony (11.8K), NikonCustom (11.4K) and the French language module (11.3K; `Lang/`
 has 18 language modules besides English).
 
-| What | Count | What it means for the engine |
-|---|---:|---|
-| Tables / tag definitions / distinct names | 1,532 / 36,222 / 23,177 (**dumped**) | The schema's size |
-| Flattened XMP structure fields | 2,702 of those definitions (**dumped**) | Made at run time from structure definitions |
-| Tag IDs with a list of definitions | 377 (**dumped**) | One ID, several definitions chosen by condition |
-| Value tables shared between definitions | 448 (**dumped**) | Written once, referenced |
-| Value tables with an `OTHER` handler / `BITMASK` | 453 / 120 (**dumped**) | Code inside a value table |
-| `PrintConv`: hash / string / code / list | 5,661 / 3,474 / 141 / 74 (**dumped**; 3 more are `undef`) | Printed values: most of ExifTool's knowledge |
-| `ValueConv`: string / code / hash / list | 2,976 / 112 / 16 / 8 (**dumped**) | |
-| `RawConv`: string / code | 1,300 / 45 (**dumped**) | Run while reading, often storing state |
-| Inverse conversions: string / code / list | 2,931 / 133 / 26 (**dumped**; 3 more are `undef`) | Writing |
-| `Condition` / `Hook` strings | 2,299 / 47 (**dumped**) | Hooks: code run while a binary table is read |
-| Translations | 19,907 (**dumped**) | Descriptions and printed values in 18 languages |
-| Named subs / anonymous subs referenced from tables | 300 / 177 (**dumped**) | Code, not data |
-| Sub definitions; `Process*` subs; `ProcessProc` | 1,439; about 500; 157 (**counted**) | The bulk of ExifTool's reading code |
-| `WriteProc` / `Write*` subs | 49 / 72 (**counted**) | Writing's procedures, besides TagLookup |
-| `$$self{Make}` / `{Model}` | 840 (**counted**) | Conditions and conversions that depend on other tags |
-| Assignments to `$$self{...}` | 638, to 354 distinct keys (**counted**) | State set while reading, read by later conditions |
-| One-line conditions reading state other than Make and Model | 970 of 2,146 (**counted**) | |
-| One-line `ValueConv` / `PrintConv` reading state | 53 (**counted**) | Read after reading: the final state |
-| `$$self{OPTIONS}` | 110 (**counted**) | Extraction that depends on the options |
-| `DOC_NUM` | 148 (**counted**) | Sub-documents: MPF images, embedded previews, frames |
-| `$$valPt` | 497 (**counted**) | Byte sniffing of the value itself |
-| `DATAMEMBER` / variable formats | 258 / 127 (**counted**) | Binary tables whose layout depends on earlier values |
-| `Priority` / `Avoid` / `PRIORITY_DIR` | 334 / 106 / 18 (**counted**) | Which of several same-named tags wins |
-| `AddTagToTable` | 104 (**counted**) | Tags created at run time |
+| What                                                        |                                                     Count | What it means for the engine                         |
+| ----------------------------------------------------------- | --------------------------------------------------------: | ---------------------------------------------------- |
+| Tables / tag definitions / distinct names                   |                      1,532 / 36,222 / 23,177 (**dumped**) | The schema's size                                    |
+| Flattened XMP structure fields                              |                   2,702 of those definitions (**dumped**) | Made at run time from structure definitions          |
+| Tag IDs with a list of definitions                          |                                          377 (**dumped**) | One ID, several definitions chosen by condition      |
+| Value tables shared between definitions                     |                                          448 (**dumped**) | Written once, referenced                             |
+| Value tables with an `OTHER` handler / `BITMASK`            |                                    453 / 120 (**dumped**) | Code inside a value table                            |
+| `PrintConv`: hash / string / code / list                    | 5,661 / 3,474 / 141 / 74 (**dumped**; 3 more are `undef`) | Printed values: most of ExifTool's knowledge         |
+| `ValueConv`: string / code / hash / list                    |                         2,976 / 112 / 16 / 8 (**dumped**) |                                                      |
+| `RawConv`: string / code                                    |                                   1,300 / 45 (**dumped**) | Run while reading, often storing state               |
+| Inverse conversions: string / code / list                   |         2,931 / 133 / 26 (**dumped**; 3 more are `undef`) | Writing                                              |
+| `Condition` / `Hook` strings                                |                                   2,299 / 47 (**dumped**) | Hooks: code run while a binary table is read         |
+| Translations                                                |                                       19,907 (**dumped**) | Descriptions and printed values in 18 languages      |
+| Named subs / anonymous subs referenced from tables          |                                    300 / 177 (**dumped**) | Code, not data                                       |
+| Sub definitions; `Process*` subs; `ProcessProc`             |                       1,439; about 500; 157 (**counted**) | The bulk of ExifTool's reading code                  |
+| `WriteProc` / `Write*` subs                                 |                                     49 / 72 (**counted**) | Writing's procedures, besides TagLookup              |
+| `$$self{Make}` / `{Model}`                                  |                                         840 (**counted**) | Conditions and conversions that depend on other tags |
+| Assignments to `$$self{...}`                                |                   638, to 354 distinct keys (**counted**) | State set while reading, read by later conditions    |
+| One-line conditions reading state other than Make and Model |                                970 of 2,146 (**counted**) |                                                      |
+| One-line `ValueConv` / `PrintConv` reading state            |                                          53 (**counted**) | Read after reading: the final state                  |
+| `$$self{OPTIONS}`                                           |                                         110 (**counted**) | Extraction that depends on the options               |
+| `DOC_NUM`                                                   |                                         148 (**counted**) | Sub-documents: MPF images, embedded previews, frames |
+| `$$valPt`                                                   |                                         497 (**counted**) | Byte sniffing of the value itself                    |
+| `DATAMEMBER` / variable formats                             |                                   258 / 127 (**counted**) | Binary tables whose layout depends on earlier values |
+| `Priority` / `Avoid` / `PRIORITY_DIR`                       |                              334 / 106 / 18 (**counted**) | Which of several same-named tags wins                |
+| `AddTagToTable`                                             |                                         104 (**counted**) | Tags created at run time                             |
 
 The tables convert mechanically, except their `OTHER` handlers. The code does not, and it is the largest part of the
 work: the 1,439 subs (about 500 of them processing procedures, 300 referenced from tables), the 177 anonymous subs,
@@ -130,16 +132,16 @@ the 453 `OTHER` handlers, and the 1,120 distinct strings the census could not cl
 
 A workspace of its own:
 
-| Part | Role |
-|---|---|
-| `schema-data/` | The tag data as JSON Lines, one file per ExifTool module, checked in and reviewed |
-| `schema-ids` | The identifier registry: every table's and definition's stable identifier (see API stability) |
-| `dump/` | The Perl script that dumps ExifTool's tables into `schema-data/`, its cross-check and the census |
-| `*-schema-gen` | Reads `schema-data/` and `schema-ids`, writes the generated Rust |
+| Part              | Role                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| `schema-data/`    | The tag data as JSON Lines, one file per ExifTool module, checked in and reviewed                          |
+| `schema-ids`      | The identifier registry: every table's and definition's stable identifier (see API stability)              |
+| `dump/`           | The Perl script that dumps ExifTool's tables into `schema-data/`, its cross-check and the census           |
+| `*-schema-gen`    | Reads `schema-data/` and `schema-ids`, writes the generated Rust                                           |
 | `*` (the library) | Sources, containers, decoders, generated tables, conversions, context, planner, composites, reader, writer |
-| `*-cli` | The command-line tool |
-| `*-difftest` | The differential harness against Perl ExifTool |
-| `fuzz/` | cargo-fuzz targets, one per container and decoder |
+| `*-cli`           | The command-line tool                                                                                      |
+| `*-difftest`      | The differential harness against Perl ExifTool                                                             |
+| `fuzz/`           | cargo-fuzz targets, one per container and decoder                                                          |
 
 `*` is the crate's name, still to choose; it must not be mistaken for ExifTool itself. The library depends on no
 consumer's crates, and its public types are its own.
@@ -325,15 +327,15 @@ ExifTool-style output over the engine's results (`-j`, `-s`, `-G`, `-n`, `-lang`
 ExifTool-like text. Printed values themselves are core, not a CLI feature. Options that take Perl are refused (see
 Non-goals). ExifTool's application features, by phase:
 
-| Feature | Phase |
-|---|---|
+| Feature                                                                                                        | Phase                                          |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | Reading: output formats, `-r`, `-ext`, `-fileNUM`, `-a`, `-u`, `-ee`, `-charset` and the other reading options | 1, and each later phase's formats as they land |
-| Writing tags, deleting groups, `-tagsFromFile`, `-overwrite_original` | 5 |
-| Renaming and moving files by tag (`-FileName<…`, `-Directory<…`, `-d` date formats) | 5 |
-| Importing tags from CSV and JSON (`-csv=`, `-j=`) | 5 |
-| Geotagging from GPS logs (`-geotag`, `Geotag.pm`) | 6 |
-| `-validate` | 6 |
-| `-htmlDump`, `-v` | Not planned (see Non-goals) |
+| Writing tags, deleting groups, `-tagsFromFile`, `-overwrite_original`                                          | 5                                              |
+| Renaming and moving files by tag (`-FileName<…`, `-Directory<…`, `-d` date formats)                            | 5                                              |
+| Importing tags from CSV and JSON (`-csv=`, `-j=`)                                                              | 5                                              |
+| Geotagging from GPS logs (`-geotag`, `Geotag.pm`)                                                              | 6                                              |
+| `-validate`                                                                                                    | 6                                              |
+| `-htmlDump`, `-v`                                                                                              | Not planned (see Non-goals)                    |
 
 Every option of ExifTool 13.64's application is listed in the CLI's documentation with its phase or as not planned,
 so none is dropped silently.
@@ -368,17 +370,17 @@ Conversions are classified as identity, constant, arithmetic formula, `sprintf` 
 (`"$val mm"`), one substitution, a call of a named sub with plain arguments, a store into the context, or a ternary on
 a predicate whose branches are themselves classified.
 
-| Field | Strings | Classified | Hand ports (distinct texts) |
-|---|---:|---:|---:|
-| `Condition` | 2,299 | 97.5% | 58 (43) |
-| `RawConv` | 1,300 | 69.6% | 395 (218) |
-| `ValueConv` | 2,976 | 70.5% | 878 (409) |
-| `PrintConv` | 3,474 | 90.9% | 315 (177) |
-| `RawConvInv` | 57 | 15.8% | 48 (26) |
-| `ValueConvInv` | 1,442 | 74.5% | 367 (145) |
-| `PrintConvInv` | 1,432 | 75.0% | 358 (79) |
-| `Hook` (always ported) | 47 | 0% | 47 (40) |
-| **All** | **13,027** | **81.1%** | **2,466 (1,120)** |
+| Field                  |    Strings | Classified | Hand ports (distinct texts) |
+| ---------------------- | ---------: | ---------: | --------------------------: |
+| `Condition`            |      2,299 |      97.5% |                     58 (43) |
+| `RawConv`              |      1,300 |      69.6% |                   395 (218) |
+| `ValueConv`            |      2,976 |      70.5% |                   878 (409) |
+| `PrintConv`            |      3,474 |      90.9% |                   315 (177) |
+| `RawConvInv`           |         57 |      15.8% |                     48 (26) |
+| `ValueConvInv`         |      1,442 |      74.5% |                   367 (145) |
+| `PrintConvInv`         |      1,432 |      75.0% |                    358 (79) |
+| `Hook` (always ported) |         47 |         0% |                     47 (40) |
+| **All**                | **13,027** |  **81.1%** |           **2,466 (1,120)** |
 
 Strings call 170 distinct subs by name (2,806 calls; the most called are `ConvertDateTime`, `GPS::ToDMS`,
 `Exif::ConvertFraction`, `Exif::PrintExposureTime` and `InverseDateTime`); each is a hand port the classified calls
@@ -473,10 +475,10 @@ Planned only once the licence is settled.
 ## Appendix: the first dump
 
 Run on 2026-11-26 in photo-gallery's container (Perl 5.40.1, B::Deparse 1.76, JSON::PP 4.16) against the ExifTool
-clone at tag 13.64, with no config file. The scripts are in photo-gallery's ignored evaluation folder,
-`target/exiftool-rs-eval/dump/`: `dump.pl` (the dump), `check.py` (the cross-check against `-list`) and `census.py`
-(the census). They move to the engine's `dump/` when its repository is made. The output (12 MB, 156 files, in
-`out/` beside them) and the census report (`census.txt`) are not committed until the licence is settled.
+clone at tag 13.64, with no config file. Everything is in photo-gallery's `eval/exiftool-dump/` (its README says how to
+rerun it): `dump.pl` (the dump), `check.py` (the cross-check against `-list`), `census.py` (the census), the census
+report `census.txt`, and the output in `out/` (12 MB, 156 files). It moves to the engine's `dump/` and
+`schema-data/` when its repository is made.
 
 **Output.** One JSON Lines file per module (`Exif.jsonl`, `Canon.jsonl`, ...) holding `table`, `tag` and `shared`
 records; `code.jsonl` (named and anonymous subs); `lang/<xx>.jsonl` (translations); `shortcuts.jsonl`; `meta.json`

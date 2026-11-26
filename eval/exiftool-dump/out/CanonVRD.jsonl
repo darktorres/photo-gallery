@@ -1,0 +1,342 @@
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::CropInfo","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"FORMAT":"int32s","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::CropInfo","TABLE_NAME":"Image::ExifTool::CanonVRD::CropInfo","TAG_PREFIX":"CanonVRD_CropInfo","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"id":"shared00022","kind":"shared","value":{"0":"No","1":"Yes"}}
+{"fields":{"Name":"CropActive","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropRotatedOriginalWidth"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropRotatedOriginalHeight"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropX"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropY"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropWidth"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropHeight"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropRotation"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Format":"double","Name":"CropAngle","PrintConv":"sprintf(\"%.7g\",$val)","PrintConvInv":"$val"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropOriginalWidth"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"fields":{"Name":"CropOriginalHeight"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::CropInfo"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::DLOInfo","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":1,"FORMAT":"int16s","GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Image"},"NOTES":"Tags added when DLO (Digital Lens Optimizer) is on.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::DLOInfo","TABLE_NAME":"Image::ExifTool::CanonVRD::DLOInfo","TAG_PREFIX":"CanonVRD_DLOInfo","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Name":"DLOSettingApplied"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DLOInfo"}
+{"fields":{"Format":"string[10]","Name":"DLOVersion"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DLOInfo"}
+{"fields":{"Binary":1,"Format":"undef[$$self{DLODataLength}]","LargeTag":1,"Name":"DLOData","Notes":"variable-length Digital Lens Optimizer data, stored in JPEG-like format","Writable":0},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DLOInfo"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::DR4","special":{"GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"NOTES":"\n        Tags written by Canon DPP version 4 in CanonVRD trailers and DR4 files. Each\n        tag has three associated flag words which are stored with the directory\n        entry, some of which are extracted as a separate tag, indicated in the table\n        below by a decimal appended to the tag ID (.0, .1 or .2).\n    ","PERMANENT":1,"PROCESS_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessDR4"},"SHORT_NAME":"CanonVRD::DR4","TABLE_NAME":"Image::ExifTool::CanonVRD::DR4","TAG_PREFIX":"CanonVRD_DR4","VARS":{"ID_FMT":"hex","SORT_PROC":{"code":"&Image::ExifTool::CanonVRD::SortDR4"}},"WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessDR4"}}}
+{"fields":{"Name":"Rotation"},"id":"65538","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"AngleAdj"},"id":"65539","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"CustomPictureStyle"},"id":"65569","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"Rating","PrintConv":{"0":"Unrated","1":1,"2":2,"3":3,"4":4,"4294967295":"Rejected","5":5}},"id":"65792","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"CheckMark","PrintConv":{"0":"Clear","1":1,"2":2,"3":3,"4":4,"5":5}},"id":"65793","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WorkColorSpace","PrintConv":{"1":"sRGB","2":"Adobe RGB","3":"Wide Gamut RGB","4":"Apple RGB","5":"ColorMatch RGB"}},"id":"66048","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"RawBrightnessAdj"},"id":"131073","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WhiteBalanceAdj","PrintConv":{"-1":"Manual (Click)","0":"Auto","1":"Daylight","2":"Cloudy","255":"Shot Settings","3":"Tungsten","4":"Fluorescent","5":"Flash","8":"Shade","9":"Kelvin"},"PrintConvColumns":2},"id":"131329","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WBAdjColorTemp"},"id":"131330","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WBAdjMagentaGreen"},"id":"131333","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WBAdjBlueAmber"},"id":"131334","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"WBAdjRGGBLevels","PrintConv":"$val =~ s/^\\d+ //; $val","PrintConvInv":"\"14 $val\""},"id":"131365","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"GammaLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"131584","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"PictureStyle","PrintConv":{"129":"Standard","130":"Portrait","131":"Landscape","132":"Neutral","133":"Faithful","134":"Monochrome","135":"Auto","136":"Fine Detail","240":"Shot Settings","255":"Custom"},"PrintHex":1},"id":"131841","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ContrastAdj"},"id":"131843","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorToneAdj"},"id":"131844","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorSaturationAdj"},"id":"131845","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"MonochromeToningEffect","PrintConv":{"0":"None","1":"Sepia","2":"Blue","3":"Purple","4":"Green"}},"id":"131846","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"MonochromeFilterEffect","PrintConv":{"0":"None","1":"Yellow","2":"Orange","3":"Red","4":"Green"}},"id":"131847","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"UnsharpMaskStrength"},"id":"131848","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"UnsharpMaskFineness"},"id":"131849","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"UnsharpMaskThreshold"},"id":"131850","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ShadowAdj"},"id":"131851","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"HighlightAdj"},"id":"131852","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"SharpnessAdj","PrintConv":{"0":"Sharpness","1":"Unsharp Mask"}},"id":"131856","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"SharpnessStrength"},"id":"131857","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ToneCurve","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::ToneCurve"}},"id":"132096","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ToneCurveBrightness"},"id":"132112","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ToneCurveContrast"},"id":"132113","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"AutoLightingOptimizer","PrintConv":{"0":"Low","1":"Standard","2":"Strong"}},"id":"132352","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"LuminanceNoiseReduction"},"id":"132608","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ChrominanceNoiseReduction"},"id":"132609","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorMoireReduction"},"id":"132720","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ShootingDistance","Notes":"100% = infinity","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"132865","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"PeripheralIllumination","PrintConv":"sprintf \"%g\", $val","PrintConvInv":"$val"},"id":"132866","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ChromaticAberration","PrintConv":"sprintf \"%g\", $val","PrintConvInv":"$val"},"id":"132867","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorBlurOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"132868","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DistortionCorrection","PrintConv":"sprintf \"%g\", $val","PrintConvInv":"$val"},"id":"132869","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DLOSetting"},"id":"132870","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ChromaticAberrationRed","PrintConv":"sprintf \"%g\", $val","PrintConvInv":"$val"},"id":"132871","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ChromaticAberrationBlue","PrintConv":"sprintf \"%g\", $val","PrintConvInv":"$val"},"id":"132872","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DistortionEffect","PrintConv":{"0":"Shot Settings","1":"Emphasize Linearity","2":"Emphasize Distance","3":"Emphasize Periphery","4":"Emphasize Center"}},"id":"132873","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DiffractionCorrectionOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"132875","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorHue"},"id":"133376","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"SaturationAdj"},"id":"133377","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"RedHSL"},"id":"133392","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"OrangeHSL"},"id":"133393","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"YellowHSL"},"id":"133394","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"GreenHSL"},"id":"133395","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"AquaHSL"},"id":"133396","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"BlueHSL"},"id":"133397","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"PurpleHSL"},"id":"133398","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"MagentaHSL"},"id":"133399","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"GammaInfo","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::GammaInfo"}},"id":"133632","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DPRAWMicroadjustBackFront"},"id":"133904","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DPRAWMicroadjustStrength"},"id":"133906","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DPRAWBokehShift"},"id":"133920","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DPRAWBokehShiftArea"},"id":"133921","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DPRAWGhostingReductionArea"},"id":"133936","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"CropAspectRatio","PrintConv":{"0":"Free","1":"Custom","10":"9:16","2":"1:1","3":"3:2","4":"2:3","5":"4:3","6":"3:4","7":"5:4","8":"4:5","9":"16:9"}},"id":"196865","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"CropAspectRatioCustom"},"id":"196866","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"CropInfo","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::CropInfo"}},"id":"983296","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Binary":1,"Name":"CustomPictureStyleData"},"id":"984320","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"StampInfo","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::StampInfo"}},"id":"984336","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DustInfo","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::DustInfo"}},"id":"984337","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"LensFocalLength"},"id":"984338","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"SharpnessAdjOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20310.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ToneCurveOriginal","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20400.1","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"AutoLightingOptimizerOn","Notes":"ignored if gamma is linear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20500.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ColorMoireReductionOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20670.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"PeripheralIlluminationOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20702.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"ChromaticAberrationOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20703.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DistortionCorrectionOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20705.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DLOOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"0x20706.0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"fields":{"Name":"DR4Header","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::DR4Header"}},"id":"header","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::DR4Header","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::DR4Header","TABLE_NAME":"Image::ExifTool::CanonVRD::DR4Header","TAG_PREFIX":"CanonVRD_DR4Header","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"int32u","Name":"DR4CameraModel","PrintConv":{"ref":"%Image::ExifTool::Canon::canonModelID"},"PrintHex":1,"SeparateTable":"Canon CanonModelID"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DR4Header"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::DustInfo","special":{"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::DustInfo","TABLE_NAME":"Image::ExifTool::CanonVRD::DustInfo","TAG_PREFIX":"CanonVRD_DustInfo"}}
+{"fields":{"Name":"DustDeleteApplied","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::DustInfo"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::Edit","special":{"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Other"},"NOTES":"Canon VRD edit information.","PROCESS_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessEditData"},"SHORT_NAME":"CanonVRD::Edit","TABLE_NAME":"Image::ExifTool::CanonVRD::Edit","TAG_PREFIX":"CanonVRD_Edit","VARS":{"ID_LABEL":"Index"},"WRITE_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessEditData"}}}
+{"fields":{"Name":"VRD1","Size":626,"SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::Ver1"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Edit"}
+{"fields":{"Name":"VRDStampTool","Size":0,"SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::StampTool"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Edit"}
+{"fields":{"Name":"VRD2","Size":null,"SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::Ver2"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Edit"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::Edit4","special":{"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Other"},"NOTES":"Canon DPP version 4 edit information.","PROCESS_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessEditData"},"SHORT_NAME":"CanonVRD::Edit4","TABLE_NAME":"Image::ExifTool::CanonVRD::Edit4","TAG_PREFIX":"CanonVRD_Edit4","VARS":{"ID_LABEL":"Index"},"WRITE_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessEditData"}}}
+{"fields":{"Name":"DR4","Size":null,"SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::DR4"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Edit4"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::GammaInfo","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"FORMAT":"double","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::GammaInfo","TABLE_NAME":"Image::ExifTool::CanonVRD::GammaInfo","TAG_PREFIX":"CanonVRD_GammaInfo","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Name":"GammaContrast"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaColorTone"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaSaturation"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaUnsharpMaskStrength"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaUnsharpMaskFineness"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaUnsharpMaskThreshold"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaSharpnessStrength"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaShadow"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaHighlight"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaBlackPoint","PrintConv":"sprintf(\"%+.3f\", $val)","PrintConvInv":"$val","ValueConv":"\n            return 0 if $val <= 0;\n            $val = log($val / 4.6875) / log(2) + 1;\n            return abs($val) > 1e-10 ? $val : 0;\n        ","ValueConvInv":"$val ? exp(($val - 1) * log(2)) * 4.6876 : 0"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaWhitePoint","PrintConv":"sprintf(\"%+.3f\", $val)","PrintConvInv":"$val","ValueConv":"\n            return $val if $val <= 0;\n            $val = log($val / 4.6875) / log(2) - 11.77109325169954;\n            return abs($val) > 1e-10 ? $val : 0;\n        ","ValueConvInv":"$val ? exp(($val + 11.77109325169954) * log(2)) * 4.6875 : 0"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Name":"GammaMidPoint","PrintConv":"sprintf(\"%+.3f\", $val)","PrintConvInv":"$val","ValueConv":"\n            return $val if $val <= 0;\n            $val = log($val / 4.6875) / log(2) - 8;\n            return abs($val) > 1e-10 ? $val : 0;\n        ","ValueConvInv":"$val ? exp(($val + 8) * log(2)) * 4.6876 : 0"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"fields":{"Format":"double[2]","Name":"GammaCurveOutputRange","Notes":"16383 max"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::GammaInfo"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::IHL","special":{"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessIHL"},"SHORT_NAME":"CanonVRD::IHL","TABLE_NAME":"Image::ExifTool::CanonVRD::IHL","TAG_PREFIX":"VRD_IHL"}}
+{"fields":{"Condition":"$self->Options(\"ExtractEmbedded\")","Index":0,"Name":"IHL_EXIF","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::CanonVRD::ProcessIHLExif"},"TagTable":"Image::ExifTool::Exif::Main"}},"id":"1","index":0,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"fields":{"Binary":1,"Index":1,"Name":"IHL_EXIF","Notes":"\n                extracted as a block if the L<Unknown|../ExifTool.html#Unknown> option is used, or processed as the\n                first sub-document with the L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> option\n            ","Unknown":1},"id":"1","index":1,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"ThumbnailImage"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"PreviewImage"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"fields":{"Name":"RawCodecVersion","ValueConv":"$val =~ s/\\0.*//s; $val"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"fields":{"Binary":1,"Name":"CRCDevelParams","Unknown":1},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::IHL"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::Main","special":{"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Other"},"NOTES":"\n        Canon Digital Photo Professional writes VRD (Recipe Data) information as a\n        trailer record to JPEG, TIFF, CRW and CR2 images, or as stand-alone VRD or\n        DR4 files.  The tags listed below represent information found in these\n        records.  The complete VRD/DR4 data record may be accessed as a block using\n        the Extra 'CanonVRD' or 'CanonDR4' tag, but this tag is not extracted or\n        copied unless specified explicitly.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::CanonVRD::ProcessCanonVRD"},"SHORT_NAME":"CanonVRD::Main","TABLE_NAME":"Image::ExifTool::CanonVRD::Main","TAG_PREFIX":"CanonVRD","WRITE_PROC":{"code":"&Image::ExifTool::CanonVRD::WriteCanonVRD"}}}
+{"fields":{"Name":"EditData","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::Edit"}},"id":"4294902004","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Main"}
+{"fields":{"Name":"IHLData","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::IHL"}},"id":"4294902005","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Main"}
+{"fields":{"Binary":1,"Flags":["Binary","Protected"],"Name":"XMP","Protected":1,"SubDirectory":{"DirName":"XMP","TagTable":"Image::ExifTool::XMP::Main"},"Writable":"undef"},"id":"4294902006","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Main"}
+{"fields":{"Name":"Edit4Data","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::Edit4"}},"id":"4294902007","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Main"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::StampInfo","special":{"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::StampInfo","TABLE_NAME":"Image::ExifTool::CanonVRD::StampInfo","TAG_PREFIX":"CanonVRD_StampInfo"}}
+{"fields":{"Name":"StampToolCount"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::StampInfo"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::StampTool","special":{"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::StampTool","TABLE_NAME":"Image::ExifTool::CanonVRD::StampTool","TAG_PREFIX":"CanonVRD_StampTool"}}
+{"fields":{"Format":"int32u","Name":"StampToolCount"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::StampTool"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::ToneCurve","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"CanonVRD","1":"CanonDR4","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::ToneCurve","TABLE_NAME":"Image::ExifTool::CanonVRD::ToneCurve","TAG_PREFIX":"CanonVRD_ToneCurve","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Name":"ToneCurveColorSpace","PrintConv":{"0":"RGB","1":"Luminance"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Name":"ToneCurveShape","PrintConv":{"0":"Curve","1":"Straight"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[2]","Name":"ToneCurveInputRange","Notes":"255 max"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[2]","Name":"ToneCurveOutputRange","Notes":"255 max"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[21]","Name":"RGBCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Name":"ToneCurveX"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Name":"ToneCurveY"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[21]","Name":"RedCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"45","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[21]","Name":"GreenCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"83","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"fields":{"Format":"int32u[21]","Name":"BlueCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"121","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::ToneCurve"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::Ver1","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"DATAMEMBER":[2],"FIRST_ENTRY":0,"GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Image"},"PERMANENT":1,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::Ver1","TABLE_NAME":"Image::ExifTool::CanonVRD::Ver1","TAG_PREFIX":"CanonVRD_Ver1","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"DataMember":"VRDVersion","Format":"int16u","Name":"VRDVersion","PrintConv":"$val =~ s/^(\\d)(\\d*)(\\d)$/$1.$2.$3/; $val","RawConv":"$$self{VRDVersion} = $val","Writable":0},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"WBAdjRGGBLevels"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WhiteBalanceAdj","PrintConv":{"0":"Auto","1":"Daylight","2":"Cloudy","3":"Tungsten","30":"Manual (Click)","31":"Shot Settings","4":"Fluorescent","5":"Flash","8":"Shade","9":"Kelvin"},"PrintConvColumns":2},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WBAdjColorTemp"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WBFineTuneActive","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WBFineTuneSaturation"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WBFineTuneTone"},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"RawColorAdj","PrintConv":{"0":"Shot Settings","1":"Faithful","2":"Custom"}},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int32s","Name":"RawCustomSaturation"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int32s","Name":"RawCustomTone"},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int32s","Name":"RawBrightnessAdj","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val","ValueConv":"$val / 6000","ValueConvInv":"int($val * 6000 + ($val < 0 ? -0.5 : 0.5))"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"ToneCurveProperty","PrintConv":{"0":"Shot Settings","1":"Linear","2":"Custom 1","3":"Custom 2","4":"Custom 3","5":"Custom 4","6":"Custom 5"},"PrintConvColumns":2},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"DynamicRangeMin"},"id":"122","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"DynamicRangeMax"},"id":"124","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"ToneCurveActive","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"272","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Name":"ToneCurveMode","PrintConv":{"0":"RGB","1":"Luminance"}},"id":"275","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int8s","Name":"BrightnessAdj"},"id":"276","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int8s","Name":"ContrastAdj"},"id":"277","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16s","Name":"SaturationAdj"},"id":"278","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int32s","Name":"ColorToneAdj","Notes":"in degrees, so -1 is the same as 359"},"id":"286","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[21]","Name":"LuminanceCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"294","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"LuminanceCurveLimits","Notes":"4 numbers: input and output highlight and shadow points"},"id":"336","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Name":"ToneCurveInterpolation","PrintConv":{"0":"Curve","1":"Straight"}},"id":"345","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[21]","Name":"RedCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"352","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"RedCurveLimits"},"id":"394","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[21]","Name":"GreenCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"410","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"GreenCurveLimits"},"id":"452","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[21]","Name":"BlueCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"468","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"BlueCurveLimits"},"id":"510","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[21]","Name":"RGBCurvePoints","PrintConv":"Image::ExifTool::CanonVRD::ToneCurvePrint($val)","PrintConvInv":"Image::ExifTool::CanonVRD::ToneCurvePrintInv($val)"},"id":"526","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u[4]","Name":"RGBCurveLimits"},"id":"568","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropActive","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"580","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropLeft","Notes":"crop coordinates in original unrotated image"},"id":"582","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropTop"},"id":"584","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropWidth"},"id":"586","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropHeight"},"id":"588","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"SharpnessAdj"},"id":"602","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CropAspectRatio","PrintConv":{"0":"Free","1":"3:2","10":"5:4","11":"1:1","12":"Circle","2":"2:3","3":"4:3","4":"3:4","5":"A-size Landscape","6":"A-size Portrait","65535":"Custom","7":"Letter-size Landscape","8":"Letter-size Portrait","9":"4:5"}},"id":"608","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"float","Name":"ConstrainedCropWidth","PrintConv":"sprintf(\"%.7g\",$val)","PrintConvInv":"$val"},"id":"610","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"float","Name":"ConstrainedCropHeight","PrintConv":"sprintf(\"%.7g\",$val)","PrintConvInv":"$val"},"id":"614","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"CheckMark","PrintConv":{"0":"Clear","1":1,"2":2,"3":3}},"id":"618","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"Rotation","PrintConv":{"0":0,"1":90,"2":180,"3":270}},"id":"622","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"fields":{"Format":"int16u","Name":"WorkColorSpace","PrintConv":{"0":"sRGB","1":"Adobe RGB","2":"Wide Gamut RGB","3":"Apple RGB","4":"ColorMatch RGB"}},"id":"624","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver1"}
+{"kind":"table","module":"CanonVRD","name":"Image::ExifTool::CanonVRD::Ver2","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"DATAMEMBER":[88,220,223,224],"FIRST_ENTRY":0,"FORMAT":"int16s","GROUPS":{"0":"CanonVRD","1":"CanonVRD","2":"Image"},"IS_SUBDIR":[224],"NOTES":"Tags added in DPP version 2.0 and later.","PERMANENT":1,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"CanonVRD::Ver2","TABLE_NAME":"Image::ExifTool::CanonVRD::Ver2","TAG_PREFIX":"CanonVRD_Ver2","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Name":"PictureStyle","PrintConv":{"0":"Standard","1":"Portrait","2":"Landscape","3":"Neutral","4":"Faithful","5":"Monochrome","6":"Unknown?","7":"Custom"},"PrintConvColumns":2},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"IsCustomPictureStyle","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawColorTone"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawSaturation"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawContrast"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawSharpness"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawHighlightPoint"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawShadowPoint"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardOutputHighlightPoint"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardOutputShadowPoint"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawColorTone"},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawSaturation"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawContrast"},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"25","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawSharpness"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawHighlightPoint"},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawShadowPoint"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitOutputHighlightPoint"},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitOutputShadowPoint"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawColorTone"},"id":"31","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawSaturation"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawContrast"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawSharpness"},"id":"35","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawHighlightPoint"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawShadowPoint"},"id":"37","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeOutputHighlightPoint"},"id":"38","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeOutputShadowPoint"},"id":"39","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawColorTone"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawSaturation"},"id":"41","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawContrast"},"id":"42","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"43","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawSharpness"},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawHighlightPoint"},"id":"45","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawShadowPoint"},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralOutputHighlightPoint"},"id":"47","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralOutputShadowPoint"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawColorTone"},"id":"49","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawSaturation"},"id":"50","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawContrast"},"id":"51","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawSharpness"},"id":"53","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawHighlightPoint"},"id":"54","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawShadowPoint"},"id":"55","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulOutputHighlightPoint"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulOutputShadowPoint"},"id":"57","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeFilterEffect","PrintConv":{"-1":"Yellow","-2":"None","0":"Orange","1":"Red","2":"Green"}},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeToningEffect","PrintConv":{"-1":"Sepia","-2":"None","0":"Blue","1":"Purple","2":"Green"}},"id":"59","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeContrast"},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"61","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeSharpness"},"id":"62","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeRawHighlightPoint"},"id":"63","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeRawShadowPoint"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeOutputHighlightPoint"},"id":"65","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeOutputShadowPoint"},"id":"66","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownContrast","Unknown":1},"id":"69","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2,"Unknown":1},"id":"70","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownSharpness","Unknown":1},"id":"71","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownRawHighlightPoint","Unknown":1},"id":"72","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownRawShadowPoint","Unknown":1},"id":"73","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownOutputHighlightPoint","Unknown":1},"id":"74","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownOutputShadowPoint","Unknown":1},"id":"75","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomColorTone"},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomSaturation"},"id":"77","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomContrast"},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"79","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomSharpness"},"id":"80","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomRawHighlightPoint"},"id":"81","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomRawShadowPoint"},"id":"82","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomOutputHighlightPoint"},"id":"83","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomOutputShadowPoint"},"id":"84","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Binary":1,"Format":"var_int16u","Name":"CustomPictureStyleData","Notes":"variable-length data structure","RawConv":"length($val) == 2 ? undef : $val","Writable":0},"id":"88","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Condition":"$$self{VRDVersion} < 330","Index":0,"Name":"ChrominanceNoiseReduction","Notes":"VRDVersion prior to 3.3.0","PrintConv":{"0":"Off","100":"High","58":"Low"}},"id":"94","index":0,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Index":1,"Name":"ChrominanceNoiseReduction","Notes":"VRDVersion 3.3.0 or later","PrintConv":{"0":0,"100":6,"116":7,"133":8,"150":9,"16":1,"166":10,"167":11,"168":12,"169":13,"170":14,"171":15,"172":16,"173":17,"174":18,"175":19,"176":20,"33":2,"50":3,"66":4,"83":5},"PrintConvColumns":4,"PrintHex":1},"id":"94","index":1,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Condition":"$$self{VRDVersion} < 330","Index":0,"Name":"LuminanceNoiseReduction","Notes":"VRDVersion prior to 3.3.0","PrintConv":{"0":"Off","100":"High","65":"Low"}},"id":"95","index":0,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Index":1,"Name":"LuminanceNoiseReduction","Notes":"VRDVersion 3.3.0 or later","PrintConv":{"0":0,"100":2,"110":3,"120":4,"130":5,"140":6,"150":7,"160":8,"170":9,"180":10,"181":11,"182":12,"183":13,"184":14,"185":15,"186":16,"187":17,"188":18,"189":19,"190":20,"65":1},"PrintConvColumns":4,"PrintHex":1},"id":"95","index":1,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Condition":"$$self{VRDVersion} < 330","Index":0,"Name":"ChrominanceNR_TIFF_JPEG","Notes":"VRDVersion prior to 3.3.0","PrintConv":{"0":"Off","100":"High","33":"Low"}},"id":"96","index":0,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Index":1,"Name":"ChrominanceNR_TIFF_JPEG","Notes":"VRDVersion 3.3.0 or later","PrintConv":{"0":0,"100":6,"116":7,"133":8,"150":9,"16":1,"166":10,"167":11,"168":12,"169":13,"170":14,"171":15,"172":16,"173":17,"174":18,"175":19,"176":20,"33":2,"50":3,"66":4,"83":5},"PrintConvColumns":4,"PrintHex":1},"id":"96","index":1,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"ChromaticAberrationOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"98","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"DistortionCorrectionOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"99","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PeripheralIlluminationOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"ColorBlur","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"101","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"ChromaticAberration","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","ValueConv":"$val / 0x400","ValueConvInv":"int($val * 0x400 + 0.5)"},"id":"102","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"DistortionCorrection","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","ValueConv":"$val / 0x400","ValueConvInv":"int($val * 0x400 + 0.5)"},"id":"103","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PeripheralIllumination","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","ValueConv":"$val / 0x400","ValueConvInv":"int($val * 0x400 + 0.5)"},"id":"104","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"AberrationCorrectionDistance","Notes":"100% = infinity","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","RawConv":"$val == 0x7fff ? undef : $val","ValueConv":"1 - $val / 0x400","ValueConvInv":"int((1 - $val) * 0x400 + 0.5)"},"id":"105","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"ChromaticAberrationRed"},"id":"106","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"ChromaticAberrationBlue"},"id":"107","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LuminanceNR_TIFF_JPEG","Notes":"val = raw / 10","ValueConv":"$val / 10","ValueConvInv":"int($val * 10 + 0.5)"},"id":"109","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"AutoLightingOptimizerOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"110","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"AutoLightingOptimizer","PrintConv":{"100":"Low","200":"Standard","300":"Strong","32767":"n/a"}},"id":"111","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"117","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"118","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"119","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"120","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"121","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"122","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownRawHighlight","Unknown":1,"ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"123","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomRawHighlight","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"124","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"126","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"127","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"128","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"129","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"130","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"131","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnknownRawShadow","Unknown":1,"ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"132","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomRawShadow","ValueConv":"$val / 10","ValueConvInv":"$val * 10"},"id":"133","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Format":"int32s","Name":"AngleAdj","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"139","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Format":"int16u","Name":"CheckMark2","PrintConv":{"0":"Clear","1":1,"2":2,"3":3,"4":4,"5":5},"PrintConvColumns":2},"id":"142","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"UnsharpMask","PrintConv":{"0":"Off","1":"On"}},"id":"144","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardUnsharpMaskStrength"},"id":"146","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardUnsharpMaskFineness"},"id":"148","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"StandardUnsharpMaskThreshold"},"id":"150","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitUnsharpMaskStrength"},"id":"152","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitUnsharpMaskFineness"},"id":"154","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"PortraitUnsharpMaskThreshold"},"id":"156","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeUnsharpMaskStrength"},"id":"158","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeUnsharpMaskFineness"},"id":"160","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"LandscapeUnsharpMaskThreshold"},"id":"162","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutraUnsharpMaskStrength"},"id":"164","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralUnsharpMaskFineness"},"id":"166","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"NeutralUnsharpMaskThreshold"},"id":"168","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulUnsharpMaskStrength"},"id":"170","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulUnsharpMaskFineness"},"id":"172","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"FaithfulUnsharpMaskThreshold"},"id":"174","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeUnsharpMaskStrength"},"id":"176","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeUnsharpMaskFineness"},"id":"178","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"MonochromeUnsharpMaskThreshold"},"id":"180","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomUnsharpMaskStrength"},"id":"182","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomUnsharpMaskFineness"},"id":"184","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomUnsharpMaskThreshold"},"id":"186","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomDefaultUnsharpStrength"},"id":"188","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomDefaultUnsharpFineness"},"id":"190","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CustomDefaultUnsharpThreshold"},"id":"192","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CropCircleActive","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"214","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CropCircleX"},"id":"215","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CropCircleY"},"id":"216","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CropCircleRadius"},"id":"217","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"DataMember":"DLOOn","Name":"DLOOn","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2,"RawConv":"$$self{DLOOn} = $val"},"id":"220","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"DLOSetting"},"id":"221","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"DLOShootingDistance","Notes":"100% = infinity","PrintConv":"sprintf(\"%.0f%%\", $val * 100)","PrintConvInv":"ToFloat($val) / 100","RawConv":"$val == 0x7fff ? undef : $val","ValueConv":"1 - $val / 0x400","ValueConvInv":"int((1 - $val) * 0x400 + 0.5)"},"id":"222","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"DataMember":"DLODataLength","Format":"int32u","Name":"DLODataLength","RawConv":"$$self{DLODataLength} = $val","Writable":0},"id":"223","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Condition":"$$self{DLOOn}","Hook":"$varSize += $$self{DLODataLength} + 0x16","Name":"DLOInfo","SubDirectory":{"TagTable":"Image::ExifTool::CanonVRD::DLOInfo"}},"id":"224","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawColorTone"},"id":"225","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawSaturation"},"id":"226","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawContrast"},"id":"227","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawLinear","PrintConv":{"ref":"shared00022"},"PrintConvColumns":2},"id":"228","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawSharpness"},"id":"229","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawHighlightPoint"},"id":"230","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawShadowPoint"},"id":"231","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawOutputHighlightPoint"},"id":"232","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}
+{"fields":{"Name":"CameraRawOutputShadowPoint"},"id":"233","index":null,"kind":"tag","table":"Image::ExifTool::CanonVRD::Ver2"}

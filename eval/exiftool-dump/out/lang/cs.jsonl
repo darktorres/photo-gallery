@@ -1,0 +1,416 @@
+{"kind":"translate","lang":"cs","tag":"AEMeteringMode","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"cs","tag":"AEProgramMode","value":{"PrintConv":{"Landscape":"Krajina","Macro":"Makro","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"AFPoint","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"AFPointBrightness","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"AFPointSelectionMethod","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"AFPointsInFocus","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"APEVersion","value":"APE verze"}
+{"kind":"translate","lang":"cs","tag":"ActiveD-Lighting","value":{"PrintConv":{"Low":"Méně","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"ActiveD-LightingMode","value":{"PrintConv":{"Low":"Méně","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"AdultContentWarning","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"Annotations","value":"Poznámky Photoshop"}
+{"kind":"translate","lang":"cs","tag":"Aperture","value":"Clona"}
+{"kind":"translate","lang":"cs","tag":"ApertureValue","value":"Clona"}
+{"kind":"translate","lang":"cs","tag":"Artist","value":"Autor"}
+{"kind":"translate","lang":"cs","tag":"AssistButtonFunction","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"Author","value":"Autor"}
+{"kind":"translate","lang":"cs","tag":"AuthorsPosition","value":"Pozice autora"}
+{"kind":"translate","lang":"cs","tag":"AutoLightingOptimizer","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"AutoRotate","value":{"PrintConv":{"None":"Žádná","Rotate 180":"180° (dolů/vpravo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)","n/a":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"BadFaxLines","value":"Špatné faxové řádky"}
+{"kind":"translate","lang":"cs","tag":"BannerImageType","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"BatteryLevel","value":"Stav baterie"}
+{"kind":"translate","lang":"cs","tag":"BitsPerSample","value":"Počet bitů na složku"}
+{"kind":"translate","lang":"cs","tag":"BlurWarning","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Brightness","value":"Jas"}
+{"kind":"translate","lang":"cs","tag":"BrightnessValue","value":"Jas"}
+{"kind":"translate","lang":"cs","tag":"By-line","value":"Autor"}
+{"kind":"translate","lang":"cs","tag":"CFAPattern","value":"CFA matrice"}
+{"kind":"translate","lang":"cs","tag":"CFAPattern2","value":"CFA matice 2"}
+{"kind":"translate","lang":"cs","tag":"CFARepeatPatternDim","value":"Velikost berevné matice CFA"}
+{"kind":"translate","lang":"cs","tag":"CPUType","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"Zataženo","Cool White Fluorescent":"Studená zářivka","Day White Fluorescent":"Denní zářivka","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Fine Weather":"Slunečno","Flash":"Blesk","Fluorescent":"Žárovka","ISO Studio Tungsten":"Studiová světla","Other":"Jiné osvětlení","Shade":"Stíny","Standard Light A":"Standardní světlo A","Standard Light B":"Standardní světlo B","Standard Light C":"Standardní světlo C","Tungsten (Incandescent)":"Zářivka","Unknown":"Neznámý","White Fluorescent":"Bílá zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"Zataženo","Cool White Fluorescent":"Studená zářivka","Day White Fluorescent":"Denní zářivka","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Fine Weather":"Slunečno","Flash":"Blesk","Fluorescent":"Žárovka","ISO Studio Tungsten":"Studiová světla","Other":"Jiné osvětlení","Shade":"Stíny","Standard Light A":"Standardní světlo A","Standard Light B":"Standardní světlo B","Standard Light C":"Standardní světlo C","Tungsten (Incandescent)":"Zářivka","Unknown":"Neznámý","White Fluorescent":"Bílá zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"CameraOrientation","value":{"Description":"Orientace","PrintConv":{"Horizontal (normal)":"0° (nahoru/vlevo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)"}}}
+{"kind":"translate","lang":"cs","tag":"CanonExposureMode","value":{"PrintConv":{"Aperture-priority AE":"Priorita clony","Manual":"Manuální","Shutter speed priority AE":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"Caption-Abstract","value":"Popisek"}
+{"kind":"translate","lang":"cs","tag":"CaptionWriter","value":"Autor popisku"}
+{"kind":"translate","lang":"cs","tag":"CaptureXResolutionUnit","value":{"PrintConv":{"um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"cs","tag":"CaptureYResolutionUnit","value":{"PrintConv":{"um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"cs","tag":"Categories","value":"Kategorie"}
+{"kind":"translate","lang":"cs","tag":"Category","value":"Kategorie"}
+{"kind":"translate","lang":"cs","tag":"CellLength","value":"Délka buňky"}
+{"kind":"translate","lang":"cs","tag":"CellWidth","value":"Šířka buňky"}
+{"kind":"translate","lang":"cs","tag":"CenterWeightedAreaSize","value":{"PrintConv":{"Average":"Průměr"}}}
+{"kind":"translate","lang":"cs","tag":"ChrominanceNR_TIFF_JPEG","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"ChrominanceNoiseReduction","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"City","value":"Město"}
+{"kind":"translate","lang":"cs","tag":"CleanFaxData","value":"Čistá fax data"}
+{"kind":"translate","lang":"cs","tag":"ColorEffect","value":{"PrintConv":{"Sepia":"Sépie"}}}
+{"kind":"translate","lang":"cs","tag":"ColorFilter","value":"Barevný filtr"}
+{"kind":"translate","lang":"cs","tag":"ColorMap","value":"Barevná mapa"}
+{"kind":"translate","lang":"cs","tag":"ColorMode","value":{"PrintConv":{"Landscape":"Krajina","Normal":"Normální","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"ColorMoireReductionMode","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"ColorResponseUnit","value":"Odpovídající barevná jednotka"}
+{"kind":"translate","lang":"cs","tag":"ColorSpace","value":{"Description":"Barevný prostor","PrintConv":{"ICC Profile":"ICC Profil","Uncalibrated":"Nekalibrován"}}}
+{"kind":"translate","lang":"cs","tag":"ColorTemperature","value":"Teplota barev"}
+{"kind":"translate","lang":"cs","tag":"ColorTone","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"CommanderGroupAMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"CommanderGroupBMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"CommanderInternalFlash","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"Comment","value":"Komentář"}
+{"kind":"translate","lang":"cs","tag":"ComponentsConfiguration","value":"Určení složek"}
+{"kind":"translate","lang":"cs","tag":"CompressedBitsPerPixel","value":"Komprimační mod"}
+{"kind":"translate","lang":"cs","tag":"Compression","value":{"Description":"Kompresní algoritmus","PrintConv":{"JPEG":"JPEG komprese","JPEG (old-style)":"JPEG (pův. verze)","Kodak DCR Compressed":"Kodak DCR komprese","Kodak KDC Compressed":"Kodak KDC komprese","Next":"Kódování NeXT 2-bit","Nikon NEF Compressed":"Nikon NEF komprese","None":"Žádná","Pentax PEF Compressed":"Pentax PEF komprese","SGILog":"Kódování SGI 32-bit Log Luminance","SGILog24":"Kódování SGI 24-bit Log Luminance","Sony ARW Compressed":"Sony ARW komprese","Thunderscan":"Kódování ThunderScan 4-bit","Uncompressed":"Bez komprese"}}}
+{"kind":"translate","lang":"cs","tag":"CompressionType","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"ConsecutiveBadFaxLines","value":"Sekvence vadných faxových řádků"}
+{"kind":"translate","lang":"cs","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Více","Low":"Méně","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"ConversionLens","value":{"PrintConv":{"Macro":"Makro"}}}
+{"kind":"translate","lang":"cs","tag":"Copyright","value":"Držitel práv"}
+{"kind":"translate","lang":"cs","tag":"CopyrightNotice","value":"Oznámení o autorských právech"}
+{"kind":"translate","lang":"cs","tag":"CopyrightStatus","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"Country","value":"Země"}
+{"kind":"translate","lang":"cs","tag":"Country-PrimaryLocationName","value":"Země"}
+{"kind":"translate","lang":"cs","tag":"CreateDate","value":"Datum a čas generování digitálních dat"}
+{"kind":"translate","lang":"cs","tag":"CreationDate","value":"Datum vytvoření"}
+{"kind":"translate","lang":"cs","tag":"Credit","value":"Kredit"}
+{"kind":"translate","lang":"cs","tag":"CropUnit","value":{"PrintConv":{"inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"CropUnits","value":{"PrintConv":{"inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"CustomRendered","value":{"Description":"Zpracování obrazu","PrintConv":{"Custom":"Uživatelské zpracování","Normal":"Normální proces"}}}
+{"kind":"translate","lang":"cs","tag":"DataImprint","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"DateCreated","value":"Datum vytvoření"}
+{"kind":"translate","lang":"cs","tag":"DateTime","value":"Datum a čas změny souboru"}
+{"kind":"translate","lang":"cs","tag":"DateTimeOriginal","value":"Datum a čas vzniku originálních dat"}
+{"kind":"translate","lang":"cs","tag":"Description","value":"Popis"}
+{"kind":"translate","lang":"cs","tag":"DeviceSettingDescription","value":"Popis nastavení zařízení"}
+{"kind":"translate","lang":"cs","tag":"DialDirectionTvAv","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"DigitalZoom","value":{"Description":"Digitální přiblížení","PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"DigitalZoomRatio","value":"Digitální zoom"}
+{"kind":"translate","lang":"cs","tag":"Directory","value":"Umístění souboru"}
+{"kind":"translate","lang":"cs","tag":"DisplaySize","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"DisplayUnits","value":{"PrintConv":{"inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"DisplayXResolutionUnit","value":{"PrintConv":{"um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"cs","tag":"DisplayYResolutionUnit","value":{"PrintConv":{"um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"cs","tag":"DisplayedUnitsX","value":{"PrintConv":{"inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"DisplayedUnitsY","value":{"PrintConv":{"inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"DjVuVersion","value":"DjVu verze"}
+{"kind":"translate","lang":"cs","tag":"DocumentName","value":"Jméno dokumentu"}
+{"kind":"translate","lang":"cs","tag":"DotRange","value":"Bodová rozteč"}
+{"kind":"translate","lang":"cs","tag":"DriveMode","value":"Režim spouště"}
+{"kind":"translate","lang":"cs","tag":"ETTLII","value":{"PrintConv":{"Average":"Průměr"}}}
+{"kind":"translate","lang":"cs","tag":"EasyMode","value":{"PrintConv":{"Landscape":"Krajina","Macro":"Makro","Manual":"Manuální","Night":"Noční foto","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"Emphasis","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"ExifImageHeight","value":"Výška"}
+{"kind":"translate","lang":"cs","tag":"ExifImageWidth","value":"Šířka"}
+{"kind":"translate","lang":"cs","tag":"ExifOffset","value":"Ukazatel Exif IFD"}
+{"kind":"translate","lang":"cs","tag":"ExifToolVersion","value":"ExifTool verze"}
+{"kind":"translate","lang":"cs","tag":"ExifVersion","value":"Exif verze"}
+{"kind":"translate","lang":"cs","tag":"ExpandFilm","value":"Ext. film"}
+{"kind":"translate","lang":"cs","tag":"ExpandFilterLens","value":"Ext. filtr objektivu"}
+{"kind":"translate","lang":"cs","tag":"ExpandFlashLamp","value":"Ext. světlo blesku"}
+{"kind":"translate","lang":"cs","tag":"ExpandLens","value":"Ext. objektiv"}
+{"kind":"translate","lang":"cs","tag":"ExpandScanner","value":"Ext. skener"}
+{"kind":"translate","lang":"cs","tag":"ExpandSoftware","value":"Ext. Software"}
+{"kind":"translate","lang":"cs","tag":"ExposureCompensation","value":"Korekce expozice"}
+{"kind":"translate","lang":"cs","tag":"ExposureIndex","value":"Index expozice"}
+{"kind":"translate","lang":"cs","tag":"ExposureMode","value":{"Description":"Mód expozice","PrintConv":{"Aperture Priority":"Priorita clony","Aperture-priority AE":"Priorita clony","Auto":"Automatická expozice","Auto bracket":"Auto braketing","Landscape":"Krajina","Manual":"Manuální expozice","Portrait":"Portrét","Shutter Priority":"Priorita času","Shutter speed priority AE":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"ExposureModeInManual","value":{"PrintConv":{"Center-weighted average":"Zvýrazněný střed","Partial metering":"Blokové","Spot metering":"Středový bod"}}}
+{"kind":"translate","lang":"cs","tag":"ExposureProgram","value":{"Description":"Expoziční mod","PrintConv":{"Action (High speed)":"Akční program (ovlivněný čas závěrky)","Aperture Priority":"Priorita clony","Aperture-priority AE":"Priorita clony","Bulb":"Žárovka","Creative (Slow speed)":"Kreativní program (ovlivněná hloubka ostrosti)","Landscape":"Krajina","Manual":"Manuální","Not Defined":"Nedefinovaný","Portrait":"Portrét","Program AE":"Normální program","Shutter Priority":"Priorita času","Shutter speed priority AE":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"ExposureTime","value":"Expoziční čas"}
+{"kind":"translate","lang":"cs","tag":"ExposureTime2","value":"Expoziční čas 2"}
+{"kind":"translate","lang":"cs","tag":"FNumber","value":"F hodnota"}
+{"kind":"translate","lang":"cs","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"0° (nahoru/vlevo)","Rotate 180":"180° (dolů/vpravo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)"}}}
+{"kind":"translate","lang":"cs","tag":"FaxProfile","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"FaxRecvParams","value":"Parametry příjemce faxu"}
+{"kind":"translate","lang":"cs","tag":"FaxRecvTime","value":"Čas příjmu faxu"}
+{"kind":"translate","lang":"cs","tag":"FaxSubAddress","value":"Sub adresa faxu"}
+{"kind":"translate","lang":"cs","tag":"FileFormat","value":"Formát"}
+{"kind":"translate","lang":"cs","tag":"FileModifyDate","value":"Datum úpravy"}
+{"kind":"translate","lang":"cs","tag":"FileName","value":"Jméno"}
+{"kind":"translate","lang":"cs","tag":"FileSize","value":"Velikost"}
+{"kind":"translate","lang":"cs","tag":"FileSource","value":{"Description":"Zdroj dat","PrintConv":{"Digital Camera":"Digitální fotoaparát","Film Scanner":"Filmový skener","Reflection Print Scanner":"Skener"}}}
+{"kind":"translate","lang":"cs","tag":"FileType","value":"Typ"}
+{"kind":"translate","lang":"cs","tag":"Filename","value":"Jméno"}
+{"kind":"translate","lang":"cs","tag":"FillOrder","value":{"Description":"Pořadí výplně","PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FilterEffect","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"FilterEffectMonochrome","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Flash","value":{"Description":"Blesk","PrintConv":{"Auto, Did not fire":"Blesk nepoužit, auto mod","Auto, Did not fire, Red-eye reduction":"Auto mod, nepoužit, redukce červených očí","Auto, Fired":"Blesk použit, auto mod","Auto, Fired, Red-eye reduction":"Blesk použit, auto mod, redukce červených očí","Auto, Fired, Red-eye reduction, Return detected":"Blesk použit, auto mod, redukce červených očí, odraz detekován","Auto, Fired, Red-eye reduction, Return not detected":"Blesk použit, auto mod, redukce červených očí, odraz nezjištěn","Auto, Fired, Return detected":"Blesk použit, auto mod, odraz detekován","Auto, Fired, Return not detected":"Blesk použit, auto mod, odraz nedetekován","Did not fire":"Blesk ne","Fired":"Blesk ano","Fired, Red-eye reduction":"Blesk použit, redukce červených očí","Fired, Red-eye reduction, Return detected":"Blesk použit, redukce červených očí, odraz detekován","Fired, Red-eye reduction, Return not detected":"Blesk použit, redukce červených očí, odraz nezjištěn","Fired, Return detected":"Odraz strobozáblesků detekován","Fired, Return not detected":"Odraz strobozáblesků nezjištěn","No Flash":"Blesk ne","No flash function":"Blesk nezjištěn","Off":"Blesk nepoužit, vynucený mod","Off, Did not fire":"Blesk nepoužit, vynucený mod","Off, Did not fire, Return not detected":"Blesk vypnut, bez záblesku, odraz nezachycen","Off, No flash function":"Neaktivní, bez funkce blesku","Off, Red-eye reduction":"Neaktivní, redukce červených očí","On":"Blesk použit, vynucený mod","On, Did not fire":"Blesk zapnut, nepoužit","On, Fired":"Blesk použit, vynucený mod","On, Red-eye reduction":"Blesk použit, vynucený mod, redukce červených očí","On, Red-eye reduction, Return detected":"Blesk použit, vynucený mod, redukce červených očí, odraz detekován","On, Red-eye reduction, Return not detected":"Blesk použit, vynucený mod, redukce červených očí, odraz nezjištěn","On, Return detected":"Blesk použit, vynucený mod, odraz detekován","On, Return not detected":"Blesk použit, vynucený mod, odraz nezjištěn"}}}
+{"kind":"translate","lang":"cs","tag":"FlashControlMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashDevice","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"FlashEnergy","value":"Síla záblesku"}
+{"kind":"translate","lang":"cs","tag":"FlashExposureComp","value":"Kompenzace blesku"}
+{"kind":"translate","lang":"cs","tag":"FlashGroupAControlMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashGroupBControlMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashGroupCControlMode","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashIntensity","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashMode","value":{"PrintConv":{"Normal":"Normální","Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"FlashModel","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"FlashOptions","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashOptions2","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FlashType","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"FlashpixVersion","value":"Podporovaná verze Flashpix"}
+{"kind":"translate","lang":"cs","tag":"FocalLength","value":"Ohnisková vzdálenost"}
+{"kind":"translate","lang":"cs","tag":"FocalLength35efl","value":"Ohnisková vzdálenost"}
+{"kind":"translate","lang":"cs","tag":"FocalLengthIn35mmFormat","value":"Přepočtená ohnisková vzdálenost (35mm)"}
+{"kind":"translate","lang":"cs","tag":"FocalPlaneResolutionUnit","value":{"Description":"Jednotka rozlišení senzoru","PrintConv":{"None":"Žádná","inches":"Palce","um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"cs","tag":"FocalPlaneXResolution","value":"Horizontální rozlišení senzoru"}
+{"kind":"translate","lang":"cs","tag":"FocalPlaneYResolution","value":"Vertikální rozlišení senzoru"}
+{"kind":"translate","lang":"cs","tag":"Focus","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusContinuous","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusMode","value":{"Description":"Ostření","PrintConv":{"Macro":"Makro","Manual":"Manuální","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusMode2","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusModeSetting","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusRange","value":{"PrintConv":{"Macro":"Makro","Manual":"Manuální","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FocusTrackingLockOn","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"FrameRate","value":"Snímkovací frekvence"}
+{"kind":"translate","lang":"cs","tag":"FrameSize","value":"Velikost snímku"}
+{"kind":"translate","lang":"cs","tag":"FreeByteCounts","value":"Počet volných bytů"}
+{"kind":"translate","lang":"cs","tag":"FreeOffsets","value":"Volná datová pozice"}
+{"kind":"translate","lang":"cs","tag":"GIFVersion","value":"GIF verze"}
+{"kind":"translate","lang":"cs","tag":"GPSAltitude","value":"Nadmořská výška"}
+{"kind":"translate","lang":"cs","tag":"GPSAltitudeRef","value":{"Description":"Nadmořská výška","PrintConv":{"Above Sea Level":"Nadmořská výška","Below Sea Level":"Nadmořská výška (záporná hodnota)"}}}
+{"kind":"translate","lang":"cs","tag":"GPSAreaInformation","value":"Název GPS oblasti"}
+{"kind":"translate","lang":"cs","tag":"GPSDOP","value":"Přesnost měření"}
+{"kind":"translate","lang":"cs","tag":"GPSDateStamp","value":"GPS Datum"}
+{"kind":"translate","lang":"cs","tag":"GPSDateTime","value":"GPS čas (atomový čas)"}
+{"kind":"translate","lang":"cs","tag":"GPSDestBearing","value":"Azimut cíle"}
+{"kind":"translate","lang":"cs","tag":"GPSDestBearingRef","value":{"Description":"Reference azimutu cíle.","PrintConv":{"Magnetic North":"Magnetický směr","True North":"Geografický směr"}}}
+{"kind":"translate","lang":"cs","tag":"GPSDestDistance","value":"Vzdálenost k cíli"}
+{"kind":"translate","lang":"cs","tag":"GPSDestDistanceRef","value":{"Description":"Reference vzdálenosti cíle","PrintConv":{"Kilometers":"Kilometry","Miles":"Míle","Nautical Miles":"Uzle"}}}
+{"kind":"translate","lang":"cs","tag":"GPSDestLatitude","value":"Zeměpisná šířka cíle"}
+{"kind":"translate","lang":"cs","tag":"GPSDestLatitudeRef","value":{"Description":"Reference pro zeměpisnou šířku cíle","PrintConv":{"North":"Severní šířka","South":"Jižní šířka"}}}
+{"kind":"translate","lang":"cs","tag":"GPSDestLongitude","value":"Zeměpisná délka cíle"}
+{"kind":"translate","lang":"cs","tag":"GPSDestLongitudeRef","value":{"Description":"Reference pro zeměpisnou délku cíle","PrintConv":{"East":"Východní délka","West":"Západní délka"}}}
+{"kind":"translate","lang":"cs","tag":"GPSDifferential","value":{"Description":"GPS rozdílová korekce","PrintConv":{"Differential Corrected":"Započítaná rozdílová korekce","No Correction":"Měření bez korekce"}}}
+{"kind":"translate","lang":"cs","tag":"GPSImgDirection","value":"Orientace obrázku"}
+{"kind":"translate","lang":"cs","tag":"GPSImgDirectionRef","value":{"Description":"Reference k orientaci obrázku","PrintConv":{"Magnetic North":"Magnetický směr","True North":"Geografický směr"}}}
+{"kind":"translate","lang":"cs","tag":"GPSInfo","value":"IFD ukazatel v GPS informacích"}
+{"kind":"translate","lang":"cs","tag":"GPSLatitude","value":"Zeměpisná šířka"}
+{"kind":"translate","lang":"cs","tag":"GPSLatitudeRef","value":{"Description":"Severní nebo Jižní šířka","PrintConv":{"North":"Severní šířka","South":"Jižní šířka"}}}
+{"kind":"translate","lang":"cs","tag":"GPSLongitude","value":"Zeměpisná délka"}
+{"kind":"translate","lang":"cs","tag":"GPSLongitudeRef","value":{"Description":"Východní nebo západní délka","PrintConv":{"East":"Východní délka","West":"Západní délka"}}}
+{"kind":"translate","lang":"cs","tag":"GPSMapDatum","value":"Geodetická data"}
+{"kind":"translate","lang":"cs","tag":"GPSMeasureMode","value":{"Description":"Mod GPS","PrintConv":{"2-D":"2-dimenzionální měření","2-Dimensional":"2-dimenzionální měření","2-Dimensional Measurement":"2-dimenzionální měření","3-D":"3-dimenzionální měření","3-Dimensional":"3-dimenzionální měření","3-Dimensional Measurement":"3-dimenzionální měření"}}}
+{"kind":"translate","lang":"cs","tag":"GPSProcessingMethod","value":"Název procesní metody GPS"}
+{"kind":"translate","lang":"cs","tag":"GPSSatellites","value":"GPS satelity využité při měření"}
+{"kind":"translate","lang":"cs","tag":"GPSSpeed","value":"Rychlost GPS přijímače"}
+{"kind":"translate","lang":"cs","tag":"GPSSpeedRef","value":{"Description":"Jednotka rychlosti","PrintConv":{"km/h":"Kilometry za hodinu","knots":"Uzle","mph":"Míle za hodinu"}}}
+{"kind":"translate","lang":"cs","tag":"GPSStatus","value":{"Description":"Stav GPS přijímače","PrintConv":{"Measurement Active":"Probíhá měření","Measurement Void":"Vzájemné měření"}}}
+{"kind":"translate","lang":"cs","tag":"GPSTimeStamp","value":"GPS čas (atomový čas)"}
+{"kind":"translate","lang":"cs","tag":"GPSTrack","value":"Směr pohybu"}
+{"kind":"translate","lang":"cs","tag":"GPSTrackRef","value":{"Description":"Reference pro směr pohybu","PrintConv":{"Magnetic North":"Magnetický směr","True North":"Geografický směr"}}}
+{"kind":"translate","lang":"cs","tag":"GPSVersionID","value":"Verze GPS TAGu"}
+{"kind":"translate","lang":"cs","tag":"GainControl","value":{"Description":"Míra jasu","PrintConv":{"High gain down":"Silné zeslabení","High gain up":"Silné zesílení","Low gain down":"Slabé zeslabení","Low gain up":"Slabé zesílení","None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Gradation","value":"Pusobivy"}
+{"kind":"translate","lang":"cs","tag":"GrayResponseCurve","value":"Šedá referenční křivka"}
+{"kind":"translate","lang":"cs","tag":"GrayResponseUnit","value":{"Description":"Jednotka odezvy šedé","PrintConv":{"0.0001":"Číslo udávající tisíce jednotek","0.001":"Číslo udávající stovky jednotek","0.1":"Číslo udávající desítky jednotek","1e-05":"Číslo udávající desetitisíce jednotek","1e-06":"Číslo udávající statisíce jednotek"}}}
+{"kind":"translate","lang":"cs","tag":"HalftoneHints","value":"Půltóny"}
+{"kind":"translate","lang":"cs","tag":"Headline","value":"Titulek"}
+{"kind":"translate","lang":"cs","tag":"HighISONoiseReduction","value":{"PrintConv":{"Low":"Méně","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"HostComputer","value":"Host"}
+{"kind":"translate","lang":"cs","tag":"Hue","value":"Odstín"}
+{"kind":"translate","lang":"cs","tag":"ICCProfile","value":"ICC-Profil"}
+{"kind":"translate","lang":"cs","tag":"IPTC-NAA","value":"IPTC-NAA metadata"}
+{"kind":"translate","lang":"cs","tag":"ISO","value":"Citlivost ISO"}
+{"kind":"translate","lang":"cs","tag":"ISOSetting","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"ImageDescription","value":"Popis obrázku"}
+{"kind":"translate","lang":"cs","tag":"ImageHeight","value":"Výška"}
+{"kind":"translate","lang":"cs","tag":"ImageHistory","value":"Historie obrázku"}
+{"kind":"translate","lang":"cs","tag":"ImageNumber","value":"Číslo obrázku"}
+{"kind":"translate","lang":"cs","tag":"ImageOrientation","value":{"PrintConv":{"Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"ImageQuality","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"ImageSize","value":"Velikost snímku"}
+{"kind":"translate","lang":"cs","tag":"ImageSourceData","value":"Zdrojová data obrázku"}
+{"kind":"translate","lang":"cs","tag":"ImageTone","value":{"PrintConv":{"Landscape":"Krajina","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"ImageUniqueID","value":"Jedinečné ID obrázku"}
+{"kind":"translate","lang":"cs","tag":"ImageWidth","value":"Šířka"}
+{"kind":"translate","lang":"cs","tag":"Index","value":"Nápověda"}
+{"kind":"translate","lang":"cs","tag":"InkNames","value":"Název náplně"}
+{"kind":"translate","lang":"cs","tag":"InkSet","value":"Inkoustová sada"}
+{"kind":"translate","lang":"cs","tag":"Instructions","value":"Pokyny"}
+{"kind":"translate","lang":"cs","tag":"InternalFlash","value":{"PrintConv":{"Fired":"Blesk ano","Manual":"Manuální","No":"Blesk ne"}}}
+{"kind":"translate","lang":"cs","tag":"InteropIndex","value":{"Description":"Identifikace","PrintConv":{"R03 - DCF option file (Adobe RGB)":"R03: DCF option file (Adobe RGB)","R98 - DCF basic file (sRGB)":"R98: DCF basic file (sRGB)","THM - DCF thumbnail file":"THM: DCF thumbnail file"}}}
+{"kind":"translate","lang":"cs","tag":"InteropOffset","value":"Značka součinnosti"}
+{"kind":"translate","lang":"cs","tag":"InteropVersion","value":"Verze kompatibility"}
+{"kind":"translate","lang":"cs","tag":"JFIFVersion","value":"JFIF verze"}
+{"kind":"translate","lang":"cs","tag":"JPEGQuality","value":{"PrintConv":{"Standard":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"Keyword","value":"Klíčová slova"}
+{"kind":"translate","lang":"cs","tag":"Keywords","value":"Klíčová slova"}
+{"kind":"translate","lang":"cs","tag":"LeafData","value":"Leaf data"}
+{"kind":"translate","lang":"cs","tag":"Lens","value":"Objektiv"}
+{"kind":"translate","lang":"cs","tag":"LensInfo","value":"Informace o optice"}
+{"kind":"translate","lang":"cs","tag":"LicenseType","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"LightSource","value":{"Description":"Zdroj světla","PrintConv":{"Cloudy":"Zataženo","Cool White Fluorescent":"Studená zářivka","Day White Fluorescent":"Denní zářivka","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Fine Weather":"Slunečno","Flash":"Blesk","Fluorescent":"Žárovka","ISO Studio Tungsten":"Studiová světla","Other":"Jiné osvětlení","Shade":"Stíny","Standard Light A":"Standardní světlo A","Standard Light B":"Standardní světlo B","Standard Light C":"Standardní světlo C","Tungsten (Incandescent)":"Zářivka","Unknown":"Neznámý","White Fluorescent":"Bílá zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"Lightness","value":"Jas"}
+{"kind":"translate","lang":"cs","tag":"Location","value":"Lokalita"}
+{"kind":"translate","lang":"cs","tag":"LoopStyle","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"LuminanceNoiseReduction","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"MIEVersion","value":"MIE verze"}
+{"kind":"translate","lang":"cs","tag":"Macro","value":{"PrintConv":{"Macro":"Makro","Manual":"Manuální","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"MacroMode","value":{"PrintConv":{"Macro":"Makro","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"Make","value":"Výrobce"}
+{"kind":"translate","lang":"cs","tag":"MakerNote","value":"Privátní data výrobce"}
+{"kind":"translate","lang":"cs","tag":"MakerNotes","value":"Poznámka výrobce"}
+{"kind":"translate","lang":"cs","tag":"ManualFlashOutput","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"MaxAperture","value":"Maximální clona+C1233 objektivu"}
+{"kind":"translate","lang":"cs","tag":"MaxApertureValue","value":"Max clona objektivu"}
+{"kind":"translate","lang":"cs","tag":"MaxSampleValue","value":"Max. hodnota vzorku"}
+{"kind":"translate","lang":"cs","tag":"MediaType","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"Metering","value":{"PrintConv":{"Spot":"Středový bod"}}}
+{"kind":"translate","lang":"cs","tag":"MeteringMode","value":{"Description":"Režim měření expozice","PrintConv":{"Average":"Průměr","Center-weighted average":"Zvýrazněný střed","Multi-segment":"Multi segment","Multi-spot":"Vícebodové","Other":"Jiné","Partial":"Blokové","Spot":"Středový bod","Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"MeteringMode2","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"cs","tag":"MeteringMode3","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"cs","tag":"MinSampleValue","value":"Min. hodnota vzorku"}
+{"kind":"translate","lang":"cs","tag":"MinoltaQuality","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"Model","value":"Typ fotoaparátu"}
+{"kind":"translate","lang":"cs","tag":"Model2","value":"Typ zařízení (2)"}
+{"kind":"translate","lang":"cs","tag":"ModifiedPictureStyle","value":{"PrintConv":{"Landscape":"Krajina","None":"Žádná","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"ModifiedSharpnessFreq","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"ModifiedToneCurve","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"ModifiedWhiteBalance","value":{"PrintConv":{"Cloudy":"Zataženo","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Flash":"Blesk","Fluorescent":"Žárovka","Shade":"Stíny","Tungsten":"Zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"ModifyDate","value":"Datum a čas změny souboru"}
+{"kind":"translate","lang":"cs","tag":"MonochromeFilterEffect","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"MonochromeToningEffect","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"NEFCompression","value":{"PrintConv":{"Uncompressed":"Bez komprese"}}}
+{"kind":"translate","lang":"cs","tag":"Noise","value":"Šum"}
+{"kind":"translate","lang":"cs","tag":"NoiseFilter","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"NoiseReduction","value":{"Description":"Potlačení šumu","PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"NumberofInks","value":"Číslo náplně"}
+{"kind":"translate","lang":"cs","tag":"ObjectFileType","value":{"PrintConv":{"None":"Žádná","Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"OldSubfileType","value":"Typ podsekce"}
+{"kind":"translate","lang":"cs","tag":"Opto-ElectricConvFactor","value":"Optoel. konverzní faktor (OECF)"}
+{"kind":"translate","lang":"cs","tag":"Orientation","value":{"Description":"Orientace","PrintConv":{"Horizontal (normal)":"0° (nahoru/vlevo)","Mirror horizontal":"0° (nahoru/vpravo)","Mirror horizontal and rotate 270 CW":"90° po směru HR (vlevo/nahoru)","Mirror horizontal and rotate 90 CW":"90° ptoti směru HR (vpravo/dolů)","Mirror vertical":"180° (dolů/vlevo)","Rotate 180":"180° (dolů/vpravo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)"}}}
+{"kind":"translate","lang":"cs","tag":"PEFVersion","value":"PEF verze"}
+{"kind":"translate","lang":"cs","tag":"Padding","value":"Náhradní znaky"}
+{"kind":"translate","lang":"cs","tag":"PageName","value":"Jméno stránky"}
+{"kind":"translate","lang":"cs","tag":"PageNumber","value":"Číslo stránky"}
+{"kind":"translate","lang":"cs","tag":"PhotoEffectsType","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"PhotometricInterpretation","value":{"Description":"Pixelové schéma","PrintConv":{"BlackIsZero":"Černá je nula","Color Filter Array":"CFA (Color Filter Matrix)","Pixar LogL":"CIE Log2(L) (Log luminance)","Pixar LogLuv":"CIE Log2(L)(u',v') (Log luminance and chrominance)","RGB Palette":"Barevné schema","Transparency Mask":"Průhlednost","WhiteIsZero":"Bílá je nula"}}}
+{"kind":"translate","lang":"cs","tag":"PhotoshopAnnotations","value":"Poznámky Photoshop"}
+{"kind":"translate","lang":"cs","tag":"PictureFinish","value":{"PrintConv":{"Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"PictureMode","value":{"PrintConv":{"Aperture-priority AE":"Priorita clony","Landscape":"Krajina","Macro":"Makro","Manual":"Manuální","Portrait":"Portrét","Shutter speed priority AE":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"PictureMode2","value":{"PrintConv":{"Aperture Priority":"Priorita clony","Manual":"Manuální","Shutter Speed Priority":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"PictureStyle","value":{"PrintConv":{"Landscape":"Krajina","None":"Žádná","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"PixelUnits","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"PlanarConfiguration","value":{"Description":"Uspořádání obrazových dat","PrintConv":{"Chunky":"Chunky Format (prokládaný)","Planar":"Planární (dvojrozměrný)"}}}
+{"kind":"translate","lang":"cs","tag":"Predictor","value":{"Description":"Predikce","PrintConv":{"Horizontal differencing":"Horizontální diferenciace","None":"Bez predikce"}}}
+{"kind":"translate","lang":"cs","tag":"PreviewColorSpace","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"PreviewImage","value":"Náhled"}
+{"kind":"translate","lang":"cs","tag":"PreviewQuality","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"PrimaryChromaticities","value":"Chromatičnost primárních barev"}
+{"kind":"translate","lang":"cs","tag":"ProgramLine","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"ProgramMode","value":{"PrintConv":{"None":"Žádná","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"Province-State","value":"Stát/provincie"}
+{"kind":"translate","lang":"cs","tag":"Quality","value":{"PrintConv":{"Low":"Méně","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"QualityMode","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"RAFVersion","value":"RAF verze"}
+{"kind":"translate","lang":"cs","tag":"Rating","value":"Hodnocení"}
+{"kind":"translate","lang":"cs","tag":"RatingPercent","value":"Hodnocení v procentech"}
+{"kind":"translate","lang":"cs","tag":"RawJpgQuality","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"RecordMode","value":{"Description":"Režim záznamu","PrintConv":{"Aperture Priority":"Priorita clony","Manual":"Manuální","Shutter Priority":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"RecordingMode","value":{"PrintConv":{"Landscape":"Krajina","Manual":"Manuální","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"ReferenceBlackWhite","value":"Černý a bílý referenční bod"}
+{"kind":"translate","lang":"cs","tag":"RelatedImageFileFormat","value":"Obrazový formát"}
+{"kind":"translate","lang":"cs","tag":"RelatedImageHeight","value":"Výška obrázku"}
+{"kind":"translate","lang":"cs","tag":"RelatedImageWidth","value":"Šířka obrázku"}
+{"kind":"translate","lang":"cs","tag":"RelatedSoundFile","value":"Audio soubor"}
+{"kind":"translate","lang":"cs","tag":"ResampleParamsQuality","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"ResolutionUnit","value":{"Description":"Jednotka X a Y rozlišení","PrintConv":{"None":"Žádná","cm":"Pixely/cm","inches":"Palce"}}}
+{"kind":"translate","lang":"cs","tag":"RetouchHistory","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Rotation","value":{"PrintConv":{"Horizontal":"0° (nahoru/vlevo)","Horizontal (normal)":"0° (nahoru/vlevo)","Rotate 180":"180° (dolů/vpravo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)","Rotated 180":"180° (dolů/vpravo)","Rotated 270 CW":"90° po směru HR (vlevo/dolů)","Rotated 90 CW":"90° ptoti směru HR (vpravo/nahoru)"}}}
+{"kind":"translate","lang":"cs","tag":"RowsPerStrip","value":"Počet řádek v části"}
+{"kind":"translate","lang":"cs","tag":"SPIFFVersion","value":"SPIFF verze"}
+{"kind":"translate","lang":"cs","tag":"SVGVersion","value":"SVG verze"}
+{"kind":"translate","lang":"cs","tag":"SampleFormat","value":{"Description":"Formát vzorku","PrintConv":{"Complex int":"Komplexní číslo","Float":"Desetinná čárka","Signed":"Záporné číslo","Undefined":"Nedefinované","Unsigned":"Kladné číslo"}}}
+{"kind":"translate","lang":"cs","tag":"SamplesPerPixel","value":"Počet složek"}
+{"kind":"translate","lang":"cs","tag":"Saturation","value":{"Description":"Saturace","PrintConv":{"High":"Vysoká","Low":"Nízká","Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"SceneCaptureType","value":{"Description":"Typ scény","PrintConv":{"Landscape":"Krajina","Night":"Noční foto","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"SceneMode","value":{"PrintConv":{"Aperture Priority":"Priorita clony","Landscape":"Krajina","Macro":"Makro","Manual":"Manuální","Normal":"Normální","Portrait":"Portrét","Shutter Priority":"Priorita času","Spot":"Středový bod","Sunset":"Západ"}}}
+{"kind":"translate","lang":"cs","tag":"SceneModeUsed","value":{"PrintConv":{"Aperture Priority":"Priorita clony","Landscape":"Krajina","Macro":"Makro","Manual":"Manuální","Portrait":"Portrét","Shutter Priority":"Priorita času"}}}
+{"kind":"translate","lang":"cs","tag":"SceneSelect","value":{"PrintConv":{"Night":"Noční foto"}}}
+{"kind":"translate","lang":"cs","tag":"SceneType","value":{"Description":"Typ scény","PrintConv":{"Directly photographed":"Přímo pořízený snímek"}}}
+{"kind":"translate","lang":"cs","tag":"SecurityClassification","value":{"Description":"Bezpečnostní klasifikace","PrintConv":{"Confidential":"Důvěrný","Restricted":"Vyhrazený","Secret":"Tajný","Top Secret":"Velmi tajný","Unclassified":"Neurčeno"}}}
+{"kind":"translate","lang":"cs","tag":"SelfTimerMode","value":"Samospoušť"}
+{"kind":"translate","lang":"cs","tag":"SensingMethod","value":{"Description":"Metoda měření","PrintConv":{"Color sequential area":"Barevný sekvenční plošný sensor","Color sequential linear":"Barevný sekvenčné-lineární senzor","Monochrome area":"Monochromatický senzor","Monochrome linear":"Monochromatický lineární senzor","Not defined":"Nedefinovaný","One-chip color area":"Jednočipový barevný senzor","Three-chip color area":"Tříčipový barevný senzor","Trilinear":"Třílineární senzor","Two-chip color area":"Dvoučipový barevný senzor"}}}
+{"kind":"translate","lang":"cs","tag":"SequentialShot","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"SerialNumber","value":"ID fotoaparátu"}
+{"kind":"translate","lang":"cs","tag":"SetButtonCrossKeysFunc","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"ShadingCompensation","value":"Kompenzace stínování"}
+{"kind":"translate","lang":"cs","tag":"Sharpness","value":{"Description":"Doostření","PrintConv":{"Hard":"Silné","Normal":"Normální","Soft":"Lehké"}}}
+{"kind":"translate","lang":"cs","tag":"SharpnessFrequency","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"ShootingMode","value":{"Description":"Režim focení","PrintConv":{"Aperture Priority":"Priorita clony","Macro":"Makro","Manual":"Manuální","Normal":"Normální","Portrait":"Portrét","Shutter Priority":"Priorita času","Spot":"Středový bod"}}}
+{"kind":"translate","lang":"cs","tag":"ShutterMode","value":{"PrintConv":{"Aperture Priority":"Priorita clony"}}}
+{"kind":"translate","lang":"cs","tag":"ShutterSpeed","value":"Expoziční čas"}
+{"kind":"translate","lang":"cs","tag":"ShutterSpeedValue","value":"Čas závěrky"}
+{"kind":"translate","lang":"cs","tag":"SlowShutter","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Software","value":"Použitý software"}
+{"kind":"translate","lang":"cs","tag":"Source","value":"Zdroj"}
+{"kind":"translate","lang":"cs","tag":"SpatialFrequencyResponse","value":"Spatial frequency response"}
+{"kind":"translate","lang":"cs","tag":"SpecialEffectsOpticalFilter","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"SpectralSensitivity","value":"Spektrální citlivost"}
+{"kind":"translate","lang":"cs","tag":"State","value":"Stát"}
+{"kind":"translate","lang":"cs","tag":"StripByteCounts","value":"Bytů na komprimovanou část"}
+{"kind":"translate","lang":"cs","tag":"StripOffsets","value":"Pozice obrazových dat"}
+{"kind":"translate","lang":"cs","tag":"SubSecCreateDate","value":"Datum a čas generování digitálních dat"}
+{"kind":"translate","lang":"cs","tag":"SubSecDateTimeOriginal","value":"Datum a čas vzniku originálních dat"}
+{"kind":"translate","lang":"cs","tag":"SubSecModifyDate","value":"Datum a čas změny souboru"}
+{"kind":"translate","lang":"cs","tag":"SubSecTime","value":"DateTime 1/100 sekundy"}
+{"kind":"translate","lang":"cs","tag":"SubSecTimeDigitized","value":"DateTimeDigitized 1/100 sekund"}
+{"kind":"translate","lang":"cs","tag":"SubSecTimeOriginal","value":"DateTimeOriginal 1/100 sekund"}
+{"kind":"translate","lang":"cs","tag":"SubfileType","value":"Nový typ podsekce"}
+{"kind":"translate","lang":"cs","tag":"Subject","value":"Popis"}
+{"kind":"translate","lang":"cs","tag":"SubjectArea","value":"Pozice hlavního objektu"}
+{"kind":"translate","lang":"cs","tag":"SubjectDistance","value":"Vzdálenost objektu"}
+{"kind":"translate","lang":"cs","tag":"SubjectDistanceRange","value":{"Description":"Rozsah vzdálenosti objektu","PrintConv":{"Close":"Blízký","Distant":"Vzdálený","Macro":"Makro","Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"SubjectLocation","value":"Pozice hlavního objektu"}
+{"kind":"translate","lang":"cs","tag":"SubjectProgram","value":{"PrintConv":{"None":"Žádná","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"Subsystem","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"SupplementalCategories","value":"Doplňkové kategorie"}
+{"kind":"translate","lang":"cs","tag":"T4Options","value":"Plné bity"}
+{"kind":"translate","lang":"cs","tag":"T6Options","value":"Volby T6"}
+{"kind":"translate","lang":"cs","tag":"TargetPrinter","value":"Cílová tiskárna"}
+{"kind":"translate","lang":"cs","tag":"Teleconverter","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"Thresholding","value":"Práh"}
+{"kind":"translate","lang":"cs","tag":"ThumbnailImage","value":"Náhled"}
+{"kind":"translate","lang":"cs","tag":"ThumbnailImageSize","value":"Velkost náhledu"}
+{"kind":"translate","lang":"cs","tag":"TileByteCounts","value":"Počet bytů prvku"}
+{"kind":"translate","lang":"cs","tag":"TileLength","value":"Délka prvku"}
+{"kind":"translate","lang":"cs","tag":"TileOffsets","value":"Offset prvku"}
+{"kind":"translate","lang":"cs","tag":"TileWidth","value":"Šířka prvku"}
+{"kind":"translate","lang":"cs","tag":"TimeScaleParamsQuality","value":{"PrintConv":{"Low":"Méně"}}}
+{"kind":"translate","lang":"cs","tag":"Title","value":"Název"}
+{"kind":"translate","lang":"cs","tag":"ToneCurve","value":{"PrintConv":{"Manual":"Manuální"}}}
+{"kind":"translate","lang":"cs","tag":"ToningEffect","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"ToningEffectMonochrome","value":{"PrintConv":{"None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"TransferFunction","value":"Transfer funkce"}
+{"kind":"translate","lang":"cs","tag":"Transformation","value":{"PrintConv":{"Horizontal (normal)":"0° (nahoru/vlevo)","Mirror horizontal":"0° (nahoru/vpravo)","Mirror horizontal and rotate 270 CW":"90° po směru HR (vlevo/nahoru)","Mirror horizontal and rotate 90 CW":"90° ptoti směru HR (vpravo/dolů)","Mirror vertical":"180° (dolů/vlevo)","Rotate 180":"180° (dolů/vpravo)","Rotate 270 CW":"90° po směru HR (vlevo/dolů)","Rotate 90 CW":"90° ptoti směru HR (vpravo/nahoru)"}}}
+{"kind":"translate","lang":"cs","tag":"TransmissionReference","value":"Reference přenosu"}
+{"kind":"translate","lang":"cs","tag":"Trapped","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"Urgency","value":"Naléhavost"}
+{"kind":"translate","lang":"cs","tag":"UserComment","value":"Komentář"}
+{"kind":"translate","lang":"cs","tag":"UserDef1PictureStyle","value":{"PrintConv":{"Landscape":"Krajina","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"UserDef2PictureStyle","value":{"PrintConv":{"Landscape":"Krajina","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"UserDef3PictureStyle","value":{"PrintConv":{"Landscape":"Krajina","Portrait":"Portrét"}}}
+{"kind":"translate","lang":"cs","tag":"VRDVersion","value":"VRD verze"}
+{"kind":"translate","lang":"cs","tag":"Version","value":"Verze"}
+{"kind":"translate","lang":"cs","tag":"VignetteControl","value":{"PrintConv":{"Normal":"Normální"}}}
+{"kind":"translate","lang":"cs","tag":"WBAdjLighting","value":{"PrintConv":{"Daylight (cloudy)":"Denní světlo (2)","Daylight (direct sunlight)":"Denní světlo (0)","Daylight (shade)":"Denní světlo (1)","Flash":"Blesk","None":"Žádná"}}}
+{"kind":"translate","lang":"cs","tag":"WhiteBalance","value":{"Description":"Vyvážení bílé","PrintConv":{"Auto":"Automatické vyvážení bílé","Black & White":"Černobílé foto","Cloudy":"Zataženo","Cool White Fluorescent":"Chladná bílá fluorescentní","Custom 1":"VLASTNÍ1","Custom 2":"VLASTNÍ2","Custom 3":"VLASTNÍ3","Custom 4":"VLASTNÍ4","Day White Fluorescent":"Denní zářivka","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Flash":"Blesk","Fluorescent":"Žárovka","Manual":"Manuální","Shade":"Stíny","Tungsten":"Zářivka","Unknown":"Neznámý","White Fluorescent":"Bílá zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"WhiteBalanceAdj","value":{"PrintConv":{"Cloudy":"Zataženo","Daylight":"Denní světlo","Flash":"Blesk","Fluorescent":"Žárovka","Shade":"Stíny","Tungsten":"Zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"WhiteBalanceMode","value":{"PrintConv":{"Unknown":"Neznámý"}}}
+{"kind":"translate","lang":"cs","tag":"WhiteBalanceSet","value":{"PrintConv":{"Cloudy":"Zataženo","Daylight":"Denní světlo","Daylight Fluorescent":"Denní světlo","Flash":"Blesk","Manual":"Manuální","Shade":"Stíny","Tungsten":"Zářivka","White Fluorescent":"Bílá zářivka"}}}
+{"kind":"translate","lang":"cs","tag":"WhitePoint","value":"Chromatičnost bílého bodu"}
+{"kind":"translate","lang":"cs","tag":"Writer-Editor","value":"Autor popisku"}
+{"kind":"translate","lang":"cs","tag":"XMP","value":"XMP metadata"}
+{"kind":"translate","lang":"cs","tag":"XPAuthor","value":"Autor"}
+{"kind":"translate","lang":"cs","tag":"XPComment","value":"Komentář"}
+{"kind":"translate","lang":"cs","tag":"XPKeywords","value":"Klíčová slova"}
+{"kind":"translate","lang":"cs","tag":"XPSubject","value":"Popis"}
+{"kind":"translate","lang":"cs","tag":"XPTitle","value":"Název"}
+{"kind":"translate","lang":"cs","tag":"XPosition","value":"X-pozice"}
+{"kind":"translate","lang":"cs","tag":"XResolution","value":"Rozlišení obrázku na šířku"}
+{"kind":"translate","lang":"cs","tag":"YCbCrCoefficients","value":"Koeficienty transformační YCbCr matrice"}
+{"kind":"translate","lang":"cs","tag":"YCbCrPositioning","value":{"Description":"Y a C pozice","PrintConv":{"Centered":"Centrované","Co-sited":"Po stranách"}}}
+{"kind":"translate","lang":"cs","tag":"YCbCrSubSampling","value":"Vzorkovací poměr Y k C"}
+{"kind":"translate","lang":"cs","tag":"YPosition","value":"Y-pozice"}
+{"kind":"translate","lang":"cs","tag":"YResolution","value":"Rozlišení obrázku na výšku"}

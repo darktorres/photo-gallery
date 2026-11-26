@@ -1,0 +1,61 @@
+{"kind":"table","module":"Palm","name":"Image::ExifTool::Palm::EXTH","special":{"FORMAT":"string","GROUPS":{"0":"Palm","1":"MOBI","2":"Document"},"NOTES":"Information extracted from the MOBI extended header.","PROCESS_PROC":{"code":"&Image::ExifTool::Palm::ProcessEXTH"},"SHORT_NAME":"Palm::EXTH","TABLE_NAME":"Image::ExifTool::Palm::EXTH","TAG_PREFIX":"Palm_EXTH"}}
+{"fields":{"Name":"DRMServerID"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"DRMCommerceID"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"DRM_E-BookBaseID"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Publisher"},"id":"101","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Imprint"},"id":"102","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Description"},"id":"103","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"ISBN"},"id":"104","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"List":1,"Name":"Subject"},"id":"105","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Groups":{"2":"Time"},"Name":"PublishDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n            require Image::ExifTool::XMP;\n            Image::ExifTool::XMP::ConvertXMPDate($val, 1);\n        "},"id":"106","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Review"},"id":"107","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Contributor"},"id":"108","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Rights"},"id":"109","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"SubjectCode"},"id":"110","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"BookType"},"id":"111","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Source"},"id":"112","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"ASIN"},"id":"113","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"BookVersion"},"id":"114","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"SampleFlag"},"id":"115","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"StartReading"},"id":"116","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Adult"},"id":"117","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"RetailPrice"},"id":"118","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"RetailPriceCurrency"},"id":"119","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"ResourceCount"},"id":"125","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"KF8CoverURI"},"id":"129","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"DictionaryShortName"},"id":"200","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"CreatorSoftware","PrintConv":{"1":"Mobigen","2":"Mobipocket","200":"Kindlegen (Windows)","201":"Kindlegen (Linux)","202":"Kindlegen (Mac)"}},"id":"204","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"CreatorMajorVersion"},"id":"205","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"CreatorMinorVersion"},"id":"206","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"CreatorBuildNumber"},"id":"207","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Watermark"},"id":"208","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Tamper-proofKeys"},"id":"209","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int8u","Name":"ClippingLimit"},"id":"401","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"PublisherLimit"},"id":"402","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int8u","Name":"TextToSpeech","PrintConv":{"0":"Enabled","1":"Disabled"}},"id":"404","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int8u","Name":"RentalFlag"},"id":"405","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"RentalExpirationDate"},"id":"406","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Format":"int32u","Name":"CDEType"},"id":"501","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"LastUpdateTime"},"id":"502","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"UpdatedTitle"},"id":"503","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"ASIN2"},"id":"504","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Language"},"id":"524","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"Alignment"},"id":"525","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"fields":{"Name":"CreatorBuildNumber2"},"id":"535","index":null,"kind":"tag","table":"Image::ExifTool::Palm::EXTH"}
+{"kind":"table","module":"Palm","name":"Image::ExifTool::Palm::MOBI","special":{"FORMAT":"int32u","GROUPS":{"0":"Palm","1":"MOBI","2":"Document"},"NOTES":"\n        Information extracted from the MOBI header of Mobipocket and Amazon Kindle\n        KF7 and KF8 files.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Palm::MOBI","TABLE_NAME":"Image::ExifTool::Palm::MOBI","TAG_PREFIX":"Palm_MOBI"}}
+{"fields":{"Format":"int16u","Name":"Compression","PrintConv":{"1":"None","17480":"HUFF/CDIC","2":"PalmDOC"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"UncompressedTextLength","PrintConv":{"code":"&Image::ExifTool::ConvertFileSize"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"Encryption","PrintConv":{"0":"None","1":"Old Mobipocket","2":"Mobipocket"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"MobiType","PrintConv":{"2":"Mobipocket Book","232":"mobipocket? generated by kindlegen1.2","248":"KF8: generated by kindlegen2","257":"News","258":"News_Feed","259":"News_Magazine","3":"PalmDoc Book","4":"Audio","513":"PICS","514":"WORD","515":"XLS","516":"PPT","517":"TEXT","518":"HTML"}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"CodePage","PrintConv":{"1252":"Windows Latin 1 (Western European)","65001":"Unicode (UTF-8)"},"RawConv":"$$self{CodePage} = $val"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"MobiVersion"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"BookName"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"fields":{"Name":"MinimumVersion"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Palm::MOBI"}
+{"kind":"table","module":"Palm","name":"Image::ExifTool::Palm::Main","special":{"FORMAT":"int32u","GROUPS":{"0":"Palm","1":"Palm","2":"Document"},"NOTES":"\n        Information extracted from Palm database files (PDB and PRC extensions),\n        Mobipocket electronic books (MOBI), and Amazon Kindle KF7 and KF8 books (AZW\n        and AZW3).\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Palm::Main","TABLE_NAME":"Image::ExifTool::Palm::Main","TAG_PREFIX":"Palm"}}
+{"fields":{"Format":"string[32]","Name":"DatabaseName"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","RawConv":"\n        my $offset = (66 * 365 + 17) * 24 * 3600;\n        return $val - $offset if $val >= $offset;\n        return $val;\n    ","ValueConv":"ConvertUnixTime($val, 1)"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","RawConv":"\n        my $offset = (66 * 365 + 17) * 24 * 3600;\n        return $val - $offset if $val >= $offset;\n        return $val;\n    ","ValueConv":"ConvertUnixTime($val, 1)"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"LastBackupDate","PrintConv":"$self->ConvertDateTime($val)","RawConv":"\n        my $offset = (66 * 365 + 17) * 24 * 3600;\n        return $val - $offset if $val >= $offset;\n        return $val;\n    ","ValueConv":"ConvertUnixTime($val, 1)"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}
+{"fields":{"Name":"ModificationNumber"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}
+{"fields":{"Format":"undef[8]","Name":"PalmFileType","PrintConv":{".pdfADBE":"Adobe Reader","BDOCWrdS":"WordSmith","BOOKMOBI":"Mobipocket","BVokBDIC":"BDicty","DATALSdb":"LIST","DB99DBOS":"DB (Database program)","DataPPrs":"eReader","DataPlkr":"Plucker","DataSprd":"QuickSheet","DataTlMl":"TealMeal","DataTlPt":"TealPaint","InfoINDB":"InfoView","InfoTlIf":"TealInfo","JbDbJBas":"JFile","JfDbJFil":"JFile Pro","Mdb1Mdb1":"MobileDB","PNRdPPrs":"eReader","PmDBPmDB":"HanDBase","SDocSilX":"iSilo 3","SM01SMem":"SuperMemo","TEXtREAd":"PalmDOC","TEXtTlDc":"TealDoc","TdatTide":"Tides","ToGoToGo":"iSilo","ToRaTRPW":"TomeRaider","dataTDBP":"ThinkDB","vIMGView":"FireViewer (ImageViewer)","zTXTGPlm":"Weasel"}},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Palm::Main"}

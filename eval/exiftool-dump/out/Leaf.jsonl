@@ -1,0 +1,155 @@
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::CameraProfile","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Camera"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'CamProf_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::CameraProfile","TABLE_NAME":"Image::ExifTool::Leaf::CameraProfile","TAG_PREFIX":"Leaf_CameraProfile"}}
+{"fields":{"Name":"CameraBackType"},"id":"CamProf_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"fields":{"Name":"CaptureProfile","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::CaptureProfile"}},"id":"CamProf_capture_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"fields":{"Name":"ImageProfile","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::ImageProfile"}},"id":"CamProf_image_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"fields":{"Name":"CameraName"},"id":"CamProf_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"fields":{"Name":"CameraType"},"id":"CamProf_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"fields":{"Name":"CameraProfileVersion"},"id":"CamProf_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraProfile"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::CameraSetup","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Camera"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'CameraObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::CameraSetup","TABLE_NAME":"Image::ExifTool::Leaf::CameraSetup","TAG_PREFIX":"Leaf_CameraSetup"}}
+{"fields":{"Name":"ISOSpeed"},"id":"CameraObj_ISO_speed","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"CameraObjBackType"},"id":"CameraObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"CameraType"},"id":"CameraObj_camera_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"LensID"},"id":"CameraObj_lens_ID","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"LensType"},"id":"CameraObj_lens_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"CameraObjName"},"id":"CameraObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"Strobe"},"id":"CameraObj_strobe","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"CameraObjType"},"id":"CameraObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"fields":{"Name":"CameraObjVersion"},"id":"CameraObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CameraSetup"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::CaptureProfile","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'CaptProf_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::CaptureProfile","TABLE_NAME":"Image::ExifTool::Leaf::CaptureProfile","TAG_PREFIX":"Leaf_CaptureProfile"}}
+{"fields":{"Name":"CCDRect"},"id":"CaptProf_CCD_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CCDValidRect"},"id":"CaptProf_CCD_valid_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CCDVideoRect"},"id":"CaptProf_CCD_video_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CaptProfBackType"},"id":"CaptProf_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CenterDarkRect"},"id":"CaptProf_center_dark_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ColorAverages"},"id":"CaptProf_color_averages","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ColorMatrix"},"id":"CaptProf_color_matrix","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"DarkCorrectionType"},"id":"CaptProf_dark_correction_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ImageBounds"},"id":"CaptProf_image_bounds","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ImageFields"},"id":"CaptProf_image_fields","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ImageOffset"},"id":"CaptProf_image_offset","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"LeftDarkRect"},"id":"CaptProf_left_dark_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"LuminanceConsts"},"id":"CaptProf_luminance_consts","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"MosaicPattern"},"id":"CaptProf_mosaic_pattern","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CaptProfName"},"id":"CaptProf_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"NumberOfPlanes"},"id":"CaptProf_number_of_planes","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"RawDataRotation"},"id":"CaptProf_raw_data_rotation","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"ReconstructionType"},"id":"CaptProf_reconstruction_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"RightDarkRect"},"id":"CaptProf_right_dark_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Description":"Capture Serial Number","Name":"CaptureSerial","PrintConv":"$val =~ s/ .*//s; $val"},"id":"CaptProf_serial_number","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CaptProfType"},"id":"CaptProf_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"CaptProfVersion"},"id":"CaptProf_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"fields":{"Name":"XYOffsetInfo"},"id":"CaptProf_xy_offset_info","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureProfile"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::CaptureSetup","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'CaptureObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::CaptureSetup","TABLE_NAME":"Image::ExifTool::Leaf::CaptureSetup","TAG_PREFIX":"Leaf_CaptureSetup"}}
+{"fields":{"Name":"MultiQuality"},"id":"CaptureObj_Multi_quality","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"CaptureObjBackType"},"id":"CaptureObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"CaptureObjName"},"id":"CaptureObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"Neutals","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::Neutrals"}},"id":"CaptureObj_neutals","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"Selection","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::Selection"}},"id":"CaptureObj_selection","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"Sharpness","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::Sharpness"}},"id":"CaptureObj_sharpness","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"SingleQuality"},"id":"CaptureObj_single_quality","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"ToneCurve","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::ToneCurve"}},"id":"CaptureObj_tone_curve","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"CaptureObjType"},"id":"CaptureObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"fields":{"Name":"CaptureObjVersion"},"id":"CaptureObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::CaptureSetup"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::ColorSetup","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'ColorObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::ColorSetup","TABLE_NAME":"Image::ExifTool::Leaf::ColorSetup","TAG_PREFIX":"Leaf_ColorSetup"}}
+{"fields":{"Name":"ColorObjBackType"},"id":"ColorObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"ColorMode"},"id":"ColorObj_color_mode","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"ColorType"},"id":"ColorObj_color_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"HasICC"},"id":"ColorObj_has_ICC","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"InputProfile"},"id":"ColorObj_input_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"ColorObjName"},"id":"ColorObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"OutputProfile"},"id":"ColorObj_output_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"ColorObjType"},"id":"ColorObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"fields":{"Name":"ColorObjVersion"},"id":"ColorObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ColorSetup"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::ImageProfile","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'ImgProf_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::ImageProfile","TABLE_NAME":"Image::ExifTool::Leaf::ImageProfile","TAG_PREFIX":"Leaf_ImageProfile"}}
+{"fields":{"Name":"ImgProfBackType"},"id":"ImgProf_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"ImageStatus"},"id":"ImgProf_image_status","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"ImgProfName"},"id":"ImgProf_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"RotationAngle"},"id":"ImgProf_rotation_angle","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"ShootSetup","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::ShootSetup"}},"id":"ImgProf_shoot_setup","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"ImgProfType"},"id":"ImgProf_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"fields":{"Name":"ImgProfVersion"},"id":"ImgProf_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ImageProfile"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::LookHeader","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Other"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'LookHead_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::LookHeader","TABLE_NAME":"Image::ExifTool::Leaf::LookHeader","TAG_PREFIX":"Leaf_LookHeader"}}
+{"fields":{"Name":"LookHeadBackType"},"id":"LookHead_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::LookHeader"}
+{"fields":{"Name":"LookHeadName"},"id":"LookHead_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::LookHeader"}
+{"fields":{"Name":"LookHeadType"},"id":"LookHead_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::LookHeader"}
+{"fields":{"Name":"LookHeadVersion"},"id":"LookHead_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::LookHeader"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::Main","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Camera"},"NOTES":"\n        These tags are found in .MOS images from Leaf digital camera backs as\n        written by Creo Leaf Capture.  They exist within the Leaf-specific directory\n        structure of EXIF tag 0x8606.  The tables below list observed Leaf tags,\n        however ExifTool will extract any tags found in the Leaf directories even if\n        they don't appear in these tables.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::Main","TABLE_NAME":"Image::ExifTool::Leaf::Main","TAG_PREFIX":"Leaf"}}
+{"fields":{"DataTag":"PreviewImage","Groups":{"2":"Preview"},"Name":"PreviewImage","RawConv":"$self->ValidateImage(ref $val ? $val : \\$val, $tag)","ValueConvInv":"$val eq \"\" and $val=\"none\"; $val","Writable":"undef","WriteCheck":"$val eq \"none\" ? undef : $self->CheckImage(\\$val)"},"id":"JPEG_preview_data","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Name":"PreviewInfo"},"id":"JPEG_preview_info","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Binary":1,"Name":"PDAHistogram"},"id":"PDA_histogram_data","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Description":"Back Serial Number","Name":"BackSerial","PrintConv":"$val =~ s/ .*//s; $val"},"id":"back_serial_number","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Name":"CameraProfile","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::CameraProfile"}},"id":"camera_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Name":"ICC_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"icc_camera_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Binary":1,"Description":"ICC To Tone Matrix","Format":"int8u","Name":"ToneMatrix"},"id":"icc_camera_to_tone_matrix","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Description":"ICC To Tone Space Flow","Format":"int16u","Name":"ToneSpaceFlow"},"id":"icc_camera_to_tone_space_flow","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Name":"RGB_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"icc_rgb_ws_profile","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Format":"int16u","Name":"ImageOffset"},"id":"image_offset","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"fields":{"Description":"Pattern Rotation Angle","Format":"int16u","Name":"PatternAngle","Notes":"\"ratation\" is not a typo"},"id":"pattern_ratation_angle","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Main"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::Neutrals","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'NeutObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::Neutrals","TABLE_NAME":"Image::ExifTool::Leaf::Neutrals","TAG_PREFIX":"Leaf_Neutrals"}}
+{"fields":{"Name":"NeutObjBackType"},"id":"NeutObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"ColorCasts"},"id":"NeutObj_color_casts","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"HighlightEndPoints"},"id":"NeutObj_highlight_end_points","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"NeutObjName"},"id":"NeutObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"Neutrals"},"id":"NeutObj_neutrals","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"ShadowEndPoints"},"id":"NeutObj_shadow_end_points","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"NeutObjType"},"id":"NeutObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"fields":{"Name":"NeutObjVersion"},"id":"NeutObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Neutrals"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::SaveSetup","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Other"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'SaveObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::SaveSetup","TABLE_NAME":"Image::ExifTool::Leaf::SaveSetup","TAG_PREFIX":"Leaf_SaveSetup"}}
+{"fields":{"Name":"SaveObjBackType"},"id":"SaveObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafAutoActive"},"id":"SaveObj_leaf_auto_active","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafAutoBaseName"},"id":"SaveObj_leaf_auto_base_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafHotFolder"},"id":"SaveObj_leaf_hot_folder","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafOpenProcHDR"},"id":"SaveObj_leaf_open_proc_HDR","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafOutputFileType"},"id":"SaveObj_leaf_output_file_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"LeafSaveSelection"},"id":"SaveObj_leaf_save_selection","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"SaveObjName"},"id":"SaveObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdAutoActive"},"id":"SaveObj_std_auto_active","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdBaseName"},"id":"SaveObj_std_base_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdHotFolder"},"id":"SaveObj_std_hot_folder","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdOpenInPhotoshop"},"id":"SaveObj_std_open_in_photoshop","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdOutputBitDepth"},"id":"SaveObj_std_output_bit_depth","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdOutputColorMode"},"id":"SaveObj_std_output_color_mode","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdOutputFileType"},"id":"SaveObj_std_output_file_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdOxygen"},"id":"SaveObj_std_oxygen","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdSaveSelection"},"id":"SaveObj_std_save_selection","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdScaledOutput"},"id":"SaveObj_std_scaled_output","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"StdSharpenOutput"},"id":"SaveObj_std_sharpen_output","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"SaveObjType"},"id":"SaveObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"fields":{"Name":"SaveObjVersion"},"id":"SaveObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::SaveSetup"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::Selection","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'SelObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::Selection","TABLE_NAME":"Image::ExifTool::Leaf::Selection","TAG_PREFIX":"Leaf_Selection"}}
+{"fields":{"Name":"SelObjBackType"},"id":"SelObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"Locks"},"id":"SelObj_locks","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"SelObjName"},"id":"SelObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"Orientation"},"id":"SelObj_orientation","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"Rect"},"id":"SelObj_rect","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"Resolution"},"id":"SelObj_resolution","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"Scale"},"id":"SelObj_scale","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"SelObjType"},"id":"SelObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"fields":{"Name":"SelObjVersion"},"id":"SelObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Selection"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::Sharpness","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'SharpObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::Sharpness","TABLE_NAME":"Image::ExifTool::Leaf::Sharpness","TAG_PREFIX":"Leaf_Sharpness"}}
+{"fields":{"Name":"SharpObjBackType"},"id":"SharpObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"DataLen"},"id":"SharpObj_data_len","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"SharpObjName"},"id":"SharpObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"SharpInfo"},"id":"SharpObj_sharp_info","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"SharpMethod"},"id":"SharpObj_sharp_method","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"SharpObjType"},"id":"SharpObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"fields":{"Name":"SharpObjVersion"},"id":"SharpObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::Sharpness"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::ShootSetup","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'ShootObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::ShootSetup","TABLE_NAME":"Image::ExifTool::Leaf::ShootSetup","TAG_PREFIX":"Leaf_ShootSetup"}}
+{"fields":{"Name":"ShootObjBackType"},"id":"ShootObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"CameraSetup","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::CameraSetup"}},"id":"ShootObj_camera_setup","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"CaptureSetup","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::CaptureSetup"}},"id":"ShootObj_capture_setup","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"ColorSetup","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::ColorSetup"}},"id":"ShootObj_color_setup","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"LookHeader","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::LookHeader"}},"id":"ShootObj_look_header","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"ShootObjName"},"id":"ShootObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"SaveSetup","SubDirectory":{"TagTable":"Image::ExifTool::Leaf::SaveSetup"}},"id":"ShootObj_save_setup","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"ShootObjType"},"id":"ShootObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"fields":{"Name":"ShootObjVersion"},"id":"ShootObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ShootSetup"}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::SubIFD","special":{"GROUPS":{"0":"MakerNotes","1":"LeafSubIFD","2":"Image"},"NOTES":"\n        Leaf writes a TIFF-format sub-IFD inside IFD0 of a MOS image.  No tags in\n        this sub-IFD are currently known, except for tags 0x8602 and 0x8606 which\n        really shouldn't be here anyway (so they don't appear in the table below)\n        because they duplicate references to the same data from tags with the same\n        ID in IFD0.\n    ","SHORT_NAME":"Leaf::SubIFD","TABLE_NAME":"Image::ExifTool::Leaf::SubIFD","TAG_PREFIX":"Leaf_SubIFD","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"kind":"table","module":"Leaf","name":"Image::ExifTool::Leaf::ToneCurve","special":{"GROUPS":{"0":"Leaf","1":"Leaf","2":"Image"},"NOTES":"All B<Tag ID>'s in the following table have a leading 'ToneObj_' which\nhas been removed.\n","PROCESS_PROC":{"code":"&Image::ExifTool::Leaf::ProcessLeaf"},"SHORT_NAME":"Leaf::ToneCurve","TABLE_NAME":"Image::ExifTool::Leaf::ToneCurve","TAG_PREFIX":"Leaf_ToneCurve"}}
+{"fields":{"Name":"ToneObjBackType"},"id":"ToneObj_back_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"Gamma"},"id":"ToneObj_gamma","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"ToneObjName"},"id":"ToneObj_name","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"Npts"},"id":"ToneObj_npts","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"Tones"},"id":"ToneObj_tones","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"ToneObjType"},"id":"ToneObj_type","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}
+{"fields":{"Name":"ToneObjVersion"},"id":"ToneObj_version","index":null,"kind":"tag","table":"Image::ExifTool::Leaf::ToneCurve"}

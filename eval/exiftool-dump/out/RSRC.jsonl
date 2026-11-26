@@ -1,0 +1,10 @@
+{"kind":"table","module":"RSRC","name":"Image::ExifTool::RSRC::Main","special":{"GROUPS":{"0":"RSRC","1":"RSRC","2":"Document"},"NOTES":"\n        Tags extracted from Mac OS resource files, DFONT files and \"._\" sidecar\n        files.  These tags may also be extracted from the resource fork of any file\n        in OS X, either by adding \"/..namedfork/rsrc\" to the filename to process the\n        resource fork alone, or by using the L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> (-ee) option to process\n        the resource fork as a sub-document of the main file.  When writing,\n        ExifTool preserves the Mac OS resource fork by default, but it may deleted\n        with C<-rsrc:all=> on the command line.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::RSRC::ProcessRSRC"},"SHORT_NAME":"RSRC::Main","TABLE_NAME":"Image::ExifTool::RSRC::Main","TAG_PREFIX":"RSRC"}}
+{"fields":{"Name":"PhotoshopInfo","SubDirectory":{"TagTable":"Image::ExifTool::Photoshop::Main"}},"id":"8BIM","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"PostscriptFont","SubDirectory":{"TagTable":"Image::ExifTool::PostScript::Main"}},"id":"POST_0x01f5","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"ApplicationMissingMsg"},"id":"STR _0xbff3","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"CreatorApplication"},"id":"STR _0xbff4","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"Keywords"},"id":"STR#_0x0080","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"Description"},"id":"TEXT_0x0080","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"Font","SubDirectory":{"TagTable":"Image::ExifTool::Font::Name"}},"id":"sfnt","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"OpenWithApplication"},"id":"usro_0x0000","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}
+{"fields":{"Name":"ApplicationVersion"},"id":"vers_0x0001","index":null,"kind":"tag","table":"Image::ExifTool::RSRC::Main"}

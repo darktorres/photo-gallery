@@ -1,0 +1,10 @@
+{"kind":"table","module":"CBOR","name":"Image::ExifTool::CBOR::Main","special":{"GROUPS":{"0":"JUMBF","1":"CBOR","2":"Other"},"NOTES":"\n        The tags below are extracted from CBOR (Concise Binary Object\n        Representation) metadata.  The C2PA specification uses this format for some\n        metadata.  As well as these tags, ExifTool will read any existing tags.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::CBOR::ProcessCBOR"},"SHORT_NAME":"CBOR::Main","TABLE_NAME":"Image::ExifTool::CBOR::Main","TAG_PREFIX":"CBOR","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Groups":{"2":"Author"},"Name":"AuthorIdentifier"},"id":"authorIdentifier","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"AuthorName"},"id":"authorName","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"Format"},"id":"dc:format","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"Title"},"id":"dc:title","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"DocumentID"},"id":"documentID","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"InstanceID"},"id":"instanceID","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"Relationship"},"id":"relationship","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"List":1,"Name":"ThumbnailHash"},"id":"thumbnailHash","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}
+{"fields":{"Name":"ThumbnailURL"},"id":"thumbnailUrl","index":null,"kind":"tag","table":"Image::ExifTool::CBOR::Main"}

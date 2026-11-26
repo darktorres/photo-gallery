@@ -1,0 +1,16 @@
+{"kind":"table","module":"PCX","name":"Image::ExifTool::PCX::Main","special":{"DATAMEMBER":[4,5],"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"Tags extracted from PC Paintbrush images.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"PCX::Main","TABLE_NAME":"Image::ExifTool::PCX::Main","TAG_PREFIX":"PCX"}}
+{"fields":{"Name":"Manufacturer","PrintConv":{"10":"ZSoft"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"Software","PrintConv":{"0":"PC Paintbrush 2.5","2":"PC Paintbrush 2.8 (with palette)","3":"PC Paintbrush 2.8 (without palette)","4":"PC Paintbrush for Windows","5":"PC Paintbrush 3.0+"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"Encoding","PrintConv":{"1":"RLE"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"BitsPerPixel"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"LeftMargin","RawConv":"$$self{LeftMargin} = $val"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"TopMargin","RawConv":"$$self{TopMargin} = $val"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"ImageWidth","Notes":"adjusted for LeftMargin","ValueConv":"$val - $$self{LeftMargin} + 1"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"ImageHeight","Notes":"adjusted for TopMargin","ValueConv":"$val - $$self{TopMargin} + 1"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"XResolution"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"YResolution"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"ColorPlanes"},"id":"65","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"BytesPerLine"},"id":"66","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Name":"ColorMode","PrintConv":{"0":"n/a","1":"Color Palette","2":"Grayscale"}},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"ScreenWidth","RawConv":"$val or undef"},"id":"70","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}
+{"fields":{"Format":"int16u","Name":"ScreenHeight","RawConv":"$val or undef"},"id":"72","index":null,"kind":"tag","table":"Image::ExifTool::PCX::Main"}

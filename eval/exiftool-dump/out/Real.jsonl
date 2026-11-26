@@ -1,0 +1,140 @@
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::Audio","special":{"GROUPS":{"0":"Real","1":"Real","2":"Audio"},"NOTES":"\n        Tags in the following table reference information extracted from various\n        versions of RealAudio (RA) files.\n    ","SHORT_NAME":"Real::Audio","TABLE_NAME":"Image::ExifTool::Real::Audio","TAG_PREFIX":"Real_Audio"}}
+{"fields":{"Name":"RA3","SubDirectory":{"TagTable":"Image::ExifTool::Real::AudioV3"}},"id":".ra3","index":null,"kind":"tag","table":"Image::ExifTool::Real::Audio"}
+{"fields":{"Name":"RA4","SubDirectory":{"TagTable":"Image::ExifTool::Real::AudioV4"}},"id":".ra4","index":null,"kind":"tag","table":"Image::ExifTool::Real::Audio"}
+{"fields":{"Name":"RA5","SubDirectory":{"TagTable":"Image::ExifTool::Real::AudioV5"}},"id":".ra5","index":null,"kind":"tag","table":"Image::ExifTool::Real::Audio"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::AudioV3","special":{"FORMAT":"int8u","GROUPS":{"0":"Real","1":"Real-RA3","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::AudioV3","TABLE_NAME":"Image::ExifTool::Real::AudioV3","TAG_PREFIX":"Real_AudioV3","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Format":"int16u","Name":"Channels"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"int16u[3]","Name":"Unknown","Unknown":1},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"int16u","Name":"BytesPerMinute"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"int32u","Name":"AudioBytes"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Name":"TitleLen","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"string[$val{4}]","Name":"Title"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Name":"ArtistLen","Unknown":1},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"string[$val{6}]","Groups":{"2":"Author"},"Name":"Artist"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Name":"CopyrightLen","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"string[$val{8}]","Groups":{"2":"Author"},"Name":"Copyright"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Name":"CommentLen","Unknown":1},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"fields":{"Format":"string[$val{10}]","Name":"Comment"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV3"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::AudioV4","special":{"FORMAT":"int16u","GROUPS":{"0":"Real","1":"Real-RA4","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::AudioV4","TABLE_NAME":"Image::ExifTool::Real::AudioV4","TAG_PREFIX":"Real_AudioV4","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Format":"undef[4]","Name":"FourCC1","Unknown":1},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"AudioFileSize","Unknown":1},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"Version2","Unknown":1},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"HeaderSize","Unknown":1},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"CodecFlavorID","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"CodedFrameSize","Unknown":1},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"AudioBytes"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"BytesPerMinute"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int32u","Name":"Unknown","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"SubPacketH","Unknown":1},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"AudioFrameSize"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"SubPacketSize","Unknown":1},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"Unknown","Unknown":1},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"SampleRate"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"Unknown","Unknown":1},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"BitsPerSample"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"Channels"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"FourCC2Len","Unknown":1},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"undef[4]","Name":"FourCC2","Unknown":1},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"FourCC3Len","Unknown":1},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"undef[4]","Name":"FourCC3","Unknown":1},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"Unknown","Unknown":1},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Name":"Unknown","Unknown":1},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"TitleLen","Unknown":1},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"string[$val{23}]","Name":"Title"},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"ArtistLen","Unknown":1},"id":"25","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"string[$val{25}]","Groups":{"2":"Author"},"Name":"Artist"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"CopyrightLen","Unknown":1},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"string[$val{27}]","Groups":{"2":"Author"},"Name":"Copyright"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"int8u","Name":"CommentLen","Unknown":1},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"fields":{"Format":"string[$val{29}]","Name":"Comment"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV4"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::AudioV5","special":{"FORMAT":"int16u","GROUPS":{"0":"Real","1":"Real-RA5","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::AudioV5","TABLE_NAME":"Image::ExifTool::Real::AudioV5","TAG_PREFIX":"Real_AudioV5","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Format":"undef[4]","Name":"FourCC1","Unknown":1},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"AudioFileSize","Unknown":1},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"Version2","Unknown":1},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"HeaderSize","Unknown":1},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"CodecFlavorID","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"CodedFrameSize","Unknown":1},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"AudioBytes"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"BytesPerMinute"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"Unknown","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"SubPacketH","Unknown":1},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"FrameSize","Unknown":1},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"SubPacketSize","Unknown":1},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"SampleRate"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"SampleRate2","Unknown":1},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"BitsPerSample"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Name":"Channels"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"int32u","Name":"Genr","Unknown":1},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"fields":{"Format":"undef[4]","Name":"FourCC3","Unknown":1},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Real::AudioV5"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::ContentDescr","special":{"FORMAT":"int16u","GROUPS":{"0":"Real","1":"Real-CONT","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::ContentDescr","TABLE_NAME":"Image::ExifTool::Real::ContentDescr","TAG_PREFIX":"Real_ContentDescr","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Name":"TitleLen","Unknown":1},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Format":"string[$val{0}]","Name":"Title"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Name":"AuthorLen","Unknown":1},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Format":"string[$val{2}]","Groups":{"2":"Author"},"Name":"Author"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Name":"CopyrightLen","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Format":"string[$val{4}]","Groups":{"2":"Author"},"Name":"Copyright"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Name":"CommentLen","Unknown":1},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"fields":{"Format":"string[$val{6}]","Name":"Comment"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::ContentDescr"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::FileInfo","special":{"GROUPS":{"0":"Real","1":"Real-MDPR","2":"Video"},"NOTES":"\n        The following tags have been observed in the FileInfo properties, but any\n        other existing information will also be extracted.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Real::ProcessRealProperties"},"SHORT_NAME":"Real::FileInfo","TABLE_NAME":"Image::ExifTool::Real::FileInfo","TAG_PREFIX":"Real_FileInfo"}}
+{"fields":{"Name":"Audiences"},"id":"Audiences","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"AudioFormat"},"id":"Audio Format","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"ContentRating","PrintConv":{"0":"No Rating","1":"All Ages","2":"Older Children","3":"Younger Teens","4":"Older Teens","5":"Adult Supervision Recommended","6":"Adults Only"}},"id":"Content Rating","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n            $val =~ m{(\\d+)/(\\d+)/(\\d+)\\s+(\\d+):(\\d+):(\\d+)} ?\n            sprintf(\"%.4d:%.2d:%.2d %.2d:%.2d:%.2d\",$3,$2,$1,$4,$5,$6) : $val\n        "},"id":"Creation Date","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"Description"},"id":"Description","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"FileID"},"id":"File ID","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"Software"},"id":"Generated By","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"Indexable","PrintConv":{"0":"False","1":"True"}},"id":"Indexable","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"Keywords"},"id":"Keywords","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n            $val =~ m{(\\d+)/(\\d+)/(\\d+)\\s+(\\d+):(\\d+):(\\d+)} ?\n            sprintf(\"%.4d:%.2d:%.2d %.2d:%.2d:%.2d\",$3,$2,$1,$4,$5,$6) : $val\n        "},"id":"Modification Date","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"TargetAudiences"},"id":"Target Audiences","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"VideoQuality"},"id":"Video Quality","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"AudioMode"},"id":"audioMode","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"fields":{"Name":"VideoMode"},"id":"videoMode","index":null,"kind":"tag","table":"Image::ExifTool::Real::FileInfo"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::Media","special":{"GROUPS":{"0":"Real","1":"Real","2":"Video"},"NOTES":"\n        These B<Tag ID>'s are Chunk ID's used in RealMedia and RealVideo (RM, RV and\n        RMVB) files.\n    ","SHORT_NAME":"Real::Media","TABLE_NAME":"Image::ExifTool::Real::Media","TAG_PREFIX":"Real_Media"}}
+{"fields":{"Name":"CONT","SubDirectory":{"TagTable":"Image::ExifTool::Real::ContentDescr"}},"id":"CONT","index":null,"kind":"tag","table":"Image::ExifTool::Real::Media"}
+{"fields":{"Name":"MDPR","SubDirectory":{"TagTable":"Image::ExifTool::Real::MediaProps"}},"id":"MDPR","index":null,"kind":"tag","table":"Image::ExifTool::Real::Media"}
+{"fields":{"Name":"PROP","SubDirectory":{"TagTable":"Image::ExifTool::Real::Properties"}},"id":"PROP","index":null,"kind":"tag","table":"Image::ExifTool::Real::Media"}
+{"fields":{"Name":"RJMD","SubDirectory":{"TagTable":"Image::ExifTool::Real::Metadata"}},"id":"RJMD","index":null,"kind":"tag","table":"Image::ExifTool::Real::Media"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::MediaProps","special":{"FORMAT":"int32u","GROUPS":{"0":"Real","1":"Real-MDPR","2":"Video"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::MediaProps","TABLE_NAME":"Image::ExifTool::Real::MediaProps","TAG_PREFIX":"Real_MediaProps","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Format":"int16u","Name":"StreamNumber"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamMaxBitrate","PrintConv":"ConvertBitrate($val)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamAvgBitrate","PrintConv":"ConvertBitrate($val)"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamMaxPacketSize"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamAvgPacketSize"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamStartTime"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamPreroll","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1000"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"StreamDuration","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1000"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int8u","Name":"StreamNameLen","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"string[$val{8}]","Name":"StreamName"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int8u","Name":"StreamMimeLen","Unknown":1},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"string[$val{10}]","Name":"StreamMimeType","RawConv":"$self->{RealStreamMime} = $val"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Name":"FileInfoLen","Unknown":1},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Condition":"$self->{RealStreamMime} eq \"logical-fileinfo\"","Name":"FileInfoLen2","Unknown":1},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u","Name":"FileInfoVersion"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u","Name":"PhysicalStreams","Unknown":1},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u[$val{15}]","Name":"PhysicalStreamNumbers","Unknown":1},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int32u[$val{15}]","Name":"DataOffsets","Unknown":1},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u","Name":"NumRules","Unknown":1},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u[$val{18}]","Name":"PhysicalStreamNumberMap","Unknown":1},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"int16u","Name":"NumProperties","Unknown":1},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"fields":{"Format":"undef[$val{13}-$val{15}*6-$val{18}*2-12]","Name":"FileInfoProperties","SubDirectory":{"TagTable":"Image::ExifTool::Real::FileInfo"}},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::Real::MediaProps"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::Metadata","special":{"GROUPS":{"0":"Real","1":"Real-RJMD","2":"Video"},"NOTES":"\n        The tags below represent information which has been observed in the Real\n        Metadata format, but ExifTool will extract any information it finds in this\n        format.  (As far as I can tell from the referenced documentation, string\n        values should be plain text, but this is not the case for the only sample\n        file I have been able to obtain containing this information.  These tags\n        could also be split into separate sub-directories, but this will wait until\n        I have better documentation or a more complete set of samples.)\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Real::ProcessRealMeta"},"SHORT_NAME":"Real::Metadata","TABLE_NAME":"Image::ExifTool::Real::Metadata","TAG_PREFIX":"Real_Metadata"}}
+{"fields":{"Name":"AlbumName"},"id":"Album/Name","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metadata"}
+{"fields":{"Name":"TrackCategory"},"id":"Track/Category","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metadata"}
+{"fields":{"Name":"TrackComments"},"id":"Track/Comments","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metadata"}
+{"fields":{"Name":"TrackLyrics"},"id":"Track/Lyrics","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metadata"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::Metafile","special":{"GROUPS":{"0":"Real","1":"Real","2":"Video"},"NOTES":"\n        Tags representing information extracted from Real Audio Metafile and\n        RealMedia Plug-in Metafile (RAM and RPM) files.\n    ","SHORT_NAME":"Real::Metafile","TABLE_NAME":"Image::ExifTool::Real::Metafile","TAG_PREFIX":"Real_Metafile"}}
+{"fields":{"Name":"Text"},"id":"txt","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metafile"}
+{"fields":{"Name":"URL"},"id":"url","index":null,"kind":"tag","table":"Image::ExifTool::Real::Metafile"}
+{"kind":"table","module":"Real","name":"Image::ExifTool::Real::Properties","special":{"FORMAT":"int32u","GROUPS":{"0":"Real","1":"Real-PROP","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::Canon::ProcessSerialData"},"SHORT_NAME":"Real::Properties","TABLE_NAME":"Image::ExifTool::Real::Properties","TAG_PREFIX":"Real_Properties","VARS":{"ID_LABEL":"Sequence"}}}
+{"fields":{"Name":"MaxBitrate","PrintConv":"ConvertBitrate($val)"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"AvgBitrate","PrintConv":"ConvertBitrate($val)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"MaxPacketSize"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"AvgPacketSize"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"NumPackets"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"Duration","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1000"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"Preroll","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1000"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"IndexOffset","Unknown":1},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Name":"DataOffset","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Format":"int16u","Name":"NumStreams"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}
+{"fields":{"Format":"int16u","Name":"Flags","PrintConv":{"BITMASK":{"0":"Allow Recording","1":"Perfect Play","2":"Live","3":"Allow Download"}}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Real::Properties"}

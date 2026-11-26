@@ -1,0 +1,6 @@
+{"kind":"table","module":"Rawzor","name":"Image::ExifTool::Rawzor::Main","special":{"GROUPS":{"0":"Rawzor","1":"Rawzor","2":"Other"},"NOTES":"\n        Rawzor files store compressed images of other formats. As well as the\n        information listed below, exiftool uncompresses and extracts the meta\n        information from the original image.\n    ","SHORT_NAME":"Rawzor::Main","TABLE_NAME":"Image::ExifTool::Rawzor::Main","TAG_PREFIX":"Rawzor","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"CompressionFactor","PrintConv":"sprintf(\"%.2f\", $val)"},"id":"CompressionFactor","index":null,"kind":"tag","table":"Image::ExifTool::Rawzor::Main"}
+{"fields":{"Name":"OriginalFileSize","PrintConv":{"code":"&Image::ExifTool::ConvertFileSize"}},"id":"OriginalFileSize","index":null,"kind":"tag","table":"Image::ExifTool::Rawzor::Main"}
+{"fields":{"Name":"OriginalFileType"},"id":"OriginalFileType","index":null,"kind":"tag","table":"Image::ExifTool::Rawzor::Main"}
+{"fields":{"Name":"RawzorCreatorVersion","PrintConv":"sprintf(\"%.2f\", $val)","ValueConv":"$val / 100"},"id":"RawzorCreatorVersion","index":null,"kind":"tag","table":"Image::ExifTool::Rawzor::Main"}
+{"fields":{"Name":"RawzorRequiredVersion","PrintConv":"sprintf(\"%.2f\", $val)","ValueConv":"$val / 100"},"id":"RawzorRequiredVersion","index":null,"kind":"tag","table":"Image::ExifTool::Rawzor::Main"}

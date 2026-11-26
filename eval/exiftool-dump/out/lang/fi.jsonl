@@ -1,0 +1,1370 @@
+{"kind":"translate","lang":"fi","tag":"AEAperture","value":"AE-aukko"}
+{"kind":"translate","lang":"fi","tag":"AEBBracketValue","value":"AEB-haarukointiarvo"}
+{"kind":"translate","lang":"fi","tag":"AEBXv","value":"AEB-valotuksen korjaus"}
+{"kind":"translate","lang":"fi","tag":"AEExposureTime","value":"AE-valotusaika"}
+{"kind":"translate","lang":"fi","tag":"AEInfo","value":"Automaattivalotustiedot"}
+{"kind":"translate","lang":"fi","tag":"AELock","value":{"Description":"AE-lukitus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"AELockButton","value":"AE-lukituspainike"}
+{"kind":"translate","lang":"fi","tag":"AEMeteringMode","value":"AE-valotuksen mittaustapa"}
+{"kind":"translate","lang":"fi","tag":"AEMeteringSegments","value":"AE-mittaussegmentit"}
+{"kind":"translate","lang":"fi","tag":"AEProgramMode","value":"AE-ohjelmatapa"}
+{"kind":"translate","lang":"fi","tag":"AESetting","value":"AE-asetus"}
+{"kind":"translate","lang":"fi","tag":"AEXv","value":"AE-valotuksen korjaus"}
+{"kind":"translate","lang":"fi","tag":"AF-CPrioritySelection","value":"AF-C -esivalinnat"}
+{"kind":"translate","lang":"fi","tag":"AF-OnForMB-D10","value":"AF-ON -painike (MB-D10)"}
+{"kind":"translate","lang":"fi","tag":"AF-SPrioritySelection","value":"AF-S -esivalinnat"}
+{"kind":"translate","lang":"fi","tag":"AFActivation","value":"AF-aktivointi"}
+{"kind":"translate","lang":"fi","tag":"AFAdjustment","value":"AF-säätö"}
+{"kind":"translate","lang":"fi","tag":"AFAperture","value":"AF-aukko"}
+{"kind":"translate","lang":"fi","tag":"AFArea","value":"AF-alue"}
+{"kind":"translate","lang":"fi","tag":"AFAreaHeight","value":"AF-alueen korkeus"}
+{"kind":"translate","lang":"fi","tag":"AFAreaIllumination","value":"AF-alueen valaisu"}
+{"kind":"translate","lang":"fi","tag":"AFAreaMode","value":"AF-aluetarkennus"}
+{"kind":"translate","lang":"fi","tag":"AFAreaModeSetting","value":"AF-aluemittaustavan asetus"}
+{"kind":"translate","lang":"fi","tag":"AFAreaWidth","value":"AF-alueen leveys"}
+{"kind":"translate","lang":"fi","tag":"AFAreas","value":"AF-alueet"}
+{"kind":"translate","lang":"fi","tag":"AFAssist","value":"AF-apu"}
+{"kind":"translate","lang":"fi","tag":"AFAssistLamp","value":{"PrintConv":{"Disabled and Not Required":"Deaktivoitu eikä tarpeen","Disabled but Required":"Deaktivoitu mutta tarpeen","Enabled but Not Used":"Aktivoitu muttei käytetty","Fired":"Lauennut"}}}
+{"kind":"translate","lang":"fi","tag":"AFDefocus","value":"AF-defokus (poikkeama polttopisteestä)"}
+{"kind":"translate","lang":"fi","tag":"AFFineTune","value":"AF-hienosäätö"}
+{"kind":"translate","lang":"fi","tag":"AFImageHeight","value":"AF-kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"AFImageWidth","value":"AF-kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"AFInfo","value":"Automaattitarkennustiedot"}
+{"kind":"translate","lang":"fi","tag":"AFInfo2","value":"AF-tiedot"}
+{"kind":"translate","lang":"fi","tag":"AFInfo2Version","value":"AF-tietojen versio"}
+{"kind":"translate","lang":"fi","tag":"AFIntegrationTime","value":"AF-integrointiaika"}
+{"kind":"translate","lang":"fi","tag":"AFMode","value":"AF-muoto"}
+{"kind":"translate","lang":"fi","tag":"AFPoint","value":{"Description":"AF-piste","PrintConv":{"Bottom Center":"Alhaalla keskellä","Bottom Left":"Alavasemmalla","Bottom Right":"Alaoikealla","Center":"Keskellä","Center Left":"Keskellä vasemmalla","Center Right":"Keskellä oikealla","Far Left/Right of Center":"Kaukana vasemmalla/keskioikealla","Far Left/Right of Center/Bottom":"Kaukana vasemmalla/keskioikealla/alhaalla","Near Left/Right of Center":"Hieman vasemmalla/keskioikealla","Near Upper/Left":"Hieman ylhäällä/vasemmalla","Top Center":"Ylhäällä keskellä","Top Left":"Ylävasemmalla","Top Near-left":"Hieman ylävasemmalla","Top Near-right":"Hieman yläoikealla","Top Right":"Yläoikealla","Upper Left":"Ylävasemmalla","Upper Right":"Yläoikealla"}}}
+{"kind":"translate","lang":"fi","tag":"AFPointIllumination","value":"AF -pistevalaisu"}
+{"kind":"translate","lang":"fi","tag":"AFPointMode","value":"AF-pistetapa"}
+{"kind":"translate","lang":"fi","tag":"AFPointSelected","value":{"Description":"Valittu AF-piste","PrintConv":{"Auto":"Automaattinen","Automatic Tracking AF":"Automaattiseuranta-AF","Bottom":"Alas","Center":"Keskelle","Face Detect AF":"Kasvojentunnistus-AF","Fixed Center":"Kiinteästi keskustaan","Left":"Vasemmalle","Lower-left":"Alavasemmalle","Lower-right":"Alaoikealle","Mid-left":"Keskivasemmalle","Mid-right":"Keskioikealle","Right":"Oikealle","Top":"Ylös","Upper-left":"Ylävasemmalle","Upper-right":"Yläoikealle"}}}
+{"kind":"translate","lang":"fi","tag":"AFPointSelected2","value":"Valittu AF-piste 2"}
+{"kind":"translate","lang":"fi","tag":"AFPointSelection","value":"AF-pistevalinnat"}
+{"kind":"translate","lang":"fi","tag":"AFPoints","value":"AF-pisteet"}
+{"kind":"translate","lang":"fi","tag":"AFPointsInFocus","value":{"Description":"Tarkennuksen AF-pisteet","PrintConv":{"Bottom-center":"Alakeski","Bottom-left":"Alavasen","Bottom-right":"Alaoikea","Center":"Keski","Fixed Center or Multiple":"Kiinteästi keskellä tai useita","Left":"Vasen","None":"Ei yhtään","Right":"Oikea","Top-center":"Yläkeski","Top-left":"Yläoikea","Top-right":"Yläoikea"}}}
+{"kind":"translate","lang":"fi","tag":"AFPointsSelected","value":"Valitut AF-pisteet"}
+{"kind":"translate","lang":"fi","tag":"AFPointsUsed","value":"Käytetyt AF-pisteet"}
+{"kind":"translate","lang":"fi","tag":"AFPredictor","value":"Ennakoiva AF"}
+{"kind":"translate","lang":"fi","tag":"AFResponse","value":"Käytetty AF"}
+{"kind":"translate","lang":"fi","tag":"AFResult","value":"AF-tulos"}
+{"kind":"translate","lang":"fi","tag":"AFSearch","value":{"Description":"AF-haku","PrintConv":{"Not Ready":"Ei valmis","Ready":"Valmis"}}}
+{"kind":"translate","lang":"fi","tag":"ARMIdentifier","value":"ARM-tunnistin"}
+{"kind":"translate","lang":"fi","tag":"ARMVersion","value":"ARM-versio"}
+{"kind":"translate","lang":"fi","tag":"AToB0","value":"A - B0"}
+{"kind":"translate","lang":"fi","tag":"AToB1","value":"A - B1"}
+{"kind":"translate","lang":"fi","tag":"AToB2","value":"A - B2"}
+{"kind":"translate","lang":"fi","tag":"AccessoryType","value":"Lisälaitetyyppi"}
+{"kind":"translate","lang":"fi","tag":"ActionAdvised","value":{"Description":"Suositettava toiminto","PrintConv":{"Object Append":"Objektiliitäntä","Object Kill":"Objektin tuhonta","Object Reference":"Objektiviite","Object Replace":"Objektin korvaus","Ojbect Append":"Objektiliitäntä"}}}
+{"kind":"translate","lang":"fi","tag":"ActiveArea","value":"Aktiivialue"}
+{"kind":"translate","lang":"fi","tag":"ActiveD-Lighting","value":"Aktiivinen D-Lighting"}
+{"kind":"translate","lang":"fi","tag":"ActiveD-LightingMode","value":"Aktivoitu D-Lighting-tapa"}
+{"kind":"translate","lang":"fi","tag":"AdjustmentMode","value":"Säätötapa"}
+{"kind":"translate","lang":"fi","tag":"AdvancedRaw","value":"Edistynyt RAW"}
+{"kind":"translate","lang":"fi","tag":"AdvancedSceneMode","value":{"Description":"Edistynyt näkymätapa","PrintConv":{"Auto":"Automaattinen","Creative":"Luova","Indoor/Architecture/Objects/HDR B&W":"Sisällä/arkkitehtuuri/kohteet","Normal":"Normaali","Outdoor/Illuminations/Flower/HDR Art":"Ulkona/valaistukset/kukka"}}}
+{"kind":"translate","lang":"fi","tag":"AlphaByteCount","value":"Alfa-tavujen määrä"}
+{"kind":"translate","lang":"fi","tag":"AlphaChannelsNames","value":"Alfa-kanavien nimet"}
+{"kind":"translate","lang":"fi","tag":"AlphaDataDiscard","value":{"Description":"Alfa-data hylätty","PrintConv":{"Flexbits Discarded":"FlexBits hylätty","Full Resolution":"Täysi resoluutio","HighPass Frequency Data Discarded":"Ylipäästötaajuusdata hylätty","Highpass and LowPass Frequency Data Discarded":"Yli- ja alipäästötaajuusdata hylätty"}}}
+{"kind":"translate","lang":"fi","tag":"AlphaOffset","value":"Alfa-siirtymä"}
+{"kind":"translate","lang":"fi","tag":"AnalogBalance","value":"Analoginen tasapaino"}
+{"kind":"translate","lang":"fi","tag":"AntiAliasStrength","value":"Kameran anti-alias -suotimen suhteellinen vahvuus"}
+{"kind":"translate","lang":"fi","tag":"Aperture","value":"Aukko"}
+{"kind":"translate","lang":"fi","tag":"ApertureRingUse","value":"Himmenninrenkaan käyttö"}
+{"kind":"translate","lang":"fi","tag":"ApertureValue","value":"Aukkoarvo"}
+{"kind":"translate","lang":"fi","tag":"ApplicationRecordVersion","value":"Sovellustietueen versio"}
+{"kind":"translate","lang":"fi","tag":"ArtFilter","value":"Taidesuodin"}
+{"kind":"translate","lang":"fi","tag":"Artist","value":"Kuvan luonut henkilö"}
+{"kind":"translate","lang":"fi","tag":"AsShotICCProfile","value":"Kuin kuvatessa -ICC-profiili"}
+{"kind":"translate","lang":"fi","tag":"AsShotNeutral","value":"Kuin kuvatessa -neutraali"}
+{"kind":"translate","lang":"fi","tag":"AsShotPreProfileMatrix","value":"Kuin kuvatessa -pre-profiilimatriisi"}
+{"kind":"translate","lang":"fi","tag":"AsShotProfileName","value":"Kuin kuvatessa -profiilin nimi"}
+{"kind":"translate","lang":"fi","tag":"AsShotWhiteXY","value":"Kuin kuvatessa -valkoinen X-Y"}
+{"kind":"translate","lang":"fi","tag":"Audio","value":{"Description":"Ääni","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"AudioDuration","value":"Audion kesto"}
+{"kind":"translate","lang":"fi","tag":"AudioOutcue","value":"Audion lopetus"}
+{"kind":"translate","lang":"fi","tag":"AudioSamplingRate","value":"Audion näytetaajuus"}
+{"kind":"translate","lang":"fi","tag":"AudioSamplingResolution","value":"Audion näyteresoluutio"}
+{"kind":"translate","lang":"fi","tag":"AudioType","value":{"Description":"Audiotyyppi","PrintConv":{"Mono Actuality":"Aktuaalisuus (monoaudio (1 kanava))","Mono Music":"Musiikki, itsensä välittämä (monoaudio (1 kanava))","Mono Question and Answer Session":"Kysymys- ja vastausistunto (monoaudio (1 kanava))","Mono Raw Sound":"Raakaääni (monoaudio (1 kanava))","Mono Response to a Question":"Vastaus kysymykseen (monoaudio (1 kanava))","Mono Scener":"Kohtaus (monoaudio (1 kanava))","Mono Voicer":"Ihmisääni (monoaudio (1 kanava))","Mono Wrap":"Pakkaus (monoaudio (1 kanava))","Stereo Actuality":"Aktuaalisuus (stereoaudio (2 kanavaa))","Stereo Music":"Musiikki, itsensä välittämä (stereomono (2 kanavaa))","Stereo Question and Answer Session":"Kysymys- ja vastausistunto (stereoaudio (2 kanavaa))","Stereo Raw Sound":"Raakaääni (stereoaudio (2 kanavaa))","Stereo Response to a Question":"Vastaus kysymykseen (stereoaudio (2 kanavaa))","Stereo Scener":"Kohtaus (stereoaudio (2 kanavaa))","Stereo Voicer":"Ihmisääni (stereoaudio (2 kanavaa))","Stereo Wrap":"Pakkaus (stereoaudio (2 kanavaa))","Text Only":"Vain teksti (ei objektidataa)"}}}
+{"kind":"translate","lang":"fi","tag":"Author","value":"Tekijä"}
+{"kind":"translate","lang":"fi","tag":"AutoAperture","value":"Himmenninrengas A:ssa"}
+{"kind":"translate","lang":"fi","tag":"AutoBracket","value":"Automaattihaarukointi"}
+{"kind":"translate","lang":"fi","tag":"AutoBracketSet","value":"Haarukointisarja"}
+{"kind":"translate","lang":"fi","tag":"AutoBracketing","value":{"Description":"Automaattinen haarukointi","PrintConv":{"No flash & flash":"Ei salamaa & Salama","Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"AutoBracketingSet","value":"Haarukointisarja"}
+{"kind":"translate","lang":"fi","tag":"AutoDistortionControl","value":"Automaattinen vääristymäkorjaus"}
+{"kind":"translate","lang":"fi","tag":"AutoExposureBracketing","value":"Automaattinen valotuksen haarukointi"}
+{"kind":"translate","lang":"fi","tag":"AutoFP","value":"Automaattinen FP"}
+{"kind":"translate","lang":"fi","tag":"AutoFocus","value":{"Description":"Automaattitarkennus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"AutoISO","value":{"Description":"Automaatti-ISO","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"AutoRedEye","value":"Automaattinen punasilmien esto"}
+{"kind":"translate","lang":"fi","tag":"AutoRotate","value":"Automaattinen kuvankierto"}
+{"kind":"translate","lang":"fi","tag":"AuxiliaryLens","value":"Lisälinssi"}
+{"kind":"translate","lang":"fi","tag":"AvApertureSetting","value":"Av-aukkoasetus"}
+{"kind":"translate","lang":"fi","tag":"BToA0","value":"B - A0"}
+{"kind":"translate","lang":"fi","tag":"BToA1","value":"B - A1"}
+{"kind":"translate","lang":"fi","tag":"BToA2","value":"B - A2"}
+{"kind":"translate","lang":"fi","tag":"BWMode","value":{"Description":"M/V-muoto","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"BackgroundColor","value":"Taustaväri"}
+{"kind":"translate","lang":"fi","tag":"BackgroundColorIndicator","value":"Taustavärin ilmaisin"}
+{"kind":"translate","lang":"fi","tag":"BackgroundColorValue","value":"Taustavärin arvo"}
+{"kind":"translate","lang":"fi","tag":"BadFaxLines","value":"Huonot faksirivit"}
+{"kind":"translate","lang":"fi","tag":"BaseExposureCompensation","value":"Valotuksen perussäätö"}
+{"kind":"translate","lang":"fi","tag":"BaseISO","value":"Perus-ISO"}
+{"kind":"translate","lang":"fi","tag":"BaselineExposure","value":"Valotuksen perusta"}
+{"kind":"translate","lang":"fi","tag":"BaselineNoise","value":"Kohinan perusta"}
+{"kind":"translate","lang":"fi","tag":"BaselineSharpness","value":"Terävyyden perusta"}
+{"kind":"translate","lang":"fi","tag":"BatteryLevel","value":"Pariston varaus"}
+{"kind":"translate","lang":"fi","tag":"BatteryOrder","value":"Paristojärjestys"}
+{"kind":"translate","lang":"fi","tag":"BayerGreenSplit","value":"Bayer Green Split -suodin"}
+{"kind":"translate","lang":"fi","tag":"Beep","value":"Äänimerkki"}
+{"kind":"translate","lang":"fi","tag":"BestQualityScale","value":"Parhaan laadun asteikko"}
+{"kind":"translate","lang":"fi","tag":"BestShotMode","value":{"Description":"Parhaan kuvan tapa","PrintConv":{"Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"BitDepth","value":"Bittisyvyys"}
+{"kind":"translate","lang":"fi","tag":"BitsPerComponent","value":"Bittejä per komponentti"}
+{"kind":"translate","lang":"fi","tag":"BitsPerExtendedRunLength","value":"Bittejä per jatkettu jakson pituus"}
+{"kind":"translate","lang":"fi","tag":"BitsPerPixel","value":"Bittejä per pikseli"}
+{"kind":"translate","lang":"fi","tag":"BitsPerRunLength","value":"Bittejä per jakson pituus"}
+{"kind":"translate","lang":"fi","tag":"BitsPerSample","value":"Bittejä per näyte"}
+{"kind":"translate","lang":"fi","tag":"BlackLevel","value":"Mustan taso"}
+{"kind":"translate","lang":"fi","tag":"BlackLevel2","value":"Mustan taso 2"}
+{"kind":"translate","lang":"fi","tag":"BlackLevelDeltaH","value":"Mustan tason Delta H"}
+{"kind":"translate","lang":"fi","tag":"BlackLevelDeltaV","value":"Mustan tason Delta V"}
+{"kind":"translate","lang":"fi","tag":"BlackLevelRepeatDim","value":"Mustan tason toiston dimensio"}
+{"kind":"translate","lang":"fi","tag":"BlackMaskBottomBorder","value":"Mustan maskin alareuna"}
+{"kind":"translate","lang":"fi","tag":"BlackMaskLeftBorder","value":"Mustan maskin vasen reuna"}
+{"kind":"translate","lang":"fi","tag":"BlackMaskRightBorder","value":"Mustan maskin oikea reuna"}
+{"kind":"translate","lang":"fi","tag":"BlackMaskTopBorder","value":"Mustan maskin yläreuna"}
+{"kind":"translate","lang":"fi","tag":"BlackPoint","value":"Musta piste"}
+{"kind":"translate","lang":"fi","tag":"BlueBalance","value":"Sinitasapaino"}
+{"kind":"translate","lang":"fi","tag":"BlueMatrixColumn","value":"Sinisen matriisin sarake"}
+{"kind":"translate","lang":"fi","tag":"BlueTRC","value":"Sinisen toonin toistokäyrä"}
+{"kind":"translate","lang":"fi","tag":"BlueX","value":"Sininen X"}
+{"kind":"translate","lang":"fi","tag":"BlueY","value":"Sininen Y"}
+{"kind":"translate","lang":"fi","tag":"BlurWarning","value":{"Description":"Tärinävaroitus","PrintConv":{"Blur Warning":"Tärinävaroitus","None":"Ei mitään"}}}
+{"kind":"translate","lang":"fi","tag":"BodyFirmwareVersion","value":"Rungon laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"BorderID","value":"Kehyksen ID"}
+{"kind":"translate","lang":"fi","tag":"BorderLocation","value":"Kehyksen sijainti"}
+{"kind":"translate","lang":"fi","tag":"BorderName","value":"Kehyksen nimi"}
+{"kind":"translate","lang":"fi","tag":"BorderType","value":"Kehyksen tyyppi"}
+{"kind":"translate","lang":"fi","tag":"BordersVersion","value":"Kehysten versio"}
+{"kind":"translate","lang":"fi","tag":"BracketMode","value":"Haarukointitapa"}
+{"kind":"translate","lang":"fi","tag":"BracketSequence","value":"Haarukointijärjestys"}
+{"kind":"translate","lang":"fi","tag":"BracketShotNumber","value":"Haarukoinnin otosnumero"}
+{"kind":"translate","lang":"fi","tag":"BracketStep","value":"Haarukointiväli"}
+{"kind":"translate","lang":"fi","tag":"BracketValue","value":"Haarukointiarvo"}
+{"kind":"translate","lang":"fi","tag":"Brightness","value":"Kirkkaus"}
+{"kind":"translate","lang":"fi","tag":"BrightnessData","value":"Kirkkausdata"}
+{"kind":"translate","lang":"fi","tag":"BrightnessValue","value":"Kirkkausarvo"}
+{"kind":"translate","lang":"fi","tag":"BulbDuration","value":"Aikavalotuksen kesto"}
+{"kind":"translate","lang":"fi","tag":"BurstMode","value":{"Description":"Sarjatapa","PrintConv":{"Auto Exposure Bracketing (AEB)":"Ääretön","Infinite":"Ääretön","Off":"Pois","On":"Matala/korkea laatu","Unlimited":"Rajaton"}}}
+{"kind":"translate","lang":"fi","tag":"By-line","value":"Tekijä"}
+{"kind":"translate","lang":"fi","tag":"By-lineTitle","value":"Tekijän ammattinimike"}
+{"kind":"translate","lang":"fi","tag":"CCDScanMode","value":{"Description":"CCD-skannaustapa","PrintConv":{"Interlaced":"Lomitettu","Progressive":"Progressiivinen"}}}
+{"kind":"translate","lang":"fi","tag":"CFALayout","value":{"Description":"CFA-sommitelma","PrintConv":{"Even columns offset down 1/2 row":"Horjahtanut sommitelma A: parilliset sarakkeet siirtyneet alas 1/2 riviä","Even columns offset up 1/2 row":"Horjahtanut sommitelma B: parilliset sarakkeet osiirtyneet ylös 1/2 riviä","Even rows offset left 1/2 column":"Horjahtanut sommitelma D: parilliset rivit siirtyneet vasemmalle 1/2 saraketta","Even rows offset right 1/2 column":"Horjahtanut sommitelma C: parilliset rivit siirtyneet oikealle 1/2 saraketta","Rectangular":"Suorakulmainen (tai neliömäinen) sommitelma"}}}
+{"kind":"translate","lang":"fi","tag":"CFAPattern","value":"CFA-kuvio"}
+{"kind":"translate","lang":"fi","tag":"CFAPattern2","value":"CFA-kuvio 2"}
+{"kind":"translate","lang":"fi","tag":"CFAPlaneColor","value":"CFA-tasoväri"}
+{"kind":"translate","lang":"fi","tag":"CFARepeatPatternDim","value":"Toistuvan CFA-kuvion laajuus"}
+{"kind":"translate","lang":"fi","tag":"CLModeShootingSpeed","value":"Hidas jatkuva kuvaus (CL)"}
+{"kind":"translate","lang":"fi","tag":"CMContrast","value":"CM:n kontrasti"}
+{"kind":"translate","lang":"fi","tag":"CMExposureCompensation","value":"CM:n valotuksen säätö"}
+{"kind":"translate","lang":"fi","tag":"CMHue","value":"CM:n sävy"}
+{"kind":"translate","lang":"fi","tag":"CMMFlags","value":"CMM-liput"}
+{"kind":"translate","lang":"fi","tag":"CMSaturation","value":"CM:n värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"CMSharpness","value":"CM:n terävyys"}
+{"kind":"translate","lang":"fi","tag":"CMWhiteBalance","value":"CM:n valkotasapaino"}
+{"kind":"translate","lang":"fi","tag":"CMWhiteBalanceComp","value":"CM:n valkotasapainon säätö"}
+{"kind":"translate","lang":"fi","tag":"CMWhiteBalanceGrayPoint","value":"CM:n valkotasapainon harmaapiste"}
+{"kind":"translate","lang":"fi","tag":"CMYKEquivalent","value":"CMYK-vastaava"}
+{"kind":"translate","lang":"fi","tag":"CPUFirmwareVersion","value":"CPU-laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"CalibrationDateTime","value":"Kalibroinnin päiväysaika"}
+{"kind":"translate","lang":"fi","tag":"CalibrationIlluminant1","value":{"Description":"Valaistuksen kalibrointi 1","PrintConv":{"Unknown":"Tuntematon"}}}
+{"kind":"translate","lang":"fi","tag":"CalibrationIlluminant2","value":{"Description":"Valaistuksen kalibrointi 2","PrintConv":{"Unknown":"Tuntematon"}}}
+{"kind":"translate","lang":"fi","tag":"CameraCalibration1","value":"Kameran kalibrointi 1"}
+{"kind":"translate","lang":"fi","tag":"CameraCalibration2","value":"Kameran kalibrointi 2"}
+{"kind":"translate","lang":"fi","tag":"CameraCalibrationSig","value":"Kameran kalibrointitunniste"}
+{"kind":"translate","lang":"fi","tag":"CameraID","value":"Kameran ID"}
+{"kind":"translate","lang":"fi","tag":"CameraISO","value":"Kamera-ISO"}
+{"kind":"translate","lang":"fi","tag":"CameraOwner","value":"Kameran omistaja"}
+{"kind":"translate","lang":"fi","tag":"CameraParameters","value":"Kameran parametrit"}
+{"kind":"translate","lang":"fi","tag":"CameraSerialNumber","value":"Kameran rungon nro"}
+{"kind":"translate","lang":"fi","tag":"CameraSettings","value":"Kameran asetukset"}
+{"kind":"translate","lang":"fi","tag":"CameraSettingsVersion","value":"Kamera-asetusten versio"}
+{"kind":"translate","lang":"fi","tag":"CameraTemperature","value":"Kameran lämpötila"}
+{"kind":"translate","lang":"fi","tag":"CameraType","value":"Kameratyyppi"}
+{"kind":"translate","lang":"fi","tag":"CameraType2","value":"Kameratyyppi 2"}
+{"kind":"translate","lang":"fi","tag":"CanonAFInfo","value":"AF-info"}
+{"kind":"translate","lang":"fi","tag":"CanonAFInfo2","value":"AF-info (2)"}
+{"kind":"translate","lang":"fi","tag":"CanonFileInfo","value":"Tiedostoinfo"}
+{"kind":"translate","lang":"fi","tag":"CanonFileLength","value":"Tiedoston pituus"}
+{"kind":"translate","lang":"fi","tag":"CanonFirmwareVersion","value":"Laiteohjelmiston versio"}
+{"kind":"translate","lang":"fi","tag":"CanonFlags","value":"Canon-liput"}
+{"kind":"translate","lang":"fi","tag":"CanonImageType","value":"Kuvatyyppi"}
+{"kind":"translate","lang":"fi","tag":"CanonModelID","value":"Mallin ID"}
+{"kind":"translate","lang":"fi","tag":"Caption-Abstract","value":"Seloste/Kuvaus"}
+{"kind":"translate","lang":"fi","tag":"CaptureConditionsPAR","value":"PAR-kuvausolosuhteet"}
+{"kind":"translate","lang":"fi","tag":"CaptureDeviceFID","value":"Kuvauslaitteen FID"}
+{"kind":"translate","lang":"fi","tag":"CasioImageSize","value":"Casion kuvakoko"}
+{"kind":"translate","lang":"fi","tag":"Category","value":"Kategoria"}
+{"kind":"translate","lang":"fi","tag":"CellLength","value":"Kennon pituus"}
+{"kind":"translate","lang":"fi","tag":"CellWidth","value":"Kennon leveys"}
+{"kind":"translate","lang":"fi","tag":"CenterAFArea","value":"Keskialueen AF"}
+{"kind":"translate","lang":"fi","tag":"CharTarget","value":"Kirjainmerkin kohde"}
+{"kind":"translate","lang":"fi","tag":"CharacterSet","value":"Merkistö"}
+{"kind":"translate","lang":"fi","tag":"ChromaBlurRadius","value":"Kromaattisen sumeuden säde"}
+{"kind":"translate","lang":"fi","tag":"ChromaticAdaptation","value":"Kromaattinen adaptaatio"}
+{"kind":"translate","lang":"fi","tag":"Chromaticity","value":"Kromaattisuus"}
+{"kind":"translate","lang":"fi","tag":"City","value":"Kaupunki"}
+{"kind":"translate","lang":"fi","tag":"ClassifyState","value":"Luokitustila"}
+{"kind":"translate","lang":"fi","tag":"CleanFaxData","value":"Poista faksidata"}
+{"kind":"translate","lang":"fi","tag":"ClipPath","value":"Leikepolku"}
+{"kind":"translate","lang":"fi","tag":"CodedCharacterSet","value":"Koodattu merkistö"}
+{"kind":"translate","lang":"fi","tag":"ColorAberrationControl","value":"Väripoikkeaman hallinta"}
+{"kind":"translate","lang":"fi","tag":"ColorAdjustment","value":"Värien säätö"}
+{"kind":"translate","lang":"fi","tag":"ColorAdjustmentMode","value":{"Description":"Värin säätötapa","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"ColorBalance","value":"Väritasapaino"}
+{"kind":"translate","lang":"fi","tag":"ColorBalanceAdj","value":"Väritasapainon säätö"}
+{"kind":"translate","lang":"fi","tag":"ColorBalanceBlue","value":"Väritasapaino sininen"}
+{"kind":"translate","lang":"fi","tag":"ColorBalanceGreen","value":"Väritasapaino vihreä"}
+{"kind":"translate","lang":"fi","tag":"ColorBalanceRed","value":"Väritasapaino punainen"}
+{"kind":"translate","lang":"fi","tag":"ColorBalanceVersion","value":"Väritasapainon versio"}
+{"kind":"translate","lang":"fi","tag":"ColorBoostData","value":"Väritehostusdata"}
+{"kind":"translate","lang":"fi","tag":"ColorBoostLevel","value":"Väritehostustaso"}
+{"kind":"translate","lang":"fi","tag":"ColorBoostType","value":"Väritehostustyyppi"}
+{"kind":"translate","lang":"fi","tag":"ColorBooster","value":"Väritehostus"}
+{"kind":"translate","lang":"fi","tag":"ColorCalibrationMatrix","value":"Värien kalibrointimatriisitaulukko"}
+{"kind":"translate","lang":"fi","tag":"ColorCharacterization","value":"Värin luonnehdinta"}
+{"kind":"translate","lang":"fi","tag":"ColorCompensationFilter","value":"Värikorjailusuodin"}
+{"kind":"translate","lang":"fi","tag":"ColorControl","value":"Värisäätö"}
+{"kind":"translate","lang":"fi","tag":"ColorEffect","value":{"Description":"Väriefekti","PrintConv":{"Black & White":"Musta & Valkoinen","Cool":"Viileä","Off":"Pois","Sepia":"Seepia","Warm":"Lämmin"}}}
+{"kind":"translate","lang":"fi","tag":"ColorFilter","value":{"Description":"Värisuodin","PrintConv":{"Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"ColorGain","value":"Värien vahvistus"}
+{"kind":"translate","lang":"fi","tag":"ColorHue","value":"Värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorInfo","value":"Väritiedot"}
+{"kind":"translate","lang":"fi","tag":"ColorMap","value":"Värikartta"}
+{"kind":"translate","lang":"fi","tag":"ColorMatrix","value":"Värimatriisi"}
+{"kind":"translate","lang":"fi","tag":"ColorMatrix1","value":"Värimatriisi 1"}
+{"kind":"translate","lang":"fi","tag":"ColorMatrix2","value":"Värimatriisi 2"}
+{"kind":"translate","lang":"fi","tag":"ColorMatrixNumber","value":"Värimatriisin numero"}
+{"kind":"translate","lang":"fi","tag":"ColorMode","value":{"Description":"Värimuoto","PrintConv":{"Autumn Leaves":"Syksyn lehdet","B & W":"M & V","B&W":"M&V","Black & White":"Heleät värit","Chrome":"Kellastunut","Clear":"Selkeä","Deep":"Syvä","Evening":"Ilta","Landscape":"Maisema","Light":"Valoisa","Natural":"Luonnollinen","Natural color":"Luonnonvalo","Natural sRGB":"Luonnollinen sRGB","Natural+ sRGB":"Luonnollinen+ sRGB","Neutral":"Neutraali","Night Portrait":"Yön muotokuva","Night Scene":"Yönäkymä","Night View":"Iltanäkymä","Night View/Portrait":"Yönäkymä","Normal":"Normaali","Off":"Pois","Portrait":"Muotokuva","Sepia":"Seepia","Solarization":"Solarisaatio","Standard":"Vakio","Sunset":"Auringonlasku","Vivid":"Heleät värit","Vivid color":"Heleä väri"}}}
+{"kind":"translate","lang":"fi","tag":"ColorMoireReduction","value":"Värimoareen vaimennus"}
+{"kind":"translate","lang":"fi","tag":"ColorMoireReductionMode","value":"Värimoareen vaimennustapa"}
+{"kind":"translate","lang":"fi","tag":"ColorPalette","value":"Väripaletti"}
+{"kind":"translate","lang":"fi","tag":"ColorProfile","value":"Väriprofiili"}
+{"kind":"translate","lang":"fi","tag":"ColorRepresentation","value":"Väriesitys"}
+{"kind":"translate","lang":"fi","tag":"ColorReproduction","value":"Värientoisto"}
+{"kind":"translate","lang":"fi","tag":"ColorResponseUnit","value":"Värin vasteyksikkö"}
+{"kind":"translate","lang":"fi","tag":"ColorSamplersResource","value":"Värinäytteenotinresurssit"}
+{"kind":"translate","lang":"fi","tag":"ColorSequence","value":"Värien esitys"}
+{"kind":"translate","lang":"fi","tag":"ColorSpace","value":{"Description":"Väriavaruus","PrintConv":{"ICC Profile":"ICC-profiili","Uncalibrated":"Kalibroimaton","Wide Gamut RGB":"Laaja Gamut RVB"}}}
+{"kind":"translate","lang":"fi","tag":"ColorTable","value":"Väritaulukko"}
+{"kind":"translate","lang":"fi","tag":"ColorTemperature","value":"Värilämpötila"}
+{"kind":"translate","lang":"fi","tag":"ColorTone","value":"Värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorToneFaithful","value":"Kohdeuskollinen värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorToneLandscape","value":"Maisemakuvan värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorToneNeutral","value":"Neutraali värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorTonePortrait","value":"Muotokuvan värisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorToneStandard","value":"Vakiovärisävy"}
+{"kind":"translate","lang":"fi","tag":"ColorType","value":"Värityyppi"}
+{"kind":"translate","lang":"fi","tag":"ColorantOrder","value":"Väriainejärjestys"}
+{"kind":"translate","lang":"fi","tag":"ColorantTable","value":"Väriainetaulukko"}
+{"kind":"translate","lang":"fi","tag":"ColorimetricReference","value":"Kolorimetrinen referenssi"}
+{"kind":"translate","lang":"fi","tag":"Comment","value":"Kommentti"}
+{"kind":"translate","lang":"fi","tag":"ComponentsConfiguration","value":"Kunkin komponentin tarkoitus"}
+{"kind":"translate","lang":"fi","tag":"CompressedBitsPerPixel","value":"Kuvan pakkausmuoto"}
+{"kind":"translate","lang":"fi","tag":"CompressedImageSize","value":"Pakatun kuvan koko"}
+{"kind":"translate","lang":"fi","tag":"Compression","value":"Pakkausskeema"}
+{"kind":"translate","lang":"fi","tag":"CompressionRatio","value":"Pakkaussuhde"}
+{"kind":"translate","lang":"fi","tag":"ConnectionSpaceIlluminant","value":"Yhteystilan valaistus"}
+{"kind":"translate","lang":"fi","tag":"ConsecutiveBadFaxLines","value":"Peräkkäiset huonot faksirivit"}
+{"kind":"translate","lang":"fi","tag":"Contact","value":"Kontakti"}
+{"kind":"translate","lang":"fi","tag":"ContentLocationCode","value":"Sisällön sijaintikoodi"}
+{"kind":"translate","lang":"fi","tag":"ContentLocationName","value":"Sisällön sijaintinimi"}
+{"kind":"translate","lang":"fi","tag":"ContinuousBracketing","value":"Jatkuva haarukointi"}
+{"kind":"translate","lang":"fi","tag":"Contrast","value":{"Description":"Kontrasti","PrintConv":{"Film Simulation":"Filminsimulaatio","High":"Korkea","Low":"Matala","Medium High":"Korkeahko","Medium Low":"Matalahko","Normal":"Vakio"}}}
+{"kind":"translate","lang":"fi","tag":"ContrastAdjustment","value":"Kontrastin säätö"}
+{"kind":"translate","lang":"fi","tag":"ContrastCurve","value":"Kontrastikäyrä"}
+{"kind":"translate","lang":"fi","tag":"ContrastFaithful","value":"Kohdeuskollinen kontrasti"}
+{"kind":"translate","lang":"fi","tag":"ContrastLandscape","value":"Maisemakuvan kontrasti"}
+{"kind":"translate","lang":"fi","tag":"ContrastMonochrome","value":"Yksivärikuvan kontrasti"}
+{"kind":"translate","lang":"fi","tag":"ContrastNeutral","value":"Neutraali kontrasti"}
+{"kind":"translate","lang":"fi","tag":"ContrastPortrait","value":"Muotokuvan kontrasti"}
+{"kind":"translate","lang":"fi","tag":"ContrastSetting","value":"Kontrastiasetus"}
+{"kind":"translate","lang":"fi","tag":"ContrastStandard","value":"Vakiokontrasti"}
+{"kind":"translate","lang":"fi","tag":"ControlMode","value":"Ohjaustapa"}
+{"kind":"translate","lang":"fi","tag":"ConversionLens","value":{"Description":"Objektiivilisäke","PrintConv":{"Macro":"Makro","Off":"Pois","Telephoto":"Tele","Wide":"Laajakulma"}}}
+{"kind":"translate","lang":"fi","tag":"Converter","value":"Konvertteri"}
+{"kind":"translate","lang":"fi","tag":"Copyright","value":"Profiilin copyright"}
+{"kind":"translate","lang":"fi","tag":"CopyrightFlag","value":"Copyright-lippu"}
+{"kind":"translate","lang":"fi","tag":"CopyrightNotice","value":"Tekijänoikeusilmoitus"}
+{"kind":"translate","lang":"fi","tag":"CoringFilter","value":"Ydinsuodin"}
+{"kind":"translate","lang":"fi","tag":"CoringValues","value":"Ydinsuodatusarvot"}
+{"kind":"translate","lang":"fi","tag":"Country-PrimaryLocationCode","value":"ISO-maakoodi"}
+{"kind":"translate","lang":"fi","tag":"Country-PrimaryLocationName","value":"Maa"}
+{"kind":"translate","lang":"fi","tag":"CreateDate","value":"Digitaalisen datan luonnin päiväys ja aika"}
+{"kind":"translate","lang":"fi","tag":"CreationDate","value":"Luontipäivä"}
+{"kind":"translate","lang":"fi","tag":"CreativeStyle","value":{"Description":"Luova tyyli","PrintConv":{"Autumn Leaves":"Syksyn lehdet","B&W":"M&V","Clear":"Selkeä","Deep":"Syvä","Landscape":"Maisema","Light":"Valoisa","Neutral":"Neutraali","Night View/Portrait":"Yönäkymä","Portrait":"Muotokuva","Sepia":"Seepia","Standard":"Vakio","Sunset":"Auringonlasku","Vivid":"Heleät värit"}}}
+{"kind":"translate","lang":"fi","tag":"CreatorAddress","value":"Tekijä - Osoite"}
+{"kind":"translate","lang":"fi","tag":"CreatorCity","value":"Tekijä - Kaupunki"}
+{"kind":"translate","lang":"fi","tag":"CreatorCountry","value":"Tekijä - Maa"}
+{"kind":"translate","lang":"fi","tag":"CreatorPostalCode","value":"Tekijä - Postinumero"}
+{"kind":"translate","lang":"fi","tag":"CreatorRegion","value":"Tekijä - Valtio/Provinssi"}
+{"kind":"translate","lang":"fi","tag":"CreatorWorkEmail","value":"Tekijä - email(it)"}
+{"kind":"translate","lang":"fi","tag":"CreatorWorkTelephone","value":"Tekijä - Puhelinnumero(t)"}
+{"kind":"translate","lang":"fi","tag":"CreatorWorkURL","value":"Tekijä - Web-sivusto(t)"}
+{"kind":"translate","lang":"fi","tag":"Credit","value":"Tarjoaja"}
+{"kind":"translate","lang":"fi","tag":"CropBottom","value":"Rajaus alhaalta"}
+{"kind":"translate","lang":"fi","tag":"CropData","value":"Rajausdata"}
+{"kind":"translate","lang":"fi","tag":"CropLeft","value":"Rajaus vasemmalta"}
+{"kind":"translate","lang":"fi","tag":"CropOutputHeight","value":"Rajaustuloksen korkeus"}
+{"kind":"translate","lang":"fi","tag":"CropOutputPixels","value":"Rajaustulokset pikselit"}
+{"kind":"translate","lang":"fi","tag":"CropOutputResolution","value":"Rajaustuloksen resoluutio"}
+{"kind":"translate","lang":"fi","tag":"CropOutputScale","value":"Rajaustuloksen mittasuhteet"}
+{"kind":"translate","lang":"fi","tag":"CropOutputWidth","value":"Rajaustuloksen leveys"}
+{"kind":"translate","lang":"fi","tag":"CropRight","value":"Rajaus oikealta"}
+{"kind":"translate","lang":"fi","tag":"CropScaledResolution","value":"Rajauksen skaalausresoluutio"}
+{"kind":"translate","lang":"fi","tag":"CropSourceResolution","value":"Rajauslähteen resoluutio"}
+{"kind":"translate","lang":"fi","tag":"CropTop","value":"Rajaus ylhäältä"}
+{"kind":"translate","lang":"fi","tag":"CurrentICCProfile","value":"Nykyinen ICC-profiili"}
+{"kind":"translate","lang":"fi","tag":"CurrentPreProfileMatrix","value":"Nykyinen pre-profiilimatriisi"}
+{"kind":"translate","lang":"fi","tag":"Curves","value":"Käyrät"}
+{"kind":"translate","lang":"fi","tag":"Custom1","value":"Mukautus 1"}
+{"kind":"translate","lang":"fi","tag":"Custom2","value":"Mukautus 2"}
+{"kind":"translate","lang":"fi","tag":"Custom3","value":"Mukautus 3"}
+{"kind":"translate","lang":"fi","tag":"Custom4","value":"Mukautus 4"}
+{"kind":"translate","lang":"fi","tag":"CustomRendered","value":{"Description":"Mukautettu kuvankäsittely","PrintConv":{"Custom":"Mukautettu käsittely","Normal":"Normaali käsittely"}}}
+{"kind":"translate","lang":"fi","tag":"CustomSaturation","value":"Mukautettu värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHQColorBoost","value":"D-Lighting HQ -väritehostus"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHQHighlight","value":"D-Lighting HQ -valoalue"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHQSelected","value":"Valittu D-Lighting HQ"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHQShadow","value":"D-Lighting HQ -varjoalue"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHSAdjustment","value":"D-Lighting HS -säätö"}
+{"kind":"translate","lang":"fi","tag":"D-LightingHSColorBoost","value":"D-Lighting HS -väritehostus"}
+{"kind":"translate","lang":"fi","tag":"DECPosition","value":"DEC-sijainti"}
+{"kind":"translate","lang":"fi","tag":"DNGBackwardVersion","value":"Edellinen DNG-versio"}
+{"kind":"translate","lang":"fi","tag":"DNGVersion","value":"DNG-versio"}
+{"kind":"translate","lang":"fi","tag":"DSPFirmwareVersion","value":"DSP-laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"DataDump","value":"Datadumppi"}
+{"kind":"translate","lang":"fi","tag":"DataImprint","value":"Datan sisällytys"}
+{"kind":"translate","lang":"fi","tag":"DataType","value":"Mattaus"}
+{"kind":"translate","lang":"fi","tag":"Date","value":"Päiväys"}
+{"kind":"translate","lang":"fi","tag":"DateCreated","value":"Luontipäiväys"}
+{"kind":"translate","lang":"fi","tag":"DateImprint","value":"Päiväysleima"}
+{"kind":"translate","lang":"fi","tag":"DateSent","value":"Lähetyspäivä"}
+{"kind":"translate","lang":"fi","tag":"DateStampMode","value":"Päiväysleiman muoto"}
+{"kind":"translate","lang":"fi","tag":"DateTime","value":"Päiväysaika"}
+{"kind":"translate","lang":"fi","tag":"DateTimeOriginal","value":"Alkuperäisen datan luonnin päiväys ja aika"}
+{"kind":"translate","lang":"fi","tag":"DealerIDNumber","value":"Myyjän ID-numero"}
+{"kind":"translate","lang":"fi","tag":"DefaultCropOrigin","value":"Oletusrajauksen alkuperä"}
+{"kind":"translate","lang":"fi","tag":"DefaultCropSize","value":"Oletusrajauskoko"}
+{"kind":"translate","lang":"fi","tag":"DefaultScale","value":"Oletusasteikko"}
+{"kind":"translate","lang":"fi","tag":"DelayTime","value":"Viiveaika"}
+{"kind":"translate","lang":"fi","tag":"DeletedImageCount","value":"Poistettujen kuvien määrä"}
+{"kind":"translate","lang":"fi","tag":"Description","value":"Deskriptio"}
+{"kind":"translate","lang":"fi","tag":"Destination","value":"Kohde"}
+{"kind":"translate","lang":"fi","tag":"DestinationCity","value":"Kohdepaikkakunta"}
+{"kind":"translate","lang":"fi","tag":"DestinationCityCode","value":"Kohdepaikkakoodi"}
+{"kind":"translate","lang":"fi","tag":"DestinationDST","value":{"Description":"Kohteen kesäaika (DST)","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"DevelopmentDynamicRange","value":"Dynamiikka-alueen kehitys"}
+{"kind":"translate","lang":"fi","tag":"DeviceAttributes","value":"Laiteattribuutit"}
+{"kind":"translate","lang":"fi","tag":"DeviceManufacturer","value":"Laitteen valmistaja"}
+{"kind":"translate","lang":"fi","tag":"DeviceMfgDesc","value":"Laitteen valmistajan kuvaus"}
+{"kind":"translate","lang":"fi","tag":"DeviceModel","value":"Laitteen malli"}
+{"kind":"translate","lang":"fi","tag":"DeviceModelDesc","value":"Laitemallin kuvaus"}
+{"kind":"translate","lang":"fi","tag":"DeviceSettingDescription","value":"Laiteasetusten kuvaus"}
+{"kind":"translate","lang":"fi","tag":"DigitalCreationDate","value":"Digitalisointipäiväys"}
+{"kind":"translate","lang":"fi","tag":"DigitalCreationTime","value":"Digitalisointiaika"}
+{"kind":"translate","lang":"fi","tag":"DigitalDEEHighlightAdj","value":"Digitaalinen DEE -vaalean pään säätö"}
+{"kind":"translate","lang":"fi","tag":"DigitalDEEShadowAdj","value":"Digitaalinen DEE-varjonsäätö"}
+{"kind":"translate","lang":"fi","tag":"DigitalDEEThreshold","value":"Digitaalinen DEE-kynnys"}
+{"kind":"translate","lang":"fi","tag":"DigitalEffectsName","value":"Digitaalisten efektien nimi"}
+{"kind":"translate","lang":"fi","tag":"DigitalEffectsType","value":"Digitaalisten efektien tyyppi"}
+{"kind":"translate","lang":"fi","tag":"DigitalEffectsVersion","value":"Digitaalisten efektien versio"}
+{"kind":"translate","lang":"fi","tag":"DigitalGEM","value":"Digitaalinen GEM"}
+{"kind":"translate","lang":"fi","tag":"DigitalGain","value":"Digitaalinen vahvistus"}
+{"kind":"translate","lang":"fi","tag":"DigitalICE","value":"Digitaalinen ICE"}
+{"kind":"translate","lang":"fi","tag":"DigitalROC","value":"Digitaalinen ROC"}
+{"kind":"translate","lang":"fi","tag":"DigitalZoom","value":"Digitaalinen zoom"}
+{"kind":"translate","lang":"fi","tag":"DigitalZoomOn","value":{"Description":"Digitaalinen zoom","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"DigitalZoomRatio","value":"Digitaalinen zoomaussuhde"}
+{"kind":"translate","lang":"fi","tag":"DirectoryIndex","value":"Kansioindeksi"}
+{"kind":"translate","lang":"fi","tag":"DirectoryNumber","value":"Kansion numero"}
+{"kind":"translate","lang":"fi","tag":"DisplayAperture","value":"Aukon näyttö"}
+{"kind":"translate","lang":"fi","tag":"DisplayedUnitsX","value":"Vaakaresoluution yksikkö"}
+{"kind":"translate","lang":"fi","tag":"DisplayedUnitsY","value":"Pystyresoluution yksikkö"}
+{"kind":"translate","lang":"fi","tag":"DistortionCorrection","value":"Vääristymäkorjaus"}
+{"kind":"translate","lang":"fi","tag":"DocumentHistory","value":"Dokumentin historia"}
+{"kind":"translate","lang":"fi","tag":"DocumentName","value":"Dokumentin nimi"}
+{"kind":"translate","lang":"fi","tag":"DocumentNotes","value":"Dokumentin huomautukset"}
+{"kind":"translate","lang":"fi","tag":"DotRange","value":"Pisteiden määrä"}
+{"kind":"translate","lang":"fi","tag":"DriveMode","value":"Kuvaustapa"}
+{"kind":"translate","lang":"fi","tag":"DriveMode2","value":"Kuvaustapa 2"}
+{"kind":"translate","lang":"fi","tag":"DustRemovalData","value":"Pölynpoistodata"}
+{"kind":"translate","lang":"fi","tag":"DynamicAFArea","value":"Dynaamisen alueen AF"}
+{"kind":"translate","lang":"fi","tag":"DynamicRange","value":{"Description":"Dynamiikka-alue","PrintConv":{"Standard":"Vakio","Wide":"Laaja"}}}
+{"kind":"translate","lang":"fi","tag":"DynamicRangeExpansion","value":{"Description":"Dynamiikka-alueen laajennus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"DynamicRangeOptimizer","value":{"Description":"Dynamiikka-alueen optimointi","PrintConv":{"Advanced Auto":"Edistynyt automatiikka","Advanced Lv1":"Edistynyt taso 1","Advanced Lv2":"Edistynyt taso 2","Advanced Lv3":"Edistynyt taso 3","Advanced Lv4":"Edistynyt taso 4","Advanced Lv5":"Edistynyt taso 5","Off":"Pois","Standard":"Vakio"}}}
+{"kind":"translate","lang":"fi","tag":"DynamicRangeSetting","value":{"Description":"Dynamiikka-alueen säätö","PrintConv":{"Film Simulation":"Filminsimulaatio","Standard (100%)":"Vakio (100%)","Wide1 (230%)":"Laaja 1 (230%)","Wide2 (400%)":"Laaja 2 (400%)"}}}
+{"kind":"translate","lang":"fi","tag":"E-DialInProgram","value":"Säätökiekko ohjelmassa"}
+{"kind":"translate","lang":"fi","tag":"EVStepInfo","value":"EV-askeltiedot"}
+{"kind":"translate","lang":"fi","tag":"EVStepSize","value":"EV-askeleen koko"}
+{"kind":"translate","lang":"fi","tag":"EVSteps","value":"EV-askeleet"}
+{"kind":"translate","lang":"fi","tag":"EasyExposureCompensation","value":"Valotuksen pikakorjaus"}
+{"kind":"translate","lang":"fi","tag":"EasyMode","value":"Helppo tapa"}
+{"kind":"translate","lang":"fi","tag":"EdgeNoiseReduction","value":"Reunakohinan vaimennus"}
+{"kind":"translate","lang":"fi","tag":"EditStatus","value":"Editoinnin tila"}
+{"kind":"translate","lang":"fi","tag":"EditTagArray","value":"Muokkaa tagiryhmää"}
+{"kind":"translate","lang":"fi","tag":"EditorialUpdate","value":{"Description":"Sisällön päivitys","PrintConv":{"Additional language":"Lisäkielet"}}}
+{"kind":"translate","lang":"fi","tag":"EffectiveLV","value":"Tehollinen valoarvo (LV)"}
+{"kind":"translate","lang":"fi","tag":"EffectiveMaxAperture","value":"Suurin tehollinen aukko"}
+{"kind":"translate","lang":"fi","tag":"Encoder","value":"Kooderi"}
+{"kind":"translate","lang":"fi","tag":"EncodingProcess","value":"Koodausmetodi"}
+{"kind":"translate","lang":"fi","tag":"EndPoints","value":"Loppupisteet"}
+{"kind":"translate","lang":"fi","tag":"EnhanceDarkTones","value":"Tummien sävyjen parantelu"}
+{"kind":"translate","lang":"fi","tag":"Enhancement","value":{"Description":"Parantelu","PrintConv":{"Blue":"Sininen","Flesh Tones":"Lihanvärinen","Green":"Vihreä","Off":"Pois","Red":"Punainen"}}}
+{"kind":"translate","lang":"fi","tag":"EnhancerValues","value":"Korjainarvot"}
+{"kind":"translate","lang":"fi","tag":"EnvelopeNumber","value":"Pakkauksen numero"}
+{"kind":"translate","lang":"fi","tag":"EnvelopePriority","value":{"Description":"Pakkauksen prioriteetti","PrintConv":{"0 (reserved)":"0 (varattu tulevaan käyttöön)","1 (most urgent)":"1 (hyvin kiireellinen)","5 (normal urgency)":"5 (normaali kiireellisyys)","8 (least urgent)":"8 (lievän kiireellinen)","9 (user-defined priority)":"9 (käyttäjän määrittämä prioriteetti)"}}}
+{"kind":"translate","lang":"fi","tag":"EnvelopeRecordVersion","value":"Pakkaustietueen versio"}
+{"kind":"translate","lang":"fi","tag":"EpsonImageHeight","value":"Epson-kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"EpsonImageWidth","value":"Epson-kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"EpsonSoftware","value":"Epson-ohjelmisto"}
+{"kind":"translate","lang":"fi","tag":"Equipment","value":"Välineistön IFD-osoitin"}
+{"kind":"translate","lang":"fi","tag":"EquipmentVersion","value":"Välineistöversio"}
+{"kind":"translate","lang":"fi","tag":"ExcursionTolerance","value":{"Description":"Toleranssin ekskursio","PrintConv":{"Allowed":"Voi toteutua","Not Allowed":"Ei sallittu (oletus)"}}}
+{"kind":"translate","lang":"fi","tag":"ExifCameraInfo","value":"Exif-kameratiedot"}
+{"kind":"translate","lang":"fi","tag":"ExifImageHeight","value":"Kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"ExifImageWidth","value":"Kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"ExifVersion","value":"Exif-versio"}
+{"kind":"translate","lang":"fi","tag":"ExitPupilPosition","value":"Lähtöpupillin sijainti"}
+{"kind":"translate","lang":"fi","tag":"ExpandFilm","value":"Filmilaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpandFilterLens","value":"Suodinlinssilaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpandFlashLamp","value":"Salamavalolaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpandLens","value":"Objektiivilaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpandScanner","value":"Skannerilaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpandSoftware","value":"Ohjelmistolaajennus"}
+{"kind":"translate","lang":"fi","tag":"ExpirationDate","value":"Päättymispäiväys"}
+{"kind":"translate","lang":"fi","tag":"ExpirationTime","value":"Päättymisaika"}
+{"kind":"translate","lang":"fi","tag":"Exposure","value":"Valotus"}
+{"kind":"translate","lang":"fi","tag":"ExposureBracketStepSize","value":"Valotuksen haarukointiväli"}
+{"kind":"translate","lang":"fi","tag":"ExposureBracketValue","value":"Valotushaarukoinnin arvo"}
+{"kind":"translate","lang":"fi","tag":"ExposureCompensation","value":"Valotuksen korjaus"}
+{"kind":"translate","lang":"fi","tag":"ExposureDelayMode","value":"Valotuksen viivetila"}
+{"kind":"translate","lang":"fi","tag":"ExposureDifference","value":"Valotusero"}
+{"kind":"translate","lang":"fi","tag":"ExposureIndex","value":"Valotusindeksi"}
+{"kind":"translate","lang":"fi","tag":"ExposureMode","value":{"Description":"Valotustapa","PrintConv":{"Aperture Priority":"Aukon esivalinta","Aperture-priority AE":"Aukon esivalinta AE","Auto":"Automaattinen","Auto bracket":"Automaattihaarukointi","Landscape":"Maisema","Manual":"Manuaalinen","Night Scene / Twilight":"Yönäkymä","Program":"Ohjelma","Program AE":"Ohjelma-AE","Program-shift":"Ohjelma-siirto","Shutter Priority":"Ajan esivalinta","Shutter speed priority AE":"Ajan esivalinta AE","n/a":"Ei asetettu"}}}
+{"kind":"translate","lang":"fi","tag":"ExposureProgram","value":{"Description":"Valotusohjelma","PrintConv":{"Action (High speed)":"Toimintaohjelma (painotettu suljinnopeutta)","Aperture-priority AE":"Aukon esivalinta","Creative (Slow speed)":"Luova ohjelma (painotettu syväterävyyttä)","Landscape":"Maisemamoodi (maisemakuviin terävällä taustalla)","Manual":"Manuaalinen","Not Defined":"Ei määritetty","Portrait":"Muotokuvamoodi (lähikuviin epäterävällä taustalla)","Program AE":"Normaali ohjelma","Shutter speed priority AE":"Ajan esivalinta"}}}
+{"kind":"translate","lang":"fi","tag":"ExposureTime","value":"Valotusaika"}
+{"kind":"translate","lang":"fi","tag":"ExposureTime2","value":"Valotusaika 2"}
+{"kind":"translate","lang":"fi","tag":"ExposureWarning","value":{"Description":"Valotusvaroitus","PrintConv":{"Bad exposure":"Valotusvirhe","Good":"OK"}}}
+{"kind":"translate","lang":"fi","tag":"ExtendedWBDetect","value":{"Description":"Laajennettu valkotas. tunnistus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"Extender","value":"Konvertteri"}
+{"kind":"translate","lang":"fi","tag":"ExtenderFirmwareVersion","value":"Konvertterin laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"ExtenderModel","value":"Konvertterimalli"}
+{"kind":"translate","lang":"fi","tag":"ExtenderSerialNumber","value":"Konvertterin sarjanumero"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlash","value":"Ulkoinen salama"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashAE1","value":"Ulkoinen salama AE 1?"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashAE1_0","value":"Ulkoinen salama AE 1 (0)?"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashAE2","value":"Ulkoinen salama AE 2?"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashAE2_0","value":"Ulkoinen salama AE 2 (0)?"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashBounce","value":{"Description":"Ulkoisen salaman heijastus","PrintConv":{"Bounce or Off":"Heijastus tai pois","Direct":"Suora","No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashExposureComp","value":"Ulkoisen salaman valotuksen säätö"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashFlags","value":"Ulkoisen salaman liput"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashGuideNumber","value":"Ulkoisen salaman ohjeluku?"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashMode","value":"Ulkoisen salaman tapa"}
+{"kind":"translate","lang":"fi","tag":"ExternalFlashZoom","value":"Ulkoisen salaman zoom"}
+{"kind":"translate","lang":"fi","tag":"ExtraSamples","value":"Lisänäytteet"}
+{"kind":"translate","lang":"fi","tag":"FNumber","value":"Aukkoarvo"}
+{"kind":"translate","lang":"fi","tag":"Face1Position","value":"Kasvojen 1 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face2Position","value":"Kasvojen 2 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face3Position","value":"Kasvojen 3 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face4Position","value":"Kasvojen 4 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face5Position","value":"Kasvojen 5 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face6Position","value":"Kasvojen 6 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face7Position","value":"Kasvojen 7 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face8Position","value":"Kasvojen 8 sijainti"}
+{"kind":"translate","lang":"fi","tag":"Face9Position","value":"Kasvojen 9 sijainti"}
+{"kind":"translate","lang":"fi","tag":"FaceDetect","value":"Kasvojen tunnistus"}
+{"kind":"translate","lang":"fi","tag":"FacePositions","value":"Kasvojen sijainnit"}
+{"kind":"translate","lang":"fi","tag":"FacesDetected","value":"Tunnistetut kasvot"}
+{"kind":"translate","lang":"fi","tag":"FaxRecvParams","value":"Faxin vastaanottoparametrit"}
+{"kind":"translate","lang":"fi","tag":"FaxRecvTime","value":"Faxin vastaanottoaika"}
+{"kind":"translate","lang":"fi","tag":"FaxSubAddress","value":"Faxin alaosoite"}
+{"kind":"translate","lang":"fi","tag":"FileFormat","value":"Tiedostomuoto"}
+{"kind":"translate","lang":"fi","tag":"FileIndex","value":"Tiedostoindeksi"}
+{"kind":"translate","lang":"fi","tag":"FileInfo","value":"Tiedostoinfot"}
+{"kind":"translate","lang":"fi","tag":"FileInfoVersion","value":"Tiedostoinfojen versio"}
+{"kind":"translate","lang":"fi","tag":"FileName","value":"Tiedostonimi"}
+{"kind":"translate","lang":"fi","tag":"FileNumber","value":"Tiedoston numero"}
+{"kind":"translate","lang":"fi","tag":"FileNumberMemory","value":"Tiedostonumeromuisti"}
+{"kind":"translate","lang":"fi","tag":"FileNumberSequence","value":"Tiedostojen numerojärjestys"}
+{"kind":"translate","lang":"fi","tag":"FileSize","value":"Tiedoston koko"}
+{"kind":"translate","lang":"fi","tag":"FileSource","value":{"Description":"Tiedoston lähde","PrintConv":{"Digital Camera":"Digitaalikamera","Film Scanner":"Filmiskanneri","Reflection Print Scanner":"Heijastava skanneri"}}}
+{"kind":"translate","lang":"fi","tag":"FileType","value":"Tiedostotyyppi"}
+{"kind":"translate","lang":"fi","tag":"Filename","value":"Tiedostonimi"}
+{"kind":"translate","lang":"fi","tag":"FillOrder","value":"Täyttöjärjestys"}
+{"kind":"translate","lang":"fi","tag":"FilmCategory","value":"Filmiluokka"}
+{"kind":"translate","lang":"fi","tag":"FilmGencode","value":"Filmin gencode"}
+{"kind":"translate","lang":"fi","tag":"FilmMode","value":{"Description":"Filmitila","PrintConv":{"Dynamic (B&W)":"Dynaaminen (M&V)","Dynamic (color)":"Dynaaminen (väri)","F0/Standard (PROVIA)":"F0/vakio","F0/Standard (Provia)":"F0/vakio","F1/Studio Portrait":"F1/studiomuotokuva","F1a/Studio Portrait Enhanced Saturation":"F1a/studiomuotokuva laajennettu värikylläisyys","F1b/Studio Portrait Smooth Skin Tone (ASTIA)":"F1b/studiomuotokuva pehmeä ihonväri","F1b/Studio Portrait Smooth Skin Tone (Astia)":"F1b/studiomuotokuva pehmeä ihonväri","F1c/Studio Portrait Increased Sharpness":"F1c/studiomuotokuva lisätty terävyys","F3/Studio Portrait Ex":"F3/studiomuotokuva Ex","Nature (color)":"Luonnollinen (väri)","Nostalgic":"Nostalginen väri","Smooth (B&W)":"Pehmeä (M&V)","Smooth (color)":"Pehmeä (väri)","Standard (B&W)":"Vakio (M&V)","Standard (color)":"Vakio (väri)","Vibrant":"Eloisa väri"}}}
+{"kind":"translate","lang":"fi","tag":"FilmProductCode","value":"Filmin tuotekoodi"}
+{"kind":"translate","lang":"fi","tag":"FilmType","value":"Filmityyppi"}
+{"kind":"translate","lang":"fi","tag":"Filter","value":"Suodin"}
+{"kind":"translate","lang":"fi","tag":"FilterEffect","value":"Suodinefekti"}
+{"kind":"translate","lang":"fi","tag":"FilterEffectMonochrome","value":"Yksivärisuodintehoste"}
+{"kind":"translate","lang":"fi","tag":"Firmware","value":"Laiteohjelmisto"}
+{"kind":"translate","lang":"fi","tag":"FirmwareDate","value":"Laiteohjelmiston päiväys"}
+{"kind":"translate","lang":"fi","tag":"FirmwareID","value":"Laiteohjelmiston ID"}
+{"kind":"translate","lang":"fi","tag":"FirmwareRevision","value":"Laiteohjelmiston revisio"}
+{"kind":"translate","lang":"fi","tag":"FirmwareVersion","value":"Laiteohjelmiston versio"}
+{"kind":"translate","lang":"fi","tag":"FixtureIdentifier","value":"Ominaisuuden tunnistin"}
+{"kind":"translate","lang":"fi","tag":"Flash","value":{"Description":"Salama","PrintConv":{"Auto, Did not fire":"Salama ei lauennut, automaattimoodi","Auto, Did not fire, Red-eye reduction":"Automaattinen, salama ei lauennut, punasilmien esto","Auto, Fired":"Salama lauennut, automaattimoodi","Auto, Fired, Red-eye reduction":"Salama lauennut, automaattimoodi, punasilmien estomoodi","Auto, Fired, Red-eye reduction, Return detected":"Salama lauennut, automaattimoodi, heijastusvalo havaittu, punasilmien estomoodi","Auto, Fired, Red-eye reduction, Return not detected":"Salama lauennut, automaattimoodi, heijastusvaloa ei havaittu, punasilmien estomoodi","Auto, Fired, Return detected":"Salama lauennut, automaattimoodi. heijastusvalo havaittu","Auto, Fired, Return not detected":"Salama lauennut, automaattimoodi, heijastusvaloa ei havaittu","Fired":"Salama lauennut","Fired, Red-eye reduction":"Salama lauennut, punasilmien estomoodi","Fired, Red-eye reduction, Return detected":"Salama lauennut, punasilmien estomoodi, heijastusvalo havaittu","Fired, Red-eye reduction, Return not detected":"Salama lauennut, punasilmien estomoodi, heijastusvaloa ei havaittu","Fired, Return detected":"Strobo-salaman heijastus havaittu","Fired, Return not detected":"Strobo-salaman heijastusta ei havaittu","No Flash":"Salama ei lauennut","No flash function":"Ei salamatoimintoa","Off, Did not fire":"Salama ei lauennut, pakkosalamatila","Off, Did not fire, Return not detected":"Pois, salama ei lauennut, heijastusta ei havaittu","Off, No flash function":"Pois, ei salamatoimintoa","Off, Red-eye reduction":"Pois, punasilmien esto","On, Did not fire":"Päällä, salama ei lauennut","On, Fired":"Salama lauennut, pakkosalamatila","On, Red-eye reduction":"Salama lauennut, pakkosalamatila, punasilmien estomoodi","On, Red-eye reduction, Return detected":"Salama lauennut, pakkosalamatila, punasilmien estomoodi, heijastusvalo havaittu","On, Red-eye reduction, Return not detected":"Salama lauennut, pakkosalamatila, punasilmien estomoodi, heijastusvaloa ei havaittu","On, Return detected":"Salama lauennut, pakkosalamatila, heijastusvalo havaittu","On, Return not detected":"Salama lauennut, pakkosalamatila, heijastusvaloa ei havaittu"}}}
+{"kind":"translate","lang":"fi","tag":"FlashActivity","value":"Salaman toiminta"}
+{"kind":"translate","lang":"fi","tag":"FlashBias","value":"Salaman muutos"}
+{"kind":"translate","lang":"fi","tag":"FlashChargeLevel","value":"Salaman varaustila"}
+{"kind":"translate","lang":"fi","tag":"FlashCompensation","value":"Salaman säätö"}
+{"kind":"translate","lang":"fi","tag":"FlashControlMode","value":"Salaman ohjaustapa"}
+{"kind":"translate","lang":"fi","tag":"FlashDevice","value":"Salamalaite"}
+{"kind":"translate","lang":"fi","tag":"FlashDistance","value":"Salamaetäisyys"}
+{"kind":"translate","lang":"fi","tag":"FlashEnergy","value":"Salaman teho"}
+{"kind":"translate","lang":"fi","tag":"FlashExposureBracketValue","value":"Salamavalotuksen haarukoinnin arvo"}
+{"kind":"translate","lang":"fi","tag":"FlashExposureComp","value":"Salaman kirkkauden säätö"}
+{"kind":"translate","lang":"fi","tag":"FlashExposureComp2","value":"Salaman kirkkauden säätö 2"}
+{"kind":"translate","lang":"fi","tag":"FlashFired","value":{"Description":"Salama lauennut","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"FlashFirmwareVersion","value":"Salaman laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"FlashFocalLength","value":"Salaman polttoväli"}
+{"kind":"translate","lang":"fi","tag":"FlashGuideNumber","value":"Salaman ohjeluku"}
+{"kind":"translate","lang":"fi","tag":"FlashInfoVersion","value":"Salaman tietojen versio"}
+{"kind":"translate","lang":"fi","tag":"FlashIntensity","value":{"Description":"Salaman teho","PrintConv":{"High":"Korkea","Low":"Matala","Normal":"Normaali","Strong":"Voimakas","Weak":"Heikko"}}}
+{"kind":"translate","lang":"fi","tag":"FlashMetering","value":"Salamamittaus"}
+{"kind":"translate","lang":"fi","tag":"FlashMeteringSegments","value":"Salaman mittaussegmentit"}
+{"kind":"translate","lang":"fi","tag":"FlashMode","value":{"Description":"Salamatapa","PrintConv":{"Auto":"Automaattinen","Did Not Fire":"Ei lauennut","Disabled":"Deaktivoitu","Fired, Commander Mode":"Lauennut, pakkotapa","Fired, External":"Lauennut, ulkoinen","Fired, Manual":"Lauennut, manuaalinen","Fired, TTL Mode":"Lauennut, TTL-tapa","Force":"Pakkotapa","Not Ready":"Ei valmis","Off":"Pois (3)","On":"Päällä (2)","Red eye":"Punasilmien esto"}}}
+{"kind":"translate","lang":"fi","tag":"FlashModel","value":{"Description":"Salaman malli","PrintConv":{"None":"Ei mitään"}}}
+{"kind":"translate","lang":"fi","tag":"FlashOptions","value":"Salamavalinnat"}
+{"kind":"translate","lang":"fi","tag":"FlashOutput","value":"Salaman teho"}
+{"kind":"translate","lang":"fi","tag":"FlashRemoteControl","value":"Salaman kaukosäätö"}
+{"kind":"translate","lang":"fi","tag":"FlashSerialNumber","value":"Salaman sarjanumero"}
+{"kind":"translate","lang":"fi","tag":"FlashSetting","value":"Salaman asetus"}
+{"kind":"translate","lang":"fi","tag":"FlashShutterSpeed","value":"Suljinaika salamakuvauksessa"}
+{"kind":"translate","lang":"fi","tag":"FlashStatus","value":"Salaman tila"}
+{"kind":"translate","lang":"fi","tag":"FlashSyncSpeed","value":"Salaman täsmäysaika"}
+{"kind":"translate","lang":"fi","tag":"FlashType","value":{"Description":"Salamatyyppi","PrintConv":{"E-System":"E-järjestelmä","None":"Ei mitään","Simple E-System":"Yksinkertainen E-järjestelmä"}}}
+{"kind":"translate","lang":"fi","tag":"FlashWarning","value":"Salamavaroitus"}
+{"kind":"translate","lang":"fi","tag":"FlashpixVersion","value":"Tuettu Flashpix-versio"}
+{"kind":"translate","lang":"fi","tag":"FlickerReduce","value":{"Description":"Värinän vaimennus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"FlipHorizontal","value":"Kiepautus vaakatasossa"}
+{"kind":"translate","lang":"fi","tag":"FocalLength","value":"Polttoväli"}
+{"kind":"translate","lang":"fi","tag":"FocalLengthIn35mmFormat","value":"Polttoväli 35 mm filmikoolla"}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneDiagonal","value":"Polttopistetason lävistäjä"}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneResolutionUnit","value":{"Description":"Polttopistetason resoluutioyksikkö","PrintConv":{"None":"Ei mitään","inches":"Tuuma","um":"µm (mikrometri)"}}}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneXResolution","value":"Polttopistetason vaakaresoluutio"}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneXSize","value":"Polttopistetason leveys"}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneYResolution","value":"Polttopistetason pystyresoluutio"}
+{"kind":"translate","lang":"fi","tag":"FocalPlaneYSize","value":"Polttopistetason korkeus"}
+{"kind":"translate","lang":"fi","tag":"FocalType","value":"Objektiivityyppi"}
+{"kind":"translate","lang":"fi","tag":"Focus","value":"Tarkennusesivalinta"}
+{"kind":"translate","lang":"fi","tag":"FocusArea","value":"Tarkennusalue"}
+{"kind":"translate","lang":"fi","tag":"FocusAreaSelection","value":"Tarkennusalueen valinta"}
+{"kind":"translate","lang":"fi","tag":"FocusContinuous","value":"Jatkuva tarkennus"}
+{"kind":"translate","lang":"fi","tag":"FocusDistance","value":"Tarkennusetäisyys"}
+{"kind":"translate","lang":"fi","tag":"FocusDistanceLower","value":"Lähitarkennus"}
+{"kind":"translate","lang":"fi","tag":"FocusDistanceUpper","value":"Kaukotarkennus"}
+{"kind":"translate","lang":"fi","tag":"FocusMode","value":{"Description":"Tarkennustapa","PrintConv":{"Auto":"Automaattinen","Manual":"Manuaalinen"}}}
+{"kind":"translate","lang":"fi","tag":"FocusMode2","value":"Tarkennustapa"}
+{"kind":"translate","lang":"fi","tag":"FocusPixel","value":"Tarkennuspikseli"}
+{"kind":"translate","lang":"fi","tag":"FocusPosition","value":"Polttopisteen paikka"}
+{"kind":"translate","lang":"fi","tag":"FocusProcess","value":"Tarkennusprosessi"}
+{"kind":"translate","lang":"fi","tag":"FocusRange","value":{"Description":"Tarkennusalue","PrintConv":{"Macro":"Makro","Normal":"Normaali"}}}
+{"kind":"translate","lang":"fi","tag":"FocusSetting","value":"Tarkennusasetus"}
+{"kind":"translate","lang":"fi","tag":"FocusStepCount","value":"Tarkennusaskelmäärä"}
+{"kind":"translate","lang":"fi","tag":"FocusWarning","value":{"Description":"Tarkennusvaroitus","PrintConv":{"Good":"OK","Out of focus":"Epätarkka"}}}
+{"kind":"translate","lang":"fi","tag":"FolderName","value":"Kansion nimi"}
+{"kind":"translate","lang":"fi","tag":"ForwardMatrix1","value":"Eteenpäin-matriisi 1"}
+{"kind":"translate","lang":"fi","tag":"ForwardMatrix2","value":"Eteenpäin-matriisi 2"}
+{"kind":"translate","lang":"fi","tag":"FrameHeight","value":"Ruudun korkeus"}
+{"kind":"translate","lang":"fi","tag":"FrameNumber","value":"Ruudun numero"}
+{"kind":"translate","lang":"fi","tag":"FrameWidth","value":"Ruudun leveys"}
+{"kind":"translate","lang":"fi","tag":"FreeByteCounts","value":"Vapaiden tavujen määrät"}
+{"kind":"translate","lang":"fi","tag":"FreeMemoryCardImages","value":"Muistikortilla tilaa"}
+{"kind":"translate","lang":"fi","tag":"FreeOffsets","value":"Vapaat siirtymät"}
+{"kind":"translate","lang":"fi","tag":"FujiFlashMode","value":{"Description":"Salamatila","PrintConv":{"External":"Ulkoinen salama","Off":"Pois","On":"Päällä","Red-eye reduction":"Punasilmäisyyden vähennys"}}}
+{"kind":"translate","lang":"fi","tag":"GEMInfo","value":"GEM-tiedot"}
+{"kind":"translate","lang":"fi","tag":"GEModel","value":"Malli"}
+{"kind":"translate","lang":"fi","tag":"GIFVersion","value":"GIF-versio"}
+{"kind":"translate","lang":"fi","tag":"GPSAltitude","value":"Korkeus"}
+{"kind":"translate","lang":"fi","tag":"GPSAltitudeRef","value":{"Description":"Viitekorkeus","PrintConv":{"Above Sea Level":"Merenpinnan korkeus","Below Sea Level":"Merenpinnan viitekorkeus (negatiivinen arvo)"}}}
+{"kind":"translate","lang":"fi","tag":"GPSAreaInformation","value":"GPS-alueen nimi"}
+{"kind":"translate","lang":"fi","tag":"GPSDOP","value":"Mittaustarkkuus"}
+{"kind":"translate","lang":"fi","tag":"GPSDateStamp","value":"GPS-päiväys"}
+{"kind":"translate","lang":"fi","tag":"GPSDestBearing","value":"Kohteen suuntima"}
+{"kind":"translate","lang":"fi","tag":"GPSDestBearingRef","value":{"Description":"Kohteen suuntiman viite","PrintConv":{"Magnetic North":"Magneettinen suunta","True North":"Todellinen suunta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSDestDistance","value":"Etäisyys kohteeseen"}
+{"kind":"translate","lang":"fi","tag":"GPSDestDistanceRef","value":{"Description":"Viite etäisyydelle kohteeseen","PrintConv":{"Kilometers":"Kilometriä","Miles":"Mailia","Nautical Miles":"Solmua"}}}
+{"kind":"translate","lang":"fi","tag":"GPSDestLatitude","value":"Kohteen leveysaste"}
+{"kind":"translate","lang":"fi","tag":"GPSDestLatitudeRef","value":{"Description":"Kohteen leveysasteen viite","PrintConv":{"North":"Pohjoista leveyttä","South":"Eteläistä leveyttä"}}}
+{"kind":"translate","lang":"fi","tag":"GPSDestLongitude","value":"Kohteen pituusaste"}
+{"kind":"translate","lang":"fi","tag":"GPSDestLongitudeRef","value":{"Description":"Kohteen pituusasteen viite","PrintConv":{"East":"Itäistä pituutta","West":"Läntistä pituutta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSDifferential","value":{"Description":"GPS-differentiaalikorjaus","PrintConv":{"Differential Corrected":"Differentiaalikorjausta käytetty","No Correction":"Mittaus ilman differentiaalikorjausta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSImgDirection","value":"Kuvan´ suunta"}
+{"kind":"translate","lang":"fi","tag":"GPSImgDirectionRef","value":{"Description":"Kuvan suunnan viite","PrintConv":{"Magnetic North":"Magneettinen suunta","True North":"Todellinen suunta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSLatitude","value":"Leveysaste"}
+{"kind":"translate","lang":"fi","tag":"GPSLatitudeRef","value":{"Description":"Pohjoista tai eteläistä leveyttä","PrintConv":{"North":"Pohjoista leveyttä","South":"Eteläistä leveyttä"}}}
+{"kind":"translate","lang":"fi","tag":"GPSLongitude","value":"Pituusaste"}
+{"kind":"translate","lang":"fi","tag":"GPSLongitudeRef","value":{"Description":"Itäistä tai läntistä pituutta","PrintConv":{"East":"Itäistä pituutta","West":"Läntistä pituutta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSMapDatum","value":"Käytetty geodeettinen karttadata"}
+{"kind":"translate","lang":"fi","tag":"GPSMeasureMode","value":{"Description":"GPS-mittaustapa","PrintConv":{"2-Dimensional Measurement":"2-ulotteinen mittaus","3-Dimensional Measurement":"3-ulotteinen mittaus"}}}
+{"kind":"translate","lang":"fi","tag":"GPSProcessingMethod","value":"GPS-prosessointimetodin nimi"}
+{"kind":"translate","lang":"fi","tag":"GPSSatellites","value":"Mittaukseen käytetyt GPS-satelliitit"}
+{"kind":"translate","lang":"fi","tag":"GPSSpeed","value":"GPS-vastaanottimen nopeus"}
+{"kind":"translate","lang":"fi","tag":"GPSSpeedRef","value":{"Description":"Nopeusyksikkö","PrintConv":{"km/h":"Kilometriä per tunti","knots":"Solmua","mph":"Mailia per tunti"}}}
+{"kind":"translate","lang":"fi","tag":"GPSStatus","value":{"Description":"GPS-vastaanottimen tila","PrintConv":{"Measurement Active":"Mittaus aktiivinen","Measurement Void":"Mittaus virheellinen"}}}
+{"kind":"translate","lang":"fi","tag":"GPSTimeStamp","value":"GPS-aika (atomikello)"}
+{"kind":"translate","lang":"fi","tag":"GPSTrack","value":"Liikkeen suunta"}
+{"kind":"translate","lang":"fi","tag":"GPSTrackRef","value":{"Description":"Liikkeen suunnan viite","PrintConv":{"Magnetic North":"Magneettinen suunta","True North":"Todellinen suunta"}}}
+{"kind":"translate","lang":"fi","tag":"GPSVersionID","value":"GPS-tagin versio"}
+{"kind":"translate","lang":"fi","tag":"GainBase","value":"Perusvahvistus"}
+{"kind":"translate","lang":"fi","tag":"GainControl","value":{"Description":"Herkkyyden säätö","PrintConv":{"High gain down":"Suuri valoisuuden vähennys","High gain up":"Suuri valoisuuden lisäys","Low gain down":"Pieni valoisuuden vähennys","Low gain up":"Pieni valoisuuden lisäys","None":"Ei mitään"}}}
+{"kind":"translate","lang":"fi","tag":"GammaCompensatedValue","value":"Kompensoidun gamman arvo"}
+{"kind":"translate","lang":"fi","tag":"GeoTiffAsciiParams","value":"Geo-ASCII -parametrien tagi"}
+{"kind":"translate","lang":"fi","tag":"GeoTiffDirectory","value":"Geo-avain -hakemiston tagi"}
+{"kind":"translate","lang":"fi","tag":"GeoTiffDoubleParams","value":"Geo-kaksoisparametrien tagi"}
+{"kind":"translate","lang":"fi","tag":"Gradation","value":"Porrastus"}
+{"kind":"translate","lang":"fi","tag":"GrayPoint","value":"Harmaapiste"}
+{"kind":"translate","lang":"fi","tag":"GrayResponseCurve","value":"Harmaan vastekäyrä"}
+{"kind":"translate","lang":"fi","tag":"GrayResponseUnit","value":{"Description":"Harmaan vasteyksikkö","PrintConv":{"0.0001":"Numero edustaa yksikön tuhannesosia","0.001":"Numero edustaa yksikön sadasosia","0.1":"Numero edustaa yksikön kymmenyksiä","1e-05":"Numero edustaa yksikön kymmenestuhannesosia","1e-06":"Numero edustaa yksikön sadastuhannesosia"}}}
+{"kind":"translate","lang":"fi","tag":"GrayScale","value":"Harmaa-asteikko"}
+{"kind":"translate","lang":"fi","tag":"GrayTRC","value":"Harmaan toonin toistokäyrä"}
+{"kind":"translate","lang":"fi","tag":"GreenMatrixColumn","value":"Vihreän matriisin sarake"}
+{"kind":"translate","lang":"fi","tag":"GreenTRC","value":"Vihreän toonin toistokäyrä"}
+{"kind":"translate","lang":"fi","tag":"GreenX","value":"Vihreä X"}
+{"kind":"translate","lang":"fi","tag":"GreenY","value":"Vihreä Y"}
+{"kind":"translate","lang":"fi","tag":"GridDisplay","value":"Ristikko"}
+{"kind":"translate","lang":"fi","tag":"HCUsage","value":"HC-käyttö"}
+{"kind":"translate","lang":"fi","tag":"HalftoneHints","value":"Puolisävyviitteet"}
+{"kind":"translate","lang":"fi","tag":"Headline","value":"Otsikko"}
+{"kind":"translate","lang":"fi","tag":"HighISONoiseReduction","value":{"Description":"Korkean ISO-tason kohinan vaimennus","PrintConv":{"High":"Korkea","Low":"Matala","Minimal":"Minimaalinen","Normal":"Normaali","Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"Highlight","value":"Valoalue"}
+{"kind":"translate","lang":"fi","tag":"HighlightData","value":"Valoalueen data"}
+{"kind":"translate","lang":"fi","tag":"HighlightProtection","value":"Valoalueen suojaus"}
+{"kind":"translate","lang":"fi","tag":"HometownCity","value":"Kotiseutu"}
+{"kind":"translate","lang":"fi","tag":"HometownCityCode","value":"Kotiseutukoodi"}
+{"kind":"translate","lang":"fi","tag":"HometownDST","value":{"Description":"Kotiseudun kesäaika (DST)","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"HostComputer","value":"Isäntätietokone"}
+{"kind":"translate","lang":"fi","tag":"Hue","value":"Sävy"}
+{"kind":"translate","lang":"fi","tag":"HueAdjustment","value":"Värisävyn säätö"}
+{"kind":"translate","lang":"fi","tag":"HueSetting","value":"Sävyn asetus"}
+{"kind":"translate","lang":"fi","tag":"HuffmanTable","value":"Huffman-taulukko"}
+{"kind":"translate","lang":"fi","tag":"ICCProfile","value":"ICC-profiili"}
+{"kind":"translate","lang":"fi","tag":"ICC_Profile","value":"ICC-syötteen väriprofiili"}
+{"kind":"translate","lang":"fi","tag":"IPTC-NAA","value":"IPTC-NAA -metadata"}
+{"kind":"translate","lang":"fi","tag":"IPTCBitsPerSample","value":"Bittien määrä per näyte"}
+{"kind":"translate","lang":"fi","tag":"IPTCData","value":"IPTC-data"}
+{"kind":"translate","lang":"fi","tag":"IPTCDigest","value":"IPTC-yhteenveto"}
+{"kind":"translate","lang":"fi","tag":"IPTCImageHeight","value":"Viivojen määrä"}
+{"kind":"translate","lang":"fi","tag":"IPTCImageRotation","value":{"Description":"Kuvan kierto","PrintConv":{"0":"Ei kiertoa","180":"180 asteen kierto","270":"270 asteen kierto","90":"90 asteen kierto"}}}
+{"kind":"translate","lang":"fi","tag":"IPTCImageWidth","value":"Pikseleitä per viiva"}
+{"kind":"translate","lang":"fi","tag":"IPTCPictureNumber","value":"Kuvan numero"}
+{"kind":"translate","lang":"fi","tag":"IPTCPixelHeight","value":"Pikselikoko suorassa kulmassa skannaussuuntaan"}
+{"kind":"translate","lang":"fi","tag":"IPTCPixelWidth","value":"Pikselikoko skannaussuunnassa"}
+{"kind":"translate","lang":"fi","tag":"ISO","value":"ISO-herkkyys"}
+{"kind":"translate","lang":"fi","tag":"ISOAuto","value":"Automaattinen ISO"}
+{"kind":"translate","lang":"fi","tag":"ISODisplay","value":"ISO-näyttö"}
+{"kind":"translate","lang":"fi","tag":"ISOExpansion","value":"ISO-laajennus"}
+{"kind":"translate","lang":"fi","tag":"ISOFloor","value":"ISO-alaraja"}
+{"kind":"translate","lang":"fi","tag":"ISOInfo","value":"ISO-tiedot"}
+{"kind":"translate","lang":"fi","tag":"ISOSelection","value":"ISO-valinta"}
+{"kind":"translate","lang":"fi","tag":"ISOSetting","value":"ISO-asetus"}
+{"kind":"translate","lang":"fi","tag":"ISOValue","value":"ISO-arvo"}
+{"kind":"translate","lang":"fi","tag":"IT8Header","value":"IT8-ylätunniste"}
+{"kind":"translate","lang":"fi","tag":"Illumination","value":"Näytön valaisu"}
+{"kind":"translate","lang":"fi","tag":"ImageAdjustment","value":"Kuvan säätö"}
+{"kind":"translate","lang":"fi","tag":"ImageAreaOffset","value":"Kuva-alueen siirtymä"}
+{"kind":"translate","lang":"fi","tag":"ImageAuthentication","value":{"Description":"Kuvan aitoustodennus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"ImageBoundary","value":"Kuvan rajat"}
+{"kind":"translate","lang":"fi","tag":"ImageByteCount","value":"Kuvan tavumäärä"}
+{"kind":"translate","lang":"fi","tag":"ImageColorIndicator","value":"Kuvan värin ilmaisin"}
+{"kind":"translate","lang":"fi","tag":"ImageColorValue","value":"Kuvan värin arvo"}
+{"kind":"translate","lang":"fi","tag":"ImageCount","value":"Kuvamäärä"}
+{"kind":"translate","lang":"fi","tag":"ImageData","value":"Kuvadata"}
+{"kind":"translate","lang":"fi","tag":"ImageDataDiscard","value":{"Description":"Kuvadatan hylkäys","PrintConv":{"Flexbits Discarded":"FlexBits hylätty","Full Resolution":"Täysi resoluutio","HighPass Frequency Data Discarded":"Ylipäästötaajuusdata hylätty","Highpass and LowPass Frequency Data Discarded":"Yli- ja alipäästötaajuusdata hylätty"}}}
+{"kind":"translate","lang":"fi","tag":"ImageDataSize","value":"Kuvadatan koko"}
+{"kind":"translate","lang":"fi","tag":"ImageDepth","value":"Kuvan syvyys"}
+{"kind":"translate","lang":"fi","tag":"ImageDescription","value":"Kuvan otsake"}
+{"kind":"translate","lang":"fi","tag":"ImageDustOff","value":"Kuvan pölynpoisto"}
+{"kind":"translate","lang":"fi","tag":"ImageEditCount","value":"Kuvan prosessointimäärä"}
+{"kind":"translate","lang":"fi","tag":"ImageHeight","value":"Kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"ImageHistory","value":"Kuvahistoria"}
+{"kind":"translate","lang":"fi","tag":"ImageID","value":"Kuvan ID"}
+{"kind":"translate","lang":"fi","tag":"ImageInfo","value":"Kuvatiedot"}
+{"kind":"translate","lang":"fi","tag":"ImageLayer","value":"Kuvataso"}
+{"kind":"translate","lang":"fi","tag":"ImageNumber","value":"Tiedostonumero"}
+{"kind":"translate","lang":"fi","tag":"ImageOffset","value":"Kuvan siirtrymä"}
+{"kind":"translate","lang":"fi","tag":"ImageOptimization","value":"Kuvan optimointi"}
+{"kind":"translate","lang":"fi","tag":"ImageOrientation","value":{"Description":"Kuvan suunta","PrintConv":{"Landscape":"Vaakakuva","Portrait":"Pystykuva","Square":"Neliömäinen"}}}
+{"kind":"translate","lang":"fi","tag":"ImagePrintStatus","value":"Kuvan tulostuksen tila"}
+{"kind":"translate","lang":"fi","tag":"ImageProcessing","value":"Kuvan prosessointi"}
+{"kind":"translate","lang":"fi","tag":"ImageProcessingVersion","value":"Kuvaprosessoinnin versio"}
+{"kind":"translate","lang":"fi","tag":"ImageQuality","value":"Kuvan laatu"}
+{"kind":"translate","lang":"fi","tag":"ImageQuality2","value":"Kuvan laatu 2"}
+{"kind":"translate","lang":"fi","tag":"ImageReview","value":"Kuvan tarkastelu"}
+{"kind":"translate","lang":"fi","tag":"ImageReviewTime","value":"Kuvan katseluaika"}
+{"kind":"translate","lang":"fi","tag":"ImageRotationStatus","value":"Kuvan kierron tila"}
+{"kind":"translate","lang":"fi","tag":"ImageSize","value":"Kuvakoko"}
+{"kind":"translate","lang":"fi","tag":"ImageSourceData","value":"Kuvan lähdedata"}
+{"kind":"translate","lang":"fi","tag":"ImageSourceEK","value":"EK-kuvalähde"}
+{"kind":"translate","lang":"fi","tag":"ImageStabilization","value":{"Description":"Kuvanvakautus","PrintConv":{"Best Shot":"Paras kuva","Off":"Pois","On":"Päällä","On, Mode 1":"Päällä, tapa 1","On, Mode 2":"Päällä, tapa 2"}}}
+{"kind":"translate","lang":"fi","tag":"ImageTone","value":{"Description":"Kuvamuoto","PrintConv":{"Bleach Bypass":"Bleach bypass -esivalotus","Bright":"Kirkas","Landscape":"Maisema","Monochrome":"Yksivärinen","Muted":"Vaimennettu","Natural":"Luonnollinen","Portrait":"Muotokuva","Reversal Film":"Kääntöfilmi","Vibrant":"Eloisa"}}}
+{"kind":"translate","lang":"fi","tag":"ImageType","value":"Sivu"}
+{"kind":"translate","lang":"fi","tag":"ImageUniqueID","value":"Kuvan uniikki ID"}
+{"kind":"translate","lang":"fi","tag":"ImageWidth","value":"Kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"Indexed","value":"Indeksoitu"}
+{"kind":"translate","lang":"fi","tag":"InkNames","value":"Musteiden nimet"}
+{"kind":"translate","lang":"fi","tag":"InkSet","value":"Mustesarja"}
+{"kind":"translate","lang":"fi","tag":"IntellectualGenre","value":"Intellektuaalinen genre"}
+{"kind":"translate","lang":"fi","tag":"IntelligentAuto","value":"Intelligentti automatiikka"}
+{"kind":"translate","lang":"fi","tag":"IntergraphMatrix","value":"Intergraph-matriisi -tagi"}
+{"kind":"translate","lang":"fi","tag":"Interlace","value":"Lomitus"}
+{"kind":"translate","lang":"fi","tag":"InternalFlash","value":{"Description":"Sisäinen salama","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"InternalFlashAE1","value":"Sisäinen salama AE 1?"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashAE1_0","value":"Sisäinen salama AE 1 (0)?"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashAE2","value":"Sisäinen salama AE 2?"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashAE2_0","value":"Sisäinen salama AE 2 (0)?"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashMode","value":"Sisäisen salaman tapa"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashStrength","value":"Sisäisen salaman teho"}
+{"kind":"translate","lang":"fi","tag":"InternalFlashTable","value":"Sisäisen salaman taulukko"}
+{"kind":"translate","lang":"fi","tag":"InternalSerialNumber","value":"Sisäinen sarjanumero"}
+{"kind":"translate","lang":"fi","tag":"InteropIndex","value":{"Description":"Interoperabiliteetin identifiointi","PrintConv":{"R03 - DCF option file (Adobe RGB)":"R03: DCF-valintatiedosto (Adobe RGB)","R98 - DCF basic file (sRGB)":"R98: DCF-perustiedosto (sRGB)","THM - DCF thumbnail file":"THM: DCF-näytekuvatiedosto"}}}
+{"kind":"translate","lang":"fi","tag":"InteropVersion","value":"Interoperabiliteetin versio"}
+{"kind":"translate","lang":"fi","tag":"IntervalLength","value":"Ajastusvälin pituus"}
+{"kind":"translate","lang":"fi","tag":"IntervalMode","value":"Ajastettu kuvaustapa"}
+{"kind":"translate","lang":"fi","tag":"IntervalNumber","value":"Ajastuksen numero"}
+{"kind":"translate","lang":"fi","tag":"JFIFVersion","value":"JFIF-versio"}
+{"kind":"translate","lang":"fi","tag":"JPEGACTables","value":"JPEG:n AC-taulukot"}
+{"kind":"translate","lang":"fi","tag":"JPEGDCTables","value":"JPEG:n DC-taulukot"}
+{"kind":"translate","lang":"fi","tag":"JPEGLosslessPredictors","value":"JPEG:n häviöttömät prediktorit"}
+{"kind":"translate","lang":"fi","tag":"JPEGPointTransforms","value":"JPEG:n pistemuunnot"}
+{"kind":"translate","lang":"fi","tag":"JPEGProc","value":"JPEG-proc"}
+{"kind":"translate","lang":"fi","tag":"JPEGQTables","value":"JPEG:n Q-taulukot"}
+{"kind":"translate","lang":"fi","tag":"JPEGQuality","value":{"Description":"JPEG-laatu","PrintConv":{"Extra Fine":"Erityishieno","Fine":"Hieno","Standard":"Normaali","n/a":"Ei asetettu"}}}
+{"kind":"translate","lang":"fi","tag":"JPEGRestartInterval","value":"JPEG:n uudelleenaloitusväli"}
+{"kind":"translate","lang":"fi","tag":"JPEGTables","value":"JPEG-taulukot"}
+{"kind":"translate","lang":"fi","tag":"JobID","value":"Työn ID"}
+{"kind":"translate","lang":"fi","tag":"Keyword","value":"Avainsana"}
+{"kind":"translate","lang":"fi","tag":"Keywords","value":"Avainsana"}
+{"kind":"translate","lang":"fi","tag":"LCDIllumination","value":"LCD:n valaisu"}
+{"kind":"translate","lang":"fi","tag":"Language","value":"Kieli"}
+{"kind":"translate","lang":"fi","tag":"LanguageIdentifier","value":"Kielen tunnistin"}
+{"kind":"translate","lang":"fi","tag":"LastFileNumber","value":"Viimeinen tiedostonumero"}
+{"kind":"translate","lang":"fi","tag":"LeafData","value":"Leaf-data"}
+{"kind":"translate","lang":"fi","tag":"Lens","value":"Objektiivi"}
+{"kind":"translate","lang":"fi","tag":"LensApertureRange","value":"Objektiivin aukkoalue"}
+{"kind":"translate","lang":"fi","tag":"LensDataVersion","value":"Objektiividatan versio"}
+{"kind":"translate","lang":"fi","tag":"LensDistortionParams","value":"Linssivääristymän parametrit"}
+{"kind":"translate","lang":"fi","tag":"LensFStops","value":"Objektiivin aukkoarvot"}
+{"kind":"translate","lang":"fi","tag":"LensFirmwareVersion","value":"Objektiivin laiteohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"LensID","value":"Objektiivin ID"}
+{"kind":"translate","lang":"fi","tag":"LensIDNumber","value":"Objektiivin ID-numero"}
+{"kind":"translate","lang":"fi","tag":"LensInfo","value":"Objektiivin tiedot"}
+{"kind":"translate","lang":"fi","tag":"LensSerialNumber","value":"Objektiivin sarjanumero"}
+{"kind":"translate","lang":"fi","tag":"LensTemperature","value":"Objektiivin lämpötila"}
+{"kind":"translate","lang":"fi","tag":"LensType","value":"Objektiivityyppi"}
+{"kind":"translate","lang":"fi","tag":"LightCondition","value":"Valaistusolot"}
+{"kind":"translate","lang":"fi","tag":"LightReading","value":"Valolukema"}
+{"kind":"translate","lang":"fi","tag":"LightSource","value":{"Description":"Valonlähde","PrintConv":{"Cloudy":"Pilvinen","Cool White Fluorescent":"Viileä valkoinen loistelamppu (W 3900 - 4500K)","Day White Fluorescent":"Valkoinen päivänvaloloistelamppu (N 4600 - 5400K)","Daylight":"Päivänvalo","Daylight Fluorescent":"Päivänvaloloistelamppu (D 5700 - 7100K)","Fine Weather":"Pilvetön","Flash":"Salama","Fluorescent":"Loistevalo","ISO Studio Tungsten":"ISO studiokeinovalo (hehkulamppu)","Other":"Muu valonlähde","Shade":"Varjo","Standard Light A":"Standardivalo A","Standard Light B":"Standardivalo B","Standard Light C":"Standardivalo C","Tungsten (Incandescent)":"Keinovalo (hehkulamppu)","Unknown":"Tuntematon","White Fluorescent":"Lämmin valkoinen loistelamppu (WW 3200 - 3700K)"}}}
+{"kind":"translate","lang":"fi","tag":"LightSourceSpecial","value":{"Description":"Erikoisvalonlähde","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"LinearResponseLimit","value":"Lineaarisen vasteen raja"}
+{"kind":"translate","lang":"fi","tag":"LinearizationTable","value":"Linearisaatiotaulukko"}
+{"kind":"translate","lang":"fi","tag":"LiveViewAF","value":"Suoranäyttö-AF"}
+{"kind":"translate","lang":"fi","tag":"LocalizedCameraModel","value":"Lokalisoitu kameramalli"}
+{"kind":"translate","lang":"fi","tag":"Location","value":"Sijainti"}
+{"kind":"translate","lang":"fi","tag":"LongExposureNoiseReduction","value":{"Description":"Pitkien valotusten kohinan vaimennus","PrintConv":{"Off":"Pois","On":"Päällä","n/a":"Ei asetettu"}}}
+{"kind":"translate","lang":"fi","tag":"LookupTable","value":"Hakutaulukko"}
+{"kind":"translate","lang":"fi","tag":"Luminance","value":"Luminanssi"}
+{"kind":"translate","lang":"fi","tag":"MB-D10BatteryType","value":"MB-D10 -paristotyyppi"}
+{"kind":"translate","lang":"fi","tag":"MB-D80Batteries","value":"MB-D80 -paristot"}
+{"kind":"translate","lang":"fi","tag":"MCUVersion","value":"MCU-versio"}
+{"kind":"translate","lang":"fi","tag":"Macro","value":{"Description":"Makro","PrintConv":{"Off":"Pois","On":"Päällä","n/a":"Ei asetettu"}}}
+{"kind":"translate","lang":"fi","tag":"MacroMode","value":{"Description":"Makrotapa","PrintConv":{"Off":"Pois","On":"Päällä","Super Macro":"Supermakro","Tele-Macro":"Telemakro"}}}
+{"kind":"translate","lang":"fi","tag":"Magnification","value":"Suurennus"}
+{"kind":"translate","lang":"fi","tag":"Make","value":"Valmistaja"}
+{"kind":"translate","lang":"fi","tag":"MakeAndModel","value":"Valmistaja ja malli"}
+{"kind":"translate","lang":"fi","tag":"MakerNote","value":"DNG-erityistiedot"}
+{"kind":"translate","lang":"fi","tag":"MakerNoteOffset","value":"Valmistajatietojen siirtymä"}
+{"kind":"translate","lang":"fi","tag":"MakerNoteSafety","value":{"Description":"Valmistatietojen turvallisuus","PrintConv":{"Safe":"Turvallinen","Unsafe":"Turvaton"}}}
+{"kind":"translate","lang":"fi","tag":"MakerNoteType","value":"Valmistajatietojen tyyppi"}
+{"kind":"translate","lang":"fi","tag":"MakerNoteVersion","value":"Valmistajatietojen versio"}
+{"kind":"translate","lang":"fi","tag":"ManometerPressure","value":"Manometrin ilmaisema paine"}
+{"kind":"translate","lang":"fi","tag":"ManualFlash","value":"Manuaalinen salama"}
+{"kind":"translate","lang":"fi","tag":"ManualFlashOutput","value":"Salaman käsisäätö"}
+{"kind":"translate","lang":"fi","tag":"ManualFocusDistance","value":"Manuaalinen etäisyydensäätö"}
+{"kind":"translate","lang":"fi","tag":"ManufactureDate","value":"Valmistuspäiväys"}
+{"kind":"translate","lang":"fi","tag":"MaskedAreas","value":"Maskilliset alueet"}
+{"kind":"translate","lang":"fi","tag":"MasterDocumentID","value":"Alkuperäisdokumentin ID"}
+{"kind":"translate","lang":"fi","tag":"MasterGain","value":"Yleisvahvistus"}
+{"kind":"translate","lang":"fi","tag":"MatrixMetering","value":"Matriisimittaus"}
+{"kind":"translate","lang":"fi","tag":"Matteing","value":"Mattaus"}
+{"kind":"translate","lang":"fi","tag":"MaxAperture","value":"Suurin aukko"}
+{"kind":"translate","lang":"fi","tag":"MaxApertureAtCurrentFocal","value":"Suurin aukko nykyisellä polttovälillä"}
+{"kind":"translate","lang":"fi","tag":"MaxApertureAtMaxFocal","value":"Suurin aukko pisimmällä polttovälillä"}
+{"kind":"translate","lang":"fi","tag":"MaxApertureAtMinFocal","value":"Suurin aukko lyhimmällä polttovälillä"}
+{"kind":"translate","lang":"fi","tag":"MaxApertureValue","value":"Objektiivin maksimiaukko"}
+{"kind":"translate","lang":"fi","tag":"MaxFocalLength","value":"Pisin polttoväli"}
+{"kind":"translate","lang":"fi","tag":"MaxSampleValue","value":"Näytteen maksimiarvo"}
+{"kind":"translate","lang":"fi","tag":"MaximumDensityRange","value":"Tiheyden maksimilaajuus"}
+{"kind":"translate","lang":"fi","tag":"MeasuredEV","value":"Mitattu EV"}
+{"kind":"translate","lang":"fi","tag":"MeasurementBacking","value":"Mittaustuenta"}
+{"kind":"translate","lang":"fi","tag":"MeasurementFlare","value":"Hajavalomittaus"}
+{"kind":"translate","lang":"fi","tag":"MeasurementGeometry","value":"Mittausgeometria"}
+{"kind":"translate","lang":"fi","tag":"MeasurementIlluminant","value":"Valaistusmittaus"}
+{"kind":"translate","lang":"fi","tag":"MeasurementObserver","value":"Mittauksen tarkkailija"}
+{"kind":"translate","lang":"fi","tag":"MediaBlackPoint","value":"Median musta piste"}
+{"kind":"translate","lang":"fi","tag":"MediaWhitePoint","value":"Median valkoinen piste"}
+{"kind":"translate","lang":"fi","tag":"Medium","value":"Keskikokoa"}
+{"kind":"translate","lang":"fi","tag":"MetadataNumber","value":"Metadatan määrä"}
+{"kind":"translate","lang":"fi","tag":"Metering","value":"Valonmittaus"}
+{"kind":"translate","lang":"fi","tag":"MeteringMode","value":{"Description":"Valonmittaustapa","PrintConv":{"Average":"Keskiarvo","Center-weighted average":"Keskustapainotteinen keskiarvo","Multi-segment":"Monisegmenttimittaus","Multi-spot":"Monipiste","Other":"Muu","Partial":"Osa-alue","Pattern+AF":"Kuvio + AF","Spot":"Pistemittaus","Spot+Highlight control":"Pistemittaus + valoalueen säätö","Spot+Shadow control":"Pistemittaus + varjoalueen säätö","Unknown":"Tuntematon"}}}
+{"kind":"translate","lang":"fi","tag":"MeteringTime","value":"Mittausaika"}
+{"kind":"translate","lang":"fi","tag":"MinAperture","value":"Pienin aukko"}
+{"kind":"translate","lang":"fi","tag":"MinFocalLength","value":"Lyhin polttoväli"}
+{"kind":"translate","lang":"fi","tag":"MinSampleValue","value":"Näytteen minimiarvo"}
+{"kind":"translate","lang":"fi","tag":"MinoltaCameraSettings2","value":"Kameran asetukset 2"}
+{"kind":"translate","lang":"fi","tag":"MinoltaCameraSettings5D","value":"Kameran asetukset (5D)"}
+{"kind":"translate","lang":"fi","tag":"MinoltaCameraSettings7D","value":"Kamera-asetukset (7D)"}
+{"kind":"translate","lang":"fi","tag":"MinoltaMakerNote","value":"Minolta-valmistajatiedot"}
+{"kind":"translate","lang":"fi","tag":"MinoltaQuality","value":{"Description":"Kuvakoko","PrintConv":{"Economy":"Taloudellinen","Extra fine":"Erityishieno","Fine":"Hieno","Standard":"Normaali","Super Fine":"Superhieno"}}}
+{"kind":"translate","lang":"fi","tag":"Model","value":"Malli"}
+{"kind":"translate","lang":"fi","tag":"Model2","value":"Kuvasyötelaitteen malli (2)"}
+{"kind":"translate","lang":"fi","tag":"ModelAndVersion","value":"Malli ja versio"}
+{"kind":"translate","lang":"fi","tag":"ModelID","value":"Mallin ID"}
+{"kind":"translate","lang":"fi","tag":"ModelTiePoint","value":"Sidospistemalli-tagi"}
+{"kind":"translate","lang":"fi","tag":"ModelTransform","value":"Muuntomalli-tagi"}
+{"kind":"translate","lang":"fi","tag":"ModelingFlash","value":"Mallinnussalama"}
+{"kind":"translate","lang":"fi","tag":"ModifiedDigitalGain","value":"Modifioitu digitaalinen vahvistus"}
+{"kind":"translate","lang":"fi","tag":"ModifiedInfo","value":"Modifioidut tiedot"}
+{"kind":"translate","lang":"fi","tag":"ModifiedParamFlag","value":"Modifioitu parametrilippu"}
+{"kind":"translate","lang":"fi","tag":"ModifiedPictureStyle","value":"Modifioitu kuvan tyyli"}
+{"kind":"translate","lang":"fi","tag":"ModifiedSaturation","value":{"Description":"Modifoitu värikylläisyys","PrintConv":{"CM1 (Red Enhance)":"CM1 (punaisen parantelu)","CM2 (Green Enhance)":"CM2 (vihreän parantelu)","CM3 (Blue Enhance)":"CM3 (sinisen parantelu)","CM4 (Skin Tones)":"CM4 (ihonvärin parantelu)","Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"ModifiedSensorBlueLevel","value":"Modifioitu anturin sinitaso"}
+{"kind":"translate","lang":"fi","tag":"ModifiedSensorRedLevel","value":"Modifioitu anturin punataso"}
+{"kind":"translate","lang":"fi","tag":"ModifiedSharpness","value":"Modifioitu terävyys"}
+{"kind":"translate","lang":"fi","tag":"ModifiedToneCurve","value":"Modifioitu sävykäyrä"}
+{"kind":"translate","lang":"fi","tag":"ModifiedWhiteBalance","value":"Modifioitu valkotasapaino"}
+{"kind":"translate","lang":"fi","tag":"ModifiedWhiteBalanceBlue","value":"Modifioitu valkotasapainon sininen"}
+{"kind":"translate","lang":"fi","tag":"ModifiedWhiteBalanceRed","value":"Modifioitu valkotasapainon punainen"}
+{"kind":"translate","lang":"fi","tag":"ModifyDate","value":"Tiedostomuutoksen päiväys ja aika"}
+{"kind":"translate","lang":"fi","tag":"MultiExposure","value":"Monivalotusdata"}
+{"kind":"translate","lang":"fi","tag":"MultiExposureAutoGain","value":"Monivalotuksen automaattivalotus"}
+{"kind":"translate","lang":"fi","tag":"MultiExposureMode","value":"Monivalotustapa"}
+{"kind":"translate","lang":"fi","tag":"MultiExposureShots","value":"Monivalotusotoksia"}
+{"kind":"translate","lang":"fi","tag":"MultiExposureVersion","value":"Monivalotusdatan versio"}
+{"kind":"translate","lang":"fi","tag":"MultiSample","value":"Moninäyte"}
+{"kind":"translate","lang":"fi","tag":"MultiSelector","value":"Monivalitsin"}
+{"kind":"translate","lang":"fi","tag":"MultipleExposureSet","value":"Monivalotus"}
+{"kind":"translate","lang":"fi","tag":"MyColorMode","value":"Oma värimuoto"}
+{"kind":"translate","lang":"fi","tag":"NDFilter","value":"ND-suodin"}
+{"kind":"translate","lang":"fi","tag":"NEFLinearizationTable","value":"Linearisaatiotaulukko"}
+{"kind":"translate","lang":"fi","tag":"NamedColor2","value":"Nimetty väri 2"}
+{"kind":"translate","lang":"fi","tag":"NativeDisplayInfo","value":"Paikallisen näytön tiedot"}
+{"kind":"translate","lang":"fi","tag":"NativeResolutionUnit","value":"Paikallisen resoluution yksikkö"}
+{"kind":"translate","lang":"fi","tag":"NativeXResolution","value":"Paikallinen vaakaresoluutio"}
+{"kind":"translate","lang":"fi","tag":"NativeYResolution","value":"Paikallinen pystyresoluutio"}
+{"kind":"translate","lang":"fi","tag":"NikonCaptureData","value":"Nikon Capture -data"}
+{"kind":"translate","lang":"fi","tag":"NikonCaptureOffsets","value":"Nikon Capture -siirtymät"}
+{"kind":"translate","lang":"fi","tag":"NikonCaptureOutput","value":"Nikon Capture -tuotos"}
+{"kind":"translate","lang":"fi","tag":"NikonCaptureVersion","value":"Nikon Capture -versio"}
+{"kind":"translate","lang":"fi","tag":"NikonICCProfile","value":"Nikon ICC-profiilin osoitin"}
+{"kind":"translate","lang":"fi","tag":"NoMemoryCard","value":"Ei muistikorttia"}
+{"kind":"translate","lang":"fi","tag":"Noise","value":"Kohina"}
+{"kind":"translate","lang":"fi","tag":"NoiseFilter","value":"Kohinasuodin"}
+{"kind":"translate","lang":"fi","tag":"NoiseReduction","value":{"Description":"Kohinan vähennys","PrintConv":{"High (+1)":"+1 (korkea)","Highest (+2)":"+2 (korkein)","Low":"Matala","Low (-1)":"-1 (matala)","Lowest (-2)":"-2 (matalin)","Normal":"Vakio","Off":"Pois","On":"Päällä","Standard":"±0 (vakio)"}}}
+{"kind":"translate","lang":"fi","tag":"NoiseReductionApplied","value":"Suoritettu kohinan vähennys"}
+{"kind":"translate","lang":"fi","tag":"NoiseReductionData","value":"Kohinanvaimennusdata"}
+{"kind":"translate","lang":"fi","tag":"NoiseReductionIntensity","value":"Kohinanvaimennuksen voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"NoiseReductionMethod","value":"Kohinanvaimennusmetodi"}
+{"kind":"translate","lang":"fi","tag":"NoiseReductionSharpness","value":"Kohinanvaimennuksen terävyys"}
+{"kind":"translate","lang":"fi","tag":"NumIndexEntries","value":"Indeksimerkintöjen määrä"}
+{"kind":"translate","lang":"fi","tag":"NumberOfChannels","value":"Kanavien määrä"}
+{"kind":"translate","lang":"fi","tag":"NumberofInks","value":"Musteiden numerot"}
+{"kind":"translate","lang":"fi","tag":"OPIProxy","value":"OPI-välipalvelin"}
+{"kind":"translate","lang":"fi","tag":"ObjectAttributeReference","value":"Intellektuaalinen genre"}
+{"kind":"translate","lang":"fi","tag":"ObjectCycle","value":{"Description":"Objektin sykli","PrintConv":{"Both Morning and Evening":"Molempina","Evening":"Iltaisin","Morning":"Aamuisin"}}}
+{"kind":"translate","lang":"fi","tag":"ObjectDistance","value":"Kohteen etäisyys"}
+{"kind":"translate","lang":"fi","tag":"ObjectName","value":"Nimike"}
+{"kind":"translate","lang":"fi","tag":"ObjectPreviewData","value":"Objektidatan esikatseludata"}
+{"kind":"translate","lang":"fi","tag":"ObjectPreviewFileFormat","value":"Objektidatan esikatselun tiedostomuoto"}
+{"kind":"translate","lang":"fi","tag":"ObjectPreviewFileVersion","value":"Objektidatan esikatselun tiedostomuodon versio"}
+{"kind":"translate","lang":"fi","tag":"ObjectTypeReference","value":"Objektyypin viiteryhmä"}
+{"kind":"translate","lang":"fi","tag":"OffsetSchema","value":"Siirtymäskeema"}
+{"kind":"translate","lang":"fi","tag":"OlympusImageHeight","value":"Kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"OlympusImageWidth","value":"Kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"OneTouchWB","value":{"Description":"Pikavalkotasapaino","PrintConv":{"Off":"Pois","On":"Päällä","On (Preset)":"Päällä (esiasetus)"}}}
+{"kind":"translate","lang":"fi","tag":"OpticalZoomCode","value":"Optisen zoomin koodi"}
+{"kind":"translate","lang":"fi","tag":"OpticalZoomMode","value":{"Description":"Optinen zoomaustapa","PrintConv":{"Extended":"Laajennettu","Standard":"Vakio"}}}
+{"kind":"translate","lang":"fi","tag":"OpticalZoomOn","value":{"Description":"Optinen zoom","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"Opto-ElectricConvFactor","value":"Optoelektrinen muuntokerroin"}
+{"kind":"translate","lang":"fi","tag":"OrderNumber","value":"Valokuva-CD:n ostotilausnumero"}
+{"kind":"translate","lang":"fi","tag":"Orientation","value":{"Description":"Kuvan suunta","PrintConv":{"Horizontal (normal)":"0° (ylä/vasen)","Mirror horizontal":"0° (ylä/oikea)","Mirror horizontal and rotate 270 CW":"90° myötäpäivään (vasen/ylä)","Mirror horizontal and rotate 90 CW":"90° vastapäivään (oikea/ala)","Mirror vertical":"180° (ala/vasen)","Rotate 180":"180° (ala/oikea)","Rotate 270 CW":"90° myötäpäivään (vasen/ala)","Rotate 90 CW":"90° vastapäivään (oikea/ylä)"}}}
+{"kind":"translate","lang":"fi","tag":"OriginalDecisionDataOffset","value":"Alkuperäisen ratkaisudatan siirtymä"}
+{"kind":"translate","lang":"fi","tag":"OriginalRawFileData","value":"Originaali raw-tiedoston data"}
+{"kind":"translate","lang":"fi","tag":"OriginalRawFileDigest","value":"Alkuperäisen raw-tiedoston tiivistelmä"}
+{"kind":"translate","lang":"fi","tag":"OriginalRawFileName","value":"Originaali raw-tiedoston nimi"}
+{"kind":"translate","lang":"fi","tag":"OriginalTransmissionReference","value":"Tehtävän tunnistin"}
+{"kind":"translate","lang":"fi","tag":"OriginatingProgram","value":"Luontiohjelma"}
+{"kind":"translate","lang":"fi","tag":"OutputImageHeight","value":"Tuotoskuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"OutputImageWidth","value":"Tuotoskuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"OutputResolution","value":"Tuotoksen resoluutio"}
+{"kind":"translate","lang":"fi","tag":"OutputResponse","value":"Tuotosvaste"}
+{"kind":"translate","lang":"fi","tag":"OwnerID","value":"Omistajan ID"}
+{"kind":"translate","lang":"fi","tag":"OwnerName","value":"Omistajan nimi"}
+{"kind":"translate","lang":"fi","tag":"Padding","value":"Täyte"}
+{"kind":"translate","lang":"fi","tag":"PageName","value":"Sivun nimi"}
+{"kind":"translate","lang":"fi","tag":"PageNumber","value":"Sivunumero"}
+{"kind":"translate","lang":"fi","tag":"PanasonicExifVersion","value":"Panasonic-exif -versio"}
+{"kind":"translate","lang":"fi","tag":"PanasonicRawVersion","value":"Panasonic-RAW:n versio"}
+{"kind":"translate","lang":"fi","tag":"PanasonicTitle","value":"Otsikko"}
+{"kind":"translate","lang":"fi","tag":"PanoramaDirection","value":"Panoraaman suunta"}
+{"kind":"translate","lang":"fi","tag":"PanoramaMode","value":"Panoraamatapa"}
+{"kind":"translate","lang":"fi","tag":"PentaxImageSize","value":{"Description":"Pentax-kuvakoko","PrintConv":{"2304x1728 or 2592x1944":"2304 x 1728 tai 2592 x 1944","2560x1920 or 2304x1728":"2560 x 1920 tai 2304 x 1728","2816x2212 or 2816x2112":"2816 x 2212 tai 2816 x 2112","3008x2008 or 3040x2024":"3008 x 2008 tai 3040 x 2024","Full":"Täysi"}}}
+{"kind":"translate","lang":"fi","tag":"PentaxVersion","value":"Pentax-versio"}
+{"kind":"translate","lang":"fi","tag":"People","value":"Ihmiset"}
+{"kind":"translate","lang":"fi","tag":"PeripheralLighting","value":"Oheislaitevalaistus"}
+{"kind":"translate","lang":"fi","tag":"PeripheralLightingSetting","value":"Oheislaitevalaistuksen asetus"}
+{"kind":"translate","lang":"fi","tag":"PeripheralLightingValue","value":"Oheislaitevalaistuksen arvo"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffect","value":"Valokuvaefekti"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffects","value":"Valokuvaefektit"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffectsBlue","value":"Valokuvaefekti sininen"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffectsData","value":"Valokuvaefektidata"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffectsGreen","value":"Valokuvaefekti vihreä"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffectsRed","value":"Valokuvaefekti punainen"}
+{"kind":"translate","lang":"fi","tag":"PhotoEffectsType","value":"Valokuvaefektityyppi"}
+{"kind":"translate","lang":"fi","tag":"PhotometricInterpretation","value":{"Description":"Pikseliskeema","PrintConv":{"BlackIsZero":"Musta on nolla","Color Filter Array":"CFA (värisuodinmatriisi)","Pixar LogL":"CIE Log2(L) (Log-luminanssi)","Pixar LogLuv":"CIE Log2(L)(u',v') (Log-luminanssi ja -krominanssi)","RGB Palette":"Väripaletti","Transparency Mask":"Läpinäkyvyysmaski","WhiteIsZero":"Valkoinen on nolla"}}}
+{"kind":"translate","lang":"fi","tag":"PhotoshopBGRThumbnail","value":"Photoshopin BRG-näytekuva"}
+{"kind":"translate","lang":"fi","tag":"PhotoshopFormat","value":"Photoshop-muoto"}
+{"kind":"translate","lang":"fi","tag":"PhotoshopQuality","value":"Photoshop-laatu"}
+{"kind":"translate","lang":"fi","tag":"PictInfo","value":"Kuvatiedot"}
+{"kind":"translate","lang":"fi","tag":"PictureControl","value":"Kuvan optimointi"}
+{"kind":"translate","lang":"fi","tag":"PictureControlActive","value":"Kuvan käsittely aktivoitu"}
+{"kind":"translate","lang":"fi","tag":"PictureControlAdjust","value":"Kuvan optimoinnin säätö"}
+{"kind":"translate","lang":"fi","tag":"PictureControlBase","value":"Kuvan perusoptimointi"}
+{"kind":"translate","lang":"fi","tag":"PictureControlData","value":"Kuvan käsittely"}
+{"kind":"translate","lang":"fi","tag":"PictureControlMode","value":"Kuvan käsittelytapa"}
+{"kind":"translate","lang":"fi","tag":"PictureControlName","value":"Kuvan optimoinnin nimi"}
+{"kind":"translate","lang":"fi","tag":"PictureControlQuickAdjust","value":"Kuvan optimoinnin pikasäätö"}
+{"kind":"translate","lang":"fi","tag":"PictureControlVersion","value":"Kuvan optimoinnin versio"}
+{"kind":"translate","lang":"fi","tag":"PictureFinish","value":"Kuvan viimeistely"}
+{"kind":"translate","lang":"fi","tag":"PictureMode","value":{"Description":"Kuvausohjelma","PrintConv":{"Anti-blur":"Epätarkkuden vähennys","Aperture-priority AE":"Aukon esivalinta AE","Auto":"Automaattinen","Beach":"Hiekkaranta","Beach & Snow":"Hiekkaranta & Lumi","Fireworks":"Ilotulitus","Flower":"Kukka","Landscape":"Maisema","Macro":"Lähikuva (Kukka)","Manual":"Manuaalinen","Museum":"Museo","Natural Light":"Luonnonvalo","Natural Light & Flash":"Luonnonvalo & Salama","Night Scene":"Yö","Party":"Juhlat","Portrait":"Muotokuva","Program AE":"Automaattinen valotusohjelma","Shutter speed priority AE":"Ajan esivalinta AE","Snow":"Lumi","Sports":"Urheilu","Sunset":"Auringonlasku","Text":"Teksti","Underwater":"Veden alla"}}}
+{"kind":"translate","lang":"fi","tag":"PictureMode2","value":"Kuvamuoto 2"}
+{"kind":"translate","lang":"fi","tag":"PictureModeBWFilter","value":{"Description":"BW-suodin -kuvamuoto","PrintConv":{"Green":"Vihreä","Neutral":"Neutraali","Orange":"Oranssi","Red":"Punainen","Yellow":"Keltainen","n/a":"E.s."}}}
+{"kind":"translate","lang":"fi","tag":"PictureModeContrast","value":"Kontrastinen kuvamuoto"}
+{"kind":"translate","lang":"fi","tag":"PictureModeHue","value":"Sävykäs kuvamuoto?"}
+{"kind":"translate","lang":"fi","tag":"PictureModeSaturation","value":"Värikylläinen kuvamuoto"}
+{"kind":"translate","lang":"fi","tag":"PictureModeSharpness","value":"Terävä kuvamuoto"}
+{"kind":"translate","lang":"fi","tag":"PictureModeTone","value":{"Description":"Vivahteikas kuvamuoto","PrintConv":{"Blue":"Sininen","Green":"Vihreä","Neutral":"Neutraali","Purple":"Violetti","Sepia":"Seepia","n/a":"E.s."}}}
+{"kind":"translate","lang":"fi","tag":"PictureStyle","value":"Kuvan tyyli"}
+{"kind":"translate","lang":"fi","tag":"PixelAspectRatio","value":"Pikselien kokosuhde"}
+{"kind":"translate","lang":"fi","tag":"PixelFormat","value":"Pikseliformaatti"}
+{"kind":"translate","lang":"fi","tag":"PixelIntensityRange","value":"Pikseli-intensiteetin alue"}
+{"kind":"translate","lang":"fi","tag":"PixelScale","value":"Pikseliasteikkomalli-tagi"}
+{"kind":"translate","lang":"fi","tag":"PlanarConfiguration","value":{"Description":"Kuvadatan järjestys","PrintConv":{"Chunky":"Lohkoformaatti (lomitettu)","Planar":"Tasoformaatti"}}}
+{"kind":"translate","lang":"fi","tag":"PlaybackMenusTime","value":"Toistovalikkojen aika"}
+{"kind":"translate","lang":"fi","tag":"PowerSource","value":"Virtalähde"}
+{"kind":"translate","lang":"fi","tag":"PreCaptureFrames","value":"Esiasetetut kehykset"}
+{"kind":"translate","lang":"fi","tag":"Predictor","value":{"Description":"Prediktori","PrintConv":{"Horizontal differencing":"Horisontaalinen differointi","None":"Prediktioskeemaa ei käytetty ennen koodausta"}}}
+{"kind":"translate","lang":"fi","tag":"Preview","value":"Esikatselu"}
+{"kind":"translate","lang":"fi","tag":"Preview0","value":"Esikatselu 0"}
+{"kind":"translate","lang":"fi","tag":"Preview1","value":"Esikatselu 1"}
+{"kind":"translate","lang":"fi","tag":"Preview2","value":"Esikatselu 2"}
+{"kind":"translate","lang":"fi","tag":"PreviewApplicationName","value":"Sovelluksen nimen esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewApplicationVersion","value":"Sovellusversion esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewColorSpace","value":{"Description":"Väriavaruuden esikatselu","PrintConv":{"Unknown":"Tuntematon"}}}
+{"kind":"translate","lang":"fi","tag":"PreviewDateTime","value":"Päiväyksen ja ajan esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImage","value":"Kuvan esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageBorders","value":"Kuvan reunojen esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageData","value":"Kuvadatan tarkastelu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageLength","value":"Kuvan pituuden esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageSize","value":"Kuvakoon esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageStart","value":"Esikatselukuvan alku"}
+{"kind":"translate","lang":"fi","tag":"PreviewImageValid","value":{"Description":"Kelvollinen esikatselukuva","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"PreviewSettingsDigest","value":"Asetustiivistelmän esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PreviewSettingsName","value":"Asetusten nimen esikatselu"}
+{"kind":"translate","lang":"fi","tag":"PrimaryAFPoint","value":"Ensisijainen AF-piste"}
+{"kind":"translate","lang":"fi","tag":"PrimaryChromaticities","value":"Päävärien kromaattisuudet"}
+{"kind":"translate","lang":"fi","tag":"PrimaryPlatform","value":"Primaari alusta"}
+{"kind":"translate","lang":"fi","tag":"PrintQuality","value":"Tulostuslaatu"}
+{"kind":"translate","lang":"fi","tag":"ProcessingInfo","value":"Prosessointitiedot"}
+{"kind":"translate","lang":"fi","tag":"ProcessingSoftware","value":"Prosessointiohjelmisto"}
+{"kind":"translate","lang":"fi","tag":"ProductID","value":"Tuotteen ID"}
+{"kind":"translate","lang":"fi","tag":"ProfileCMMType","value":"CMM-tyypin profiili"}
+{"kind":"translate","lang":"fi","tag":"ProfileCalibrationSig","value":"Profiilin kalibrointitunniste"}
+{"kind":"translate","lang":"fi","tag":"ProfileClass","value":"Profiilin luokka"}
+{"kind":"translate","lang":"fi","tag":"ProfileConnectionSpace","value":"Profiilin yhteystila"}
+{"kind":"translate","lang":"fi","tag":"ProfileCopyright","value":"Profiilin copyright"}
+{"kind":"translate","lang":"fi","tag":"ProfileCreator","value":"Profiilin luoja"}
+{"kind":"translate","lang":"fi","tag":"ProfileDateTime","value":"Profiilin päiväysaika"}
+{"kind":"translate","lang":"fi","tag":"ProfileDescription","value":"Profiilin kuvaus"}
+{"kind":"translate","lang":"fi","tag":"ProfileDescriptionML","value":"Monikieliprofiilin kuvaus"}
+{"kind":"translate","lang":"fi","tag":"ProfileEmbedPolicy","value":{"Description":"Profiilin upotusmenetelmä","PrintConv":{"Allow Copying":"Salli kopiointi","Embed if Used":"Upota jos käytössä","Never Embed":"Älä koskaan upota","No Restrictions":"Ei rajoituksia"}}}
+{"kind":"translate","lang":"fi","tag":"ProfileFileSignature","value":"Profiilidatan tunniste"}
+{"kind":"translate","lang":"fi","tag":"ProfileHueSatMapData1","value":"Profiilin Sävy Värik. -kartan data 1"}
+{"kind":"translate","lang":"fi","tag":"ProfileHueSatMapData2","value":"Profiilin Sävy Värik. -kartan data 2"}
+{"kind":"translate","lang":"fi","tag":"ProfileID","value":"Profiilin ID"}
+{"kind":"translate","lang":"fi","tag":"ProfileLookTableData","value":"Profiilin hakutaulukon data"}
+{"kind":"translate","lang":"fi","tag":"ProfileName","value":"Profiilin nimi"}
+{"kind":"translate","lang":"fi","tag":"ProfileSequenceDesc","value":"Profiilisarjan kuvaus"}
+{"kind":"translate","lang":"fi","tag":"ProfileToneCurve","value":"Profiilin toonin käyrä"}
+{"kind":"translate","lang":"fi","tag":"ProfileVersion","value":"Profiilin versio"}
+{"kind":"translate","lang":"fi","tag":"ProgramISO","value":"Ohjelma-ISO"}
+{"kind":"translate","lang":"fi","tag":"ProgramLine","value":"Valotusohjelma"}
+{"kind":"translate","lang":"fi","tag":"ProgramMode","value":"Ohjelman muoto"}
+{"kind":"translate","lang":"fi","tag":"ProgramShift","value":"Ohjelmasiirto"}
+{"kind":"translate","lang":"fi","tag":"ProgramVersion","value":"Ohjelmaversio"}
+{"kind":"translate","lang":"fi","tag":"ProgressiveScans","value":"Progressiiviset skannaukset"}
+{"kind":"translate","lang":"fi","tag":"Province-State","value":"Provinssi/Valtio"}
+{"kind":"translate","lang":"fi","tag":"Quality","value":{"Description":"Laatu","PrintConv":{"Best":"Paras","Better":"Parempi","Compressed RAW":"Pakattu RAW","Compressed RAW + JPEG":"Pakattu RAW + JPEG","Economy":"Taloudellinen","Extra Fine":"Erityishieno","Fine":"Hieno","Good":"Hyvä","Normal":"Normaali","Standard":"Vakio","Super Fine":"Superhieno","n/a":"Ei asetettu"}}}
+{"kind":"translate","lang":"fi","tag":"Quality2","value":"Laatu 2"}
+{"kind":"translate","lang":"fi","tag":"QualityMode","value":{"Description":"Kuvalaatu","PrintConv":{"Economy":"Taloudellinen","Fine":"Hieno","Normal":"Normaali"}}}
+{"kind":"translate","lang":"fi","tag":"QuantizationMethod","value":{"Description":"Kvantisointimetodi","PrintConv":{"AP Domestic Analogue":"AP domestinen analogia","Color Space Specific":"Erityisväriavaruus","Compression Method Specific":"Erityispakkausmetodi","Gamma Compensated":"Kompensoitu gamma","IPTC Ref B":"IPTC ref \"B\"","Linear Density":"Lineaarinen tiheys","Linear Dot Percent":"Lineaarinen pisteprosentti","Linear Reflectance/Transmittance":"Lineaarinen heijastavuus/läpäisevyys"}}}
+{"kind":"translate","lang":"fi","tag":"QuickAdjust","value":"Pikasäätö"}
+{"kind":"translate","lang":"fi","tag":"QuickShot","value":{"Description":"Pikakuvaus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"ROCInfo","value":"ROC-tiedot"}
+{"kind":"translate","lang":"fi","tag":"RangeFinder","value":"Alue-etsin"}
+{"kind":"translate","lang":"fi","tag":"RasterPadding","value":"Rasteritäyte"}
+{"kind":"translate","lang":"fi","tag":"RasterizedCaption","value":"Rasteroitu seloste"}
+{"kind":"translate","lang":"fi","tag":"Rating","value":"Arvostelu"}
+{"kind":"translate","lang":"fi","tag":"RawDataOffset","value":"RAW-datan siirtymä"}
+{"kind":"translate","lang":"fi","tag":"RawDataUniqueID","value":"Raw-datan uniikki ID"}
+{"kind":"translate","lang":"fi","tag":"RawDevColorSpace","value":"Väriavaruus"}
+{"kind":"translate","lang":"fi","tag":"RawDevContrastValue","value":"Kontrastiarvo"}
+{"kind":"translate","lang":"fi","tag":"RawDevEditStatus","value":{"Description":"Editointitila","PrintConv":{"Edited (Landscape)":"Studio (maisema)","Edited (Portrait)":"Studio (muotokuva)","Original":"Alkuperäinen"}}}
+{"kind":"translate","lang":"fi","tag":"RawDevEngine","value":{"Description":"Moottori","PrintConv":{"Advanced High Speed":"Edistynyt suurnopeus","High Function":"Hyvä suorituskyky","High Speed":"Suurnopeus"}}}
+{"kind":"translate","lang":"fi","tag":"RawDevExposureBiasValue","value":"Valotuksen korjausarvo"}
+{"kind":"translate","lang":"fi","tag":"RawDevGrayPoint","value":"Harmaapiste"}
+{"kind":"translate","lang":"fi","tag":"RawDevMemoryColorEmphasis","value":"Muistivärin korostus"}
+{"kind":"translate","lang":"fi","tag":"RawDevNoiseReduction","value":"Kohinasuodin (ISO-tehostus)"}
+{"kind":"translate","lang":"fi","tag":"RawDevSaturationEmphasis","value":"Värikylläisyyden korostus"}
+{"kind":"translate","lang":"fi","tag":"RawDevSettings","value":"Kohinanvaimennus"}
+{"kind":"translate","lang":"fi","tag":"RawDevSharpnessValue","value":"Kontrastiarvo"}
+{"kind":"translate","lang":"fi","tag":"RawDevVersion","value":"RAW-kehityksen versio"}
+{"kind":"translate","lang":"fi","tag":"RawDevWBFineAdjustment","value":"Valkotasapainon hienosäätö"}
+{"kind":"translate","lang":"fi","tag":"RawDevWhiteBalanceValue","value":"Valkotasapainon arvo"}
+{"kind":"translate","lang":"fi","tag":"RawImageCenter","value":"RAW-kuvan keskusta"}
+{"kind":"translate","lang":"fi","tag":"RawImageDigest","value":"RAW-kuvan tiivistelmä"}
+{"kind":"translate","lang":"fi","tag":"RawImageHeight","value":"Kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"RawImageSize","value":"RAW-kuvakoko"}
+{"kind":"translate","lang":"fi","tag":"RawImageWidth","value":"Kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"RawInfoVersion","value":"RAW Info -versio"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace1Age","value":"Tunnistettujen kasvojen 1 ikä"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace1Name","value":"Tunnistettujen kasvojen 1 nimi"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace1Position","value":"Tunnistettujen kasvojen 1 sijainti"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace2Age","value":"Tunnistettujen kasvojen 2 ikä"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace2Name","value":"Tunnistettujen kasvojen 2 nimi"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace2Position","value":"Tunnistettujen kasvojen 2 sijainti"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace3Age","value":"Tunnistettujen kasvojen 2 ikä"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace3Name","value":"Tunnistettujen kasvojen 3 nimi"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFace3Position","value":"Tunnistettujen kasvojen 3 sijainti"}
+{"kind":"translate","lang":"fi","tag":"RecognizedFaceFlags","value":"Tunnistettujen kasvojen liput"}
+{"kind":"translate","lang":"fi","tag":"RecordMode","value":{"Description":"Tallennustapa","PrintConv":{"Aperture Priority":"Aukon esivalinta","Best Shot":"Paras kuva","Manual":"Manuaalinen","Movie":"Elokuva","Movie (19)":"Elokuva (19)","Program AE":"AE-ohjelma","Shutter Priority":"Ajan esivalinta","YouTube Movie":"YouTube-elokuva"}}}
+{"kind":"translate","lang":"fi","tag":"RecordShutterRelease","value":{"Description":"Laukaisujen tallennus","PrintConv":{"Press start, press stop":"Aloitus painaen, lopetus painaen","Record while down":"Tallennus laukaisin alhaalla"}}}
+{"kind":"translate","lang":"fi","tag":"RecordingMode","value":"Tallennustapa"}
+{"kind":"translate","lang":"fi","tag":"RedBalance","value":"Punatasapaino"}
+{"kind":"translate","lang":"fi","tag":"RedEyeCorrection","value":"Punasilmäkorjaus"}
+{"kind":"translate","lang":"fi","tag":"RedEyeData","value":"Punasilmädata"}
+{"kind":"translate","lang":"fi","tag":"RedMatrixColumn","value":"Punaisen matriisin sarake"}
+{"kind":"translate","lang":"fi","tag":"RedTRC","value":"Punaisen toonin toistokäyrä"}
+{"kind":"translate","lang":"fi","tag":"RedX","value":"Punainen X"}
+{"kind":"translate","lang":"fi","tag":"RedY","value":"Punainen Y"}
+{"kind":"translate","lang":"fi","tag":"ReductionMatrix1","value":"Reduktiomatriisi 1"}
+{"kind":"translate","lang":"fi","tag":"ReductionMatrix2","value":"Reduktiomatriisi 2"}
+{"kind":"translate","lang":"fi","tag":"ReferenceBlackWhite","value":"Musta ja valkoinen viitearvopari"}
+{"kind":"translate","lang":"fi","tag":"ReferenceDate","value":"Viitepäiväys"}
+{"kind":"translate","lang":"fi","tag":"ReferenceNumber","value":"Viitenumero"}
+{"kind":"translate","lang":"fi","tag":"ReferenceService","value":"Viitepalvelu"}
+{"kind":"translate","lang":"fi","tag":"RelatedImageFileFormat","value":"Kuvatiedoston muoto"}
+{"kind":"translate","lang":"fi","tag":"RelatedImageHeight","value":"Kuvan korkeus"}
+{"kind":"translate","lang":"fi","tag":"RelatedImageWidth","value":"Kuvan leveys"}
+{"kind":"translate","lang":"fi","tag":"RelatedSoundFile","value":"Asiaan liittyvä audiotiedosto"}
+{"kind":"translate","lang":"fi","tag":"ReleaseButtonToUseDial","value":"Käytä valitsinta vapauttaen painike"}
+{"kind":"translate","lang":"fi","tag":"ReleaseDate","value":"Julkaisupäiväys"}
+{"kind":"translate","lang":"fi","tag":"ReleaseMode","value":"Laukaisutapa"}
+{"kind":"translate","lang":"fi","tag":"ReleaseTime","value":"Julkaisuaika"}
+{"kind":"translate","lang":"fi","tag":"RemoteOnDuration","value":"Kaukolaukaisin"}
+{"kind":"translate","lang":"fi","tag":"RenderingIntent","value":"Muokkausmenetelmä"}
+{"kind":"translate","lang":"fi","tag":"Resaved","value":{"Description":"Tallennus uudelleen","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"ResolutionMode","value":"Resoluutiomuoto"}
+{"kind":"translate","lang":"fi","tag":"ResolutionUnit","value":{"Description":"X- ja Y-resoluution yksikkö","PrintConv":{"None":"Ei mitään","inches":"Tuuma"}}}
+{"kind":"translate","lang":"fi","tag":"RetouchHistory","value":"Korjailuhistoria"}
+{"kind":"translate","lang":"fi","tag":"ReverseIndicators","value":"Käänteiset ilmaisimet"}
+{"kind":"translate","lang":"fi","tag":"RevisionNumber","value":"Revision numero"}
+{"kind":"translate","lang":"fi","tag":"RollGuidElements","value":"Guid-elementtien vieritys"}
+{"kind":"translate","lang":"fi","tag":"Rotation","value":{"Description":"Kierto","PrintConv":{"Horizontal (normal)":"Vaakatasossa (normaali)","Rotate 270 CW":"Kierto 90° VP","Rotate 90 CW":"Kierto 90° MP"}}}
+{"kind":"translate","lang":"fi","tag":"RowInterleaveFactor","value":"Rivin lomitusfaktori"}
+{"kind":"translate","lang":"fi","tag":"RowsPerStrip","value":"Rivien määrä per strippi"}
+{"kind":"translate","lang":"fi","tag":"SBAExposureRecord","value":"SBA-valotuksen tallennus"}
+{"kind":"translate","lang":"fi","tag":"SBAInputImageBitDepth","value":"SBA-syötekuvan bittisyvyys"}
+{"kind":"translate","lang":"fi","tag":"SBAInputImageColorspace","value":"SBA-syötekuvan väriavaruus"}
+{"kind":"translate","lang":"fi","tag":"SMaxSampleValue","value":"S-maksimiminäytteen arvo"}
+{"kind":"translate","lang":"fi","tag":"SMinSampleValue","value":"S-miniminäytteen arvo"}
+{"kind":"translate","lang":"fi","tag":"SRFocalLength","value":"Vakain (SR) eri polttoväleillä"}
+{"kind":"translate","lang":"fi","tag":"SRResult","value":"Kuvanvakain"}
+{"kind":"translate","lang":"fi","tag":"SampleFormat","value":"Näyteformaatti"}
+{"kind":"translate","lang":"fi","tag":"SampleStructure","value":{"Description":"Näytteiden rakenne","PrintConv":{"CompressionDependent":"Määritetty pakkaustoiminnon yhteydessä","Orthogonal4-2-2Sampling":"Toisistaan riippumattomat näytetaajuuksin suhteessa 4:2:2:(4)","OrthogonalConstangSampling":"Toisistaan riippumattomat samoin suhteellisin näytetaajuuksin kussakin komponentissa"}}}
+{"kind":"translate","lang":"fi","tag":"SamplesPerPixel","value":"Komponenttien määrä"}
+{"kind":"translate","lang":"fi","tag":"SanyoQuality","value":{"Description":"Sanyo-laatu","PrintConv":{"Fine/High":"Hieno/korkea","Fine/Low":"Hieno/matala","Fine/Medium":"Hieno/keskilaatu","Fine/Medium High":"Hieno/korkeahko","Fine/Medium Low":"Hieno/matalahko","Fine/Super High":"Hieno/superkorkea","Fine/Very High":"Hieno/hyvin korkea","Fine/Very Low":"Hieno/hyvin matala","Normal/High":"Normaali/korkea","Normal/Low":"Normaali/matala","Normal/Medium":"Normaali/keskilaatu","Normal/Medium High":"Normaali/korkeahko","Normal/Medium Low":"Normaali/matalahko","Normal/Super High":"Normaali/superkorkea","Normal/Very High":"Normaali/hyvin korkea","Normal/Very Low":"Normaali/hyvin matala","Super Fine/High":"Superhieno/korkea","Super Fine/Low":"Superhieno/matala","Super Fine/Medium":"Superhieno/keskilaatu","Super Fine/Medium High":"Superhieno/korkeahko","Super Fine/Medium Low":"Superhieno/matalahko","Super Fine/Super High":"Superhieno/superkorkea","Super Fine/Very High":"Superhieno/hyvin korkea","Super Fine/Very Low":"Superhieno/hyvin matala"}}}
+{"kind":"translate","lang":"fi","tag":"SanyoThumbnail","value":"Sanyo-näytekuva"}
+{"kind":"translate","lang":"fi","tag":"Saturation","value":{"Description":"Värikylläisyys","PrintConv":{"+1 (medium high)":"Korkeahko","+2 (high)":"Korkea","-1 (medium low)":"Matalahko","0 (normal)":"Vakio","Film Simulation":"Filminsimulaatio","High":"Korkea","Low":"Matala","Medium High":"Korkeahko","Medium Low":"Matalahko","None (B&W)":"Ei mitään (M&V)","Normal":"Vakio"}}}
+{"kind":"translate","lang":"fi","tag":"SaturationFaithful","value":"Kohdeuskollinen värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"SaturationLandscape","value":"Maisemakuvan värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"SaturationNeutral","value":"Neutraali värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"SaturationPortrait","value":"Muotokuvan värikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"SaturationSetting","value":"Värikylläisyyden sasetus"}
+{"kind":"translate","lang":"fi","tag":"SaturationStandard","value":"Vakiovärikylläisyys"}
+{"kind":"translate","lang":"fi","tag":"ScanImageEnhancer","value":{"Description":"Skannauskuvan parantelu","PrintConv":{"Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"ScanningDirection","value":{"Description":"Skannaussuunta","PrintConv":{"Bottom-Top, L-R":"Alhaalta ylös, vasemmalta oikealle","Bottom-Top, R-L":"Alhaalta ylös, oikealta vasemmalle","L-R, Bottom-Top":"Vasemmalta oikealle, alhaalta ylös","L-R, Top-Bottom":"Vasemmalta oikealle, ylhäältä alas","R-L, Bottom-Top":"Oikealta vasemmalle, alhaalta ylös","R-L, Top-Bottom":"Oikealta vasemmalle, ylhäältä alas","Top-Bottom, L-R":"Ylhäältä alas, vasemmalta oikealle","Top-Bottom, R-L":"Ylhäältä alas, oikealta vasemmalle"}}}
+{"kind":"translate","lang":"fi","tag":"Scene","value":"Näyttämö"}
+{"kind":"translate","lang":"fi","tag":"SceneArea","value":"Näkymäalue?"}
+{"kind":"translate","lang":"fi","tag":"SceneAssist","value":"Näkymä-avustaja"}
+{"kind":"translate","lang":"fi","tag":"SceneCaptureType","value":{"Description":"Kuvatun näkymän tyyppi","PrintConv":{"Landscape":"Maisema","Night":"Yönäkymä","Portrait":"Muotokuva","Standard":"Standardi"}}}
+{"kind":"translate","lang":"fi","tag":"SceneDetect","value":"Kohtauksen tunnistus"}
+{"kind":"translate","lang":"fi","tag":"SceneMode","value":{"Description":"Näkymän muoto","PrintConv":{"2 in 1":"2 1:ssä","Auction":"Huutokauppa","Auto":"Automaattinen","Available Light":"Vallitseva valo","Beach":"Hiekkaranta","Beach & Snow":"Hiekkaranta&Lumi","Behind Glass":"Lasin takaa","Candle":"Kynttilä","Children":"Lapset","Cuisine":"Ateria","Digital Image Stabilization":"Digitaalinen kuvanvakautus","Documents":"Dokumentit","Face Portrait":"Kasvokuva","Fireworks":"Ilotulitus","Food":"Ateria","High Key":"High key -yläsävykuva","Indoor":"Sisäkuva","Landscape":"Maisema","Landscape+Portrait":"Maisema+muotokuva","Low Key":"Low key -alasävykuva","Macro":"Makro","Movie":"Elokuva","Museum":"Museo","My Mode":"Oma tapa","Nature Macro":"Luontomakro","Night Portrait":"Yön muotokuva","Night Scene":"Iltanäkymä","Night View/Portrait":"Iltanäkymä/Yön muotokuva","Night+Portrait":"Yö+muotokuva","Normal":"Normaali","Panorama":"Panoraama","Pet":"Lemmikki","Portrait":"Muotokuva","Self Portrait":"Omakuva","Self Portrait+Self Timer":"Omakuva+itselaukaisin","Self Protrait+Timer":"Omakuva+itselaukaisin","Shoot & Select":"Kuvaa & Valitse","Shoot & Select1":"Kuvaus&valinta 1","Shoot & Select2":"Kuvaus&valinta 2","Shooting Guide":"Kuvausopas","Smile Shot":"Hymykuva","Snow":"Lumi","Sport":"Urheilu","Sports":"Urheilutapahtuma","Standard":"Vakio","Sunset":"Auringonlasku","Super Macro":"Supermakro","Text":"Teksti","Underwater Macro":"Veden alla makro","Underwater Snapshot":"Veden alla tilannekuva","Underwater Wide1":"Veden alla laaja 1","Underwater Wide2":"Veden alla laaja 2","Vivid":"Heleä"}}}
+{"kind":"translate","lang":"fi","tag":"SceneSelect","value":{"Description":"Näkymän valinta","PrintConv":{"Lamp":"Lamppu","Night":"Yö","Off":"Pois","Sport":"Urheilu","User 1":"Käyttäjä 1","User 2":"Käyttäjä 2"}}}
+{"kind":"translate","lang":"fi","tag":"SceneType","value":{"Description":"Näkymätyyppi","PrintConv":{"Directly photographed":"Suoraan otettu valokuva"}}}
+{"kind":"translate","lang":"fi","tag":"SecurityClassification","value":{"Description":"Turvallisuusluokitus","PrintConv":{"Confidential":"Luottamuksellinen","Restricted":"Rajoitettu","Secret":"Salainen","Top Secret":"Huippusalainen","Unclassified":"Ei luokiteltu"}}}
+{"kind":"translate","lang":"fi","tag":"SelfTimer","value":{"Description":"Itselaukaisin","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"SelfTimerMode","value":"Itselaukaisumoodi"}
+{"kind":"translate","lang":"fi","tag":"SelfTimerShotCount","value":"Itselaukaisimen otosmäärä"}
+{"kind":"translate","lang":"fi","tag":"SelfTimerTime","value":"Itselaukaisimen viive"}
+{"kind":"translate","lang":"fi","tag":"SensingMethod","value":{"Description":"Mittausmetodi","PrintConv":{"Color sequential area":"Peräkkäisvärialueen anturi","Color sequential linear":"Peräkkäisvärien lineaarianturi","Monochrome area":"Monokromialueen anturi","Monochrome linear":"Monokromilineaarinen anturi","Not defined":"Ei määritetty","One-chip color area":"Yhden chipin värialueen anturi","Three-chip color area":"Kolmen chipin värialueen anturi","Trilinear":"Trilineaarinen anturi","Two-chip color area":"Kahden chipin värialueen anturi"}}}
+{"kind":"translate","lang":"fi","tag":"SensitivityAdjust","value":"Herkkyyden asetus"}
+{"kind":"translate","lang":"fi","tag":"SensitivitySteps","value":"Herkkyysaskeleet"}
+{"kind":"translate","lang":"fi","tag":"SensorBlueLevel","value":"Anturin sinitaso"}
+{"kind":"translate","lang":"fi","tag":"SensorBottomBorder","value":"Anturin alareuna"}
+{"kind":"translate","lang":"fi","tag":"SensorHeight","value":"Anturin korkeus"}
+{"kind":"translate","lang":"fi","tag":"SensorLeftBorder","value":"Anturin vasen reuna"}
+{"kind":"translate","lang":"fi","tag":"SensorPixelSize","value":"Anturin pikselikoko"}
+{"kind":"translate","lang":"fi","tag":"SensorRedLevel","value":"Anturin punataso"}
+{"kind":"translate","lang":"fi","tag":"SensorRightBorder","value":"Anturin oikea reuna"}
+{"kind":"translate","lang":"fi","tag":"SensorTemperature","value":"Anturin lämpötila"}
+{"kind":"translate","lang":"fi","tag":"SensorTopBorder","value":"Anturin yläreuna"}
+{"kind":"translate","lang":"fi","tag":"SensorWidth","value":"Anturin leveys"}
+{"kind":"translate","lang":"fi","tag":"Sequence","value":"Järjestys"}
+{"kind":"translate","lang":"fi","tag":"SequenceNumber","value":"Järjestysnumero"}
+{"kind":"translate","lang":"fi","tag":"SequenceShotInterval","value":{"Description":"Sarjakuvauksen taajuus","PrintConv":{"10 frames/s":"10 ruutua/s","15 frames/s":"15 ruutua/s","20 frames/s":"20 ruutua/s","5 frames/s":"5 ruutua/s"}}}
+{"kind":"translate","lang":"fi","tag":"SequentialShot","value":{"Description":"Sarjakuvaus","PrintConv":{"Adjust Exposure":"Valotuksen säätö","Best":"Paras","None":"Ei mitään","Standard":"Vakio"}}}
+{"kind":"translate","lang":"fi","tag":"SerialNumber","value":"Sarjanumero"}
+{"kind":"translate","lang":"fi","tag":"SerialNumberFormat","value":"Sarjanumeron muoto"}
+{"kind":"translate","lang":"fi","tag":"ServiceIdentifier","value":"Palvelun tunnistin"}
+{"kind":"translate","lang":"fi","tag":"ShadingCompensation","value":{"Description":"Varjostumakorjaus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"Shadow","value":"Varjo"}
+{"kind":"translate","lang":"fi","tag":"ShadowProtection","value":"Varjoalueen suojaus "}
+{"kind":"translate","lang":"fi","tag":"ShadowScale","value":"Varjoasteikko"}
+{"kind":"translate","lang":"fi","tag":"Sharpness","value":{"Description":"Terävyys","PrintConv":{"+1 (medium hard)":"Kovahko","+2 (hard)":"Kova","+3 (very hard)":"Kova 2","-1 (medium soft)":"Pehmeähkö","-2 (soft)":"Pehmeä 2","-3 (very soft)":"Pehmeä","0 (normal)":"Vakio","Film Simulation":"Filminsimulaatio","Hard":"Kova","Hard2":"Kova 2","Medium Hard":"Kovahko","Medium Soft":"Pehmeähkö","Normal":"Vakio","Soft":"Pehmeä","Soft2":"Pehmeä 2","n/a":"E.s."}}}
+{"kind":"translate","lang":"fi","tag":"SharpnessFactor","value":"Terävöintikerroin"}
+{"kind":"translate","lang":"fi","tag":"SharpnessFaithful","value":"Kohdeuskollinen terävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessFreqTable","value":"Terävyyden taajuustaulukko"}
+{"kind":"translate","lang":"fi","tag":"SharpnessFrequency","value":"Terävyystaajuus"}
+{"kind":"translate","lang":"fi","tag":"SharpnessLandscape","value":"Maisemakuvan terävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessMonochrome","value":"Yksivärikuvan terävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessNeutral","value":"Neutraali terävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessPortrait","value":"Muotokuvan terävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessSetting","value":"Terävyysasetus"}
+{"kind":"translate","lang":"fi","tag":"SharpnessStandard","value":"Vakioterävyys"}
+{"kind":"translate","lang":"fi","tag":"SharpnessTable","value":"Terävyystaulukko"}
+{"kind":"translate","lang":"fi","tag":"ShootingInfoDisplay","value":"Kuvaustietojen näyttö"}
+{"kind":"translate","lang":"fi","tag":"ShootingMode","value":"IR-kauko-ohjaus"}
+{"kind":"translate","lang":"fi","tag":"ShortDocumentID","value":"Lyhyt dokumentin ID"}
+{"kind":"translate","lang":"fi","tag":"ShortOwnerName","value":"Omistajan lyhyt nimi"}
+{"kind":"translate","lang":"fi","tag":"ShotInfoVersion","value":"Otostietojen versio"}
+{"kind":"translate","lang":"fi","tag":"ShutterCount","value":"Laukaisumäärä"}
+{"kind":"translate","lang":"fi","tag":"ShutterReleaseButtonAE-L","value":"Laukaisin AE-L"}
+{"kind":"translate","lang":"fi","tag":"ShutterSpeedValue","value":"Suljinnopeuden arvo"}
+{"kind":"translate","lang":"fi","tag":"SimilarityIndex","value":"Yhtäläisyysindeksi"}
+{"kind":"translate","lang":"fi","tag":"Site","value":"Sivusto"}
+{"kind":"translate","lang":"fi","tag":"SlaveFlashMeteringSegments","value":"Orjasalaman mittaussegmentit"}
+{"kind":"translate","lang":"fi","tag":"SlowShutter","value":"Hidas suljin"}
+{"kind":"translate","lang":"fi","tag":"SlowSync","value":{"Description":"Hidas suljin","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"Software","value":"Ohjelmisto"}
+{"kind":"translate","lang":"fi","tag":"SoftwareVersion","value":"Ohjelmistoversio"}
+{"kind":"translate","lang":"fi","tag":"Source","value":"Lähde"}
+{"kind":"translate","lang":"fi","tag":"SourceImageDirectory","value":"Lähdekuvan kansio"}
+{"kind":"translate","lang":"fi","tag":"SourceImageFileName","value":"Lähdekuvan tiedostonimi"}
+{"kind":"translate","lang":"fi","tag":"SourceImageVolumeName","value":"Lähdekuvan taltion nimi"}
+{"kind":"translate","lang":"fi","tag":"SpatialFrequencyResponse","value":"Spatiaalisen taajuuden vaste"}
+{"kind":"translate","lang":"fi","tag":"SpecialInstructions","value":"Ohjeet"}
+{"kind":"translate","lang":"fi","tag":"SpecialMode","value":"Erikoistapa"}
+{"kind":"translate","lang":"fi","tag":"SpectralSensitivity","value":"Spektraalinen herkkyys"}
+{"kind":"translate","lang":"fi","tag":"Sport","value":"Urheilu"}
+{"kind":"translate","lang":"fi","tag":"SpotFocusPointX","value":"Pistetarkennuksen piste X"}
+{"kind":"translate","lang":"fi","tag":"SpotFocusPointY","value":"Pistetarkennuksen piste Y"}
+{"kind":"translate","lang":"fi","tag":"SpotMeteringMode","value":"Pistemittaustapa"}
+{"kind":"translate","lang":"fi","tag":"StorageMethod","value":"Tallennusmetodi"}
+{"kind":"translate","lang":"fi","tag":"StraightenAngle","value":"Kuvan suoristus"}
+{"kind":"translate","lang":"fi","tag":"StripByteCounts","value":"Tavuja per pakattu strippi"}
+{"kind":"translate","lang":"fi","tag":"StripOffsets","value":"Kuvadatan sijainti"}
+{"kind":"translate","lang":"fi","tag":"Sub-location","value":"Sijainti"}
+{"kind":"translate","lang":"fi","tag":"SubSecTime","value":"DateTime sekunnin murto-osina"}
+{"kind":"translate","lang":"fi","tag":"SubSecTimeDigitized","value":"DateTimeDigitized sekunnin murto-osina"}
+{"kind":"translate","lang":"fi","tag":"SubSecTimeOriginal","value":"DateTimeOriginal sekunnin murto-osina"}
+{"kind":"translate","lang":"fi","tag":"SubTileBlockSize","value":"Alalaattalohkon koko"}
+{"kind":"translate","lang":"fi","tag":"Subject","value":"Aihe"}
+{"kind":"translate","lang":"fi","tag":"SubjectArea","value":"Kohdealue"}
+{"kind":"translate","lang":"fi","tag":"SubjectDistance","value":"Kohteen etäisyys"}
+{"kind":"translate","lang":"fi","tag":"SubjectDistanceRange","value":{"Description":"Objektiivin tarkennusetäisyys","PrintConv":{"Close":"Lähikuva","Distant":"Etäkuva","Macro":"Makro","Unknown":"Tuntematon"}}}
+{"kind":"translate","lang":"fi","tag":"SubjectLocation","value":"Kohteen sijainti"}
+{"kind":"translate","lang":"fi","tag":"SubjectProgram","value":"Kuvausohjelma"}
+{"kind":"translate","lang":"fi","tag":"SubjectReference","value":"Aiheen koodi"}
+{"kind":"translate","lang":"fi","tag":"SuperMacro","value":{"Description":"Supermakro","PrintConv":{"Off":"Pois","On (1)":"Päällä (1)","On (2)":"Päällä (2)"}}}
+{"kind":"translate","lang":"fi","tag":"SupplementalCategories","value":"Täydentävä kategoria"}
+{"kind":"translate","lang":"fi","tag":"SupplementalType","value":{"Description":"Lisäystyyppi","PrintConv":{"Main Image":"Ei asetettu","Rasterized Caption":"Rasteroitu seloste","Reduced Resolution Image":"Alennetun resoluution kuva"}}}
+{"kind":"translate","lang":"fi","tag":"SvISOSetting","value":"Sv-ISO-asetus"}
+{"kind":"translate","lang":"fi","tag":"T4Options","value":"Lisätyt täytebitit"}
+{"kind":"translate","lang":"fi","tag":"T6Options","value":"T6-valinnat"}
+{"kind":"translate","lang":"fi","tag":"TIFF-EPStandardID","value":"TIFF/EP-standardin ID"}
+{"kind":"translate","lang":"fi","tag":"TargetAperture","value":"Tavoiteaukko"}
+{"kind":"translate","lang":"fi","tag":"TargetExposureTime","value":"Tavoitevalotusaika"}
+{"kind":"translate","lang":"fi","tag":"TargetPrinter","value":"Kohdetulostin"}
+{"kind":"translate","lang":"fi","tag":"Technology","value":{"Description":"Teknologia","PrintConv":{"Digital Camera":"Digitaalikamera","Dye Sublimation Printer":"Lämpösublimaatiotulostin","Electrophotographic Printer":"Lasertulostin","Electrostatic Printer":"Sähköstaattinen tulostin","Film Scanner":"Filmiskanneri","Film Writer":"Filmitulostin","Flexography":"Fleksografia","Gravure":"Syväpaino","Ink Jet Printer":"Mustesuihkutulostin","Offset Lithography":"Offsetlitografia","Photo CD":"Valokuva-CD","Photo Image Setter":"Valokuvaimagesetteri","Photographic Paper Printer":"Valokuvapaperitulostin","Projection Television":"Projektiotelevisio","Reflective Scanner":"Heijastusskanneri","Silkscreen":"Silkkipaino","Thermal Wax Printer":"Lämpövahatulostin","Video Camera":"Videokamera","Video Monitor":"Videomonitori"}}}
+{"kind":"translate","lang":"fi","tag":"Text","value":"Teksti"}
+{"kind":"translate","lang":"fi","tag":"TextInfo","value":"Tekstitiedot"}
+{"kind":"translate","lang":"fi","tag":"TextStamp","value":{"Description":"Tekstileimasin","PrintConv":{"Off":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"Thresholding","value":"Kynnystys"}
+{"kind":"translate","lang":"fi","tag":"ThumbnailImage","value":"Näytekuva"}
+{"kind":"translate","lang":"fi","tag":"ThumbnailImageValidArea","value":"Näytekuvan kelpaava alue"}
+{"kind":"translate","lang":"fi","tag":"TileByteCounts","value":"Ruutujen tavumäärät"}
+{"kind":"translate","lang":"fi","tag":"TileDepth","value":"Ruudun syvyys"}
+{"kind":"translate","lang":"fi","tag":"TileLength","value":"Ruudun pituus"}
+{"kind":"translate","lang":"fi","tag":"TileOffsets","value":"Ruutusiirtymät"}
+{"kind":"translate","lang":"fi","tag":"TileWidth","value":"Otsikon leveys"}
+{"kind":"translate","lang":"fi","tag":"Time","value":"Aika"}
+{"kind":"translate","lang":"fi","tag":"TimeCreated","value":"Luontiaika"}
+{"kind":"translate","lang":"fi","tag":"TimeSent","value":"Lähetysaika"}
+{"kind":"translate","lang":"fi","tag":"TimeSincePowerOn","value":"Virran päälläoloaika"}
+{"kind":"translate","lang":"fi","tag":"TimeStamp","value":"Aikaleima"}
+{"kind":"translate","lang":"fi","tag":"TimeZone","value":"Aikavyöhyke"}
+{"kind":"translate","lang":"fi","tag":"TimeZoneOffset","value":"Aikavyöhykkeen siirtymä"}
+{"kind":"translate","lang":"fi","tag":"TimerFunctionButton","value":"Ajastustoimintopainike"}
+{"kind":"translate","lang":"fi","tag":"Title","value":"Otsikko"}
+{"kind":"translate","lang":"fi","tag":"ToneComp","value":"Sävykorjailu"}
+{"kind":"translate","lang":"fi","tag":"ToneCurve","value":"Sävykäyrä"}
+{"kind":"translate","lang":"fi","tag":"ToneCurveMatching","value":"Sävykäyrän täsmäys"}
+{"kind":"translate","lang":"fi","tag":"ToneCurveTable","value":"Sävykäyrätaulukko"}
+{"kind":"translate","lang":"fi","tag":"ToneCurves","value":"Sävykäyrät"}
+{"kind":"translate","lang":"fi","tag":"ToningEffect","value":"Sävytysefekti"}
+{"kind":"translate","lang":"fi","tag":"ToningEffectMonochrome","value":"Yksivärisävytysefekti"}
+{"kind":"translate","lang":"fi","tag":"ToningSaturation","value":"Sävykylläisyys"}
+{"kind":"translate","lang":"fi","tag":"TransferFunction","value":"Muuntotoiminto"}
+{"kind":"translate","lang":"fi","tag":"TransferRange","value":"Siirtonopeus"}
+{"kind":"translate","lang":"fi","tag":"Transform","value":"Muunna"}
+{"kind":"translate","lang":"fi","tag":"Transformation","value":{"Description":"Muunto","PrintConv":{"Mirror horizontal":"Peilaa vaakasuunnassa","Mirror horizontal and rotate 270 CW":"Peilaa vaakasuunnassa ja kierrä 270° myötäpäivään","Mirror horizontal and rotate 90 CW":"Peilaa vaakasuunnassa ja kierrä 90° myötäpäivään","Mirror vertical":"Peilaa pystysuunnassa","Rotate 180":"Kierrä 180°","Rotate 270 CW":"Kierrä 90° myötäpäivään","Rotate 90 CW":"Kierrä 90° myötäpäivään"}}}
+{"kind":"translate","lang":"fi","tag":"TransparencyIndicator","value":"Läpinäkyvyyden ilmaisin"}
+{"kind":"translate","lang":"fi","tag":"TravelDay","value":"Matkapäivä"}
+{"kind":"translate","lang":"fi","tag":"TvExposureTimeSetting","value":"Tv-valotusaikaasetus"}
+{"kind":"translate","lang":"fi","tag":"Type","value":"Tyyppi"}
+{"kind":"translate","lang":"fi","tag":"Uncompressed","value":{"Description":"Pakkaamaton","PrintConv":{"No":"Ei","Yes":"Kyllä"}}}
+{"kind":"translate","lang":"fi","tag":"UniqueCameraModel","value":"Uniikki kameramalli"}
+{"kind":"translate","lang":"fi","tag":"UniqueDocumentID","value":"Uniikin dokumentin ID"}
+{"kind":"translate","lang":"fi","tag":"Unknown","value":"Tuntematon"}
+{"kind":"translate","lang":"fi","tag":"Unsharp1Color","value":"Terävöinti 1 -väri"}
+{"kind":"translate","lang":"fi","tag":"Unsharp1HaloWidth","value":"Terävöinti 1 -halolaajuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp1Intensity","value":"Terävöinti 1 -voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp1Threshold","value":"Terävöinti 1 -kynnys"}
+{"kind":"translate","lang":"fi","tag":"Unsharp2Color","value":"Terävöinti 2 -väri"}
+{"kind":"translate","lang":"fi","tag":"Unsharp2HaloWidth","value":"Terävöinti 2 -halolaajuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp2Intensity","value":"Terävöinti 2 -voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp2Threshold","value":"Terävöinti 2 -kynnys"}
+{"kind":"translate","lang":"fi","tag":"Unsharp3Color","value":"Terävöinti 3 -väri"}
+{"kind":"translate","lang":"fi","tag":"Unsharp3HaloWidth","value":"Terävöinti 3 -halolaajuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp3Intensity","value":"Terävöinti 3 -voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp3Threshold","value":"Terävöinti 3 -kynnys"}
+{"kind":"translate","lang":"fi","tag":"Unsharp4Color","value":"Terävöinti 4 -väri"}
+{"kind":"translate","lang":"fi","tag":"Unsharp4HaloWidth","value":"Terävöinti 4 -halolaajuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp4Intensity","value":"Terävöinti 4 -voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"Unsharp4Threshold","value":"Terävöinti 4 -kynnys"}
+{"kind":"translate","lang":"fi","tag":"UnsharpCount","value":"Terävöintimäärä"}
+{"kind":"translate","lang":"fi","tag":"UnsharpData","value":"Terävöintidata"}
+{"kind":"translate","lang":"fi","tag":"UnsharpMask","value":"Epäterävä maski"}
+{"kind":"translate","lang":"fi","tag":"Urgency","value":{"Description":"Kiireellisyys","PrintConv":{"0 (reserved)":"0 (varattu tulevaan käyttöön)","1 (most urgent)":"1 (hyvin kiireellinen)","5 (normal urgency)":"5 (normaali kiirellisyys)","8 (least urgent)":"8 (lievän kiireellinen)","9 (user-defined priority)":"9 (varattu tulevaan käyttöön)"}}}
+{"kind":"translate","lang":"fi","tag":"UserComment","value":"Käyttäjän kommentti"}
+{"kind":"translate","lang":"fi","tag":"UserSelectGroupTitle","value":"Käyttäjän valitseman ryhmän otsikko"}
+{"kind":"translate","lang":"fi","tag":"VRDOffset","value":"VRD-siirtymä"}
+{"kind":"translate","lang":"fi","tag":"VRInfo","value":"Kuvanvakaimen tiedot"}
+{"kind":"translate","lang":"fi","tag":"VRInfoVersion","value":"VR- (kuvanvakain) tietojen versio"}
+{"kind":"translate","lang":"fi","tag":"ValidAFPoints","value":"Kelpaavat AF-pisteet"}
+{"kind":"translate","lang":"fi","tag":"VariProgram","value":"Kuvausohjelma"}
+{"kind":"translate","lang":"fi","tag":"Version","value":"Versio"}
+{"kind":"translate","lang":"fi","tag":"VibrationReduction","value":"Kuvanvakautus"}
+{"kind":"translate","lang":"fi","tag":"VideoCardGamma","value":"Grafiikkakortin gamma"}
+{"kind":"translate","lang":"fi","tag":"ViewfinderWarning","value":"Etsinvaroitus"}
+{"kind":"translate","lang":"fi","tag":"ViewingCondDesc","value":"Katseluolojen kuvaus"}
+{"kind":"translate","lang":"fi","tag":"VignetteControl","value":{"Description":"Vinjetoinnin korjaus","PrintConv":{"High":"Korkea","Low":"Matala","Normal":"Normaali","Off":"Pois"}}}
+{"kind":"translate","lang":"fi","tag":"VignetteControlIntensity","value":"Vinjetoinnin korjauksen voimakkuus"}
+{"kind":"translate","lang":"fi","tag":"VoiceMemo","value":{"Description":"Äänen tallennus","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"WBAdjData","value":"Valkotaspainon säätödata"}
+{"kind":"translate","lang":"fi","tag":"WBBlueLevel","value":"Valkotas. sinisen taso"}
+{"kind":"translate","lang":"fi","tag":"WBBracketMode","value":"Valkotasapaino-haarukointitapa"}
+{"kind":"translate","lang":"fi","tag":"WBBracketValueAB","value":"Valkotasapainon AB-haarukointiarvo"}
+{"kind":"translate","lang":"fi","tag":"WBBracketValueGM","value":"Valkotasapainon GM-haarukointiarvo"}
+{"kind":"translate","lang":"fi","tag":"WBGreenLevel","value":"Vihreän taso"}
+{"kind":"translate","lang":"fi","tag":"WBMode","value":{"Description":"Valkotasapainotila","PrintConv":{"Auto":"Automaattinen"}}}
+{"kind":"translate","lang":"fi","tag":"WBRedLevel","value":"Valkotas. punaisen taso"}
+{"kind":"translate","lang":"fi","tag":"WBShiftAB","value":"Valkotas. säätö keltainen/sininen"}
+{"kind":"translate","lang":"fi","tag":"WBShiftGM","value":"Valkotas. säätö vihreä/magenta"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevels","value":"Valkotasapaino punainen/sininen"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsAuto","value":"Valkotas. RB-tasot, automatiikka"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsCoolWhiteFluor","value":"Valkotas. RB-tasot, viileän valk. loistel."}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsDayWhiteFluor","value":"Valkotas. RB-tasot, valk. päivänvaloloistel."}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsDaylightFluor","value":"Valkotas. RB-tasot, päivänvaloloistel."}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsEveningSunlight","value":"Valkotas. RB-tasot, ilta-aurinko"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsFineWeather","value":"Valkotas. RB-tasot, kaunis sää"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsShade","value":"Valkotas. RB-tasot, varjo"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsTungsten","value":"Valkotas. RB-tasot, hehkulamppu"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsUsed","value":"Käytetyt valkotas. RB-tasot"}
+{"kind":"translate","lang":"fi","tag":"WB_RBLevelsWhiteFluorescent","value":"Valkotas. RB-tasot, valk. loistelamppu"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsCloudy","value":"Valkotasapainon RGGB-tasojen pilvinen"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsDaylight","value":"Valkotasapainon RGGB-tasojen päivänvalo"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsFlash","value":"Valkotasapainon RGGB-tasojen salama"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsFluorescentD","value":"Valkotasapainon RGGB-tasojen loistelamppu D"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsFluorescentN","value":"Valkotasapainon RGGB-tasojen loistelamppu N"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsFluorescentW","value":"Valkotasapainon RGGB-tasojen loistelamppu W"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsShade","value":"Valkotasapainon RGGB-tasojen varjo"}
+{"kind":"translate","lang":"fi","tag":"WB_RGGBLevelsTungsten","value":"Valkotasapainon RGGB-tasojen hehkulamppu"}
+{"kind":"translate","lang":"fi","tag":"Watermark","value":"Vesileima"}
+{"kind":"translate","lang":"fi","tag":"WatermarkType","value":"Vesileiman tyyppi"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalance","value":{"Description":"Valkotasapaino","PrintConv":{"Auto":"Automaattinen","Cloudy":"Pilvinen","Custom":"Mukautus","Custom2":"Mukautus 2","Custom3":"Mukautus 3","Custom4":"Mukautus 4","Day White Fluorescent":"Valkoinen päivänvaloloistelamppu","Daylight":"Auringonvalo","Daylight Fluorescent":"Päivänvaloloistelamppu","Flash":"Salama","Incandescent":"Hehkulamppu","Living Room Warm White Fluorescent":"Asuinhuoneen lämmin valkoinen loistelamppu","Manual":"Manuaalinen","Warm White Fluorescent":"Lämmin valkoinen loistelamppu","White Fluorescent":"Valkoinen loistelamppu"}}}
+{"kind":"translate","lang":"fi","tag":"WhiteBalance2","value":{"Description":"Valkotasapaino","PrintConv":{"3000K (Tungsten light)":"3000 K (hehkulamppu)","3600K (Tungsten light-like)":"3600 K (hehkulamppumainen valo)","4000K (Cool white fluorescent)":"4000 K (viileän valkoinen loistelamppu)","4500K (Neutral white fluorescent)":"4500 K (neutraali valkoinen loistelamppu)","5300K (Fine Weather)":"5300 K (kaunis sää)","6000K (Cloudy)":"6000 K (pilvinen)","6600K (Daylight fluorescent)":"6600 K (päivänvaloloistelamppu)","7500K (Fine Weather with Shade)":"7500 K (kaunis sää ja varjoja)","Auto":"Automaattinen","Custom WB 1":"Mukautettu valkotasapaino 1","Custom WB 2":"Mukautettu valkotasapaino 2","Custom WB 2900K":"Mukautettu valkotasapaino 2900 K","Custom WB 3":"Mukautettu valkotasapaino 3","Custom WB 4":"Mukautettu valkotasapaino 4","Custom WB 5400K":"Mukautettu valkotasapaino 5400 K","Custom WB 8000K":"Mukautettu valkotasapaino 8000 K","One Touch WB 1":"Mukautettu valkotasapaino 1","One Touch WB 2":"Mukautettu valkotasapaino 2","One Touch WB 3":"Mukautettu valkotasapaino 3","One Touch WB 4":"Mukautettu valkotasapaino 4"}}}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceAdj","value":"Väritasapainon säätö"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceBias","value":"Valkotasapainon korjaus"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceBlue","value":"Valkotasapaino sininen"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceBracket","value":"Valkotasapainon haarukointi"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceBracketing","value":"Valkotasapainohaarukointi"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceComp","value":"Valkotasapainon säätö"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceFineTune","value":"Valkotasapainon hienosäätö"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceMatching","value":"Valkotasapainon täsmäys"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceMode","value":{"Description":"Valkotasapainon muoto","PrintConv":{"Auto (Cloudy)":"Automaattinen (pilvinen)","Auto (Day White Fluorescent)":"Automaattinen (valkoinen päivänvaloloistelamppu)","Auto (Daylight Fluorescent)":"Automaattinen (päivänvaloloistelamppu)","Auto (Daylight)":"Automaattinen (auringonvalo)","Auto (Flash)":"Automaattinen (salama)","Auto (Shade)":"Automaattinen (varjo)","Auto (Tungsten)":"Automaattinen (hehkulamppu)","Auto (White Fluorescent)":"Automaattinen (valkoinen loistelamppu)","Unknown":"Automaattinen (ei tunnistettu)","User-Selected":"Itse valittu"}}}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceRed","value":"Valkotasapaino punainen"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceSet","value":"Asetettu valkotasapaino"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceTable","value":"Valkotasapainotaulukko"}
+{"kind":"translate","lang":"fi","tag":"WhiteBalanceTemperature","value":"Valkotaspainon lämpötila"}
+{"kind":"translate","lang":"fi","tag":"WhiteBoard","value":"Valkoinen pohja"}
+{"kind":"translate","lang":"fi","tag":"WhiteLevel","value":"Valkoinen taso"}
+{"kind":"translate","lang":"fi","tag":"WhitePoint","value":"Valkoinen piste"}
+{"kind":"translate","lang":"fi","tag":"WhitePointX","value":"Valkoinen piste X"}
+{"kind":"translate","lang":"fi","tag":"WhitePointY","value":"Valkoinen piste Y"}
+{"kind":"translate","lang":"fi","tag":"Wide","value":"Laaja"}
+{"kind":"translate","lang":"fi","tag":"WideFocusZone","value":"Laaja-alatarkennuksen alue"}
+{"kind":"translate","lang":"fi","tag":"WideRange","value":{"Description":"Laaja alue","PrintConv":{"Off":"Pois","On":"Päällä"}}}
+{"kind":"translate","lang":"fi","tag":"WorldTimeLocation","value":{"Description":"Maailmanaikasijainti","PrintConv":{"Destination":"Kohde","Home":"Koti","Hometown":"Kotiseutu"}}}
+{"kind":"translate","lang":"fi","tag":"Writer-Editor","value":"Selosteen/Kuvatekstin kirjoittaja"}
+{"kind":"translate","lang":"fi","tag":"X3FillLight","value":"X3-täytevalo"}
+{"kind":"translate","lang":"fi","tag":"XClipPathUnits","value":"X-leikepolkuyksiköt"}
+{"kind":"translate","lang":"fi","tag":"XMP","value":"XMP-metadata"}
+{"kind":"translate","lang":"fi","tag":"XPosition","value":"X-sijainti"}
+{"kind":"translate","lang":"fi","tag":"XResolution","value":"Kuvan vaakaresoluutio"}
+{"kind":"translate","lang":"fi","tag":"YCbCrCoefficients","value":"Väriavaruuden muunnon matriisikertoimet"}
+{"kind":"translate","lang":"fi","tag":"YCbCrPositioning","value":{"Description":"Y:n ja C:n sijoitus","PrintConv":{"Centered":"Keskitetty","Co-sited":"Vierekkäin"}}}
+{"kind":"translate","lang":"fi","tag":"YCbCrSubSampling","value":"Suhteen Y - C subsamplaus"}
+{"kind":"translate","lang":"fi","tag":"YClipPathUnits","value":"Y-leikepolkuyksiköt"}
+{"kind":"translate","lang":"fi","tag":"YPosition","value":"Y-sijainti"}
+{"kind":"translate","lang":"fi","tag":"YResolution","value":"Kuvan pystyresoluutio"}
+{"kind":"translate","lang":"fi","tag":"ZoneMatching","value":{"Description":"Yli/alivalotuksen esto","PrintConv":{"High Key":"Yläsävykuva","ISO Setting Used":"Pois (käytetty ISO-asetusta)","Low Key":"Alasävykuva"}}}
+{"kind":"translate","lang":"fi","tag":"Zoom","value":"Zoom-objektiivi"}
+{"kind":"translate","lang":"fi","tag":"ZoomSourceWidth","value":"Zoomauksen lähtökoko"}
+{"kind":"translate","lang":"fi","tag":"ZoomStepCount","value":"Zoom-askelmäärä"}
+{"kind":"translate","lang":"fi","tag":"ZoomTargetWidth","value":"Zoomauksen loppukoko"}

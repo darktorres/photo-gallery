@@ -1,0 +1,83 @@
+{"kind":"table","module":"Kandao","name":"Image::ExifTool::Kandao::FrameISP","special":{"GROUPS":{"0":"Kandao","1":"KVAR","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kandao::FrameISP","TABLE_NAME":"Image::ExifTool::Kandao::FrameISP","TAG_PREFIX":"Kandao_FrameISP"}}
+{"fields":{"Format":"int32u","Name":"TimeStamp","Unknown":1},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::FrameISP"}
+{"fields":{"Format":"float[2]","Name":"FrameISP_4","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::FrameISP"}
+{"kind":"table","module":"Kandao","name":"Image::ExifTool::Kandao::GPS","special":{"GROUPS":{"0":"Kandao","1":"KVAR","2":"Location"},"NOTES":"\n        These tags are in the family 1 KVAR group instead of a GPS group to allow\n        them to be distinguished from the duplicate GPS tags in the GPSX table.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kandao::GPS","TABLE_NAME":"Image::ExifTool::Kandao::GPS","TAG_PREFIX":"Kandao_GPS"}}
+{"fields":{"Format":"int32u","Name":"TimeStamp"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPS"}
+{"fields":{"Format":"double","Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")","ValueConv":"Image::ExifTool::GPS::ToDegrees($val, 1)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPS"}
+{"fields":{"Format":"double","Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")","ValueConv":"Image::ExifTool::GPS::ToDegrees($val, 1)"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPS"}
+{"fields":{"Format":"double","Name":"GPSAltitude","PrintConv":"$_ = sprintf(\"%.6f\", $val); s/\\.?0+$//; \"$_ m\""},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPS"}
+{"kind":"table","module":"Kandao","name":"Image::ExifTool::Kandao::GPSX","special":{"GROUPS":{"0":"Kandao","1":"GPS","2":"Location"},"NOTES":"\n        These tags are in the family 1 GPS group.  They are duplicates of the tags\n        in the Kandao GPS table with the addition of GPSDateTime.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kandao::GPSX","TABLE_NAME":"Image::ExifTool::Kandao::GPSX","TAG_PREFIX":"Kandao_GPSX"}}
+{"fields":{"Format":"int32u","Name":"TimeStamp"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPSX"}
+{"fields":{"Description":"GPS Date/Time","Format":"int64u","Groups":{"2":"Time"},"Name":"GPSDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val/1000, 0, 3) . \"Z\""},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPSX"}
+{"fields":{"Format":"double","Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")","ValueConv":"Image::ExifTool::GPS::ToDegrees($val, 1)"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPSX"}
+{"fields":{"Format":"double","Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")","ValueConv":"Image::ExifTool::GPS::ToDegrees($val, 1)"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPSX"}
+{"fields":{"Format":"double","Name":"GPSAltitude","PrintConv":"$_ = sprintf(\"%.6f\", $val); s/\\.?0+$//; \"$_ m\""},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::GPSX"}
+{"kind":"table","module":"Kandao","name":"Image::ExifTool::Kandao::IMU","special":{"GROUPS":{"0":"Kandao","1":"KVAR","2":"Location"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kandao::IMU","TABLE_NAME":"Image::ExifTool::Kandao::IMU","TAG_PREFIX":"Kandao_IMU"}}
+{"fields":{"Format":"int64u","Name":"TimeStamp"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::IMU"}
+{"fields":{"Format":"int16s[3]","Name":"Gyroscope"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::IMU"}
+{"fields":{"Format":"int16s[3]","Name":"Accelerometer"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::IMU"}
+{"kind":"table","module":"Kandao","name":"Image::ExifTool::Kandao::Main","special":{"GROUPS":{"0":"Kandao","1":"KVAR","2":"Camera"},"NOTES":"\n        Tags extracted from Kandao KVAR files and the 'kvar', 'kfix' and 'kstb'\n        atoms in Kandao MP4 videos, with a family 1 group name of KVAR, KFIX or KSTB\n        depending on their location.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Kandao::ProcessKandao"},"SHORT_NAME":"Kandao::Main","TABLE_NAME":"Image::ExifTool::Kandao::Main","TAG_PREFIX":"Kandao","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Name":"AEMetering"},"id":"AE_METERING","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"AEMode"},"id":"AE_MODE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"AF_FN"},"id":"AF_FN","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"AudioGain"},"id":"AUDIO_GAIN","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"AWB_CCT"},"id":"AWB_CCT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"AWBMode"},"id":"AWB_MODE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"BatteryTemperature"},"id":"BAT_TEMP","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"CaptureMode"},"id":"CAPTURE_MODE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"CenterShift"},"id":"CENTER_SHIFT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"CoverMode"},"id":"COVER_MODE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"CPUTemperature","ValueConv":"$val / 10"},"id":"CPU_TEMP","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Customized"},"id":"CUSTOMIZED","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Dashboard"},"id":"DASHBOARD","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Distortion"},"id":"DISTORTION","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"DynamicRange"},"id":"DYNAMIC_RANGE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"EV"},"id":"EV","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Exp"},"id":"EXP","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"FanLevel"},"id":"FAN_LEVEL","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"FanMode"},"id":"FAN_MODE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"FOV"},"id":"FOV","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"FRAME_ISP","RecordSize":12,"SubDirectory":{"TagTable":"Image::ExifTool::Kandao::FrameISP"}},"id":"FRAME_ISP","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"GainMap0"},"id":"GAINMAP0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"GainMap1"},"id":"GAINMAP1","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Condition":"$$valPt =~ /^\\xff{4}/","Index":0,"Name":"GPS","RecordSize":28,"SubDirectory":{"Start":4,"TagTable":"Image::ExifTool::Kandao::GPS"}},"id":"GPS","index":0,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Index":1,"Name":"GPS","RecordSize":20,"SubDirectory":{"TagTable":"Image::ExifTool::Kandao::GPS"}},"id":"GPS","index":1,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"GPSX","RecordSize":36,"SubDirectory":{"TagTable":"Image::ExifTool::Kandao::GPSX"}},"id":"GPSX","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"GPSCaptureTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val/1000, 0, 3) . \"Z\""},"id":"GPS_CAPTIME","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"HDR"},"id":"HDR","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"HardwareVersion"},"id":"HW_VER","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"ImageStyle"},"id":"IMAGE_STYLE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"IMU","RecordSize":20,"SubDirectory":{"TagTable":"Image::ExifTool::Kandao::IMU"}},"id":"IMU","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Info"},"id":"INFO","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"InputInsert"},"id":"INPUT_INSERT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Interval"},"id":"INTERVAL","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"ISO"},"id":"ISO","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"ISP"},"id":"ISP","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"ISPVersion"},"id":"ISP_VER","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"LensData"},"id":"LENS","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Format":"int16u","Name":"LensIndex"},"id":"LENS_INDEX","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Lens0OTP_ID"},"id":"LENS_OTP_ID0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Lens1OTP_ID"},"id":"LENS_OTP_ID1","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Lens0SerialNumber"},"id":"LENS_SN0","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Lens1SerialNumber"},"id":"LENS_SN1","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"NeedLDSC"},"id":"NEED_LSC","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"OutputInsert"},"id":"OUTPUT_INSERT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Model"},"id":"PRODUCT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Project"},"id":"PROJECT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Projection"},"id":"PROJECTION","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"ProductVersion"},"id":"PR_VER","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Binary":1,"Format":"undef","Name":"PresentationTimeStamp","Notes":"TimeStamp for each frame"},"id":"PTS","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"TimeStampUnit","PrintConv":{"0":"ms","1":"Subtle","2":"ns"}},"id":"PTS_UNIT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Shutter"},"id":"SHUTTER","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"SerialNumber"},"id":"SN","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Stereo"},"id":"STEREO","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Stitched"},"id":"STITCHED","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"SoftwareVersion"},"id":"SW_VER","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"TotalFrames"},"id":"TOTAL_FRAME","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"TotalTime","ValueConv":"$val / 1000"},"id":"TOTAL_TIME_MS","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"VideoBitrate","PrintConv":"($val / 1e6) . \" Mbps\""},"id":"VIDEO_BITRATE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"VideoCaptureTime","Notes":"local camera time","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"VIDEO_CAPTIME","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"VideoCodec"},"id":"VIDEO_CODECTYPE","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"VideoFormat"},"id":"VIDEO_FORMAT","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"VideoResolution"},"id":"VIDEO_RESOLUTION","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}
+{"fields":{"Name":"Yaw"},"id":"YAW","index":null,"kind":"tag","table":"Image::ExifTool::Kandao::Main"}

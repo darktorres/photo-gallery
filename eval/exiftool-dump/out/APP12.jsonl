@@ -1,0 +1,32 @@
+{"kind":"table","module":"APP12","name":"Image::ExifTool::APP12::Ducky","special":{"GROUPS":{"0":"Ducky","1":"Ducky","2":"Image"},"NOTES":"\n        Photoshop uses the JPEG APP12 \"Ducky\" segment to store some information in\n        \"Save for Web\" images.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::APP12::ProcessDucky"},"SHORT_NAME":"APP12::Ducky","TABLE_NAME":"Image::ExifTool::APP12::Ducky","TAG_PREFIX":"APP12_Ducky","WRITABLE":"string","WRITE_PROC":{"code":"&Image::ExifTool::APP12::WriteDucky"}}}
+{"fields":{"Avoid":1,"Name":"Quality","PrintConv":"\"$val%\"","PrintConvInv":"$val=~/(\\d+)/ ? $1 : undef","Priority":0,"ValueConv":"unpack(\"N\",$val)","ValueConvInv":"pack(\"N\",$val)","Writable":"int32u"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::APP12::Ducky"}
+{"fields":{"Avoid":1,"Name":"Comment","Priority":0,"ValueConv":"$self->Decode(substr($val,4),\"UTF16\",\"MM\")","ValueConvInv":"pack(\"N\",length $val) . $self->Encode($val,\"UTF16\",\"MM\")"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::APP12::Ducky"}
+{"fields":{"Avoid":1,"Groups":{"2":"Author"},"Name":"Copyright","Priority":0,"ValueConv":"$self->Decode(substr($val,4),\"UTF16\",\"MM\")","ValueConvInv":"pack(\"N\",length $val) . $self->Encode($val,\"UTF16\",\"MM\")"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::APP12::Ducky"}
+{"kind":"table","module":"APP12","name":"Image::ExifTool::APP12::PictureInfo","special":{"GROUPS":{"0":"APP12","1":"PictureInfo","2":"Image"},"NOTES":"\n        The JPEG APP12 \"Picture Info\" segment was used by some older cameras, and\n        contains ASCII-based meta information.  Below are some tags which have been\n        observed Agfa and Polaroid images, however ExifTool will extract information\n        from any tags found in this segment.\n    ","PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::APP12::ProcessAPP12"},"SHORT_NAME":"APP12::PictureInfo","TABLE_NAME":"Image::ExifTool::APP12::PictureInfo","TAG_PREFIX":"APP12_PictureInfo"}}
+{"fields":{"Name":"Aperture","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"Aperture","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ColorMode"},"id":"ColorMode","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ContTake"},"id":"ContTake","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ExposureCompensation"},"id":"ExpBias","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"FNumber","PrintConv":"sprintf(\"%.1f\",$val)","ValueConv":"$val=~s/^[A-Za-z ]*//;$val"},"id":"FNumber","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"FirmwareVersion"},"id":"FWare","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Flash","PrintConv":{"0":"Off","1":"On"}},"id":"Flash","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"FocusMode"},"id":"FocusMode","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"FocusPos"},"id":"FocusPos","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"ID"},"id":"ID","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ImageSize","PrintConv":"$val=~tr/-/x/;$val"},"id":"ImageSize","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"LightS"},"id":"LightS","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Macro","PrintConv":{"0":"Off","1":"On"}},"id":"Macro","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Protect"},"id":"Protect","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Quality"},"id":"Quality","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Resolution"},"id":"Resolution","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"SerialNumber"},"id":"Serial#","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"$val * 1e-6"},"id":"Shutter","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"StrobeTime"},"id":"StrobeTime","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val=~/^\\d+$/ ? ConvertUnixTime($val) : $val"},"id":"TimeDate","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"DataMember":"CameraType","Groups":{"2":"Camera"},"Name":"CameraType","RawConv":"$self->{CameraType} = $val"},"id":"Type","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"Version"},"id":"Version","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"YTarget"},"id":"Ytarget","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"Zoom"},"id":"Zoom","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ZoomPos"},"id":"ZoomPos","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"$val * 1e-6"},"id":"shtr","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}
+{"fields":{"Name":"YLevel"},"id":"ylevel","index":null,"kind":"tag","table":"Image::ExifTool::APP12::PictureInfo"}

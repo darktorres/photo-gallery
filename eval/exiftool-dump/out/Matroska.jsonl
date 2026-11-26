@@ -1,0 +1,327 @@
+{"kind":"table","module":"Matroska","name":"Image::ExifTool::Matroska::Main","special":{"GROUPS":{"0":"Matroska","1":"Matroska","2":"Video"},"NOTES":"\n        The following tags are extracted from Matroska multimedia container files.\n        This container format is used by file types such as MKA, MKV, MKS and WEBM.\n        For speed, by default ExifTool extracts tags only up to the first Cluster\n        unless a Seek element specifies the position of a Tags element after this.\n        However, the L<Verbose|../ExifTool.html#Verbose> (-v) and L<Unknown|../ExifTool.html#Unknown> = 2 (-U) options force processing of\n        Cluster data, and the L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> (-ee) option skips over Clusters to\n        read subsequent tags.  See\n        L<http://www.matroska.org/technical/specs/index.html> for the official\n        Matroska specification.\n    ","SHORT_NAME":"Matroska::Main","TABLE_NAME":"Image::ExifTool::Matroska::Main","TAG_PREFIX":"Matroska","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Name":"ChapterDisplay","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackType","PrintConv":{"1":"Video","16":"Logo","17":"Subtitle","18":"Buttons","2":"Audio","3":"Complex","32":"Control"},"PrintHex":1,"RawConv":"$$self{TrackTypes}{$val} = 1; $$self{TrackType} = $val"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"ChapterString"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"$$self{TrackType} and $$self{TrackType} == 0x01","Format":"string","Index":0,"Name":"VideoCodecID"},"id":"6","index":0,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"$$self{TrackType} and $$self{TrackType} == 0x02","Format":"string","Index":1,"Name":"AudioCodecID"},"id":"6","index":1,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Index":2,"Name":"CodecID"},"id":"6","index":2,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"id":"shared00234","kind":"shared","value":{"0":"No","1":"Yes"}}
+{"fields":{"Format":"unsigned","Name":"TrackDefault","PrintConv":{"ref":"shared00234"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterTrackNumber","Unknown":1},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Slices","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ChapterTrack","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Groups":{"1":"Chapter#"},"Name":"ChapterTimeStart","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1e9"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterTimeEnd","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1e9"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueRefTime","PrintConv":"$$self{TimecodeScale} ? ConvertDuration($val) : $val","Unknown":1,"ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val"},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueRefCluster","Unknown":1},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterFlagHidden","Unknown":1},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"VideoScanType","PrintConv":{"0":"Undetermined","1":"Interlaced","2":"Progressive"}},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"BlockDuration","PrintConv":"$$self{TimecodeScale} ? \"$val s\" : $val","Unknown":1,"ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val"},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackLacing","PrintConv":{"ref":"shared00234"},"Unknown":1},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Groups":{"2":"Audio"},"Name":"AudioChannels"},"id":"31","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"BlockGroup","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Block","NoSave":1,"Unknown":1},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"BlockVirtual","NoSave":1,"Unknown":1},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SimpleBlock","NoSave":1,"Unknown":1},"id":"35","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"CodecState","Unknown":1},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"BlockAdditional","NoSave":1,"Unknown":1},"id":"37","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"BlockMore","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"38","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"Position"},"id":"39","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CodecDecodeAll","PrintConv":{"ref":"shared00234"}},"id":"42","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"PrevSize"},"id":"43","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"delete $$self{TrackType}; 1","Name":"TrackEntry","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"EncryptedBlock","NoSave":1,"Unknown":1},"id":"47","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ImageWidth"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueTime","PrintConv":"$$self{TimecodeScale} ? ConvertDuration($val) : $val","Unknown":1,"ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val"},"id":"51","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Groups":{"2":"Audio"},"Name":"AudioSampleRate"},"id":"53","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ChapterAtom","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"54","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"CueTrackPositions","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"55","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackUsed","PrintConv":{"ref":"shared00234"}},"id":"57","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ImageHeight"},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"CuePoint","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"59","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CRC-32","Unknown":1},"id":"63","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"BlockAdditionalID","Unknown":1},"id":"75","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"LaceNumber","Unknown":1},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"FrameNumber","Unknown":1},"id":"77","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"Delay","Unknown":1},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ClusterDuration","Unknown":1},"id":"79","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackNumber"},"id":"87","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"CueReference","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"91","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Video","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"96","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Audio","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"97","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TimeCode","PrintConv":"$$self{TimecodeScale} ? ConvertDuration($val) : $val","Unknown":1,"ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val"},"id":"103","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"TimeSlice","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"104","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueCodecState","Unknown":1},"id":"106","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueRefCodecState","Unknown":1},"id":"107","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Void","NoSave":1,"Unknown":1},"id":"108","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"BlockAddID","Unknown":1},"id":"110","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueClusterPosition","Unknown":1},"id":"113","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueTrack","Unknown":1},"id":"119","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ReferencePriority","Unknown":1},"id":"122","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"signed","Name":"ReferenceBlock","PrintConv":"$$self{TimecodeScale} ? \"$val s\" : $val","Unknown":1,"ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val"},"id":"123","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"signed","Name":"ReferenceVirtual","Unknown":1},"id":"125","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentCompressionAlgorithm","PrintConv":{"0":"zlib","1":"bzlib","2":"lzo1x","3":"Header Stripping"}},"id":"596","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ContentCompressionSettings","Unknown":1},"id":"597","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"DocType","RawConv":"$self->OverrideFileType(\"WEBM\") if $val eq \"webm\"; $val"},"id":"642","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"DocTypeReadVersion"},"id":"645","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EBMLVersion"},"id":"646","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"DocTypeVersion"},"id":"647","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EBMLMaxIDLength","Unknown":1},"id":"754","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EBMLMaxSizeLength","Unknown":1},"id":"755","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EBMLReadVersion"},"id":"759","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterLanguage"},"id":"892","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterCountry"},"id":"894","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"SegmentFamily","Unknown":1},"id":"1092","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Description":"Date/Time Original","Format":"date","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)"},"id":"1121","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TagLanguageBCP47"},"id":"1146","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TagDefault","PrintConv":{"ref":"shared00234"}},"id":"1156","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"TagBinary"},"id":"1157","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"TagString"},"id":"1159","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Name":"Duration","PrintConv":"$$self{TimecodeScale} ? ConvertDuration($val) : $val","ValueConv":"$$self{TimecodeScale} ? $val * $$self{TimecodeScale} / 1e9 : $val / 1000"},"id":"1161","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ChapterProcessPrivate","Unknown":1},"id":"1293","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterFlagEnabled","Unknown":1},"id":"1432","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"TagName"},"id":"1443","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"EditionEntry","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"1465","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"EditionUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"1468","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EditionFlagHidden","Unknown":1},"id":"1469","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EditionFlagDefault","Unknown":1},"id":"1499","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"EditionFlagOrdered","Unknown":1},"id":"1501","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"AttachedFileData"},"id":"1628","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"AttachedFileMIMEType"},"id":"1632","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"AttachedFileName"},"id":"1646","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"AttachedFileReferral","Unknown":1},"id":"1653","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"AttachedFileDescription"},"id":"1662","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"AttachedFileUID","ValueConv":"unpack(\"H*\",$val)"},"id":"1710","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentEncryptionAlgorithm","PrintConv":{"0":"Not Encrypted","1":"DES","2":"3DES","3":"Twofish","4":"Blowfish","5":"AES"}},"id":"2017","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ContentEncryptionKeyID","Unknown":1},"id":"2018","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ContentSignature","Unknown":1},"id":"2019","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ContentSignatureKeyID","Unknown":1},"id":"2020","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentSignatureAlgorithm","PrintConv":{"0":"Not Signed","1":"RSA"}},"id":"2021","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentSignatureHashAlgorithm","PrintConv":{"0":"Not Signed","1":"SHA1-160","2":"MD5"}},"id":"2022","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"MuxingApp"},"id":"3456","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Seek","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"3515","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentEncodingOrder","Unknown":1},"id":"4145","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentEncodingScope","Unknown":1},"id":"4146","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ContentEncodingType","PrintConv":{"0":"Compression","1":"Encryption"}},"id":"4147","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ContentCompression","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"4148","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ContentEncryption","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"4149","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueRefNumber","Unknown":1},"id":"4959","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"TrackName"},"id":"4974","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CueBlockNumber","Unknown":1},"id":"4984","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"signed","Name":"TrackOffset","Unknown":1},"id":"4991","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SeekID","PrintConv":"\n            my $tagInfo = $Image::ExifTool::Matroska::Main{$val};\n            $val = sprintf('0x%x', $val);\n            $val .= \" ($$tagInfo{Name})\" if ref $tagInfo eq 'HASH' and $$tagInfo{Name};\n            return $val;\n        ","SeekInfo":"ID","Unknown":1},"id":"5035","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"SeekPosition","RawConv":"$val + $$self{SeekHeadOffset}","SeekInfo":"Position","Unknown":1},"id":"5036","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"Stereo3DMode","Printconv":{"0":"Mono","1":"Right Eye","2":"Left Eye","3":"Both Eyes"}},"id":"5048","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CropBottom"},"id":"5290","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"DisplayWidth"},"id":"5296","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"DisplayUnit","PrintConv":{"0":"Pixels","1":"cm","2":"inches","3":"Display Aspect Ratio","4":"Unknown"}},"id":"5298","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"AspectRatioType","PrintConv":{"0":"Free Resizing","1":"Keep Aspect Ratio","2":"Fixed"}},"id":"5299","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"DisplayHeight"},"id":"5306","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CropTop"},"id":"5307","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CropLeft"},"id":"5324","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"CropRight"},"id":"5341","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackForced","PrintConv":{"ref":"shared00234"}},"id":"5546","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"MaxBlockAdditionID","Unknown":1},"id":"5614","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"WritingApp"},"id":"5953","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SilentTracks","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"6228","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"SilentTrackNumber"},"id":"6359","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"AttachedFile","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"8615","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ContentEncoding","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"8768","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Groups":{"2":"Audio"},"Name":"AudioBitsPerSample"},"id":"8804","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"CodecPrivate","Unknown":1},"id":"9122","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Targets","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"9152","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterPhysicalEquivalent","PrintConv":{"10":"Index","20":"Track","30":"Session","40":"Layer","50":"Side","60":"CD / DVD","70":"Set / Package"}},"id":"9155","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TagChapterUID","ValueConv":"unpack(\"H*\",$val)"},"id":"9156","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TagTrackUID","ValueConv":"unpack(\"H*\",$val)"},"id":"9157","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TagAttachmentUID","ValueConv":"unpack(\"H*\",$val)"},"id":"9158","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TagEditionUID","ValueConv":"unpack(\"H*\",$val)"},"id":"9161","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TargetType"},"id":"9162","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"SignedElement","Unknown":1},"id":"9522","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"TrackTranslate","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"9764","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"TrackTranslateTrackID","Unknown":1},"id":"9893","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackTranslateCodec","PrintConv":{"0":"Matroska Script","1":"DVD Menu"}},"id":"9919","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TrackTranslateEditionUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"9980","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SimpleTag","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"10184","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TargetTypeValue","PrintConv":{"10":"Shot","20":"Scene/Subtrack","30":"Chapter/Track","40":"Session","50":"Movie/Album","60":"Season/Edition","70":"Collection"}},"id":"10442","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ChapterProcessCommand","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"10513","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterProcessTime","PrintConv":{"0":"For Duration of Chapter","1":"Before Chapter","2":"After Chapter"},"Unknown":1},"id":"10530","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ChapterTranslate","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"10532","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ChapterProcessData","Unknown":1},"id":"10547","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ChapterProcess","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"10564","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterProcessCodecID","PrintConv":{"0":"Matroska","1":"DVD"},"Unknown":1},"id":"10581","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ChapterTranslateID","Unknown":1},"id":"10661","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"ChapterTranslateCodec","PrintConv":{"0":"Matroska Script","1":"DVD Menu"}},"id":"10687","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterTranslateEditionUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"10748","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"ContentEncodings","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"11648","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"MinCache","Unknown":1},"id":"11751","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"MaxCache","Unknown":1},"id":"11768","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterSegmentUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"11879","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterSegmentEditionUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"11964","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TrackOverlay","Unknown":1},"id":"12203","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Tag","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"13171","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"SegmentFileName"},"id":"13188","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"SegmentUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"13220","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"ChapterUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"13252","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TrackUID","ValueConv":"unpack(\"H*\",$val)"},"id":"13253","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TrackAttachmentUID","ValueConv":"unpack(\"H*\",$val)"},"id":"13382","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"BlockAdditions","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"13729","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Groups":{"2":"Audio"},"Name":"OutputAudioSampleRate"},"id":"14517","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"Title"},"id":"15273","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Audio"},"Name":"ChannelPositions","Unknown":1},"id":"15739","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SignatureElements","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"15963","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SignatureElementList","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"15995","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"SignatureAlgo"},"id":"16010","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"SignatureHash"},"id":"16026","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"SignaturePublicKey","Unknown":1},"id":"16037","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"Signature","Unknown":1},"id":"16053","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Projection","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Projection"}},"id":"30320","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TrackLanguage"},"id":"177564","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"TrackLanguageIETF"},"id":"177565","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Name":"TrackTimecodeScale"},"id":"209231","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Name":"FrameRate"},"id":"230371","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"$$self{TrackType} and $$self{TrackType} == 0x01","Format":"unsigned","Index":0,"Name":"VideoFrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000","ValueConv":"$val ? 1e9 / $val : 0"},"id":"254851","index":0,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Index":1,"Name":"DefaultDuration","PrintConv":"($val * 1000) . \" ms\"","ValueConv":"$val / 1e9"},"id":"254851","index":1,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"$$self{TrackType} and $$self{TrackType} == 0x01","Format":"utf8","Index":0,"Name":"VideoCodecName"},"id":"362120","index":0,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Condition":"$$self{TrackType} and $$self{TrackType} == 0x02","Format":"utf8","Index":1,"Name":"AudioCodecName"},"id":"362120","index":1,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Index":2,"Name":"CodecName"},"id":"362120","index":2,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"CodecDownloadURL"},"id":"438848","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"unsigned","Name":"TimecodeScale","PrintConv":"($val * 1000) . \" ms\"","RawConv":"$$self{TimecodeScale} = $val","ValueConv":"$val / 1e9"},"id":"710577","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Binary":1,"Name":"ColorSpace","Unknown":1},"id":"963876","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"float","Name":"Gamma"},"id":"1029411","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"CodecSettings"},"id":"1742487","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"CodecInfoURL"},"id":"1785920","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"PrevFileName"},"id":"1868715","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"PrevUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"1882403","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"utf8","Name":"NextFileName"},"id":"1999803","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Format":"string","Name":"NextUID","Unknown":1,"ValueConv":"unpack(\"H*\",$val)"},"id":"2013475","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Chapters","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"4433776","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SeekHead","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"21863284","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Tags","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"39109479","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Info","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"88713574","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Tracks","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"106212971","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SegmentHeader","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"139690087","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Attachments","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"155296873","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"EBMLHeader","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"172351395","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SignatureSlot","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"190023271","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Cues","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"206814059","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"Cluster","SubDirectory":{"TagTable":"Image::ExifTool::Matroska::Main"}},"id":"256095861","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"fields":{"Name":"SEAL","NotEBML":1,"SubDirectory":{"TagTable":"Image::ExifTool::XMP::SEAL"}},"id":"1397047628","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Main"}
+{"kind":"table","module":"Matroska","name":"Image::ExifTool::Matroska::Projection","special":{"GROUPS":{"0":"Matroska","1":"Matroska","2":"Video"},"NOTES":"\n        Projection tags defined by the Spherical Video V2 specification.  See\n        L<https://github.com/google/spatial-media/blob/master/docs/spherical-video-v2-rfc.md>\n        for the specification.\n    ","SHORT_NAME":"Matroska::Projection","TABLE_NAME":"Image::ExifTool::Matroska::Projection","TAG_PREFIX":"Matroska_Projection","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"DataMember":"ProjectionType","Format":"unsigned","Name":"ProjectionType","PrintConv":{"0":"Rectangular","1":"Equirectangular","2":"Cubemap","3":"Mesh"},"RawConv":"$$self{ProjectionType} = $val"},"id":"30321","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Condition":"$$self{ProjectionType} == 1","Index":0,"Name":"EquirectangularProj","SubDirectory":{"TagTable":"Image::ExifTool::QuickTime::equi"}},"id":"30322","index":0,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Condition":"$$self{ProjectionType} == 2","Index":1,"Name":"CubemapProj","SubDirectory":{"TagTable":"Image::ExifTool::QuickTime::cbmp"}},"id":"30322","index":1,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Binary":1,"Index":2,"Name":"ProjectionPrivate"},"id":"30322","index":2,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Format":"float","Name":"ProjectionPoseYaw"},"id":"30323","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Format":"float","Name":"ProjectionPosePitch"},"id":"30324","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"fields":{"Format":"float","Name":"ProjectionPoseRoll"},"id":"30325","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::Projection"}
+{"kind":"table","module":"Matroska","name":"Image::ExifTool::Matroska::StdTag","special":{"GROUPS":{"0":"Matroska","1":"Matroska","2":"Video"},"NOTES":"\n        Standardized Matroska tags, stored in a SimpleTag structure (see\n        L<https://www.matroska.org/technical/tagging.html>).\n    ","PRIORITY":0,"SHORT_NAME":"Matroska::StdTag","TABLE_NAME":"Image::ExifTool::Matroska::StdTag","TAG_PREFIX":"Matroska_StdTag","VARS":{"LONG_TAGS":3}}}
+{"fields":{"Name":"Accompaniment"},"id":"ACCOMPANIMENT","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Actor"},"id":"ACTOR","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Address"},"id":"ADDRESS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Arranger"},"id":"ARRANGER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Artist"},"id":"ARTIST","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ArtDirector"},"id":"ART_DIRECTOR","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"AssistantDirector"},"id":"ASSISTANT_DIRECTOR","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Barcode"},"id":"BARCODE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"BPM"},"id":"BPM","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"BPS"},"id":"BPS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"CatalogNumber"},"id":"CATALOG_NUMBER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Character"},"id":"CHARACTER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Choregrapher"},"id":"CHOREGRAPHER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Comment"},"id":"COMMENT","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Composer"},"id":"COMPOSER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ComposerNationality"},"id":"COMPOSER_NATIONALITY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"CompositionLocation"},"id":"COMPOSITION_LOCATION","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Conductor"},"id":"CONDUCTOR","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ContentType"},"id":"CONTENT_TYPE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Coproducer"},"id":"COPRODUCER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Copyright"},"id":"COPYRIGHT","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"CostumeDesigner"},"id":"COSTUME_DESIGNER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Country"},"id":"COUNTRY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"id":"shared00235","kind":"shared","value":{"2":"Time"}}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_DIGITIZED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"DateEncoded","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_ENCODED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"DatePurchased","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_PURCHASED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Description":"Date/Time Original","Groups":{"ref":"shared00235"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_RECORDED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"DateReleased","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_RELEASED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"DateTagged","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_TAGGED","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"DateWritten","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"DATE_WRITTEN","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Description"},"id":"DESCRIPTION","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Director"},"id":"DIRECTOR","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"DirectorOfPhotography"},"id":"DIRECTOR_OF_PHOTOGRAPHY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"DistributedBy"},"id":"DISTRIBUTED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Duration"},"id":"DURATION","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"EditedBy"},"id":"EDITED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Email"},"id":"EMAIL","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"EncodedBy"},"id":"ENCODED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Encoder"},"id":"ENCODER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"EncoderSettings"},"id":"ENCODER_SETTINGS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ExecutiveProducer"},"id":"EXECUTIVE_PRODUCER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"FAX"},"id":"FAX","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"FPS"},"id":"FPS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Genre"},"id":"GENRE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"IMDB"},"id":"IMDB","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"InitialKey"},"id":"INITIAL_KEY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"IsList":1,"Name":"Instruments","ValueConv":"my @a = split /,\\s?/, $val; \\@a"},"id":"INSTRUMENTS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ISBN"},"id":"ISBN","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ISRC"},"id":"ISRC","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"IsList":1,"Name":"Keywords","ValueConv":"my @a = split /,\\s?/, $val; \\@a"},"id":"KEYWORDS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Label"},"id":"LABEL","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"LabelCode"},"id":"LABEL_CODE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"LawRating"},"id":"LAW_RATING","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Lccn"},"id":"LCCN","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"LeadPerformer"},"id":"LEAD_PERFORMER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"License"},"id":"LICENSE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Lyricist"},"id":"LYRICIST","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Lyrics"},"id":"LYRICS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"MasteredBy"},"id":"MASTERED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"MCDI"},"id":"MCDI","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Measure"},"id":"MEASURE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"MixedBy"},"id":"MIXED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Mood"},"id":"MOOD","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"NumberOfBytes"},"id":"NUMBER_OF_BYTES","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"NumberOfFrames"},"id":"NUMBER_OF_FRAMES","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Original"},"id":"ORIGINAL","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"OriginalMediaType"},"id":"ORIGINAL_MEDIA_TYPE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PartNumber"},"id":"PART_NUMBER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PartOffset"},"id":"PART_OFFSET","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Period"},"id":"PERIOD","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Phone"},"id":"PHONE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PlayCounter"},"id":"PLAY_COUNTER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Producer"},"id":"PRODUCER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ProductionCopyright"},"id":"PRODUCTION_COPYRIGHT","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ProductionDesigner"},"id":"PRODUCTION_DESIGNER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ProductionStudio"},"id":"PRODUCTION_STUDIO","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Publisher"},"id":"PUBLISHER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PurchaseCurrency"},"id":"PURCHASE_CURRENCY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PurchaseInfo"},"id":"PURCHASE_INFO","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PurchaseItem"},"id":"PURCHASE_ITEM","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PurchaseOwner"},"id":"PURCHASE_OWNER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"PurchasePrice"},"id":"PURCHASE_PRICE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Rating"},"id":"RATING","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"RecordingLocation"},"id":"RECORDING_LOCATION","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"RemixedBy"},"id":"REMIXED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ReplaygainGain"},"id":"REPLAYGAIN_GAIN","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ReplaygainPeak"},"id":"REPLAYGAIN_PEAK","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Sample"},"id":"SAMPLE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ScreenplayBy"},"id":"SCREENPLAY_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"SortWith"},"id":"SORT_WITH","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"SoundEngineer"},"id":"SOUND_ENGINEER","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"SphericalVideoXML","SubDirectory":{"ProcessProc":"Image::ExifTool::XMP::ProcessGSpherical","TagTable":"Image::ExifTool::XMP::Main"}},"id":"SPHERICAL-VIDEO","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Subject"},"id":"SUBJECT","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Subtitle"},"id":"SUBTITLE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Summary"},"id":"SUMMARY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Synopsis"},"id":"SYNOPSIS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"TermsOfUse"},"id":"TERMS_OF_USE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"ThanksTo"},"id":"THANKS_TO","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Title"},"id":"TITLE","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"TMDB"},"id":"TMDB","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"TotalParts"},"id":"TOTAL_PARTS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"Tuning"},"id":"TUNING","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"TVDB"},"id":"TVDB","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"URL"},"id":"URL","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"WrittenBy"},"id":"WRITTEN_BY","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"StatisticsTags"},"id":"_STATISTICS_TAGS","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"StatisticsWritingApp"},"id":"_STATISTICS_WRITING_APP","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Groups":{"ref":"shared00235"},"Name":"StatisticsWritingDateUTC","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{4})-(\\d{2})-/$1:$2:/; $val"},"id":"_STATISTICS_WRITING_DATE_UTC","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}
+{"fields":{"Name":"SphericalVideoXML","SubDirectory":{"ProcessProc":"Image::ExifTool::XMP::ProcessGSpherical","TagTable":"Image::ExifTool::XMP::Main"}},"id":"spherical-video","index":null,"kind":"tag","table":"Image::ExifTool::Matroska::StdTag"}

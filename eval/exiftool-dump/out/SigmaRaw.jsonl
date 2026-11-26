@@ -1,0 +1,78 @@
+{"kind":"table","module":"SigmaRaw","name":"Image::ExifTool::SigmaRaw::Header","special":{"FORMAT":"int32u","GROUPS":{"0":"SigmaRaw","1":"SigmaRaw","2":"Other"},"NOTES":"Information extracted from the header of an X3F file.","PROCESS_PROC":{"code":"&Image::ExifTool::SigmaRaw::ProcessX3FHeader"},"SHORT_NAME":"SigmaRaw::Header","TABLE_NAME":"Image::ExifTool::SigmaRaw::Header","TAG_PREFIX":"SigmaRaw_Header"}}
+{"fields":{"Name":"FileVersion","ValueConv":"($val >> 16) . \".\" . ($val & 0xffff)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Format":"undef[16]","Name":"ImageUniqueID","ValueConv":"unpack(\"H*\", $val)"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Name":"MarkBits","PrintConv":{"BITMASK":{}}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Name":"ImageWidth"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Name":"ImageHeight"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Name":"Rotation"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Format":"string[32]","Name":"WhiteBalance"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"fields":{"Format":"string[32]","Name":"SceneCaptureType"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header"}
+{"kind":"table","module":"SigmaRaw","name":"Image::ExifTool::SigmaRaw::Header4","special":{"FORMAT":"int32u","GROUPS":{"0":"SigmaRaw","1":"SigmaRaw","2":"Other"},"NOTES":"Header information for version 4.0 or greater X3F.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"SigmaRaw::Header4","TABLE_NAME":"Image::ExifTool::SigmaRaw::Header4","TAG_PREFIX":"SigmaRaw_Header4"}}
+{"fields":{"Name":"FileVersion","ValueConv":"($val >> 16) . \".\" . ($val & 0xffff)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header4"}
+{"fields":{"Name":"ImageWidth"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header4"}
+{"fields":{"Name":"ImageHeight"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header4"}
+{"fields":{"Name":"Rotation"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Header4"}
+{"kind":"table","module":"SigmaRaw","name":"Image::ExifTool::SigmaRaw::HeaderExt","special":{"FORMAT":"float","GROUPS":{"0":"SigmaRaw","1":"SigmaRaw","2":"Camera"},"NOTES":"Extended header data found in version 2.1 and 2.2 files","SHORT_NAME":"SigmaRaw::HeaderExt","TABLE_NAME":"Image::ExifTool::SigmaRaw::HeaderExt","TAG_PREFIX":"SigmaRaw_HeaderExt"}}
+{"fields":{"Name":"Unused"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"ExposureAdjust","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"Contrast","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"Shadow","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"Highlight","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"Saturation","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"Sharpness","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"RedAdjust","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"GreenAdjust","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"BlueAdjust","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"fields":{"Name":"X3FillLight","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::HeaderExt"}
+{"kind":"table","module":"SigmaRaw","name":"Image::ExifTool::SigmaRaw::Main","special":{"GROUPS":{"0":"SigmaRaw","1":"SigmaRaw","2":"Other"},"NOTES":"\n        These tags are used in Sigma and Foveon RAW (.X3F) images.  Metadata is also\n        extracted from the JpgFromRaw image if it exists (all models but the SD9 and\n        SD10).  Currently, metadata may only be written to the embedded JpgFromRaw.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::SigmaRaw::ProcessX3FDirectory"},"SHORT_NAME":"SigmaRaw::Main","TABLE_NAME":"Image::ExifTool::SigmaRaw::Main","TAG_PREFIX":"SigmaRaw"}}
+{"fields":{"Name":"Header","SubDirectory":{"TagTable":"Image::ExifTool::SigmaRaw::Header"}},"id":"Header","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Name":"Header4","SubDirectory":{"TagTable":"Image::ExifTool::SigmaRaw::Header4"}},"id":"Header4","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Name":"HeaderExt","SubDirectory":{"TagTable":"Image::ExifTool::SigmaRaw::HeaderExt"}},"id":"HeaderExt","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Binary":1,"Condition":"not $$self{IsJpgFromRaw}","Groups":{"2":"Preview"},"Index":0,"Name":"PreviewImage"},"id":"IMA2","index":0,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Index":1,"Name":"JpgFromRaw"},"id":"IMA2","index":1,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"PreviewImage"},"id":"IMAG","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"fields":{"Name":"Properties","SubDirectory":{"TagTable":"Image::ExifTool::SigmaRaw::Properties"}},"id":"PROP","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Main"}
+{"kind":"table","module":"SigmaRaw","name":"Image::ExifTool::SigmaRaw::Properties","special":{"GROUPS":{"0":"SigmaRaw","1":"SigmaRaw","2":"Camera"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::SigmaRaw::ProcessX3FProperties"},"SHORT_NAME":"SigmaRaw::Properties","TABLE_NAME":"Image::ExifTool::SigmaRaw::Properties","TAG_PREFIX":"SigmaRaw_Properties"}}
+{"fields":{"Name":"MeteringMode","PrintConv":{"8":"8-segment","A":"Average","C":"Center-weighted average"}},"id":"AEMODE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"AFArea"},"id":"AFAREA","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"AFInFocus"},"id":"AFINFOCUS","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FocusMode"},"id":"AFMODE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Groups":{"2":"Image"},"Name":"FNumber","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"APERTURE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ApertureDisplayed"},"id":"AP_DESC","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"BracketShot"},"id":"BRACKET","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"BurstShot"},"id":"BURST","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"Make"},"id":"CAMMANUF","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"Model"},"id":"CAMMODEL","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"CameraName"},"id":"CAMNAME","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"SerialNumber"},"id":"CAMSERIAL","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"SceneCaptureType"},"id":"CM_DESC","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ColorSpace"},"id":"COLORSPACE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"DriveMode","PrintConv":{"10S":"10 s Timer","2S":"2 s Timer","AB":"Auto Bracket","MULTI":"Multi Shot","OFF":"Off","SINGLE":"Single Shot","UP":"Mirror Up"}},"id":"DRIVE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"EvalState"},"id":"EVAL_STATE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Groups":{"2":"Image"},"Name":"ExposureCompensation","PrintConv":"Image::ExifTool::Exif::PrintFraction($val)"},"id":"EXPCOMP","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Groups":{"2":"Image"},"Name":"NetExposureCompensation","PrintConv":"Image::ExifTool::Exif::PrintFraction($val)"},"id":"EXPNET","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Groups":{"2":"Image"},"Name":"IntegrationTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"$val * 1e-6"},"id":"EXPTIME","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FirmwareVersion"},"id":"FIRMVERS","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FlashMode","PrintConv":"ucfirst(lc($val))"},"id":"FLASH","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FlashExpComp"},"id":"FLASHEXPCOMP","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FlashPower"},"id":"FLASHPOWER","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FlashTTLMode"},"id":"FLASHTTLMODE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FlashType"},"id":"FLASHTYPE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FocalLength","PrintConv":"sprintf(\"%.1f mm\",$val)"},"id":"FLENGTH","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"FocalLengthIn35mmFormat","PrintConv":"sprintf(\"%.1f mm\",$val)"},"id":"FLEQ35MM","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"Focus","PrintConv":{"AF":"Auto-focus Locked","M":"Manual","NO LOCK":"Auto-focus Didn't Lock"}},"id":"FOCUS","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ImageBoardID"},"id":"IMAGEBOARDID","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ImagerBoardID"},"id":"IMAGERBOARDID","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"SensorTemperature","PrintConv":"\"$val C\""},"id":"IMAGERTEMP","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ISO"},"id":"ISO","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"LensApertureRange"},"id":"LENSARANGE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"LensFocalRange"},"id":"LENSFRANGE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"LensType","PrintConv":{"ref":"%Image::ExifTool::Sigma::sigmaLensTypes"},"PrintHex":1,"SeparateTable":"Sigma LensType","ValueConv":"$val =~ /^[0-9a-f]+$/i ? hex($val) : $val","ValueConvInv":"$val=~s/\\.\\d+$//; IsInt($val) ? sprintf(\"%x\",$val) : $val"},"id":"LENSMODEL","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ExposureProgram","PrintConv":{"A":"Aperture Priority","M":"Manual","P":"Program","S":"Shutter Priority"}},"id":"PMODE","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"Quality","PrintConv":{"HI":"High","LOW":"Low","MED":"Medium"}},"id":"RESOLUTION","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"SensorID"},"id":"SENSORID","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Groups":{"2":"Image"},"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)"},"id":"SHUTTER","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"ShutterSpeedDisplayed"},"id":"SH_DESC","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val)"},"id":"TIME","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"VersionBF"},"id":"VERSION_BF","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}
+{"fields":{"Name":"WhiteBalance"},"id":"WB_DESC","index":null,"kind":"tag","table":"Image::ExifTool::SigmaRaw::Properties"}

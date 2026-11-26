@@ -1,0 +1,7 @@
+{"kind":"table","module":"Motorola","name":"Image::ExifTool::Motorola::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Motorola","2":"Camera"},"SHORT_NAME":"Motorola::Main","TABLE_NAME":"Image::ExifTool::Motorola::Main","TAG_PREFIX":"Motorola","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"BuildNumber","Writable":"string"},"id":"21760","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}
+{"fields":{"Name":"SerialNumber","Writable":"string"},"id":"21761","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}
+{"fields":{"Condition":"$format eq \"string\"","Name":"CustomRendered","Writable":"string"},"id":"25632","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}
+{"fields":{"Name":"DriveMode","Writable":"string"},"id":"25808","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}
+{"fields":{"Name":"Sensor","Writable":"string"},"id":"26206","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}
+{"fields":{"Name":"ManufactureDate","Writable":"string"},"id":"26373","index":null,"kind":"tag","table":"Image::ExifTool::Motorola::Main"}

@@ -1,0 +1,15 @@
+{"kind":"table","module":"FITS","name":"Image::ExifTool::FITS::Main","special":{"GROUPS":{"0":"FITS","1":"FITS","2":"Image"},"NOTES":"\n        This table lists some standard Flexible Image Transport System (FITS) tags,\n        but ExifTool will extract any other tags found.  See\n        L<https://fits.gsfc.nasa.gov/fits_standard.html> for the specification.\n    ","SHORT_NAME":"FITS::Main","TABLE_NAME":"Image::ExifTool::FITS::Main","TAG_PREFIX":"FITS"}}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"AUTHOR","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Background"},"id":"BACKGRND","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Comment","Notes":"leading spaces are removed if L<PrintConv|../ExifTool.html#PrintConv> is enabled","PrintConv":"$val =~ s/^ +//; $val"},"id":"COMMENT","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate"},"id":"DATE","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ObservationDateEnd"},"id":"DATE-END","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ObservationDate"},"id":"DATE-OBS","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"History","Notes":"leading spaces are removed if L<PrintConv|../ExifTool.html#PrintConv> is enabled","PrintConv":"$val =~ s/^ +//; $val"},"id":"HISTORY","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Instrument"},"id":"INSTRUME","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Object"},"id":"OBJECT","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Observer"},"id":"OBSERVER","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Reference"},"id":"REFERENC","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Name":"Telescope"},"id":"TELESCOP","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ObservationTimeEnd"},"id":"TIME-END","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ObservationTime"},"id":"TIME-OBS","index":null,"kind":"tag","table":"Image::ExifTool::FITS::Main"}

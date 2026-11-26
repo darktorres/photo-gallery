@@ -1,0 +1,29 @@
+{"kind":"table","module":"PostScript","name":"Image::ExifTool::PostScript::Main","special":{"GROUPS":{"0":"PostScript","1":"PostScript","2":"Image"},"PREFERRED":1,"PROCESS_PROC":{"code":"&Image::ExifTool::PostScript::ProcessPS"},"SHORT_NAME":"PostScript::Main","TABLE_NAME":"Image::ExifTool::PostScript::Main","TAG_PREFIX":"PostScript","WRITE_PROC":{"code":"&Image::ExifTool::PostScript::WritePS"}}}
+{"fields":{"Name":"AIBuildNumber"},"id":"AI12_BuildNumber","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AIColorUsage"},"id":"AI3_ColorUsage","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AIFileFormat"},"id":"AI5_FileFormat","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AINumLayers"},"id":"AI5_NumLayers","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AIRulerUnits","PrintConv":{"0":"Inches","1":"Millimeters","2":"Points","3":"Picas","4":"Centimeters","6":"Pixels"}},"id":"AI5_RulerUnits","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AITargetResolution"},"id":"AI5_TargetResolution","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AICreatorVersion"},"id":"AI8_CreatorVersion","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"AIColorModel","PrintConv":{"1":"RGB","2":"CMYK"}},"id":"AI9_ColorModel","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author","Priority":0,"Writable":"string"},"id":"Author","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"EmbeddedFile","Notes":"extracted with L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> option","SubDirectory":{"TagTable":"Image::ExifTool::PostScript::Main"}},"id":"BeginDocument","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"ICC_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"BeginICCProfile","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"PhotoshopData","SubDirectory":{"TagTable":"Image::ExifTool::Photoshop::Main"}},"id":"BeginPhotoshop","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"BoundingBox","Priority":0},"id":"BoundingBox","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Copyright","Priority":0,"Writable":"string"},"id":"Copyright","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","PrintConvInv":"$self->InverseDateTime($val)","Priority":0,"Writable":"string"},"id":"CreationDate","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Creator","Priority":0,"Writable":"string"},"id":"Creator","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"EmbeddedFileName","Notes":"\n            not a real tag ID, but the file name from a BeginDocument statement.\n            Extracted with document metadata when L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> option is used\n        "},"id":"EmbeddedFileName","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"For","Notes":"for whom the document was prepared","Priority":0,"Writable":"string"},"id":"For","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"ImageData","Priority":0},"id":"ImageData","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Keywords","Priority":0,"Writable":"string"},"id":"Keywords","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","PrintConvInv":"$self->InverseDateTime($val)","Priority":0,"Writable":"string"},"id":"ModDate","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Pages","Priority":0},"id":"Pages","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Routing","Priority":0,"Writable":"string"},"id":"Routing","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Subject","Priority":0,"Writable":"string"},"id":"Subject","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"TIFFPreview","Notes":"\n            not a real tag ID, but used to represent the TIFF preview extracted from DOS\n            EPS images\n        "},"id":"TIFFPreview","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Title","Priority":0,"Writable":"string"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"Version","Priority":0,"Writable":"string"},"id":"Version","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"begin_xml_packet","index":null,"kind":"tag","table":"Image::ExifTool::PostScript::Main"}

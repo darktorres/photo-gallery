@@ -1,0 +1,87 @@
+{"kind":"table","module":"TNEF","name":"Image::ExifTool::TNEF::AttachInfo","special":{"GROUPS":{"0":"File","1":"File","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::TNEF::ProcessProps"},"SHORT_NAME":"TNEF::AttachInfo","TABLE_NAME":"Image::ExifTool::TNEF::AttachInfo","TAG_PREFIX":"Attach"}}
+{"fields":{"Name":"AttachSize"},"id":"3616","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachNum"},"id":"3617","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"MappingSignature","Unknown":1},"id":"4088","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachFileName"},"id":"12289","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachBinary"},"id":"14081","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachFileExtension"},"id":"14083","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachMethod","PrintConv":{"0":"Attachment Created","1":"AttachData","2":"AttachLongPathName (recipients with access)","4":"AttachLongPathName","5":"Embedded Message","6":"AttachBinary (object)","7":"AttachLongPathName (using AttachmentProviderType)"}},"id":"14085","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachLongFileName"},"id":"14087","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachPathName"},"id":"14088","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachLongPathName"},"id":"14093","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Name":"AttachMIMEType"},"id":"14094","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"id":"shared00364","kind":"shared","value":{"2":"Time"}}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"ExceptionStartTime","PrintConv":"$self->ConvertDateTime($val)","Unknown":1},"id":"32763","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"ExceptionEndTime","PrintConv":"$self->ConvertDateTime($val)","Unknown":1},"id":"32764","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::AttachInfo"}
+{"kind":"table","module":"TNEF","name":"Image::ExifTool::TNEF::Main","special":{"GROUPS":{"0":"File","1":"File","2":"Other"},"NOTES":"\n        Information extracted from Transport Neutral Encapsulation Format (TNEF)\n        files (eg. winmail.dat).  But note that the exiftool application doesn't\n        process files with a .DAT extension by default when a directory name is\n        given, so in this case either specify the .DAT file(s) by name or add\n        C<-ext+ dat> to the command.\n    ","SHORT_NAME":"TNEF::Main","TABLE_NAME":"Image::ExifTool::TNEF::Main","TAG_PREFIX":"TNEF","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Name":"From"},"id":"32768","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"Subject"},"id":"98308","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"MessageID"},"id":"98313","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"AttachTitle"},"id":"98320","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"MessageBody"},"id":"163852","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"StartDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"196614","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"EndDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"196615","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"SentDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"229381","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"ReceivedDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"229382","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"AttachCreateDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"229394","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"AttachModifyDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"229395","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"MessageModifyDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"229408","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"ResponseRequested"},"id":"262153","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"int16u","Name":"Priority","PrintConv":{"0":"Low","1":"Normal","2":"High"}},"id":"294925","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"OwnerAppointmentID"},"id":"327688","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"Owner"},"id":"393216","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"SentFor"},"id":"393217","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"Delegate"},"id":"393218","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"MessageStatus"},"id":"425991","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Binary":1,"Name":"AttachData"},"id":"425999","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Binary":1,"Name":"AttachMetaFile"},"id":"426001","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"AttachTransportFilename"},"id":"430081","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Binary":1,"Name":"AttachRenderingData"},"id":"430082","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"MessageProps","SubDirectory":{"TagTable":"Image::ExifTool::TNEF::MsgProps"}},"id":"430083","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"RecipientTable"},"id":"430084","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"AttachInfo","SubDirectory":{"TagTable":"Image::ExifTool::TNEF::AttachInfo"}},"id":"430085","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"int32u","Name":"CodePage","PrintConv":{"ref":"%Image::ExifTool::Microsoft::codePage"},"RawConv":"$val=~s/ .*//;$$self{Charset} = $charsetName{\"cp$val\"}; $val","SeparateTable":"Microsoft CodePage"},"id":"430087","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"OriginalMessageClass"},"id":"460288","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Name":"MessageClass"},"id":"491528","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"fields":{"Format":"int8u","Name":"TNEFVersion","PrintConv":"$val =~ tr/ /./; $val","ValueConv":"my @a = reverse split \" \", $val; \"@a\""},"id":"561158","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::Main"}
+{"kind":"table","module":"TNEF","name":"Image::ExifTool::TNEF::MsgProps","special":{"GROUPS":{"0":"File","1":"File","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::TNEF::ProcessProps"},"SHORT_NAME":"TNEF::MsgProps","TABLE_NAME":"Image::ExifTool::TNEF::MsgProps","TAG_PREFIX":"MsgProps","VARS":{"LONG_TAGS":0,"NO_LOOKUP":1}}}
+{"fields":{"Name":"AlternateRecipientAllowed"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"ClientSubmitTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"57","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedByName"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedRepresentingName"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Groups":{"2":"Author"},"Name":"OriginalAuthorName"},"id":"77","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"OriginalDeliveryTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"85","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"Subject"},"id":"112","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedByAddressType"},"id":"117","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedByEmailAddress"},"id":"118","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedRepresentingAddressType"},"id":"119","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReceivedRepresentingEmailAddress"},"id":"120","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"CorrelationKey","RawConv":"$$val"},"id":"127","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"SenderName"},"id":"3098","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"SenderSearchKey","RawConv":"ref $val ? $$val : $val"},"id":"3101","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"MessageDeliveryTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"3590","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"NormalizedSubject"},"id":"3613","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"PrimarySendAccount"},"id":"3624","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"NextSendAccount"},"id":"3625","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"DeliveryOrRenewTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"3842","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Binary":1,"Name":"MessageBodyText"},"id":"4096","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"SyncBodyCount"},"id":"4103","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"SyncBodyData"},"id":"4104","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"MessageBodyRTF","Notes":"RTF message body, decompressed if necessary","RawConv":"$$val","ValueConv":"my $dat = Image::ExifTool::TNEF::DecompressRTF($self,$val); \\$dat"},"id":"4105","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Binary":1,"Name":"MessageBodyHTML"},"id":"4115","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"InternetMessageID"},"id":"4149","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"Hidden"},"id":"4340","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"ReadOnly"},"id":"4342","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"12295","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Format":"date","Groups":{"ref":"shared00364"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"12296","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"InternetCodePage"},"id":"16350","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"LocalUserID"},"id":"16369","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Groups":{"2":"Author"},"Name":"CreatorName"},"id":"16376","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"LastModifierName"},"id":"16378","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"MessageCodePage"},"id":"16381","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"SpamConfidenceLevel"},"id":"16502","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author","Notes":"\n            tag ID's for named properties are constructed from the property namespace\n            GUID with the ending \"-0000-0000-C000-000000000046\" removed, followed by the\n            string or numerical ID in hex, separated by an underscore\n        "},"id":"00020329_Author","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Groups":{"2":"Author"},"Name":"LastAuthor"},"id":"00020329_LastAuthor","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"HomeAddress"},"id":"00062004_0000801A","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"HomeAddressCountryCode"},"id":"00062004_000080DA","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}
+{"fields":{"Name":"AppVersion"},"id":"00062008_00008554","index":null,"kind":"tag","table":"Image::ExifTool::TNEF::MsgProps"}

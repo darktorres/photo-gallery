@@ -1,0 +1,143 @@
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::Background","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::Background","TABLE_NAME":"Image::ExifTool::MNG::Background","TAG_PREFIX":"MNG_Background"}}
+{"fields":{"Format":"int16u[3]","Name":"BackgroundColor"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Background"}
+{"fields":{"Name":"MandatoryBackground","PrintConv":{"0":"Color and Image Advisory","1":"Color Mandatory, Image Advisory","2":"Color Advisory, Image Mandatory","3":"Color and Image Mandatory"}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Background"}
+{"fields":{"Format":"int16u","Name":"BackgroundImageID"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Background"}
+{"fields":{"Name":"BackgroundTiling","PrintConv":{"0":"No","1":"Yes"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Background"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::BasisObject","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::BasisObject","TABLE_NAME":"Image::ExifTool::MNG::BasisObject","TAG_PREFIX":"MNG_BasisObject"}}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"BitDepth"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"ColorType","PrintConv":{"0":"Grayscale","2":"RGB","3":"Palette","4":"Grayscale with Alpha","6":"RGB with Alpha"},"RawConv":"$Image::ExifTool::PNG::colorType = $val"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"Compression","PrintConv":{"0":"Deflate/Inflate"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"Filter","PrintConv":{"0":"Adaptive"}},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"Interlace","PrintConv":{"0":"Noninterlaced","1":"Adam7 Interlace"}},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Format":"int32u","Name":"RedSample"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Format":"int32u","Name":"GreenSample"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Format":"int32u","Name":"BlueSample"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Format":"int32u","Name":"AlphaSample"},"id":"25","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"fields":{"Name":"Viewable"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::MNG::BasisObject"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::ClipObjects","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::ClipObjects","TABLE_NAME":"Image::ExifTool::MNG::ClipObjects","TAG_PREFIX":"MNG_ClipObjects"}}
+{"fields":{"Format":"int16u","Name":"FirstObject"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ClipObjects"}
+{"fields":{"Format":"int16u","Name":"LastObject"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ClipObjects"}
+{"fields":{"Name":"DeltaType","PrintConv":{"0":"Absolute","1":"Relative"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ClipObjects"}
+{"fields":{"Format":"int32u[4]","Name":"ClipBoundary"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ClipObjects"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::CloneObject","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::CloneObject","TABLE_NAME":"Image::ExifTool::MNG::CloneObject","TAG_PREFIX":"MNG_CloneObject"}}
+{"fields":{"Format":"int16u","Name":"SourceID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Format":"int16u","Name":"CloneID"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Name":"CloneType","PrintConv":{"0":"Full","1":"Parital","2":"Renumber object"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Name":"DoNotShow"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Name":"ConcreteFlag"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Name":"LocalDeltaType","PrintConv":{"0":"Absolute","1":"Relative"}},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"fields":{"Format":"int32u[2]","Name":"DeltaXY"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::MNG::CloneObject"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::DefineObject","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::DefineObject","TABLE_NAME":"Image::ExifTool::MNG::DefineObject","TAG_PREFIX":"MNG_DefineObject"}}
+{"fields":{"Format":"int16u","Name":"ObjectID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DefineObject"}
+{"fields":{"Name":"DoNotShow"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DefineObject"}
+{"fields":{"Name":"ConcreteFlag"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DefineObject"}
+{"fields":{"Format":"int32u[2]","Name":"XYLocation"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DefineObject"}
+{"fields":{"Format":"int32u[4]","Name":"ClippingBoundary"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DefineObject"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::DeltaPNGHeader","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::DeltaPNGHeader","TABLE_NAME":"Image::ExifTool::MNG::DeltaPNGHeader","TAG_PREFIX":"MNG_DeltaPNGHeader"}}
+{"fields":{"Format":"int16u","Name":"ObjectID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DeltaPNGHeader"}
+{"fields":{"Name":"ImageType","PrintConv":{"0":"Unspecified","1":"PNG","2":"JNG"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DeltaPNGHeader"}
+{"fields":{"Name":"DeltaType","PrintConv":{"0":"Full Replacement","1":"Pixel Addition","2":"Alpha Addition","3":"Color Addition","4":"Pixel Replacement","5":"Alpha Replacement","6":"Color Replacement","7":"No Change"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DeltaPNGHeader"}
+{"fields":{"Format":"int32u[2]","Name":"BlockSize"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DeltaPNGHeader"}
+{"fields":{"Format":"int32u[2]","Name":"BlockLocation"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MNG::DeltaPNGHeader"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::ExportImage","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::ExportImage","TABLE_NAME":"Image::ExifTool::MNG::ExportImage","TAG_PREFIX":"MNG_ExportImage"}}
+{"fields":{"Format":"int16u","Name":"SnapshotID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ExportImage"}
+{"fields":{"Format":"string","Name":"SnapshotName"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ExportImage"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::FramePriority","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::FramePriority","TABLE_NAME":"Image::ExifTool::MNG::FramePriority","TAG_PREFIX":"MNG_FramePriority"}}
+{"fields":{"Name":"DeltaType","PrintConv":{"0":"Absolute","1":"Relative"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::FramePriority"}
+{"fields":{"Name":"Priority"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::FramePriority"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::JNGHeader","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::JNGHeader","TABLE_NAME":"Image::ExifTool::MNG::JNGHeader","TAG_PREFIX":"MNG_JNGHeader"}}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"ColorType","PrintConv":{"10":"Color","12":"Gray Alpha","14":"Color Alpha","8":"Gray"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"BitDepth"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"Compression","PrintConv":{"8":"Huffman-coded baseline JPEG"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"Interlace","PrintConv":{"0":"Sequential","8":"Progressive"}},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"AlphaBitDepth"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"AlphaCompression","PrintConv":{"0":"MNG Grayscale IDAT","8":"JNG 8-bit Grayscale JDAA"}},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"AlphaFilter","PrintConv":{"0":"Adaptive MNG (N/A for JPEG)"}},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"fields":{"Name":"AlphaInterlace","PrintConv":{"0":"Noninterlaced"}},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::MNG::JNGHeader"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::Loop","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::Loop","TABLE_NAME":"Image::ExifTool::MNG::Loop","TAG_PREFIX":"MNG_Loop"}}
+{"fields":{"Name":"NestLevel"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Loop"}
+{"fields":{"Format":"int32u","Name":"IterationCount"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Loop"}
+{"fields":{"Name":"TerminationCondition","PrintConv":{"0":"Deterministic, not cacheable","1":"Decoder discretion, not cacheable","2":"User discretion, not cacheable","3":"External signal, not cacheable","4":"Deterministic, cacheable","5":"Decoder discretion, cacheable","6":"User discretion, cacheable","7":"External signal, cacheable"}},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Loop"}
+{"fields":{"Format":"int32u[2]","Name":"IterationMinMax"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Loop"}
+{"fields":{"Format":"int32u","Name":"SignalNumber"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Loop"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::MNGHeader","special":{"FORMAT":"int32u","GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::MNGHeader","TABLE_NAME":"Image::ExifTool::MNG::MNGHeader","TAG_PREFIX":"MNG_MNGHeader"}}
+{"fields":{"Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"ImageHeight"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"TicksPerSecond"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"NominalLayerCount"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"NominalFrameCount"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"NominalPlayTime"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"fields":{"Name":"SimplicityProfile","PrintConv":"sprintf(\"0x%.8x\", $val)"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MNGHeader"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::MagnifyObject","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::MagnifyObject","TABLE_NAME":"Image::ExifTool::MNG::MagnifyObject","TAG_PREFIX":"MNG_MagnifyObject"}}
+{"fields":{"Format":"int16u","Name":"FirstObjectID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"LastObjectID"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"id":"shared00222","kind":"shared","value":{"0":"No Magnification","1":"Pixel Replication","2":"Linear Interpolation","3":"Closest Pixel","4":"Color Linear Interpolation and Alpha Closest Pixel","5":"Color Closest Pixel and Alpha Linear Interpolation"}}
+{"fields":{"Name":"XMethod","PrintConv":{"ref":"shared00222"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"XMag"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"YMag"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"LeftMag"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"RightMag"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"TopMag"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Format":"int16u","Name":"BottomMag"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"fields":{"Name":"YMethod","PrintConv":{"ref":"shared00222"}},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MagnifyObject"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::Main","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"NOTES":"\n        This table contains definitions for tags found in MNG and JNG images.  MNG\n        is a superset of PNG and JNG, so a MNG image may contain any of these tags\n        as well as any PNG tags.  Conversely, only some of these tags are valid for\n        JNG images.\n    ","SHORT_NAME":"MNG::Main","TABLE_NAME":"Image::ExifTool::MNG::Main","TAG_PREFIX":"MNG"}}
+{"fields":{"Name":"Background","SubDirectory":{"TagTable":"Image::ExifTool::MNG::Background"}},"id":"BACK","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"BasisObject","SubDirectory":{"TagTable":"Image::ExifTool::MNG::BasisObject"}},"id":"BASI","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"ClipObjects","SubDirectory":{"TagTable":"Image::ExifTool::MNG::ClipObjects"}},"id":"CLIP","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"CloneObject","SubDirectory":{"TagTable":"Image::ExifTool::MNG::CloneObject"}},"id":"CLON","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"DropByKeyword"},"id":"DBYK","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"DefineObject","SubDirectory":{"TagTable":"Image::ExifTool::MNG::DefineObject"}},"id":"DEFI","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"DeltaPNGHeader","SubDirectory":{"TagTable":"Image::ExifTool::MNG::DeltaPNGHeader"}},"id":"DHDR","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"DiscardObjects","ValueConv":"join(\" \",unpack(\"n*\",$val))"},"id":"DISC","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"DropChunks","ValueConv":"join(\" \",$val=~/..../g)"},"id":"DROP","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"Frame"},"id":"FRAM","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"JNGHeader","SubDirectory":{"TagTable":"Image::ExifTool::MNG::JNGHeader"}},"id":"JHDR","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"Loop","SubDirectory":{"TagTable":"Image::ExifTool::MNG::Loop"}},"id":"LOOP","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"MagnifyObject","SubDirectory":{"TagTable":"Image::ExifTool::MNG::MagnifyObject"}},"id":"MAGN","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"MNGHeader","SubDirectory":{"TagTable":"Image::ExifTool::MNG::MNGHeader"}},"id":"MHDR","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"MoveObjects","SubDirectory":{"TagTable":"Image::ExifTool::MNG::MoveObjects"}},"id":"MOVE","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"OrderingRestrictions"},"id":"ORDR","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"PasteImage","SubDirectory":{"TagTable":"Image::ExifTool::MNG::PasteImage"}},"id":"PAST","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"PartialPalette"},"id":"PPLT","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"PromoteParent","SubDirectory":{"TagTable":"Image::ExifTool::MNG::PromoteParent"}},"id":"PROM","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"SaveObjects"},"id":"SAVE","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"SeekPoint","ValueConv":"$val=~s/\\0.*//s; $val"},"id":"SEEK","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"ShowObjects","SubDirectory":{"TagTable":"Image::ExifTool::MNG::ShowObjects"}},"id":"SHOW","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"TerminationAction","SubDirectory":{"TagTable":"Image::ExifTool::MNG::TerminationAction"}},"id":"TERM","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"ExportImage","SubDirectory":{"TagTable":"Image::ExifTool::MNG::ExportImage"}},"id":"eXPi","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"FramePriority","SubDirectory":{"TagTable":"Image::ExifTool::MNG::FramePriority"}},"id":"fPRI","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Binary":1,"Name":"ResourcesNeeded"},"id":"nEED","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"fields":{"Name":"GlobalPixelSize","SubDirectory":{"TagTable":"Image::ExifTool::PNG::PhysicalPixel"}},"id":"pHYg","index":null,"kind":"tag","table":"Image::ExifTool::MNG::Main"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::MoveObjects","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::MoveObjects","TABLE_NAME":"Image::ExifTool::MNG::MoveObjects","TAG_PREFIX":"MNG_MoveObjects"}}
+{"fields":{"Format":"int16u","Name":"FirstObject"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MoveObjects"}
+{"fields":{"Format":"int16u","Name":"LastObject"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MoveObjects"}
+{"fields":{"Name":"DeltaType","PrintConv":{"0":"Absolute","1":"Relative"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MoveObjects"}
+{"fields":{"Format":"int32u[2]","Name":"DeltaXY"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::MNG::MoveObjects"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::PasteImage","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::PasteImage","TABLE_NAME":"Image::ExifTool::MNG::PasteImage","TAG_PREFIX":"MNG_PasteImage"}}
+{"fields":{"Format":"int16u","Name":"DestinationID"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Name":"TargetDeltaType","PrintConv":{"0":"Absolute","1":"Relative"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Format":"int32u[2]","Name":"TargetXY"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Format":"int16u","Name":"SourceID"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Name":"CompositionMode","PrintConv":{"0":"Over","1":"Replace","2":"Under"}},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Name":"Orientation","PrintConv":{"0":"Same as source","2":"Flipped left-right, then up-down","4":"Flipped left-right","6":"Flipped up-down","8":"Tiled"}},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Name":"OffsetOrigin","PrintConv":{"0":"Desination Origin","1":"Target Origin"}},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Format":"int32u[2]","Name":"OffsetXY"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Name":"BoundaryOrigin","PrintConv":{"0":"Desination Origin","1":"Target Origin"}},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"fields":{"Format":"int32u[4]","Name":"PastClippingBoundary"},"id":"25","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PasteImage"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::PromoteParent","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::PromoteParent","TABLE_NAME":"Image::ExifTool::MNG::PromoteParent","TAG_PREFIX":"MNG_PromoteParent"}}
+{"fields":{"Name":"NewColorType"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PromoteParent"}
+{"fields":{"Name":"NewBitDepth"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PromoteParent"}
+{"fields":{"Name":"FillMethod","PrintConv":{"0":"Bit Replication","1":"Zero Fill"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::PromoteParent"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::ShowObjects","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::ShowObjects","TABLE_NAME":"Image::ExifTool::MNG::ShowObjects","TAG_PREFIX":"MNG_ShowObjects"}}
+{"fields":{"Format":"int16u","Name":"FirstObject"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ShowObjects"}
+{"fields":{"Format":"int16u","Name":"LastObject"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ShowObjects"}
+{"fields":{"Name":"ShowMode"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MNG::ShowObjects"}
+{"kind":"table","module":"MNG","name":"Image::ExifTool::MNG::TerminationAction","special":{"GROUPS":{"0":"MNG","1":"MNG","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MNG::TerminationAction","TABLE_NAME":"Image::ExifTool::MNG::TerminationAction","TAG_PREFIX":"MNG_TerminationAction"}}
+{"fields":{"Name":"TerminationAction","PrintConv":{"0":"Show Last Frame","1":"Display Nothing","2":"Show First Frame","3":"Repeat Sequence"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MNG::TerminationAction"}
+{"fields":{"Name":"IterationEndAction","PrintConv":{"0":"Show Last Frame","1":"Display Nothing","2":"Show First Frame"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::MNG::TerminationAction"}
+{"fields":{"Format":"int32u","Name":"Delay"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MNG::TerminationAction"}
+{"fields":{"Format":"int32u","Name":"IterationMax"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::MNG::TerminationAction"}

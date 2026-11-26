@@ -1,0 +1,5 @@
+{"kind":"table","module":"Scalado","name":"Image::ExifTool::Scalado::Main","special":{"FORMAT":"int32s","GROUPS":{"0":"APP4","1":"Scalado","2":"Image"},"NOTES":"\n        Tags extracted from the JPEG APP4 \"SCALADO\" segment found in images from\n        HTC, LG and Samsung phones.  (Presumably written by Scalado mobile software,\n        L<http://www.scalado.com/>.)\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Scalado::ProcessScalado"},"SHORT_NAME":"Scalado::Main","TABLE_NAME":"Image::ExifTool::Scalado::Main","TAG_PREFIX":"Scalado"}}
+{"fields":{"Name":"PreviewImageHeight","ValueConv":"$val ? abs($val) : undef"},"id":"HGHT","index":null,"kind":"tag","table":"Image::ExifTool::Scalado::Main"}
+{"fields":{"Name":"PreviewQuality","ValueConv":"$val ? abs($val) : undef"},"id":"QUAL","index":null,"kind":"tag","table":"Image::ExifTool::Scalado::Main"}
+{"fields":{"Name":"DataLength","Unknown":1},"id":"SPMO","index":null,"kind":"tag","table":"Image::ExifTool::Scalado::Main"}
+{"fields":{"Name":"PreviewImageWidth","ValueConv":"$val ? abs($val) : undef"},"id":"WDTH","index":null,"kind":"tag","table":"Image::ExifTool::Scalado::Main"}

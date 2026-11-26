@@ -1,0 +1,69 @@
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::Audio","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Audio"},"NOTES":"Information extracted from the Flash Audio header.","PROCESS_PROC":{"code":"&Image::ExifTool::FLAC::ProcessBitStream"},"SHORT_NAME":"Flash::Audio","TABLE_NAME":"Image::ExifTool::Flash::Audio","TAG_PREFIX":"Flash_Audio"}}
+{"fields":{"Name":"AudioEncoding","PrintConv":{"0":"PCM-BE (uncompressed)","1":"ADPCM","10":"AAC","11":"Speex","13":"MP3 8-Khz","15":"Device-specific sound","2":"MP3","3":"PCM-LE (uncompressed)","4":"Nellymoser 16kHz Mono","5":"Nellymoser 8kHz Mono","6":"Nellymoser","7":"G.711 A-law logarithmic PCM","8":"G.711 mu-law logarithmic PCM"}},"id":"Bit0-3","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Audio"}
+{"fields":{"Name":"AudioSampleRate","ValueConv":{"0":5512,"1":11025,"2":22050,"3":44100}},"id":"Bit4-5","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Audio"}
+{"fields":{"Name":"AudioBitsPerSample","ValueConv":"8 * ($val + 1)"},"id":"Bit6","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Audio"}
+{"fields":{"Name":"AudioChannels","PrintConv":{"1":"1 (mono)","2":"2 (stereo)"},"ValueConv":"$val + 1"},"id":"Bit7","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Audio"}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::CuePoint","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Video"},"NOTES":"\n        These tag names are added to the CuePoint name to generate complete tag\n        names like \"CuePoint0Name\".\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Flash::ProcessMeta"},"SHORT_NAME":"Flash::CuePoint","TABLE_NAME":"Image::ExifTool::Flash::CuePoint","TAG_PREFIX":"Flash_CuePoint"}}
+{"fields":{"Name":"Name"},"id":"name","index":null,"kind":"tag","table":"Image::ExifTool::Flash::CuePoint"}
+{"fields":{"Name":"Parameter","SubDirectory":{"TagTable":"Image::ExifTool::Flash::Parameter"}},"id":"parameters","index":null,"kind":"tag","table":"Image::ExifTool::Flash::CuePoint"}
+{"fields":{"Name":"Time"},"id":"time","index":null,"kind":"tag","table":"Image::ExifTool::Flash::CuePoint"}
+{"fields":{"Name":"Type"},"id":"type","index":null,"kind":"tag","table":"Image::ExifTool::Flash::CuePoint"}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::FLV","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Other"},"NOTES":"\n        Information is extracted from the following packets in FLV (Flash Video)\n        files.\n    ","SHORT_NAME":"Flash::FLV","TABLE_NAME":"Image::ExifTool::Flash::FLV","TAG_PREFIX":"Flash_FLV"}}
+{"fields":{"BitMask":4,"Name":"Audio","SubDirectory":{"TagTable":"Image::ExifTool::Flash::Audio"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Flash::FLV"}
+{"fields":{"BitMask":1,"Name":"Video","SubDirectory":{"TagTable":"Image::ExifTool::Flash::Video"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Flash::FLV"}
+{"fields":{"Name":"Meta","SubDirectory":{"TagTable":"Image::ExifTool::Flash::Meta"}},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Flash::FLV"}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::Main","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Video"},"NOTES":"\n        The information below is extracted from SWF (Shockwave Flash) files.  Tags\n        with string ID's represent information extracted from the file header.\n    ","SHORT_NAME":"Flash::Main","TABLE_NAME":"Image::ExifTool::Flash::Main","TAG_PREFIX":"Flash","VARS":{"ALPHA_FIRST":1}}}
+{"fields":{"Name":"FlashAttributes","PrintConv":{"BITMASK":{"0":"UseNetwork","3":"ActionScript3","4":"HasMetadata"}}},"id":"69","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"77","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"Compressed","PrintConv":{"0":"False","1":"True"}},"id":"Compressed","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"Duration","Notes":"calculated from FrameRate and FrameCount","PrintConv":"ConvertDuration($val)"},"id":"Duration","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"FlashVersion"},"id":"FlashVersion","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"FrameCount"},"id":"FrameCount","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"FrameRate"},"id":"FrameRate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"ImageHeight"},"id":"ImageHeight","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"fields":{"Name":"ImageWidth"},"id":"ImageWidth","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Main"}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::Meta","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Video"},"NOTES":"\n        Below are a few observed FLV Meta tags, but ExifTool will attempt to extract\n        information from any tag found.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Flash::ProcessMeta"},"SHORT_NAME":"Flash::Meta","TABLE_NAME":"Image::ExifTool::Flash::Meta","TAG_PREFIX":"Flash_Meta"}}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioCodecID"},"id":"audiocodecid","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioBitrate","PrintConv":"ConvertBitrate($val)","ValueConv":"$val * 1000"},"id":"audiodatarate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioDelay"},"id":"audiodelay","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioSampleRate"},"id":"audiosamplerate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioSampleSize"},"id":"audiosamplesize","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioSize"},"id":"audiosize","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"ByteLength"},"id":"bytelength","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"CanSeekToEnd"},"id":"canSeekToEnd","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"CanSeekOnTime"},"id":"canseekontime","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"CreatedBy"},"id":"createdby","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","ValueConv":"$val=~s/\\s+$//; $val"},"id":"creationdate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"CuePoint","SubDirectory":{"TagTable":"Image::ExifTool::Flash::CuePoint"}},"id":"cuePoints","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"DataSize"},"id":"datasize","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"Duration","PrintConv":"ConvertDuration($val)"},"id":"duration","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"FileSizeBytes"},"id":"filesize","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000"},"id":"framerate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"HasAudio"},"id":"hasAudio","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"HasCuePoints"},"id":"hasCuePoints","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"HasKeyFrames"},"id":"hasKeyframes","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"HasMetadata"},"id":"hasMetadata","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"HasVideo"},"id":"hasVideo","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"ImageHeight"},"id":"height","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"HTTPHostHeader"},"id":"httphostheader","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"KeyFramePositions"},"id":"keyframesFilepositions","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"KeyFramesTimes"},"id":"keyframesTimes","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"LastKeyFrameTime"},"id":"lastkeyframetimestamp","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"LastTimeStamp"},"id":"lasttimestamp","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"liveXML","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"MetadataCreator"},"id":"metadatacreator","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"MetadataDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"metadatadate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"Message"},"id":"pmsg","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"URL"},"id":"purl","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"SourceData"},"id":"sourcedata","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"StartTime","PrintConv":"ConvertDuration($val)"},"id":"starttime","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"Stereo"},"id":"stereo","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"TotalDataRate","PrintConv":"int($val + 0.5)","ValueConv":"$val * 1000"},"id":"totaldatarate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"TotalDuration"},"id":"totalduration","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"VideoCodecID"},"id":"videocodecid","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"VideoBitrate","PrintConv":"ConvertBitrate($val)","ValueConv":"$val * 1000"},"id":"videodatarate","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"VideoSize"},"id":"videosize","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"fields":{"Name":"ImageWidth"},"id":"width","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Meta"}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::Parameter","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Video"},"NOTES":"\n        There are no pre-defined parameter tags, but ExifTool will extract any\n        existing parameters, with tag names like \"CuePoint0ParameterXxx\".\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Flash::ProcessMeta"},"SHORT_NAME":"Flash::Parameter","TABLE_NAME":"Image::ExifTool::Flash::Parameter","TAG_PREFIX":"Flash_Parameter"}}
+{"kind":"table","module":"Flash","name":"Image::ExifTool::Flash::Video","special":{"GROUPS":{"0":"Flash","1":"Flash","2":"Video"},"NOTES":"Information extracted from the Flash Video header.","PROCESS_PROC":{"code":"&Image::ExifTool::FLAC::ProcessBitStream"},"SHORT_NAME":"Flash::Video","TABLE_NAME":"Image::ExifTool::Flash::Video","TAG_PREFIX":"Flash_Video"}}
+{"fields":{"Name":"VideoEncoding","PrintConv":{"1":"JPEG","2":"Sorensen H.263","3":"Screen Video","4":"On2 VP6","5":"On2 VP6 Alpha","6":"Screen Video 2","7":"H.264"}},"id":"Bit4-7","index":null,"kind":"tag","table":"Image::ExifTool::Flash::Video"}

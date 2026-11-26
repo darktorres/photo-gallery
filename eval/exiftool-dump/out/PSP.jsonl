@@ -1,0 +1,26 @@
+{"kind":"table","module":"PSP","name":"Image::ExifTool::PSP::Creator","special":{"GROUPS":{"0":"PSP","1":"PSP","2":"Image"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::PSP::ProcessExtData"},"SHORT_NAME":"PSP::Creator","TABLE_NAME":"Image::ExifTool::PSP::Creator","TAG_PREFIX":"PSP_Creator"}}
+{"fields":{"Name":"Title"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Format":"int32u","Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"Image::ExifTool::ConvertUnixTime($val,1)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Format":"int32u","Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"Image::ExifTool::ConvertUnixTime($val,1)"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Name":"Description"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Format":"int32u","Name":"CreatorAppID","PrintConv":{"0":"Unknown","1":"Paint Shop Pro"}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"fields":{"Count":4,"Format":"int8u","Name":"CreatorAppVersion","PrintConv":"$val=~tr/ /./; $val","ValueConv":"join(\" \",reverse split \" \", $val)"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Creator"}
+{"kind":"table","module":"PSP","name":"Image::ExifTool::PSP::Ext","special":{"GROUPS":{"0":"PSP","1":"PSP","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::PSP::ProcessExtData"},"SHORT_NAME":"PSP::Ext","TABLE_NAME":"Image::ExifTool::PSP::Ext","TAG_PREFIX":"PSP_Ext"}}
+{"fields":{"Name":"EXIFInfo","SubDirectory":{"TagTable":"Image::ExifTool::Exif::Main"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Ext"}
+{"kind":"table","module":"PSP","name":"Image::ExifTool::PSP::Image","special":{"GROUPS":{"0":"PSP","1":"PSP","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"PSP::Image","TABLE_NAME":"Image::ExifTool::PSP::Image","TAG_PREFIX":"PSP_Image"}}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"double","Name":"ImageResolution"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int8u","Name":"ResolutionUnit","PrintConv":{"0":"None","1":"inches","2":"cm"}},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int16u","Name":"Compression","PrintConv":{"0":"None","1":"RLE","2":"LZ77","3":"JPEG"}},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int16u","Name":"BitsPerSample"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int16u","Name":"Planes"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"fields":{"Format":"int32u","Name":"NumColors"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Image"}
+{"kind":"table","module":"PSP","name":"Image::ExifTool::PSP::Main","special":{"GROUPS":{"0":"PSP","1":"PSP","2":"Image"},"NOTES":"\n        Tags extracted from Paint Shop Pro images (PSP, PSPIMAGE, PSPFRAME,\n        PSPSHAPE, PSPTUBE and TUB extensions).\n    ","SHORT_NAME":"PSP::Main","TABLE_NAME":"Image::ExifTool::PSP::Main","TAG_PREFIX":"PSP","VARS":{"ALPHA_FIRST":1}}}
+{"fields":{"Condition":"$$self{PSPFileVersion} > 3","Index":0,"Name":"ImageInfo","SubDirectory":{"Start":4,"TagTable":"Image::ExifTool::PSP::Image"}},"id":"0","index":0,"kind":"tag","table":"Image::ExifTool::PSP::Main"}
+{"fields":{"Index":1,"Name":"ImageInfo","SubDirectory":{"TagTable":"Image::ExifTool::PSP::Image"}},"id":"0","index":1,"kind":"tag","table":"Image::ExifTool::PSP::Main"}
+{"fields":{"Name":"CreatorInfo","SubDirectory":{"TagTable":"Image::ExifTool::PSP::Creator"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Main"}
+{"fields":{"Name":"ExtendedInfo","SubDirectory":{"TagTable":"Image::ExifTool::PSP::Ext"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Main"}
+{"fields":{"Name":"FileVersion","PrintConv":"$val=~tr/ /./; $val"},"id":"FileVersion","index":null,"kind":"tag","table":"Image::ExifTool::PSP::Main"}

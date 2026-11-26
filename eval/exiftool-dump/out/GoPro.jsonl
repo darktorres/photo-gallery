@@ -1,0 +1,182 @@
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::GLPI","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Location"},"PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessString"},"SHORT_NAME":"GoPro::GLPI","TABLE_NAME":"Image::ExifTool::GoPro::GLPI","TAG_PREFIX":"GoPro_GLPI","VARS":{"ID_FMT":"dec","ID_LABEL":"Index"}}}
+{"fields":{"Groups":{"2":"Time"},"Name":"GPSDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":{"code":"&Image::ExifTool::GoPro::ConvertSystemTime"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSAltitude","PrintConv":"\"$val m\""},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Hidden":1,"Name":"GLPI_Unknown4","PrintConv":"\"$val m\"","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSSpeedX","PrintConv":"\"$val m/s\""},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSSpeedY","PrintConv":"\"$val m/s\""},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSSpeedZ","PrintConv":"\"$val m/s\""},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"fields":{"Name":"GPSTrack"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GLPI"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::GPMF","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Camera"},"NOTES":"\n        Tags extracted from the GPMF box of GoPro MP4 videos, the APP6 \"GoPro\"\n        segment of JPEG files, and from the \"gpmd\" timed metadata if the\n        L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded> (-ee) option is enabled.  Many more tags exist, but are\n        currently unknown and extracted only with the L<Unknown|../ExifTool.html#Unknown> (-u) option. Please\n        let me know if you discover the meaning of any of these unknown tags. See\n        L<https://github.com/gopro/gpmf-parser> for details about this format.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessGoPro"},"SHORT_NAME":"GoPro::GPMF","TABLE_NAME":"Image::ExifTool::GoPro::GPMF","TAG_PREFIX":"GoPro_GPMF"}}
+{"fields":{"Name":"AudioLevel","Notes":"dBFS"},"id":"AALP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoBoostScore"},"id":"ABSC","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"Accelerometer","Notes":"accelerator readings in m/s2"},"id":"ACCL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoLowLightDuration"},"id":"ALLD","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AudioProtuneOption"},"id":"APTO","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AspectRatioUnwarped"},"id":"ARUW","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AspectRatioWarped"},"id":"ARWA","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"Attitude"},"id":"ATTD","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"AttitudeTarget"},"id":"ATTR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"id":"shared00191","kind":"shared","value":{"N":"No","Y":"Yes"}}
+{"fields":{"Name":"AudioBlueTooth","PrintConv":{"ref":"shared00191"}},"id":"AUBT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AudioSetting"},"id":"AUDO","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoProtune","PrintConv":{"ref":"shared00191"}},"id":"AUPT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"BitrateSetting"},"id":"BITR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"AddUnits":1,"Name":"Controller","PrintConv":"Image::ExifTool::GoPro::AddUnits($self, $val, $tag)","Unknown":1},"id":"BPOS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"CameraSerialNumber"},"id":"CASN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreationDate","PrintConv":"$self->ConvertDateTime($val)","RawConv":"ConvertUnixTime($val)"},"id":"CDAT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"CaptureDelayTimer"},"id":"CDTM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ClassificationDataPresent","PrintConv":{"ref":"shared00191"}},"id":"CLDP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"CameraOrientation","Notes":"quaternions 0-1"},"id":"CORI","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ChapterNumber"},"id":"CPIN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"CoyoteSense"},"id":"CSEN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ControlLevel"},"id":"CTRL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"CoyoteStatus"},"id":"CYTS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DeviceContainer","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GPMF"}},"id":"DEVC","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DurationSetting"},"id":"DUST","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DeviceID","Unknown":1},"id":"DVID","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DeviceName"},"id":"DVNM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DigitalZoomAmount"},"id":"DZMX","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DigitalZoomOn","PrintConv":{"ref":"shared00191"}},"id":"DZOM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DigitalZoom"},"id":"DZST","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ElectronicImageStabilization"},"id":"EISA","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ElectronicStabilizationOn","PrintConv":{"ref":"shared00191"}},"id":"EISE","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Empty","Unknown":1},"id":"EMPT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"AddUnits":1,"Name":"EscapeStatus","PrintConv":"Image::ExifTool::GoPro::AddUnits($self, $val, $tag)","Unknown":1},"id":"ESCS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ExposureType"},"id":"EXPT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"FaceDetected"},"id":"FACE","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"FaceNumbers"},"id":"FCNM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"FirmwareVersion"},"id":"FMWR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"OtherFirmware"},"id":"FWVS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSPos","RawConv":"$val","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GLPI"}},"id":"GLPI","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSRaw","RawConv":"$val","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GPRI"},"Unknown":1},"id":"GPRI","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSInfo","RawConv":"$val","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GPS5"}},"id":"GPS5","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSInfo9","RawConv":"$val","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GPS9"}},"id":"GPS9","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSAltitudeSystem"},"id":"GPSA","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"GPSMeasureMode","PrintConv":{"2":"2-Dimensional Measurement","3":"3-Dimensional Measurement"}},"id":"GPSF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Description":"GPS Horizontal Positioning Error","Name":"GPSHPositioningError","ValueConv":"$val / 100"},"id":"GPSP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Groups":{"2":"Time"},"Name":"GPSDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/^(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})/20$1:$2:$3 $4:$5:/; $val"},"id":"GPSU","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"GravityVector"},"id":"GRAV","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"Gyroscope","Notes":"gyroscope readings in rad/s"},"id":"GYRO","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"HorizonControl"},"id":"HCTL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"HDRVideo","PrintConv":{"ref":"shared00191"}},"id":"HDRV","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"HindsightSettings"},"id":"HSGT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"PredominantHue"},"id":"HUES","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"ImageOrientation","Notes":"quaternions 0-1"},"id":"IORI","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ISOSpeeds"},"id":"ISOE","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"ImageSensorGain"},"id":"ISOG","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"BatteryStatus","RawConv":"$val","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::KBAT"}},"id":"KBAT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"LocalPositionNED"},"id":"LNED","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"HealthLogs"},"id":"LOGS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Magnetometer"},"id":"MAGN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MappingXCoefficients"},"id":"MAPX","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MappingYCoefficients"},"id":"MAPY","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Description":"Camera Model Name","Groups":{"2":"Camera"},"Name":"Model"},"id":"MINF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MediaMode"},"id":"MMOD","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AccelerometerMatrix"},"id":"MTRX","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MediaUniqueID","PrintConv":"\n            my @a = split ' ', $val;\n            $_ = sprintf('%.8x',$_) foreach @a;\n            return join('', @a);\n        "},"id":"MUID","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MicrophoneWet"},"id":"MWET","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MappingXMode"},"id":"MXCF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MappingYMode"},"id":"MYCF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"OrientationDataPresent","PrintConv":{"ref":"shared00191"}},"id":"ORDP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoRotation","PrintConv":{"A":"Auto","D":"Down","U":"Up"}},"id":"OREN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"InputOrientation"},"id":"ORIN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"OutputOrientation"},"id":"ORIO","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"HDRSetting"},"id":"PHDR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ProtuneISOMode"},"id":"PIMD","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoISOMin"},"id":"PIMN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"AutoISOMax"},"id":"PIMX","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"PolynomialCoefficients"},"id":"POLY","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"PhotoResolution"},"id":"PRES","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"LensProjection"},"id":"PRJT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Protune","PrintConv":{"N":"Off","Y":"On"}},"id":"PRTN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ColorMode"},"id":"PTCL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ExposureCompensation"},"id":"PTEV","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Sharpness"},"id":"PTSH","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"WhiteBalance"},"id":"PTWB","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"PowerProfile"},"id":"PWPR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"PolynomialPower"},"id":"PYCF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SpeedRampSetting"},"id":"RAMP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Rate"},"id":"RATE","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Comments","ValueConv":"$self->Decode($val, \"Latin\")"},"id":"RMRK","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ScaleFactor","Unknown":1},"id":"SCAL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ScheduleCapture","PrintConv":{"ref":"shared00191"}},"id":"SCAP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SceneClassification"},"id":"SCEN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"AddUnits":1,"Name":"ScaledPressure","PrintConv":"Image::ExifTool::GoPro::AddUnits($self, $val, $tag)"},"id":"SCPR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ScheduleCaptureTime"},"id":"SCTM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ExposureTimes","PrintConv":"\n            my @a = split ' ', $val;\n            $_ = Image::ExifTool::Exif::PrintExposureTime($_) foreach @a;\n            return join ' ', @a;\n        "},"id":"SHUT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"AddUnits":1,"Name":"ScaledIMU","PrintConv":"Image::ExifTool::GoPro::AddUnits($self, $val, $tag)"},"id":"SIMU","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SIUnits","Unknown":1,"ValueConv":"$self->Decode($val, \"Latin\")"},"id":"SIUN","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SpotMeter","PrintConv":{"ref":"shared00191"}},"id":"SMTR","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SensorReadoutTime"},"id":"SROT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"TimeStamp","ValueConv":"$val / 1e6"},"id":"STMP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"StreamName","Unknown":1,"ValueConv":"$self->Decode($val, \"Latin\")"},"id":"STNM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"NestedSignalStream","SubDirectory":{"TagTable":"Image::ExifTool::GoPro::GPMF"}},"id":"STRM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"SystemTime","RawConv":"\n            my @v = split ' ', $val;\n            if (@v == 2) {\n                my $s = $$self{SystemTimeList};\n                $s or $s = $$self{SystemTimeList} = [ ];\n                push @$s, \\@v;\n            }\n            return $val;\n        "},"id":"SYST","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"TimeOffset"},"id":"TIMO","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"CameraTemperature","PrintConv":"\"$val C\""},"id":"TMPC","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"TotalSamples","Unknown":1},"id":"TSMP","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"StructureType","Unknown":1},"id":"TYPE","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"TimeZone","PrintConv":"Image::ExifTool::TimeZoneString($val)"},"id":"TZON","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"InputUniformity"},"id":"UNIF","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"Units","Unknown":1,"ValueConv":"$self->Decode($val, \"Latin\")"},"id":"UNIT","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"MetadataVersion","PrintConv":"$val =~ tr/ /./; $val"},"id":"VERS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"FieldOfView","PrintConv":{"L":"Linear","S":"Super View","W":"Wide"}},"id":"VFOV","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"VideoFrameRate","PrintConv":"$val=~s( )(/);$val"},"id":"VFPS","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"BinaryData":1,"Name":"VisualFlightRulesHUD"},"id":"VFRH","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"VideoFrameSize","PrintConv":"$val=~s/ /x/;$val"},"id":"VRES","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ColorTemperatures"},"id":"WBAL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"WindProcessing"},"id":"WNDM","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Binary":1,"Name":"WhiteBalanceRGB"},"id":"WRGB","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"LumaAverage"},"id":"YAVG","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"DiagonalFieldOfView"},"id":"ZFOV","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"fields":{"Name":"ZoomScaleNormalization"},"id":"ZMPL","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPMF"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::GPRI","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Location"},"PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessString"},"SHORT_NAME":"GoPro::GPRI","TABLE_NAME":"Image::ExifTool::GoPro::GPRI","TAG_PREFIX":"GoPro_GPRI","VARS":{"ID_FMT":"dec","ID_LABEL":"Index"}}}
+{"fields":{"Groups":{"2":"Time"},"Name":"GPSDateTimeRaw","PrintConv":"$self->ConvertDateTime($val)","ValueConv":{"code":"&Image::ExifTool::GoPro::ConvertSystemTime"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Name":"GPSLatitudeRaw","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Name":"GPSLongitudeRaw","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Name":"GPSAltitudeRaw","PrintConv":"\"$val m\""},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Hidden":1,"Name":"GPRI_Unknown4","PrintConv":"\"$val m\"","Unknown":1},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Hidden":1,"Name":"GPRI_Unknown5","PrintConv":"\"$val m\"","Unknown":1},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Name":"GPSSpeedRaw"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Name":"GPSTrackRaw"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Hidden":1,"Name":"GPRI_Unknown8","Unknown":1},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"fields":{"Hidden":1,"Name":"GPRI_Unknown9","Unknown":1},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPRI"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::GPS5","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Location"},"PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessString"},"SHORT_NAME":"GoPro::GPS5","TABLE_NAME":"Image::ExifTool::GoPro::GPS5","TAG_PREFIX":"GoPro_GPS5","VARS":{"ID_FMT":"dec","ID_LABEL":"Index"}}}
+{"fields":{"Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS5"}
+{"fields":{"Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS5"}
+{"fields":{"Name":"GPSAltitude","PrintConv":"\"$val m\""},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS5"}
+{"fields":{"Name":"GPSSpeed","Notes":"stored as m/s but converted to km/h when extracted","ValueConv":"$val * 3.6"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS5"}
+{"fields":{"Name":"GPSSpeed3D","Notes":"stored as m/s but converted to km/h when extracted","ValueConv":"$val * 3.6"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS5"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::GPS9","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Location"},"PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessString"},"SHORT_NAME":"GoPro::GPS9","TABLE_NAME":"Image::ExifTool::GoPro::GPS9","TAG_PREFIX":"GoPro_GPS9","VARS":{"ID_FMT":"dec","ID_LABEL":"Index"}}}
+{"fields":{"Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSAltitude","PrintConv":"\"$val m\""},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSSpeed","Notes":"stored as m/s but converted to km/h when extracted","ValueConv":"$val * 3.6"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSSpeed3D","Notes":"stored as m/s but converted to km/h when extracted","ValueConv":"$val * 3.6"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Hidden":1,"Name":"GPSDays","RawConv":"$$self{GPSDays} = $val; undef"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Groups":{"2":"Time"},"Name":"GPSDateTime","PrintConv":"$self->ConvertDateTime($val)","RawConv":"ConvertUnixTime(($$self{GPSDays} + 10957) * 24 * 3600 + $val, undef, 3)"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSDOP"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"fields":{"Name":"GPSMeasureMode","PrintConv":{"2":"2-Dimensional Measurement","3":"3-Dimensional Measurement"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::GPS9"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::KBAT","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Camera"},"NOTES":"Battery status information found in GoPro Karma videos.","PROCESS_PROC":{"code":"&Image::ExifTool::GoPro::ProcessString"},"SHORT_NAME":"GoPro::KBAT","TABLE_NAME":"Image::ExifTool::GoPro::KBAT","TAG_PREFIX":"GoPro_KBAT","VARS":{"ID_FMT":"dec","ID_LABEL":"Index"}}}
+{"fields":{"Name":"BatteryCurrent","PrintConv":"\"$val A\""},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryCapacity","PrintConv":"\"$val Ah\""},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown2","PrintConv":"\"$val J\"","Unknown":1},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryTemperature","PrintConv":"\"$val C\""},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryVoltage1","PrintConv":"\"$val V\""},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryVoltage2","PrintConv":"\"$val V\""},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryVoltage3","PrintConv":"\"$val V\""},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryVoltage4","PrintConv":"\"$val V\""},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryTime","PrintConv":"ConvertDuration(int($val + 0.5))"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown9","PrintConv":"\"$val %\"","Unknown":1},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown10","Unknown":1},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown11","Unknown":1},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown12","Unknown":1},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Hidden":1,"Name":"KBAT_Unknown13","Unknown":1},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"fields":{"Name":"BatteryLevel","PrintConv":"\"$val %\""},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::KBAT"}
+{"kind":"table","module":"GoPro","name":"Image::ExifTool::GoPro::fdsc","special":{"GROUPS":{"0":"GoPro","1":"GoPro","2":"Camera"},"NOTES":"\n        Tags extracted from the MP4 \"fdsc\" timed metadata when the L<ExtractEmbedded|../ExifTool.html#ExtractEmbedded>\n        (-ee) option is used.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GoPro::fdsc","TABLE_NAME":"Image::ExifTool::GoPro::fdsc","TAG_PREFIX":"GoPro_fdsc"}}
+{"fields":{"Format":"string[15]","Name":"FirmwareVersion"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::fdsc"}
+{"fields":{"Format":"string[16]","Name":"SerialNumber"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::fdsc"}
+{"fields":{"Format":"string[15]","Name":"OtherSerialNumber"},"id":"87","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::fdsc"}
+{"fields":{"Description":"Camera Model Name","Format":"string[16]","Name":"Model"},"id":"102","index":null,"kind":"tag","table":"Image::ExifTool::GoPro::fdsc"}

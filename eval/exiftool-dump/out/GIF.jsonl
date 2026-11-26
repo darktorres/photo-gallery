@@ -1,0 +1,33 @@
+{"kind":"table","module":"GIF","name":"Image::ExifTool::GIF::Animation","special":{"GROUPS":{"0":"GIF","1":"GIF","2":"Image"},"NOTES":"Information extracted from the \"NETSCAPE2.0\" animation extension.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GIF::Animation","TABLE_NAME":"Image::ExifTool::GIF::Animation","TAG_PREFIX":"GIF_Animation"}}
+{"fields":{"Format":"int16u","Name":"AnimationIterations","PrintConv":"$val ? $val : \"Infinite\""},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Animation"}
+{"kind":"table","module":"GIF","name":"Image::ExifTool::GIF::Extensions","special":{"GROUPS":{"0":"GIF","1":"GIF","2":"Image"},"NOTES":"Tags extracted from GIF89a application extensions.","SHORT_NAME":"GIF::Extensions","TABLE_NAME":"Image::ExifTool::GIF::Extensions","TAG_PREFIX":"GIF_Extensions","WRITE_PROC":{"code":"anon:Image/ExifTool/GIF.pm:67#1"}}}
+{"fields":{"Deletable":1,"Name":"JUMBF","SubDirectory":{"TagTable":"Image::ExifTool::Jpeg2000::Main"}},"id":"C2PA_GIF/","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"fields":{"Name":"ICC_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"},"Writable":2},"id":"ICCRGBG1/012","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"fields":{"Name":"MIDIControl","SubDirectory":{"TagTable":"Image::ExifTool::GIF::MIDIControl"}},"id":"MIDICTRL/Jon","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"fields":{"Binary":1,"Groups":{"2":"Audio"},"Name":"MIDISong"},"id":"MIDISONG/Dm7","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"fields":{"Name":"Animation","SubDirectory":{"TagTable":"Image::ExifTool::GIF::Animation"}},"id":"NETSCAPE/2.0","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"fields":{"IncludeLengthBytes":2,"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"},"Terminator":"<\\?xpacket end=['\"][wr]['\"]\\?>","Writable":2},"id":"XMP Data/XMP","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Extensions"}
+{"kind":"table","module":"GIF","name":"Image::ExifTool::GIF::MIDIControl","special":{"GROUPS":{"0":"GIF","1":"GIF","2":"Audio"},"NOTES":"Information extracted from the MIDI control block extension.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GIF::MIDIControl","TABLE_NAME":"Image::ExifTool::GIF::MIDIControl","TAG_PREFIX":"GIF_MIDIControl"}}
+{"fields":{"Name":"MIDIControlVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"fields":{"Name":"SequenceNumber"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"fields":{"Name":"MelodicPolyphony"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"fields":{"Name":"PercussivePolyphony"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"fields":{"Format":"int16u","Name":"ChannelUsage","PrintConv":"sprintf(\"0x%.4x\", $val)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"fields":{"Format":"int16u","Name":"DelayTime","PrintConv":"$val . \" s\"","ValueConv":"$val / 100"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GIF::MIDIControl"}
+{"kind":"table","module":"GIF","name":"Image::ExifTool::GIF::Main","special":{"GROUPS":{"0":"GIF","1":"GIF","2":"Image"},"NOTES":"\n        This table lists information extracted from GIF images. See\n        L<http://www.w3.org/Graphics/GIF/spec-gif89a.txt> for the official GIF89a\n        specification.\n    ","SHORT_NAME":"GIF::Main","TABLE_NAME":"Image::ExifTool::GIF::Main","TAG_PREFIX":"GIF","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"Comment","Writable":2},"id":"Comment","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"Duration","Notes":"duration of a single animation iteration","PrintConv":"sprintf(\"%.2f s\",$val)"},"id":"Duration","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"Extensions","SubDirectory":{"TagTable":"Image::ExifTool::GIF::Extensions"}},"id":"Extensions","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"FrameCount","Notes":"number of animated images"},"id":"FrameCount","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"GIFVersion"},"id":"GIFVersion","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"ScreenDescriptor","SubDirectory":{"TagTable":"Image::ExifTool::GIF::Screen"}},"id":"ScreenDescriptor","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"Text","Notes":"text displayed in image"},"id":"Text","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"fields":{"Name":"TransparentColor"},"id":"TransparentColor","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Main"}
+{"kind":"table","module":"GIF","name":"Image::ExifTool::GIF::Screen","special":{"GROUPS":{"0":"GIF","1":"GIF","2":"Image"},"NOTES":"Information extracted from the GIF logical screen descriptor.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GIF::Screen","TABLE_NAME":"Image::ExifTool::GIF::Screen","TAG_PREFIX":"GIF_Screen"}}
+{"fields":{"Format":"int16u","Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"Format":"int16u","Name":"ImageHeight"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"BitShift":7,"Mask":128,"Name":"HasColorMap","PrintConv":{"0":"No","1":"Yes"}},"id":"4.1","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"BitShift":4,"Mask":112,"Name":"ColorResolutionDepth","ValueConv":"$val + 1"},"id":"4.2","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"BitShift":0,"Mask":7,"Name":"BitsPerPixel","ValueConv":"$val + 1"},"id":"4.3","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"Name":"BackgroundColor"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}
+{"fields":{"Name":"PixelAspectRatio","RawConv":"$val ? $val : undef","ValueConv":"($val + 15) / 64"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::GIF::Screen"}

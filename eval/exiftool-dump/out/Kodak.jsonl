@@ -1,0 +1,1109 @@
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Borders","special":{"GROUPS":{"0":"Meta","1":"KodakBordersIFD","2":"Image"},"SHORT_NAME":"Kodak::Borders","TABLE_NAME":"Image::ExifTool::Kodak::Borders","TAG_PREFIX":"Kodak_Borders","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"BordersVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"fields":{"Name":"BorderName","PrintConv":"Image::ExifTool::Exif::ConvertExifText($self,$val,\"BorderName\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"fields":{"Name":"BorderID"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"fields":{"Name":"BorderLocation"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"fields":{"Name":"BorderType"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"fields":{"Name":"WatermarkType"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Borders"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::CameraInfo","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"These tags are used by the  P712, P850 and P880.","SHORT_NAME":"Kodak::CameraInfo","TABLE_NAME":"Image::ExifTool::Kodak::CameraInfo","TAG_PREFIX":"Kodak_CameraInfo","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"SensorWidth","Notes":"effective sensor size","Writable":"int16u"},"id":"63744","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"SensorHeight","Writable":"int16u"},"id":"63745","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"BayerPattern","Writable":"string"},"id":"63746","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"SensorFullWidth","Notes":"includes black border?","Writable":"int16u"},"id":"63747","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"SensorFullHeight","Writable":"int16u"},"id":"63748","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"KodakImageWidth","Writable":"int16u"},"id":"63751","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"KodakImageHeight","Writable":"int16u"},"id":"63752","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"KodakInfoType","Writable":"string"},"id":"64000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"SerialNumber","Writable":"string"},"id":"64004","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"FNumber","Priority":0,"ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int16u"},"id":"64772","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","Priority":0,"ValueConv":"$val / 1e6","ValueConvInv":"$val * 1e6","Writable":"int32u"},"id":"64773","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"fields":{"Name":"ISO","Priority":0,"Writable":"int16u"},"id":"64774","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::CameraInfo"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::DcEM","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Video"},"SHORT_NAME":"Kodak::DcEM","TABLE_NAME":"Image::ExifTool::Kodak::DcEM","TAG_PREFIX":"Kodak_DcEM"}}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::DcMD","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Video"},"NOTES":"Metadata directory found in MOV and MP4 videos from some Kodak cameras.","SHORT_NAME":"Kodak::DcMD","TABLE_NAME":"Image::ExifTool::Kodak::DcMD","TAG_PREFIX":"Kodak_DcMD"}}
+{"fields":{"Name":"CameraByteOrder","PrintConv":{"II":"Little-endian (Intel, II)","MM":"Big-endian (Motorola, MM)"}},"id":"CMbo","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::DcMD"}
+{"fields":{"Name":"CameraByteOrder","PrintConv":{"II":"Little-endian (Intel, II)","MM":"Big-endian (Motorola, MM)"}},"id":"Cmbo","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::DcMD"}
+{"fields":{"Name":"DcEM","SubDirectory":{"TagTable":"Image::ExifTool::Kodak::DcEM"}},"id":"DcEM","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::DcMD"}
+{"fields":{"Name":"DcME","SubDirectory":{"TagTable":"Image::ExifTool::Kodak::DcME"}},"id":"DcME","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::DcMD"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::DcME","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Video"},"SHORT_NAME":"Kodak::DcME","TABLE_NAME":"Image::ExifTool::Kodak::DcME","TAG_PREFIX":"Kodak_DcME"}}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Free","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Video"},"NOTES":"\n        Information stored in the \"free\" atom of Kodak MP4 videos. (VERY bad form\n        for Kodak to store useful information in an atom intended for unused space!)\n    ","SHORT_NAME":"Kodak::Free","TABLE_NAME":"Image::ExifTool::Kodak::Free","TAG_PREFIX":"Kodak_Free"}}
+{"fields":{"Format":"int16s","Name":"ApertureValue","PrintConv":"sprintf(\"%.1f\",$val)","ValueConv":"2 ** ($val / 2000)"},"id":"AprV","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int32s","Name":"BrightnessValue","ValueConv":"$val / 1000"},"id":"BrtV","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16s","Name":"ExposureCompensation","PrintConv":"Image::ExifTool::Exif::PrintFraction($val)","ValueConv":"$val / 3"},"id":"Expc","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"rational32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)"},"id":"Expo","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16u","Groups":{"2":"Camera"},"Name":"FocalLengthIn35mmFormat","PrintConv":"\"$val mm\""},"id":"FL35","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16u","Name":"FNumber","PrintConv":"Image::ExifTool::Exif::PrintFNumber($val)","ValueConv":"$val / 100"},"id":"FNum","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16u","Groups":{"2":"Camera"},"Name":"FocalLength","PrintConv":"sprintf(\"%.1f mm\",$val)"},"id":"FoLn","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"ISOS","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Name":"FirmwareVersion","ValueConv":"substr($val, 2, unpack(\"C\",$val))"},"id":"SVer","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Name":"PreviewInfo","SubDirectory":{"TagTable":"Image::ExifTool::Kodak::Scrn"}},"id":"Scrn","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Name":"SerialNumber","ValueConv":"substr($val, 2, unpack(\"C\",$val))"},"id":"Seri","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"fields":{"Format":"int16s","Name":"ShutterSpeedValue","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"abs($val)<100 ? 2**(-$val/3) : 0"},"id":"StSV","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Free"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::IFD","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"KodakIFD","2":"Image"},"NOTES":"\n        These tags are found in a separate IFD of JPEG, TIFF, DCR and KDC images\n        from some older Kodak models such as the DC50, DC120, DCS760C, DCS Pro 14N,\n        14nx, SLR/n, Pro Back and Canon EOS D2000.\n    ","SET_GROUP1":1,"SHORT_NAME":"Kodak::IFD","TABLE_NAME":"Image::ExifTool::Kodak::IFD","TAG_PREFIX":"Kodak_IFD","WRITE_GROUP":"KodakIFD","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Count":4,"Name":"KodakVersion","PrintConv":"$val =~ tr/ /./; $val","PrintConvInv":"$val =~ tr/./ /; $val","Writable":"int8u"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnknownEV","Unknown":1,"Writable":"rational64u"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureValue","Writable":"rational64u"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OriginalFileName","Writable":"string"},"id":"1001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KodakTag","Writable":"int32u"},"id":"1002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SensorLeftBorder","Writable":"int16u"},"id":"1003","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SensorTopBorder","Writable":"int16u"},"id":"1004","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SensorImageWidth","Writable":"int16u"},"id":"1005","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SensorImageHeight","Writable":"int16u"},"id":"1006","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackLevelTop","Writable":"int16u"},"id":"1007","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackLevelBottom","Writable":"int16u"},"id":"1008","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TextualInfo","SubDirectory":{"TagTable":"Image::ExifTool::Kodak::TextualInfo"}},"id":"1009","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMode","Priority":0,"Unknown":1,"Writable":"int16u"},"id":"1010","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashCompensation","Writable":"rational64s"},"id":"1011","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WindMode","Unknown":1,"Writable":"int16u"},"id":"1012","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FocusMode","Priority":0,"Unknown":1,"Writable":"int16u"},"id":"1013","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MinAperture","Writable":"rational64u"},"id":"1016","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MaxAperture","Writable":"rational64u"},"id":"1017","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WhiteBalanceMode","Unknown":1,"Writable":"int16u"},"id":"1018","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WhiteBalanceDetected","Unknown":1,"Writable":"int16u"},"id":"1019","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WhiteBalance","PrintConv":{},"Priority":0,"Writable":"int16u"},"id":"1020","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Condition":"$count == 72","Index":0,"Name":"Processing","SubDirectory":{"TagTable":"Image::ExifTool::Kodak::Processing"}},"id":"1021","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Index":1,"Name":"ProcessingParameters"},"id":"1021","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageAbsoluteX","Writable":"int16s"},"id":"1022","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageAbsoluteY","Writable":"int16s"},"id":"1023","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ApplicationKeyString","Writable":"string"},"id":"1024","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Time","Writable":"string"},"id":"1025","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSString","Writable":"string"},"id":"1026","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"EventLogCapture","Unknown":1},"id":"1027","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ComponentTable","Unknown":1},"id":"1028","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CustomIlluminant","Unknown":1,"Writable":"int16u"},"id":"1029","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Condition":"$count == 1","Groups":{"2":"Camera"},"Index":0,"Name":"CameraTemperature","PrintConv":"\"$val C\"","PrintConvInv":"$val=~s/ ?C//; $val","Writable":"rational64s"},"id":"1030","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Index":1,"Name":"CameraTemperature"},"id":"1030","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"AdapterVoltage","Writable":"rational64u"},"id":"1031","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"BatteryVoltage","Writable":"rational64u"},"id":"1032","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacVoltages"},"id":"1033","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"IlluminantDetectorData","Unknown":1},"id":"1034","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PixelClockFrequency","Writable":"int32u"},"id":"1035","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"CenterPixel","Writable":"int16u"},"id":"1036","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BurstCount","Writable":"int16u"},"id":"1037","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackLevelRough","Writable":"int16u"},"id":"1038","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"OffsetMapHorizontal","Unknown":1},"id":"1039","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"OffsetMapVertical","Unknown":1},"id":"1040","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"Histogram","Unknown":1},"id":"1041","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"VerticalClockOverlaps","Writable":"int16u"},"id":"1042","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SensorTemperature"},"id":"1043","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"XilinxVersion","Writable":"string"},"id":"1044","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FirmwareVersion","Writable":"int32u"},"id":"1045","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackLevelRoughAfter","Writable":"int16u"},"id":"1046","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BrightRowsTop"},"id":"1047","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EventLogProcess"},"id":"1048","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacVoltagesFlush"},"id":"1049","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashUsed"},"id":"1050","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashType"},"id":"1051","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SelfTimer"},"id":"1052","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"AFMode"},"id":"1053","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LensType"},"id":"1054","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageCropX","Writable":"int16s"},"id":"1055","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageCropY","Writable":"int16s"},"id":"1056","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"AdjustedTbnImageWidth"},"id":"1057","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"AdjustedTbnImageHeight"},"id":"1058","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IntegrationTime","Writable":"int32u"},"id":"1059","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BracketingMode"},"id":"1060","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BracketingStep"},"id":"1061","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BracketingCounter"},"id":"1062","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HuffmanTableLength"},"id":"1070","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HuffmanTableValue"},"id":"1071","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MainBoardVersion","Writable":"int32u"},"id":"1080","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerBoardVersion","Writable":"int32u"},"id":"1081","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FocusEdgeMap"},"id":"1100","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IdleTiming"},"id":"1510","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlushTiming"},"id":"1511","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IntegrateTiming"},"id":"1512","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RegisterReadTiming"},"id":"1513","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FirstLineTransferTiming"},"id":"1514","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ShiftTiming"},"id":"1515","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NormalLineTransferTiming"},"id":"1516","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TestTransferTiming"},"id":"1517","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MinimumFlushRows"},"id":"1530","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerPowerOnDelayMsec","Writable":"int32u"},"id":"1533","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerInitialTimingCode"},"id":"1534","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerLogicProgram"},"id":"1535","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerBiasSettlingDelayMsec","Writable":"int32u"},"id":"1536","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IdleSequence"},"id":"1540","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FirstFlushSequence"},"id":"1541","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinalFlushSequence"},"id":"1542","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SampleBlackSequence"},"id":"1543","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TransferSequence"},"id":"1544","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacCountsPerVolt"},"id":"1550","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackDacChannel"},"id":"1551","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackAdCountsPerDacVolt"},"id":"1552","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackTarget"},"id":"1553","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackDacSettlingMsec"},"id":"1554","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"StandardMatrixDaylight","Writable":"rational64s"},"id":"2000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"StandardMatrixTungsten","Writable":"rational64s"},"id":"2001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"StandardMatrixFluorescent","Writable":"rational64s"},"id":"2002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"StandardMatrixFlash","Writable":"rational64s"},"id":"2003","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"StandardMatrixCustom","Writable":"rational64s"},"id":"2004","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"DeviantMatrixDaylight","Writable":"rational64s"},"id":"2010","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"DeviantMatrixTungsten","Writable":"rational64s"},"id":"2011","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"DeviantMatrixFluorescent","Writable":"rational64s"},"id":"2012","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"DeviantMatrixFlash","Writable":"rational64s"},"id":"2013","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"DeviantMatrixCustom","Writable":"rational64s"},"id":"2014","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixDaylight","Writable":"rational64s"},"id":"2020","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixTungsten","Writable":"rational64s"},"id":"2021","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixFluorescent","Writable":"rational64s"},"id":"2022","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixFlash","Writable":"rational64s"},"id":"2023","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixCustom","Writable":"rational64s"},"id":"2024","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"UniqueMatrixAuto","Writable":"rational64s"},"id":"2025","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"StandardWhiteDaylight","Writable":"rational64s"},"id":"2100","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"StandardWhiteTungsten","Writable":"rational64s"},"id":"2101","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"StandardWhiteFluorescent","Writable":"rational64s"},"id":"2102","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"StandardWhiteFlash","Writable":"rational64s"},"id":"2103","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"StandardWhiteCustom","Writable":"rational64s"},"id":"2104","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"DeviantWhiteDaylight","Writable":"rational64s"},"id":"2110","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"DeviantWhiteTungsten","Writable":"rational64s"},"id":"2111","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"DeviantWhiteFluorescent","Writable":"rational64s"},"id":"2112","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"DeviantWhiteFlash","Writable":"rational64s"},"id":"2113","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"DeviantWhiteCustom","Writable":"rational64s"},"id":"2114","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ColorTemperature","Writable":"int16u"},"id":"2118","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsAsShot"},"id":"2119","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsDaylight"},"id":"2120","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsTungsten"},"id":"2121","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsFluorescent"},"id":"2122","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsFlash"},"id":"2123","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsCustom"},"id":"2124","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"WB_RGBLevelsAuto"},"id":"2125","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"WB_RGBMulDaylight","Writable":"rational64u"},"id":"2130","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"WB_RGBMulTungsten","Writable":"rational64u"},"id":"2131","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"WB_RGBMulFluorescent","Writable":"rational64u"},"id":"2132","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"WB_RGBMulFlash","Writable":"rational64u"},"id":"2133","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"WB_RGBCoeffsDaylight"},"id":"2140","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"WB_RGBCoeffsTungsten"},"id":"2141","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"WB_RGBCoeffsFluorescent"},"id":"2142","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"WB_RGBCoeffsFlash"},"id":"2143","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureGainDaylight","Writable":"rational64s"},"id":"2200","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureGainTungsten","Writable":"rational64s"},"id":"2201","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureGainFluorescent","Writable":"rational64s"},"id":"2202","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureGainFlash","Writable":"rational64s"},"id":"2203","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureGainCustom","Writable":"rational64s"},"id":"2204","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"AnalogISOTable","Writable":"rational64u"},"id":"2205","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"AnalogCaptureISO","Writable":"int32u"},"id":"2206","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ISOCalibrationGain","Writable":"rational64u"},"id":"2207","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ISOCalibrationGainTable"},"id":"2208","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureHeadroomFactor"},"id":"2209","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LinearitySplineTags"},"id":"2219","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"MonitorMatrix","Writable":"rational64s"},"id":"2300","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TonScaleTable"},"id":"2301","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Gamma","Writable":"rational64u"},"id":"2302","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LogLinTable"},"id":"2303","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LinLogTable"},"id":"2304","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"GammaTable"},"id":"2305","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LogScale","Writable":"rational64u"},"id":"2306","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BaseISO","Writable":"rational64u"},"id":"2307","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LinLogCoring","Writable":"int16u"},"id":"2308","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"PatternGainConversionTable"},"id":"2309","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DefectCount"},"id":"2310","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"DefectList"},"id":"2311","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"DefectListPacked"},"id":"2312","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageSpace","Writable":"int16u"},"id":"2313","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ThumbnailCompressionTable"},"id":"2314","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ThumbnailExpansionTable"},"id":"2315","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ImageCompressionTable"},"id":"2316","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ImageExpansionTable"},"id":"2317","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EighteenPercentPoint"},"id":"2318","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DefectIsoCode","Writable":"int16u"},"id":"2319","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BaseISODaylight","Writable":"rational64u"},"id":"2320","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BaseISOTungsten","Writable":"rational64u"},"id":"2321","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BaseISOFluorescent","Writable":"rational64u"},"id":"2322","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BaseISOFlash","Writable":"rational64u"},"id":"2323","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MatrixSelectThreshold","Writable":"int16s"},"id":"2330","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MatrixSelectK","Writable":"rational64u"},"id":"2331","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"IlluminantDetectTable"},"id":"2332","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RGTable"},"id":"2333","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MatrixSelectThreshold1","Writable":"int16s"},"id":"2334","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MatrixSelectThreshold2","Writable":"int16s"},"id":"2335","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PortraitMatrix"},"id":"2340","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PortraitToneScaleTable"},"id":"2341","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EnableSharpening","Writable":"int16u"},"id":"2350","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":25,"Name":"SharpeningKernel","Writable":"int16s"},"id":"2351","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeMapSlope","Writable":"int16u"},"id":"2352","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeMapX1","Writable":"int16u"},"id":"2353","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeMapX2","Writable":"int16u"},"id":"2354","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"KernelDenominators","Writable":"int16u"},"id":"2355","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeMapX3","Writable":"int16u"},"id":"2356","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeMapX4","Writable":"int16u"},"id":"2357","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SharpenForThumbnail"},"id":"2358","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EdgeSpline"},"id":"2359","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy2Hor"},"id":"2360","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy2Ver"},"id":"2361","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy4Hor"},"id":"2362","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy4Ver"},"id":"2363","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy3Hor"},"id":"2364","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy3Ver"},"id":"2365","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy6Hor"},"id":"2366","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy6Ver"},"id":"2367","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy2Hor3MPdcr"},"id":"2368","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DownSampleBy2Ver3MPdcr"},"id":"2369","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ThumbnailResizeRatio"},"id":"2370","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":4,"Name":"AtCaptureUserCrop","Writable":"int32u"},"id":"2371","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageResolution","Writable":"int32u"},"id":"2372","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageResolutionJpg","Writable":"int32u"},"id":"2373","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersLow"},"id":"2380","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersMed"},"id":"2381","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersHigh"},"id":"2382","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersHost"},"id":"2383","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"EdgeSplineLow"},"id":"2384","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"EdgeSplineMed"},"id":"2385","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"EdgeSplineHigh"},"id":"2386","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersHost6MP"},"id":"2387","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"USMParametersHost3MP"},"id":"2388","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternImagerWidth","Writable":"int16u"},"id":"2400","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternImagerHeight","Writable":"int16u"},"id":"2401","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternAreaWidth","Writable":"int16u"},"id":"2402","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternAreaHeight","Writable":"int16u"},"id":"2403","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"PatternCorrectionGains"},"id":"2404","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCorrectionOffsets"},"id":"2405","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternX","Writable":"int16u"},"id":"2406","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternY","Writable":"int16u"},"id":"2407","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"PatternCorrectionFactors"},"id":"2408","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCorrectionFactorScale","Writable":"int16u"},"id":"2409","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCropRows1","Writable":"int16u"},"id":"2410","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCropRows2","Writable":"int16u"},"id":"2411","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCropCols1","Writable":"int16u"},"id":"2412","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PatternCropCols2","Writable":"int16u"},"id":"2413","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PixelCorrectionGains"},"id":"2414","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"StitchRows"},"id":"2415","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"StitchColumns"},"id":"2416","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PixelCorrectionScale","Writable":"int16u"},"id":"2417","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PixelCorrectionOffset","Writable":"int16u"},"id":"2418","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LensTableIndex"},"id":"2440","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DiffTileGains602832"},"id":"2450","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DiffTileGains24t852822"},"id":"2451","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TileGainDeterminationTable"},"id":"2460","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NemoBlurKernel"},"id":"2461","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NemoTileSize"},"id":"2462","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NemoGainFactors"},"id":"2463","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NemoDarkLimit"},"id":"2464","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NemoHighlight12Limit"},"id":"2465","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerFileProductionLevel","Writable":"int16u"},"id":"2500","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerFileDateCreated","Writable":"int32u"},"id":"2501","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CalibrationVersion","Writable":"string"},"id":"2502","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerFileTagsVersionStandard","Writable":"int16u"},"id":"2503","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IFCameraModel","Writable":"string"},"id":"2504","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CalibrationHistory","Writable":"string"},"id":"2505","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"CalibrationLog"},"id":"2506","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"SensorSerialNumber","Writable":"string"},"id":"2510","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DefectConcealArtCorrectThres"},"id":"2550","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SglColDCACThres1"},"id":"2551","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SglColDCACThres2"},"id":"2552","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SglColDCACTHres3"},"id":"2553","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DblColDCACThres1"},"id":"2561","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DblColDCACThres2"},"id":"2562","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"DefectConcealThresTable"},"id":"2570","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MonoUniqueMatrix"},"id":"2600","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MonoMonitorMatrix"},"id":"2601","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MonoToneScaleTable"},"id":"2602","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenInitialScaling"},"id":"2650","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenInitialRows"},"id":"2651","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenInitialColumns"},"id":"2652","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":4,"Name":"OmenInitialIPFStrength","Writable":"int32s"},"id":"2653","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":4,"Name":"OmenEarlyStrength","Writable":"int32s"},"id":"2654","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":4,"Name":"OmenAutoStrength","Writable":"int32s"},"id":"2655","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":4,"Name":"OmenAtCaptureStrength","Writable":"int32s"},"id":"2656","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenAtCaptureMode"},"id":"2657","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenFocalLengthLimit","Writable":"int16s"},"id":"2658","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenSurfaceIndex","Writable":"int16s"},"id":"2660","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenPercentToRationalLimitsRed"},"id":"2661","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenPercentToRationalLimitsGoR"},"id":"2662","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenPercentToRationalLimitsBlue"},"id":"2663","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenPercentToRationalLimitsGoB"},"id":"2664","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenEarlyGoBSurface"},"id":"2670","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenEarlyGoBRows"},"id":"2671","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenEarlyGoBColumns"},"id":"2672","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenSmoothingKernel"},"id":"2675","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenGradientOffset"},"id":"2676","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenGradientKernel"},"id":"2677","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenGradientKernelTaps"},"id":"2678","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenRatioClipFactors"},"id":"2679","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenRatioExclusionFactors"},"id":"2680","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenGradientExclusionLimits"},"id":"2681","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenROICoordinates"},"id":"2682","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenROICoefficients"},"id":"2683","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenRangeWeighting"},"id":"2684","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OmenMeanToStrength"},"id":"2685","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FactoryWhiteGainsDaylight"},"id":"3000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FactoryWhiteOffsetsDaylight"},"id":"3001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacGainsCoarse"},"id":"3002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacGainsFine"},"id":"3003","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DigitalExposureGains"},"id":"3004","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DigitalExposureBiases"},"id":"3005","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackClamp"},"id":"3006","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ChannelCoarseGainAdjust"},"id":"3007","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackClampOffset"},"id":"3008","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMPixelThresholdFactor"},"id":"3060","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMWindowThresholdFactor"},"id":"3061","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMTrimFraction"},"id":"3062","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMSmoothRejThresh"},"id":"3063","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMFillRejThresh"},"id":"3064","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMWsize"},"id":"3065","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMErodeRadius"},"id":"3066","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMNumPatches"},"id":"3067","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMNoiseScale"},"id":"3068","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BrightDefectThreshold"},"id":"3070","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BrightDefectIntegrationMS"},"id":"3071","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BrightDefectIsoCode"},"id":"3072","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TopDarkRow1"},"id":"3075","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TopDarkRow2"},"id":"3076","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BottomDarkRow1"},"id":"3077","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BottomDarkRow2"},"id":"3078","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LeftDarkCol1"},"id":"3079","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LeftDarkCol2"},"id":"3080","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RightDarkCol1"},"id":"3081","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RightDarkCol2"},"id":"3082","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HMPixThresh"},"id":"3083","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HMColThresh"},"id":"3084","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HMWsize"},"id":"3085","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HMColRejThresh"},"id":"3086","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMPixThresh"},"id":"3087","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMColThresh"},"id":"3088","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMNbands"},"id":"3089","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMColDropThresh"},"id":"3090","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMPatchResLimit"},"id":"3091","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MapScale"},"id":"3092","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Klut"},"id":"3100","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RimNonlinearity"},"id":"3101","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InverseRimNonlinearity"},"id":"3102","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RembrandtToneScale"},"id":"3103","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RimToNifColorTransform"},"id":"3104","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RimToNifScaleFactor"},"id":"3105","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NifNonlinearity"},"id":"3106","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBALogTransform"},"id":"3107","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InverseSBALogTransform"},"id":"3108","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBABlack","Writable":"int16u"},"id":"3109","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAGray","Writable":"int16u"},"id":"3110","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAWhite","Writable":"int16u"},"id":"3111","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"GaussianWeights"},"id":"3112","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"SfsBoundary"},"id":"3113","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CoringTableBest"},"id":"3114","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CoringTableBetter"},"id":"3115","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CoringTableGood"},"id":"3116","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureReferenceGain"},"id":"3117","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExposureReferenceOffset"},"id":"3118","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBARedBalanceLut"},"id":"3119","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAGreenBalanceLut"},"id":"3120","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBABlueBalanceLut"},"id":"3121","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBANeutralBAL","Writable":"int32s"},"id":"3122","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAGreenMagentaBAL","Writable":"int32s"},"id":"3123","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAIlluminantBAL","Writable":"int32s"},"id":"3124","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAAnalysisComplete","Writable":"int8u"},"id":"3125","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"JPEGQTableBest"},"id":"3126","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"JPEGQTableBetter"},"id":"3127","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"JPEGQTableGood"},"id":"3128","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RembrandtPortraitToneScale"},"id":"3129","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RembrandtConsumerToneScale"},"id":"3130","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAGreenThreshold1"},"id":"3131","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAGreenThreshold2"},"id":"3132","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableLarge50Pct"},"id":"3133","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableLarge67Pct"},"id":"3134","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableLarge100Pct"},"id":"3135","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableMedium50Pct"},"id":"3136","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableMedium67Pct"},"id":"3137","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableMedium100Pct"},"id":"3138","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableSmall50Pct"},"id":"3139","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableSmall67Pct"},"id":"3140","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"QTableSmall100Pct"},"id":"3141","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAHighGray","Writable":"int16u"},"id":"3142","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBALowGray","Writable":"int16u"},"id":"3143","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureLook","Writable":"int16u"},"id":"3144","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAIllOffset","Writable":"int16s"},"id":"3145","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SBAGmOffset","Writable":"int16s"},"id":"3146","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NifNonlinearity12Bit"},"id":"3147","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SharpeningOn"},"id":"3148","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NifNonlinearity16Bit"},"id":"3149","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RawHistogram"},"id":"3150","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RawCFAComponentAverages"},"id":"3151","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DisableFlagsPresent"},"id":"3152","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DelayCols"},"id":"3153","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DummyColsLeft"},"id":"3154","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TrashColsRight"},"id":"3155","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackColsRight"},"id":"3156","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DummyColsRight"},"id":"3157","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OverClockColsRight"},"id":"3158","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackRowsTopOut"},"id":"3159","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TrashRowsBottom"},"id":"3160","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackRowsBottom"},"id":"3161","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OverClockRowsBottom"},"id":"3162","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackColsLeft"},"id":"3163","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackRowsTop"},"id":"3164","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveColsLeft"},"id":"3165","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveColsRight"},"id":"3166","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveRowsTop"},"id":"3167","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveRowsBottom"},"id":"3168","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ProcessBorderColsLeft","Writable":"int16u"},"id":"3169","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ProcessBorderColsRight","Writable":"int16u"},"id":"3170","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ProcessBorderRowsTop","Writable":"int16u"},"id":"3171","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ProcessBorderRowsBottom","Writable":"int16u"},"id":"3172","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveCols"},"id":"3173","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveRows"},"id":"3174","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FirstLines"},"id":"3175","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackRowsTopIn"},"id":"3176","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackRowsBottomIn"},"id":"3177","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackRowsBottomOut"},"id":"3178","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackColsLeftOut"},"id":"3179","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackColsLeftIn"},"id":"3180","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackColsRightIn"},"id":"3181","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UnusedBlackColsRightOut"},"id":"3182","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAOffsetRows","Writable":"int32u"},"id":"3183","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ShiftCols","Writable":"int16s"},"id":"3184","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAOffsetCols","Writable":"int32u"},"id":"3185","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkMapScale"},"id":"3190","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HMapHandling"},"id":"3191","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VMapHandling"},"id":"3192","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkThreshold"},"id":"3193","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMDitherMatrix","Writable":"int16u"},"id":"3194","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMDitherMatrixWidth","Writable":"int16u"},"id":"3195","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DMDitherMatrixHeight","Writable":"int16u"},"id":"3196","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MaxPixelValueThreshold","Writable":"int16u"},"id":"3197","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HoleFillDeltaThreshold","Writable":"int16u"},"id":"3198","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkPedestal","Writable":"int16u"},"id":"3199","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageProcessingFileTagsVersionNumber","Writable":"int16u"},"id":"3200","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ImageProcessingFileDateCreated","Writable":"string"},"id":"3201","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DoublingMicrovolts","Writable":"int32s"},"id":"3202","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkFrameShortExposure","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"$val","ValueConv":"$val / 1e6","ValueConvInv":"$val * 1e6","Writable":"int32u"},"id":"3203","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkFrameLongExposure","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"$val","ValueConv":"$val / 1e6","ValueConvInv":"$val * 1e6","Writable":"int32u"},"id":"3204","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkFrameCountFactor","Writable":"rational64u"},"id":"3205","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HoleFillDarkDeltaThreshold","Writable":"int16u"},"id":"3208","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FarkleWhiteThreshold"},"id":"3209","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ColumnResetOffsets"},"id":"3210","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ColumnGainFactors"},"id":"3211","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Channel0LagKernel"},"id":"3212","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Channel1LagKernel"},"id":"3213","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Channel2LagKernel"},"id":"3214","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Channel3LagKernel"},"id":"3215","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BluegrassTable"},"id":"3216","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BluegrassScale1"},"id":"3217","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BluegrassScale2"},"id":"3218","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishedFileProcessingRequest"},"id":"3300","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"FirmwareVersion","Writable":"string"},"id":"3301","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HostSoftwareExportVersion"},"id":"3302","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HostSoftwareRendering","PrintConv":{"0":"Normal (sRGB)","1":"Linear (camera RGB)","2":"Pro Photo RGB","3":"Unknown","4":"Other Profile"},"Writable":"int32u"},"id":"3303","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DCS3XXProcessingInfoIFD"},"id":"3500","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DCS3XXProcessingInfo"},"id":"3501","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IPAVersion","Writable":"int32u"},"id":"3502","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishIPAVersion"},"id":"3510","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishIPFVersion"},"id":"3511","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishFileType","PrintConv":{"0":"JPEG Best","1":"JPEG Better","2":"JPEG Good","3":"TIFF RGB"},"Writable":"int32u"},"id":"3512","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishResolution","PrintConv":{"0":"100%","1":"67%","2":"50%","3":"25%"},"Writable":"int32u"},"id":"3513","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishNoise","PrintConv":{"0":"Normal","1":"Strong","2":"Low"},"Writable":"int32u"},"id":"3514","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishSharpening","PrintConv":{"0":"None","1":"High","2":"Medium","3":"Low"},"Writable":"int32u"},"id":"3515","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishLook","PrintConv":{"0":"Product","1":"Portrait","10":"Product Hi Color Hold","11":"Portrait Hi Color Hold","13":"DCS BW Normal","14":"DCS BW Wratten 8","15":"DCS BW Wratten 25","16":"DCS Sepia 1","17":"DCS Sepia 2","2":"Product Reduced","3":"Portrait Reduced","4":"Monochrome Product","5":"Monochrome Portrait","6":"Wedding","7":"Event","8":"Product Hi Color","9":"Portrait Hi Color"},"Writable":"int32u"},"id":"3516","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FinishExposure","PrintConv":{"0":"Yes","1":"No"},"Writable":"int32u"},"id":"3517","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SigmaScalingFactorLowRes","Writable":"rational64u"},"id":"3595","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SigmaScalingFactorCamera","Writable":"rational64u"},"id":"3596","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":-1,"Name":"SigmaImpulseParameters","Writable":"int16u"},"id":"3597","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"SigmaNoiseThreshTableV2"},"id":"3598","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":-1,"Name":"SigmaSizeTable","Writable":"int16u"},"id":"3599","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DacGainsCoarseAdjPreIF41"},"id":"3600","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"SigmaNoiseFilterCalTableV1"},"id":"3601","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"SigmaNoiseFilterTableV1"},"id":"3602","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Lin12ToKlut8"},"id":"3603","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SigmaNoiseFilterTableV1Version"},"id":"3604","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Lin12ToKlut12"},"id":"3605","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Klut12ToLin12"},"id":"3606","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"NifNonlinearity12To16"},"id":"3607","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"SBALog12Transform"},"id":"3608","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"InverseSBALog12Transform"},"id":"3609","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale0"},"id":"3610","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale1"},"id":"3611","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale2"},"id":"3612","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale3"},"id":"3613","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale4"},"id":"3614","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale5"},"id":"3615","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale6"},"id":"3616","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale7"},"id":"3617","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale8"},"id":"3618","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ToneScale9"},"id":"3619","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat0"},"id":"3620","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat1"},"id":"3621","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat2"},"id":"3622","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat3"},"id":"3623","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat4"},"id":"3624","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat5"},"id":"3625","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat6"},"id":"3626","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat7"},"id":"3627","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat8"},"id":"3628","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DayMat9"},"id":"3629","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat0"},"id":"3630","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat1"},"id":"3631","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat2"},"id":"3632","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat3"},"id":"3633","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat4"},"id":"3634","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat5"},"id":"3635","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat6"},"id":"3636","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat7"},"id":"3637","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat8"},"id":"3638","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TungMat9"},"id":"3639","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat0"},"id":"3640","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat1"},"id":"3641","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat2"},"id":"3642","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat3"},"id":"3643","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat4"},"id":"3644","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat5"},"id":"3645","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat6"},"id":"3646","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat7"},"id":"3647","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat8"},"id":"3648","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FluorMat9"},"id":"3649","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat0"},"id":"3650","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat1"},"id":"3651","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat2"},"id":"3652","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat3"},"id":"3653","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat4"},"id":"3654","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat5"},"id":"3655","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat6"},"id":"3656","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat7"},"id":"3657","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat8"},"id":"3658","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FlashMat9"},"id":"3659","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Format":"undef","Name":"KodakLook","ValueConv":"$val=~tr/\\0/\\n/; $val","ValueConvInv":"$val=~tr/\\n/\\0/; $val","Writable":"string"},"id":"3660","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"IPFCameraModel","Writable":"string"},"id":"3661","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"AH2GreenInterpolationThreshold","Writable":"int16u"},"id":"3662","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"ResamplingKernelDenominators067","Writable":"int16u"},"id":"3663","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"ResamplingKernelDenominators050","Writable":"int16u"},"id":"3664","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"ResamplingKernelDenominators100","Writable":"int16u"},"id":"3665","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat0"},"id":"3670","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat1"},"id":"3671","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat2"},"id":"3672","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat3"},"id":"3673","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat4"},"id":"3674","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat5"},"id":"3675","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat6"},"id":"3676","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat7"},"id":"3677","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat8"},"id":"3678","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LookMat9"},"id":"3679","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAInterpolationAlgorithm","PrintConv":{"0":"AH2","1":"Karnak"},"Writable":"int16u"},"id":"3680","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAInterpolationMetric","PrintConv":{"0":"Linear12","1":"KLUT12"},"Writable":"int16u"},"id":"3681","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CFAZipperFixThreshold","Writable":"int16u"},"id":"3682","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersKhufuRGB","Writable":"int16u"},"id":"3683","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersKhufu6MP","Writable":"int16u"},"id":"3684","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersKhufu3MP","Writable":"int16u"},"id":"3685","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"ChromaNoiseHighFThresh","Writable":"int32u"},"id":"3690","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"ChromaNoiseLowFThresh","Writable":"int32u"},"id":"3691","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ChromaNoiseEdgeMapThresh","Writable":"int32u"},"id":"3692","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ChromaNoiseColorSpace","Writable":"int32u"},"id":"3693","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"EnableChromaNoiseReduction","Writable":"int16u"},"id":"3694","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersHostRGB","Writable":"int16u"},"id":"3695","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersHost6MP","Writable":"int16u"},"id":"3696","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"NoiseReductionParametersHost3MP","Writable":"int16u"},"id":"3697","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":6,"Name":"NoiseReductionParametersCamera","Writable":"int16u"},"id":"3698","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":6,"Name":"NoiseReductionParametersAtCapture","Writable":"int16u"},"id":"3699","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"LCDMatrix","Writable":"rational64s"},"id":"3700","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"LCDMatrixChickFix","Writable":"rational64s"},"id":"3701","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":9,"Name":"LCDMatrixMarvin","Writable":"rational64s"},"id":"3702","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDGammaTableChickFix"},"id":"3708","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDGammaTableMarvin"},"id":"3709","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDGammaTable"},"id":"3710","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDSharpeningF1"},"id":"3711","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDSharpeningF2"},"id":"3712","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDSharpeningF3"},"id":"3713","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDSharpeningF4"},"id":"3714","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeMapX1"},"id":"3715","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeMapX2"},"id":"3716","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeMapX3"},"id":"3717","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeMapX4"},"id":"3718","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeMapSlope"},"id":"3719","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"YCrCbMatrix"},"id":"3720","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDEdgeSpline"},"id":"3721","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Fac18Per","Writable":"int16u"},"id":"3730","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Fac170Per","Writable":"int16u"},"id":"3731","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Fac100Per","Writable":"int16u"},"id":"3732","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ExtraTickLocations"},"id":"3739","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV0"},"id":"3740","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV1"},"id":"3741","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV2"},"id":"3742","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV3"},"id":"3743","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV4"},"id":"3744","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV5"},"id":"3745","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV6"},"id":"3746","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV7"},"id":"3747","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV8"},"id":"3748","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"RGBtoeV9"},"id":"3749","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT0"},"id":"3750","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT1"},"id":"3751","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT2"},"id":"3752","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT3"},"id":"3753","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT4"},"id":"3754","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT5"},"id":"3755","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT6"},"id":"3756","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT7"},"id":"3757","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT8"},"id":"3758","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"LCDHistLUT9"},"id":"3759","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDLinearClipValue"},"id":"3760","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDStepYvalues"},"id":"3790","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDStepYvaluesChickFix"},"id":"3791","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"LCDStepYvaluesMarvin"},"id":"3792","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"InterpolationCoefficients"},"id":"3800","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InterpolationCoefficients6MP"},"id":"3801","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InterpolationCoefficients3MP"},"id":"3802","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"NoiseReductionParametersHostNormal"},"id":"3840","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"NoiseReductionParametersHostStrong"},"id":"3841","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"NoiseReductionParametersHostLow"},"id":"3842","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MariahTextureThreshold","Writable":"int16u"},"id":"3850","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MariahMapLoThreshold","Writable":"int16u"},"id":"3851","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MariahMapHiThreshold","Writable":"int16u"},"id":"3852","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MariahChromaBlurSize","Writable":"int16u"},"id":"3853","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MariahSigmaThreshold","Writable":"int16u"},"id":"3854","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"MariahThresholds"},"id":"3855","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"MariahThresholdsNormal"},"id":"3856","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"MariahThresholdsStrong"},"id":"3857","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"MariahThresholdsLow"},"id":"3858","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuLinearRedMixingCoefficient"},"id":"3860","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuLinearGreenMixingCoefficient"},"id":"3861","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuLinearBlueMixingCoefficient"},"id":"3862","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuUSpaceC2MixingCoefficient"},"id":"3863","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuSigmaGaussianWeights"},"id":"3864","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuSigmaScalingFactors6MP"},"id":"3865","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuSigmaScalingFactors3MP"},"id":"3866","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"KhufuSigmaScalingFactors14MP"},"id":"3867","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI0Thresholds"},"id":"3890","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI1Thresholds"},"id":"3891","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI2Thresholds"},"id":"3892","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI3Thresholds"},"id":"3893","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI4Thresholds"},"id":"3894","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KhufuI5Thresholds"},"id":"3895","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoDayBVThresh","Writable":"int16u"},"id":"3900","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoNeuRange","Writable":"int16u"},"id":"3901","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoBVFactor","Writable":"int16s"},"id":"3902","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoIllFactor","Writable":"int16s"},"id":"3903","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoTunThresh","Writable":"int16s"},"id":"3904","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CondadoFluThresh","Writable":"int16s"},"id":"3905","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"CondadoDayOffsets","Writable":"int16s"},"id":"3906","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"CondadoTunOffsets","Writable":"int16s"},"id":"3907","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":2,"Name":"CondadoFluOffsets","Writable":"int16s"},"id":"3908","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB0Spline"},"id":"3930","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB1Spline"},"id":"3931","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB2Spline"},"id":"3932","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB3Spline"},"id":"3933","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB4Spline"},"id":"3934","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB5Spline"},"id":"3935","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB6Spline"},"id":"3936","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB7Spline"},"id":"3937","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB8Spline"},"id":"3938","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToCRGB9Spline"},"id":"3939","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM0Spline"},"id":"3940","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM1Spline"},"id":"3941","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM2Spline"},"id":"3942","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM3Spline"},"id":"3943","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM4Spline"},"id":"3944","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM5Spline"},"id":"3945","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM6Spline"},"id":"3946","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM7Spline"},"id":"3947","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM8Spline"},"id":"3948","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CRGBToERIMM9Spline"},"id":"3949","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMNonLinearitySpline"},"id":"3950","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Delta12To8Spline"},"id":"3951","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Delta8To12Spline"},"id":"3952","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InverseMonitorMatrix"},"id":"3953","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"NifNonlinearityExt"},"id":"3954","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"InvNifNonLinearity"},"id":"3955","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMM13ToERIMM12Spline"},"id":"3956","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale0Spline"},"id":"3960","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale1Spline"},"id":"3961","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale2Spline"},"id":"3962","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale3Spline"},"id":"3963","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale4Spline"},"id":"3964","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale5Spline"},"id":"3965","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale6Spline"},"id":"3966","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale7Spline"},"id":"3967","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale8Spline"},"id":"3968","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneScale9Spline"},"id":"3969","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale0Spline"},"id":"3970","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale1Spline"},"id":"3971","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale2Spline"},"id":"3972","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale3Spline"},"id":"3973","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale4Spline"},"id":"3974","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale5Spline"},"id":"3975","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale6Spline"},"id":"3976","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale7Spline"},"id":"3977","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale8Spline"},"id":"3978","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ERIMMToneScale9Spline"},"id":"3979","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB0Spline"},"id":"3980","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB1Spline"},"id":"3981","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB2Spline"},"id":"3982","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB3Spline"},"id":"3983","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB4Spline"},"id":"3984","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB5Spline"},"id":"3985","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB6Spline"},"id":"3986","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB7Spline"},"id":"3987","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB8Spline"},"id":"3988","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RIMMToCRGB9Spline"},"id":"3989","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"QTableLarge25Pct"},"id":"4000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"QTableMedium25Pct"},"id":"4001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"QTableSmall25Pct"},"id":"4002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NoiseReductionKernel"},"id":"4400","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"UserMetaData"},"id":"5000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"InputProfile","Writable":"undef"},"id":"5001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"KodakLookProfile","Writable":"undef"},"id":"5002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"OutputProfile","Writable":"undef"},"id":"5003","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SourceProfilePrefix","Writable":"string"},"id":"5008","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ToneCurveProfileName","Writable":"string"},"id":"5009","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"InputProfile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"5010","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Binary":1,"Name":"ProcessParametersV2"},"id":"5011","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob2"},"id":"5012","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob3"},"id":"5013","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob4"},"id":"5014","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob5"},"id":"5015","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob6"},"id":"5016","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob7"},"id":"5017","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob8"},"id":"5018","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReservedBlob9"},"id":"5019","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ScriptVersion","Writable":"int32u"},"id":"6000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerTimingData"},"id":"6010","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ISO","Writable":"int32u"},"id":"6020","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Scav11Cols"},"id":"6050","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Scav12Cols"},"id":"6051","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Scav21Cols"},"id":"6052","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"Scav22Cols"},"id":"6053","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveCTEMonitor1Cols"},"id":"6054","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveCTEMonitor2Cols"},"id":"6055","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveCTEMonitorRows"},"id":"6056","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveBuf1Cols"},"id":"6057","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveBuf2Cols"},"id":"6058","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveBuf1Rows"},"id":"6059","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ActiveBuf2Rows"},"id":"6060","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"HRNoiseLines"},"id":"6080","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"RNoiseLines"},"id":"6081","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ANoiseLines"},"id":"6082","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerCols","Writable":"int16u"},"id":"6100","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImagerRows","Writable":"int16u"},"id":"6110","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveCols1","Writable":"int32u"},"id":"6120","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveCols2","Writable":"int32u"},"id":"6130","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveRows1","Writable":"int32u"},"id":"6140","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PartialActiveRows2","Writable":"int32u"},"id":"6150","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ElectricalBlackColumns","Writable":"int32u"},"id":"6160","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ResetBlackSegRows","Writable":"int32u"},"id":"6170","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureWidthNormal","Writable":"int32u"},"id":"6200","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureHeightNormal","Writable":"int32u"},"id":"6201","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureWidthResetBlackSegNormal"},"id":"6202","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureHeightResetBlackSegNormal"},"id":"6203","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkRefOffsetNormal"},"id":"6204","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureWidthTest","Writable":"int32u"},"id":"6210","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureHeightTest"},"id":"6211","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureWidthResetBlackSegTest"},"id":"6212","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CaptureHeightResetBlackSegTest"},"id":"6213","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkRefOffsetTest"},"id":"6214","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageSegmentStartLine","Writable":"int32u"},"id":"6220","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ImageSegmentLines","Writable":"int32u"},"id":"6221","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"SkipLineTime","Writable":"int32u"},"id":"6222","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FastResetLineTime","Writable":"int32u"},"id":"6240","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"NormalLineTime","Writable":"int32u"},"id":"6250","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"MinIntegrationRows","Writable":"int32u"},"id":"6260","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"PreReadFastResetCount","Writable":"int32u"},"id":"6270","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TransferTimeNormal","Writable":"int32u"},"id":"6280","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TransferTimeTest","Writable":"int32u"},"id":"6281","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"QuietTime","Writable":"int32u"},"id":"6282","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OverClockCols","Writable":"int16u"},"id":"6300","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"H2ResetBlackPixels","Writable":"int32u"},"id":"6310","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"H3ResetBlackPixels","Writable":"int32u"},"id":"6320","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"BlackAcquireRows","Writable":"int32u"},"id":"6330","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OverClockRows","Writable":"int16u"},"id":"6340","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"H3ResetBlackColumns","Writable":"int32u"},"id":"6350","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"DarkBlackSegRows","Writable":"int32u"},"id":"6360","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"CrossbarEnable"},"id":"6400","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"FifoenOnePixelDelay","Writable":"int32u"},"id":"6401","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReadoutTypeRequested","Writable":"int32u"},"id":"6402","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ReadoutTypeActual","Writable":"int32u"},"id":"6403","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"OffsetDacValue","Writable":"int32u"},"id":"6410","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TempAmpGainX100","Writable":"int32u"},"id":"6420","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"VarrayDacNominalValues","Writable":"int32u"},"id":"6430","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"VddimDacNominalValues"},"id":"6440","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"C14Configuration","Writable":"int32u"},"id":"6500","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA1Offset","Writable":"int32u"},"id":"6510","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA1Bandwidth","Writable":"int32u"},"id":"6511","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA1Gain","Writable":"int32u"},"id":"6512","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA1EdgePolarity","Writable":"int32u"},"id":"6513","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA2Offset","Writable":"int32u"},"id":"6520","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA2Bandwidth","Writable":"int32u"},"id":"6521","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA2Gain","Writable":"int32u"},"id":"6522","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA2EdgePolarity","Writable":"int32u"},"id":"6523","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA3Offset","Writable":"int32u"},"id":"6530","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA3Bandwidth","Writable":"int32u"},"id":"6531","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA3Gain","Writable":"int32u"},"id":"6532","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA3EdgePolarity","Writable":"int32u"},"id":"6533","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA4Offset","Writable":"int32u"},"id":"6540","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA4Bandwidth","Writable":"int32u"},"id":"6541","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Count":3,"Name":"TDA4Gain","Writable":"int32u"},"id":"6542","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"TDA4EdgePolarity","Writable":"int32u"},"id":"6543","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"fields":{"Name":"ComLenBlkSize","Writable":"int16u"},"id":"65000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::IFD"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::KDC_IFD","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"KDC_IFD","2":"Image"},"NOTES":"\n        These tags are found in a separate IFD of KDC images from some newer Kodak\n        models such as the P880 and Z1015IS.\n    ","SET_GROUP1":1,"SHORT_NAME":"Kodak::KDC_IFD","TABLE_NAME":"Image::ExifTool::Kodak::KDC_IFD","TAG_PREFIX":"Kodak_KDC_IFD","WRITE_GROUP":"KDC_IFD","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"SerialNumber","Writable":"string"},"id":"64000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WhiteBalance","PrintConv":{"0":"Auto","1":"Fluorescent","2":"Tungsten","3":"Daylight","6":"Shade"},"Writable":"int8u"},"id":"64013","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WB_RGBLevelsAuto"},"id":"64037","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WB_RGBLevelsTungsten"},"id":"64039","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WB_RGBLevelsFluorescent"},"id":"64040","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WB_RGBLevelsDaylight"},"id":"64041","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"fields":{"Name":"WB_RGBLevelsShade"},"id":"64042","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::KDC_IFD"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::MOV","special":{"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        This information is found in the TAGS atom of MOV videos from Kodak models\n        such as the P880.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::MOV","TABLE_NAME":"Image::ExifTool::Kodak::MOV","TAG_PREFIX":"Kodak_MOV"}}
+{"fields":{"Format":"string[21]","Name":"Make"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"string[42]","Name":"Model"},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"string[8]","Name":"ModelType"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"$val ? 10 / $val : 0"},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"rational64u","Name":"FNumber","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"82","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"rational64s","Name":"ExposureCompensation","PrintConv":"Image::ExifTool::Exif::PrintFraction($val)"},"id":"90","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"fields":{"Format":"rational64u","Name":"FocalLength","PrintConv":"sprintf(\"%.1f mm\",$val)"},"id":"112","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::MOV"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":8,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        The table below contains the most common set of Kodak tags.  The following\n        Kodak camera models have been tested and found to use these tags: C360,\n        C663, C875, CX6330, CX6445, CX7330, CX7430, CX7525, CX7530, DC4800, DC4900,\n        DX3500, DX3600, DX3900, DX4330, DX4530, DX4900, DX6340, DX6440, DX6490,\n        DX7440, DX7590, DX7630, EasyShare-One, LS420, LS443, LS633, LS743, LS753,\n        V530, V550, V570, V603, V610, V705, Z650, Z700, Z710, Z730, Z740, Z760 and\n        Z7590.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Main","TABLE_NAME":"Image::ExifTool::Kodak::Main","TAG_PREFIX":"Kodak","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"string[8]","Name":"KodakModel"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"Quality","PrintConv":{"1":"Fine","2":"Normal"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"BurstMode","PrintConv":{"0":"Off","1":"On"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"KodakImageWidth"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"KodakImageHeight"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Groups":{"2":"Time"},"Name":"YearCreated"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int8u[2]","Groups":{"2":"Time"},"Name":"MonthDayCreated","ValueConv":"sprintf(\"%.2d:%.2d\",split(\" \", $val))","ValueConvInv":"$val=~tr/:./ /;$val"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int8u[4]","Groups":{"2":"Time"},"Name":"TimeCreated","Shift":"Time","ValueConv":"sprintf(\"%.2d:%.2d:%.2d.%.2d\",split(\" \", $val))","ValueConvInv":"$val=~tr/:./ /;$val"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"BurstMode2","Unknown":1},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"ShutterMode","PrintConv":{"0":"Auto","32":"Manual?","8":"Aperture Priority"}},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"MeteringMode","PrintConv":{"0":"Multi-segment","1":"Center-weighted average","2":"Spot"}},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"SequenceNumber"},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"FNumber","ValueConv":"$val / 100","ValueConvInv":"int($val * 100 + 0.5)"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16s","Name":"ExposureCompensation","PrintConv":"$val > 0 ? \"+$val\" : $val","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1000","ValueConvInv":"$val * 1000"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"VariousModes","Unknown":1},"id":"38","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int32u","Name":"Distance1","Unknown":1},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int32u","Name":"Distance2","Unknown":1},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int32u","Name":"Distance3","Unknown":1},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int32u","Name":"Distance4","Unknown":1},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"FocusMode","PrintConv":{"0":"Normal","2":"Macro"}},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"VariousModes2","Unknown":1},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"PanoramaMode","Unknown":1},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"SubjectDistance","Unknown":1},"id":"62","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"WhiteBalance","PrintConv":{"0":"Auto","1":"Flash?","2":"Tungsten","3":"Daylight"},"Priority":0},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Flags":"PrintHex","Name":"FlashMode","PrintConv":{"0":"Auto","1":"Fill Flash","16":"Fill Flash","2":"Off","3":"Red-Eye","32":"Off","64":"Red-Eye?"},"PrintHex":1},"id":"92","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Name":"FlashFired","PrintConv":{"0":"No","1":"Yes"}},"id":"93","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"ISOSetting","PrintConv":"$val ? $val : \"Auto\"","PrintConvInv":"$val=~/^\\d+$/ ? $val : 0"},"id":"94","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"96","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"TotalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"98","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"DateTimeStamp","PrintConv":"$val ? \"Mode $val\" : \"Off\"","PrintConvInv":"$val=~tr/0-9//dc; $val ? $val : 0"},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Flags":"PrintHex","Format":"int16u","Name":"ColorMode","PrintConv":{"1":"B&W","16384":"Sepia","2":"Sepia","256":"Saturated Color","3":"B&W Yellow Filter","32":"Saturated Color","4":"B&W Red Filter","512":"Neutral Color","64":"Neutral Color","8192":"B&W"},"PrintHex":1},"id":"102","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int16u","Name":"DigitalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"104","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"fields":{"Format":"int8s","Name":"Sharpness","PrintConv":{"ref":"shared00010"}},"id":"107","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Main"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Meta","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"Meta","1":"MetaIFD","2":"Image"},"NOTES":"\n        These tags are found in the APP3 \"Meta\" segment of JPEG images from Kodak\n        cameras such as the DC280, DC3400, DC5000, MC3, M580, Z950 and Z981.  The\n        structure of this segment is similar to the APP1 \"Exif\" segment, but a\n        different set of tags is used.\n    ","SHORT_NAME":"Kodak::Meta","TABLE_NAME":"Image::ExifTool::Kodak::Meta","TAG_PREFIX":"Kodak_Meta","WRITE_GROUP":"MetaIFD","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"FilmProductCode"},"id":"50000","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"ImageSourceEK"},"id":"50001","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"CaptureConditionsPAR"},"id":"50002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"CameraOwner","RawConv":"Image::ExifTool::Exif::ConvertExifText($self,$val,$tag)","RawConvInv":"Image::ExifTool::Exif::EncodeExifText($self,$val)","Writable":"undef"},"id":"50003","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"SerialNumber","RawConv":"Image::ExifTool::Exif::ConvertExifText($self,$val,$tag)","RawConvInv":"Image::ExifTool::Exif::EncodeExifText($self,$val)","Writable":"undef"},"id":"50004","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"UserSelectGroupTitle"},"id":"50005","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"DealerIDNumber"},"id":"50006","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"CaptureDeviceFID"},"id":"50007","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"EnvelopeNumber"},"id":"50008","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"FrameNumber"},"id":"50009","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"FilmCategory"},"id":"50010","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"FilmGencode"},"id":"50011","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"ModelAndVersion"},"id":"50012","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"FilmSize"},"id":"50013","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SBA_RGBShifts"},"id":"50014","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SBAInputImageColorspace"},"id":"50015","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SBAInputImageBitDepth"},"id":"50016","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Binary":1,"Name":"SBAExposureRecord"},"id":"50017","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Binary":1,"Name":"UserAdjSBA_RGBShifts"},"id":"50018","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"ImageRotationStatus"},"id":"50019","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"RollGuidElements"},"id":"50020","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"MetadataNumber"},"id":"50021","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"EditTagArray"},"id":"50022","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"Magnification"},"id":"50023","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"NativeXResolution"},"id":"50028","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"NativeYResolution"},"id":"50029","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Flags":"SubIFD","Groups":{"1":"KodakEffectsIFD"},"Name":"KodakEffectsIFD","SubDirectory":{"Start":"$val","TagTable":"Image::ExifTool::Kodak::SpecialEffects"},"SubIFD":1},"id":"50030","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Flags":"SubIFD","Groups":{"1":"KodakBordersIFD"},"Name":"KodakBordersIFD","SubDirectory":{"Start":"$val","TagTable":"Image::ExifTool::Kodak::Borders"},"SubIFD":1},"id":"50031","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"NativeResolutionUnit"},"id":"50042","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SourceImageDirectory"},"id":"50200","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SourceImageFileName"},"id":"50201","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"SourceImageVolumeName"},"id":"50202","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"PrintQuality"},"id":"50284","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"fields":{"Name":"ImagePrintStatus"},"id":"50286","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Meta"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Processing","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"FORMAT":"int16u","GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Processing","TABLE_NAME":"Image::ExifTool::Kodak::Processing","TAG_PREFIX":"Kodak_Processing","WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"int16u[3]","Name":"WB_RGBLevels","ValueConv":"\n            my @a = split ' ',$val;\n            foreach (@a) {\n                $_ = 2048 / $_ if $_;\n            }\n            return join ' ', @a;\n        "},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Processing"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Scrn","special":{"FORMAT":"int16u","GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Scrn","TABLE_NAME":"Image::ExifTool::Kodak::Scrn","TAG_PREFIX":"Kodak_Scrn"}}
+{"fields":{"Name":"PreviewImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Scrn"}
+{"fields":{"Name":"PreviewImageHeight"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Scrn"}
+{"fields":{"Format":"int32u","Name":"PreviewImageLength"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Scrn"}
+{"fields":{"Format":"undef[$val{2}]","Groups":{"2":"Preview"},"Name":"PreviewImage","RawConv":"$self->ValidateImage(\\$val, $tag)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Scrn"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SpecialEffects","special":{"GROUPS":{"0":"Meta","1":"KodakEffectsIFD","2":"Image"},"SHORT_NAME":"Kodak::SpecialEffects","TABLE_NAME":"Image::ExifTool::Kodak::SpecialEffects","TAG_PREFIX":"Kodak_SpecialEffects","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"DigitalEffectsVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SpecialEffects"}
+{"fields":{"Name":"DigitalEffectsName","PrintConv":"Image::ExifTool::Exif::ConvertExifText($self,$val,\"DigitalEffectsName\")"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SpecialEffects"}
+{"fields":{"Name":"DigitalEffectsType"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SpecialEffects"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD0","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"SubIFD0 through SubIFD5 tags are written a number of newer Kodak models.","SHORT_NAME":"Kodak::SubIFD0","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD0","TAG_PREFIX":"Kodak_SubIFD0","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"SceneMode","Notes":"may not be valid for some models","PrintConv":{"1":"Sport","10":"Text","11":"Fireworks","12":"Macro","13":"Museum","16":"Children","17":"Program","18":"Aperture Priority","19":"Shutter Priority","20":"Manual","25":"Back Light","28":"Candlelight","29":"Sunset","3":"Portrait","31":"Panorama Left-right","32":"Panorama Right-left","33":"Smart Scene","34":"High ISO","4":"Landscape","6":"Beach","7":"Night Portrait","8":"Night Landscape","9":"Snow"},"PrintConvColumns":2,"Writable":"int16u"},"id":"64002","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"SerialNumber","Writable":"string"},"id":"64025","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"KodakImageWidth","Writable":"int16u"},"id":"64029","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"KodakImageHeight","Writable":"int16u"},"id":"64030","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"SensorWidth","Writable":"int16u"},"id":"64032","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"SensorHeight","Writable":"int16u"},"id":"64033","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"FNumber","Priority":0,"ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int16u"},"id":"64035","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","Priority":0,"ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5","Writable":"int32u"},"id":"64036","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"ISO","Priority":0,"Writable":"int16u"},"id":"64046","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"OpticalZoom","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val=~s/ ?x//; $val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int16u"},"id":"64061","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"ISO","Priority":0,"Writable":"int16u"},"id":"64070","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"KodakImageWidth","Writable":"int16u"},"id":"64081","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"KodakImageHeight","Writable":"int16u"},"id":"64082","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"ThumbnailWidth","Writable":"int16u"},"id":"64084","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"ThumbnailHeight","Writable":"int16u"},"id":"64085","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"PreviewImageWidth","Writable":"int16u"},"id":"64087","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"fields":{"Name":"PreviewImageHeight","Writable":"int16u"},"id":"64088","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD0"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD1","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD1","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD1","TAG_PREFIX":"Kodak_SubIFD1","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"fields":{"Name":"ISO","Priority":0,"Writable":"int16u"},"id":"39","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD1"}
+{"fields":{"Name":"ISO","Priority":0,"Writable":"int16u"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD1"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD2","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD2","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD2","TAG_PREFIX":"Kodak_SubIFD2","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"id":"shared00217","kind":"shared","value":{"0":"Program","10":"High ISO","11":"Text","12":"Macro","13":"Back Light","16":"Landscape","17":"Night Landscape","18":"Night Portrait","19":"Snow","2":"Aperture Priority","20":"Beach","21":"Fireworks","22":"Sunset","23":"Candlelight","28":"Panorama","3":"Shutter Priority","4":"Manual","5":"Portrait","6":"Sport","7":"Children","8":"Museum"}}
+{"fields":{"Name":"SceneModeUsed","PrintConv":{"ref":"shared00217"},"PrintConvColumns":2,"Writable":"int32u"},"id":"24578","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"OpticalZoom","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val=~s/ ?x//; $val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int32u"},"id":"24582","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"MaxAperture","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int32u"},"id":"24835","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"SceneModeUsed","PrintConv":{"ref":"shared00217"},"PrintConvColumns":2,"Writable":"int32u"},"id":"61442","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"OpticalZoom","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val=~s/ ?x//; $val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int32u"},"id":"61446","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"FNumber","Priority":0,"ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int32u"},"id":"61699","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","Priority":0,"ValueConv":"$val / 1e6","ValueConvInv":"$val * 1e6","Writable":"int32u"},"id":"61700","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"fields":{"Name":"ISO","Priority":0,"ValueConv":"$val / 10","ValueConvInv":"$val * 10","Writable":"int32u"},"id":"61701","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD2"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD3","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD3","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD3","TAG_PREFIX":"Kodak_SubIFD3","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"fields":{"Name":"OpticalZoom","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val=~s/ ?x//; $val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int16u"},"id":"4096","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x2007","Unknown":1},"id":"8199","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x2008","Unknown":1},"id":"8200","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x2009","Unknown":1},"id":"8201","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x200a","Unknown":1},"id":"8202","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x200b","Unknown":1},"id":"8203","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x3020","Unknown":1},"id":"12320","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x3030","Unknown":1},"id":"12336","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x3040","Unknown":1},"id":"12352","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x3050","Unknown":1},"id":"12368","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x3060","Unknown":1},"id":"12384","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8001","Unknown":1},"id":"32769","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8002","Unknown":1},"id":"32770","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8003","Unknown":1},"id":"32771","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8004","Unknown":1},"id":"32772","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8005","Unknown":1},"id":"32773","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8006","Unknown":1},"id":"32774","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8007","Unknown":1},"id":"32775","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8008","Unknown":1},"id":"32776","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x8009","Unknown":1},"id":"32777","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x800a","Unknown":1},"id":"32778","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x800b","Unknown":1},"id":"32779","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"fields":{"FixCount":1,"Flags":["FixCount","Unknown","Hidden"],"Hidden":1,"Name":"Kodak_SubIFD3_0x800c","Unknown":1},"id":"32780","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD3"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD4","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD4","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD4","TAG_PREFIX":"Kodak_SubIFD4","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD5","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD5","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD5","TAG_PREFIX":"Kodak_SubIFD5","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"fields":{"Name":"OpticalZoom","PrintConv":"sprintf(\"%.2f\",$val)","PrintConvInv":"$val=~s/ ?x//; $val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int16u"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::SubIFD5"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::SubIFD6","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"SubIFD6 is written by the M580.","PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"SHORT_NAME":"Kodak::SubIFD6","TABLE_NAME":"Image::ExifTool::Kodak::SubIFD6","TAG_PREFIX":"Kodak_SubIFD6","WRITE_PROC":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::TextualInfo","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Image"},"NOTES":"\n        Below is a list of tags which have been observed in the Kodak TextualInfo\n        data, however ExifTool will extract information from any tags found here.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessKodakText"},"SHORT_NAME":"Kodak::TextualInfo","TABLE_NAME":"Image::ExifTool::Kodak::TextualInfo","TAG_PREFIX":"Kodak_TextualInfo"}}
+{"fields":{"Name":"AFMode"},"id":"AF Function","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ActualCompensation"},"id":"Actual Compensation","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"Aperture","ValueConv":"$val=~s/^f//i; $val"},"id":"Aperture","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"AutoBracket"},"id":"Auto Bracket","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"BrightnessValue"},"id":"Brightness Value","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"CameraModel"},"id":"Camera","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"CameraBody"},"id":"Camera body","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ExposureCompensation"},"id":"Compensation","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Date"},"id":"Date","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ExposureBias"},"id":"Exposure Bias","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ExposureMode","PrintConv":{"A":"Aperture Priority","B":"Bulb","M":"Manual","OTHER":{"code":"anon:Image/ExifTool/Kodak.pm:2646#1"},"P":"Program","S":"Shutter Priority"}},"id":"Exposure Mode","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"FirmwareVersion"},"id":"Firmware Version","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"FlashExposureComp"},"id":"Flash Compensation","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"FlashFired"},"id":"Flash Fired","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"FlashSyncMode"},"id":"Flash Sync Mode","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"FocalLength","PrintConv":"\"$val mm\""},"id":"Focal Length","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"KodakImageHeight"},"id":"Height","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ISO"},"id":"ISO","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ISO"},"id":"ISO Speed","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ImageNumber"},"id":"Image Number","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"Lens","Priority":0},"id":"Lens","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"MaxAperture","ValueConv":"$val=~s/^f//i; $val"},"id":"Max Aperture","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"MeterMode"},"id":"Meter Mode","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"MinAperture","ValueConv":"$val=~s/^f//i; $val"},"id":"Min Aperture","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"PopupFlash"},"id":"Popup Flash","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"SerialNumber"},"id":"Serial Number","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ShootingMode"},"id":"Shooting Mode","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"ShutterSpeed"},"id":"Shutter","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"Temperature"},"id":"Temperature","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Time"},"id":"Time","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"WhiteBalance"},"id":"White balance","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"KodakImageWidth"},"id":"Width","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"fields":{"Name":"OtherInfo","Notes":"any other information without a tag name"},"id":"_other_info","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::TextualInfo"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type10","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        Another variation of the IFD-format type, this time with just a byte order\n        indicator instead of a full TIFF header.  These tags are used by the Z980.\n    ","PRIORITY":0,"SHORT_NAME":"Kodak::Type10","TABLE_NAME":"Image::ExifTool::Kodak::Type10","TAG_PREFIX":"Kodak_Type10","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Count":2,"Name":"PreviewImageSize","PrintConv":"$val =~ tr/ /x/; $val","PrintConvInv":"$val =~ tr/x/ /; $val","Writable":"int16u"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type10"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5","Writable":"int32u"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type10"}
+{"fields":{"Name":"FNumber","ValueConv":"$val / 10","ValueConvInv":"$val * 10","Writable":"int16u"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type10"}
+{"fields":{"Name":"ISO","PrintConv":"int($val + 0.5)","PrintConvInv":"$val","ValueConv":"exp($val/3*log(2))*25","ValueConvInv":"3*log($val/25)/log(2)","Writable":"int16u"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type10"}
+{"fields":{"Name":"FocalLength","PrintConv":"\"$val mm\"","PrintConvInv":"$val=~s/\\s*mm//;$val","ValueConv":"$val / 100","ValueConvInv":"$val * 100","Writable":"int32u"},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type10"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type11","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        These tags are found in models such as the PixPro S-1.  They are not\n        writable because the inconsistency of Kodak maker notes is beginning to get\n        on my nerves.\n    ","SHORT_NAME":"Kodak::Type11","TABLE_NAME":"Image::ExifTool::Kodak::Type11","TAG_PREFIX":"Kodak_Type11"}}
+{"fields":{"Name":"FirmwareVersion"},"id":"260","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"PictureEffect","PrintConv":{"0":"None","3":"Monochrome","9":"Kodachrome"}},"id":"515","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"KodakModel"},"id":"519","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"KodakMake"},"id":"768","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"LensSerialNumber"},"id":"776","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"LensModel"},"id":"777","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"LevelMeter","Unknown":1},"id":"781","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"Pitch"},"id":"785","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"Yaw"},"id":"786","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"Roll"},"id":"787","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"CX","Unknown":1},"id":"788","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"CY","Unknown":1},"id":"789","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"fields":{"Name":"Rads","Unknown":1},"id":"790","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type11"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type2","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        These tags are used by the Kodak DC220, DC260, DC265 and DC290,\n        Hewlett-Packard PhotoSmart 618, C500 and C912, Pentax EI-200 and EI-2000,\n        and Minolta EX1500Z.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type2","TABLE_NAME":"Image::ExifTool::Kodak::Type2","TAG_PREFIX":"Kodak_Type2","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"string[32]","Name":"KodakMaker"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type2"}
+{"fields":{"Format":"string[32]","Name":"KodakModel"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type2"}
+{"fields":{"Format":"int32u","Name":"KodakImageWidth"},"id":"108","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type2"}
+{"fields":{"Format":"int32u","Name":"KodakImageHeight"},"id":"112","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type2"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type3","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"These tags are used by the DC240, DC280, DC3400 and DC5000.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type3","TABLE_NAME":"Image::ExifTool::Kodak::Type3","TAG_PREFIX":"Kodak_Type3","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"int16u","Groups":{"2":"Time"},"Name":"YearCreated"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int8u[2]","Groups":{"2":"Time"},"Name":"MonthDayCreated","ValueConv":"sprintf(\"%.2d:%.2d\",split(\" \", $val))","ValueConvInv":"$val=~tr/:./ /;$val"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int8u[4]","Groups":{"2":"Time"},"Name":"TimeCreated","Shift":"Time","ValueConv":"sprintf(\"%2d:%.2d:%.2d.%.2d\",split(\" \", $val))","ValueConvInv":"$val=~tr/:./ /;$val"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int16u","Name":"OpticalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int8s","Name":"Sharpness","PrintConv":{"ref":"shared00010"}},"id":"55","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int16u","Name":"FNumber","ValueConv":"$val / 100","ValueConvInv":"int($val * 100 + 0.5)"},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type3"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type4","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"These tags are used by the DC200 and DC215.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type4","TABLE_NAME":"Image::ExifTool::Kodak::Type4","TAG_PREFIX":"Kodak_Type4","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"string[12]","Name":"OriginalFileName"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type4"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type5","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        These tags are used by the CX4200, CX4210, CX4230, CX4300, CX4310, CX6200\n        and CX6230.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type5","TABLE_NAME":"Image::ExifTool::Kodak::Type5","TAG_PREFIX":"Kodak_Type5","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Name":"WhiteBalance","PrintConv":{"1":"Daylight","2":"Flash","3":"Tungsten"}},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Format":"int16u","Name":"FNumber","ValueConv":"$val / 100","ValueConvInv":"int($val * 100 + 0.5)"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Format":"int16u","Name":"OpticalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Format":"int16u","Name":"DigitalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Name":"FlashMode","PrintConv":{"0":"Auto","1":"On","2":"Off","3":"Red-Eye"}},"id":"39","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Name":"ImageRotated","PrintConv":{"0":"No","1":"Yes"}},"id":"42","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"fields":{"Name":"Macro","PrintConv":{"0":"On","1":"Off"}},"id":"43","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type5"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type6","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"These tags are used by the DX3215 and DX3700.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type6","TABLE_NAME":"Image::ExifTool::Kodak::Type6","TAG_PREFIX":"Kodak_Type6","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e5","ValueConvInv":"$val * 1e5"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int32u","Name":"ISOSetting","Unknown":1},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int16u","Name":"FNumber","ValueConv":"$val / 100","ValueConvInv":"int($val * 100 + 0.5)"},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int16u","Name":"OpticalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int16u","Name":"DigitalZoom","ValueConv":"$val / 100","ValueConvInv":"$val * 100"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"fields":{"Format":"int16u","Name":"Flash","PrintConv":{"0":"No Flash","1":"Fired"}},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type6"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type7","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        The maker notes of models such as the C340, C433, CC533, LS755, V803 and\n        V1003 seem to start with the camera serial number.  The C310, C315, C330,\n        C643, C743, CD33, CD43, CX7220 and CX7300 maker notes are also decoded using\n        this table, although the strings for these cameras don't conform to the\n        usual Kodak serial number format, and instead have the model name followed\n        by 8 digits.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type7","TABLE_NAME":"Image::ExifTool::Kodak::Type7","TAG_PREFIX":"Kodak_Type7","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Format":"string[16]","Name":"SerialNumber","ValueConv":"$val=~s/\\s+$//; $val","ValueConvInv":"$val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type7"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type8","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        Kodak models such as the ZD710, P712, P850, P880, V1233, V1253, V1275,\n        V1285, Z612, Z712, Z812, Z885 use standard TIFF IFD format for the maker\n        notes.  In keeping with Kodak's strategy of inconsistent makernotes, models\n        such as the M380, M1033, M1093, V1073, V1273, Z1012, Z1085 and Z8612\n        also use these tags, but these makernotes begin with a TIFF header instead\n        of an IFD entry count and use relative instead of absolute offsets.  There\n        is a large amount of information stored in these maker notes (apparently\n        with much duplication), but relatively few tags have so far been decoded.\n    ","SHORT_NAME":"Kodak::Type8","TABLE_NAME":"Image::ExifTool::Kodak::Type8","TAG_PREFIX":"Kodak_Type8","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD0","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","ProcessProc":{"code":"&Image::ExifTool::Kodak::ProcessKodakIFD"},"TagTable":"Image::ExifTool::Kodak::SubIFD0","WriteProc":{"code":"&Image::ExifTool::Kodak::WriteKodakIFD"}}},"id":"64512","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD0","SubDirectory":{"Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD0"},"SubIFD":1},"id":"64512","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD1","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD1"}},"id":"64513","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD1","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD1"},"SubIFD":1},"id":"64513","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD2","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD2"}},"id":"64514","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD2","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD2"},"SubIFD":1},"id":"64514","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD3","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD3"}},"id":"64515","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD3","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD3"},"SubIFD":1},"id":"64515","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD4","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD4"}},"id":"64516","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD4","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD4"},"SubIFD":1},"id":"64516","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD5","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD5"}},"id":"64517","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD5","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD5"},"SubIFD":1},"id":"64517","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Index":0,"Name":"SubIFD6","NestedHtmlDump":2,"SubDirectory":{"Base":"$start","TagTable":"Image::ExifTool::Kodak::SubIFD6"}},"id":"64518","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Index":1,"Name":"SubIFD6","SubDirectory":{"Base":"$start","Start":"$val","TagTable":"Image::ExifTool::Kodak::SubIFD6"},"SubIFD":1},"id":"64518","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$format eq \"undef\"","Groups":{"1":"MakerNotes"},"Name":"SubIFD255","NestedHtmlDump":2,"SubDirectory":{"TagTable":"Image::ExifTool::Kodak::SubIFD0"}},"id":"64767","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"fields":{"Condition":"$$valPt ne \"\\0\\0\\0\\0\"","Flags":"SubIFD","Groups":{"1":"MakerNotes"},"Name":"CameraInfo","SubDirectory":{"Start":"$val","TagTable":"Image::ExifTool::Kodak::CameraInfo"},"SubIFD":1},"id":"65280","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type8"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Type9","special":{"CHECK_PROC":{"code":"&Image::ExifTool::CheckBinaryData"},"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"NOTES":"\n        These tags are used by the Kodak C140, C180, C913, C1013, M320, M340 and\n        M550, as well as various cameras marketed by other manufacturers.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Type9","TABLE_NAME":"Image::ExifTool::Kodak::Type9","TAG_PREFIX":"Kodak_Type9","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::WriteBinaryData"}}}
+{"fields":{"Condition":"$$self{Make} =~ /Kodak/i","Format":"int16u","Index":0,"Name":"FNumber","ValueConv":"$val / 100","ValueConvInv":"int($val * 100 + 0.5)"},"id":"12","index":0,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Format":"int16u","Index":1,"Name":"FNumber","ValueConv":"$val / 10","ValueConvInv":"int($val * 10 + 0.5)"},"id":"12","index":1,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Format":"int32u","Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","PrintConvInv":"Image::ExifTool::Exif::ConvertFraction($val)","ValueConv":"$val / 1e6","ValueConvInv":"$val * 1e6"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Description":"Date/Time Original","Format":"string[20]","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","PrintConvInv":"$self->InverseDateTime($val,0)","Shift":"Time","ValueConv":"$val=~s{/}{:}g; $val","ValueConvInv":"$val=~s{^(\\d{4}):(\\d{2}):}{$1/$2/}; $val"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Format":"int16u","Name":"ISO"},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Condition":"$$self{Make} =~ /Kodak/i","Format":"string[16]","Name":"FirmwareVersion","Notes":"Kodak only"},"id":"87","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Condition":"$$self{Make} =~ /Kodak/i and $$valPt =~ /^([A-Z0-9]{1,11}\\0|[A-Z0-9]{12})/i","Format":"string[12]","Name":"UnknownNumber","Notes":"Kodak only","Writable":0},"id":"168","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"fields":{"Condition":"$$self{Make} =~ /Kodak/i and $$valPt =~ /^([A-Z0-9]{1,11}\\0|[A-Z0-9]{12})/i","Format":"string[12]","Name":"UnknownNumber","Notes":"Kodak only","Writable":0},"id":"196","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::Type9"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::Unknown","special":{"FIRST_ENTRY":0,"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Camera"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Kodak::Unknown","TABLE_NAME":"Image::ExifTool::Kodak::Unknown","TAG_PREFIX":"Kodak_Unknown"}}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::frea","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Image"},"NOTES":"Information stored in the \"frea\" atom of Kodak PixPro SP360 MP4 videos.","SHORT_NAME":"Kodak::frea","TABLE_NAME":"Image::ExifTool::Kodak::frea","TAG_PREFIX":"Kodak_frea"}}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"PreviewImage"},"id":"scra","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::frea"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"ThumbnailImage"},"id":"thma","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::frea"}
+{"fields":{"Format":"int32u","Name":"Duration","PrintConv":"ConvertDuration($val)","Priority":0},"id":"tima","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::frea"}
+{"fields":{"Name":"KodakVersion","RawConv":"$$self{KodakVersion} = $val"},"id":"ver ","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::frea"}
+{"kind":"table","module":"Kodak","name":"Image::ExifTool::Kodak::pose","special":{"GROUPS":{"0":"MakerNotes","1":"Kodak","2":"Video"},"NOTES":"\n        Streamed orientation information from the PixPro 4KVR360, extracted as\n        sub-documents when the L<Duplicates|../ExifTool.html#Duplicates> option is used.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Kodak::ProcessPose"},"SHORT_NAME":"Kodak::pose","TABLE_NAME":"Image::ExifTool::Kodak::pose","TAG_PREFIX":"Kodak_pose"}}
+{"fields":{"Name":"Accelerometer"},"id":"Accelerometer","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::pose"}
+{"fields":{"Name":"AngularVelocity"},"id":"AngularVelocity","index":null,"kind":"tag","table":"Image::ExifTool::Kodak::pose"}

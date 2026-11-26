@@ -1,0 +1,13 @@
+{"kind":"table","module":"ITC","name":"Image::ExifTool::ITC::Header","special":{"GROUPS":{"0":"ITC","1":"ITC","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ITC::Header","TABLE_NAME":"Image::ExifTool::ITC::Header","TAG_PREFIX":"ITC_Header"}}
+{"fields":{"Format":"undef[4]","Name":"DataType","PrintConv":{"artw":"Artwork"}},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Header"}
+{"kind":"table","module":"ITC","name":"Image::ExifTool::ITC::Item","special":{"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"ITC","1":"ITC","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ITC::Item","TABLE_NAME":"Image::ExifTool::ITC::Item","TAG_PREFIX":"ITC_Item"}}
+{"fields":{"Format":"undef[8]","Name":"LibraryID","ValueConv":"uc unpack \"H*\", $val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"fields":{"Format":"undef[8]","Name":"TrackID","ValueConv":"uc unpack \"H*\", $val"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"fields":{"Format":"undef[4]","Name":"DataLocation","PrintConv":{"down":"Downloaded Separately","locl":"Local Music File"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"fields":{"Format":"undef[4]","Name":"ImageType","ValueConv":{"\u0000\u0000\u0000\r":"JPEG","PNGf":"PNG"}},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"fields":{"Name":"ImageWidth"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"fields":{"Name":"ImageHeight"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Item"}
+{"kind":"table","module":"ITC","name":"Image::ExifTool::ITC::Main","special":{"GROUPS":{"0":"ITC","1":"ITC","2":"Other"},"NOTES":"This information is found in iTunes Cover Flow data files.","SHORT_NAME":"ITC::Main","TABLE_NAME":"Image::ExifTool::ITC::Main","TAG_PREFIX":"ITC"}}
+{"fields":{"Name":"ImageData","Notes":"embedded JPEG or PNG image, depending on ImageType"},"id":"data","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Main"}
+{"fields":{"Name":"Itch","SubDirectory":{"TagTable":"Image::ExifTool::ITC::Header"}},"id":"itch","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Main"}
+{"fields":{"Name":"Item","SubDirectory":{"TagTable":"Image::ExifTool::ITC::Item"}},"id":"item","index":null,"kind":"tag","table":"Image::ExifTool::ITC::Main"}

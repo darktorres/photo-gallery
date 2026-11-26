@@ -1,0 +1,190 @@
+{"kind":"translate","lang":"sv","tag":"Aperture","value":"Bländare"}
+{"kind":"translate","lang":"sv","tag":"ApertureValue","value":"Bländare"}
+{"kind":"translate","lang":"sv","tag":"Artist","value":"Upphovsman"}
+{"kind":"translate","lang":"sv","tag":"Author","value":"Upphovsman"}
+{"kind":"translate","lang":"sv","tag":"AuthorsPosition","value":"Författarens befattning"}
+{"kind":"translate","lang":"sv","tag":"BitsPerSample","value":"Antal bitar per komponent"}
+{"kind":"translate","lang":"sv","tag":"Brightness","value":"Ljusstyrka"}
+{"kind":"translate","lang":"sv","tag":"By-line","value":"Upphovsman"}
+{"kind":"translate","lang":"sv","tag":"CFAPattern","value":"CFA-mönster"}
+{"kind":"translate","lang":"sv","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"Mulet","Cool White Fluorescent":"Kalljusrör (W 3800 - 4500 k)","Day White Fluorescent":"Dagljusrör, högdager (N 4600 - 5500k)","Daylight":"Dagsljus","Daylight Fluorescent":"Dagljusrör (D 5700 - 7100 k)","Fine Weather":"Fint väder","Flash":"Blixt","Fluorescent":"Lysrörsbelysning","ISO Studio Tungsten":"ISO tungsten studiobelysning","Other":"Annan ljuskälla","Shade":"Skugga","Standard Light A":"Standardljus A","Standard Light B":"Standardljus B","Standard Light C":"Standardljus C","Tungsten (Incandescent)":"Tungsten","Unknown":"Okänt","Warm White Fluorescent":"Varmt vitt fluorescerande (L 2600 - 3250k)","White Fluorescent":"Vit lysrörsbelysning (WW 3250 - 3800 k)"}}}
+{"kind":"translate","lang":"sv","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"Mulet","Cool White Fluorescent":"Kalljusrör (W 3800 - 4500 k)","Day White Fluorescent":"Dagljusrör, högdager (N 4600 - 5500k)","Daylight":"Dagsljus","Daylight Fluorescent":"Dagljusrör (D 5700 - 7100 k)","Fine Weather":"Fint väder","Flash":"Blixt","Fluorescent":"Lysrörsbelysning","ISO Studio Tungsten":"ISO tungsten studiobelysning","Other":"Annan ljuskälla","Shade":"Skugga","Standard Light A":"Standardljus A","Standard Light B":"Standardljus B","Standard Light C":"Standardljus C","Tungsten (Incandescent)":"Tungsten","Unknown":"Okänt","Warm White Fluorescent":"Varmt vitt fluorescerande (L 2600 - 3250k)","White Fluorescent":"Vit lysrörsbelysning (WW 3250 - 3800 k)"}}}
+{"kind":"translate","lang":"sv","tag":"Caption-Abstract","value":"Bildtext"}
+{"kind":"translate","lang":"sv","tag":"CaptionWriter","value":"Bildtextredigerare"}
+{"kind":"translate","lang":"sv","tag":"Categories","value":"Kategorier"}
+{"kind":"translate","lang":"sv","tag":"Category","value":"Kategorier"}
+{"kind":"translate","lang":"sv","tag":"City","value":"Ort"}
+{"kind":"translate","lang":"sv","tag":"ColorFilter","value":"Färgfilter"}
+{"kind":"translate","lang":"sv","tag":"ColorMode","value":{"Description":"Kreativa inst.","PrintConv":{"Autumn Leaves":"Höstlöv","B&W":"Svartvitt","Clear":"Klart","Deep":"Djupt","Landscape":"Landskap","Light":"Ljust","Neutral":"Neutralt","Night View":"Nattvy","Night View/Portrait":"Nattporträtt","Portrait":"Porträtt","Sunset":"Solnedgång","Vivid":"Levande färg"}}}
+{"kind":"translate","lang":"sv","tag":"ColorSpace","value":{"Description":"Färgområdesinformation","PrintConv":{"ICC Profile":"ICC-profil","Uncalibrated":"Ej kalibrerat"}}}
+{"kind":"translate","lang":"sv","tag":"ColorTemperature","value":"Färgtemperatur"}
+{"kind":"translate","lang":"sv","tag":"Comment","value":"Kommentar"}
+{"kind":"translate","lang":"sv","tag":"ComponentsConfiguration","value":"Enskilda komponenters betydelse"}
+{"kind":"translate","lang":"sv","tag":"CompressedBitsPerPixel","value":"Bildkomprimeringsläge"}
+{"kind":"translate","lang":"sv","tag":"Compression","value":{"Description":"Komprimeringsschema","PrintConv":{"JPEG":"JPEG-komprimering","Uncompressed":"Ingen komprimering"}}}
+{"kind":"translate","lang":"sv","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Hård","Low":"Mjuk","Normal":"Standard"}}}
+{"kind":"translate","lang":"sv","tag":"Copyright","value":"Copyright-innehavare"}
+{"kind":"translate","lang":"sv","tag":"CopyrightNotice","value":"Copyrightmeddelande"}
+{"kind":"translate","lang":"sv","tag":"Country","value":"Land"}
+{"kind":"translate","lang":"sv","tag":"Country-PrimaryLocationName","value":"Land"}
+{"kind":"translate","lang":"sv","tag":"CreateDate","value":"Skapat datum"}
+{"kind":"translate","lang":"sv","tag":"CreationDate","value":"Skapad datum"}
+{"kind":"translate","lang":"sv","tag":"Credit","value":"Medverkande"}
+{"kind":"translate","lang":"sv","tag":"CustomRendered","value":{"Description":"Anpassad bildbearbetning","PrintConv":{"Custom":"Anpassad process","Normal":"Normal process"}}}
+{"kind":"translate","lang":"sv","tag":"DateCreated","value":"Skapat datum"}
+{"kind":"translate","lang":"sv","tag":"DateTimeOriginal","value":"Ursprungligt datum & tid"}
+{"kind":"translate","lang":"sv","tag":"DeviceSettingDescription","value":"Beskrivning av enhetsinställning"}
+{"kind":"translate","lang":"sv","tag":"DigitalZoomRatio","value":"Digitalt zoomomfång"}
+{"kind":"translate","lang":"sv","tag":"Directory","value":"Filplats"}
+{"kind":"translate","lang":"sv","tag":"DriveMode","value":"Enhetsläge"}
+{"kind":"translate","lang":"sv","tag":"DynamicRangeOptimizer","value":{"Description":"Opt.av dyn.omr.","PrintConv":{"Advanced Auto":"Avancerad auto","Advanced Lv1":"Avancerad niv1","Advanced Lv2":"Avancerad niv2","Advanced Lv3":"Avancerad niv3","Advanced Lv4":"Avancerad niv4","Advanced Lv5":"Avancerad niv5","Auto":"Automatisk","Off":"Av"}}}
+{"kind":"translate","lang":"sv","tag":"ExifImageHeight","value":"Giltig bildhöjd"}
+{"kind":"translate","lang":"sv","tag":"ExifImageWidth","value":"Giltig bildbredd"}
+{"kind":"translate","lang":"sv","tag":"ExifOffset","value":"IFD-pekare för Exif"}
+{"kind":"translate","lang":"sv","tag":"ExifVersion","value":"Exif-version"}
+{"kind":"translate","lang":"sv","tag":"ExposureCompensation","value":"Exponeringsförskjutning"}
+{"kind":"translate","lang":"sv","tag":"ExposureIndex","value":"Exponeringsindex"}
+{"kind":"translate","lang":"sv","tag":"ExposureMode","value":{"Description":"Exponeringsläge","PrintConv":{"Auto":"Automatisk exponering","Auto bracket":"Automatisk alternativexponering","Manual":"Manuell exponering"}}}
+{"kind":"translate","lang":"sv","tag":"ExposureProgram","value":{"Description":"Exponeringsprogram","PrintConv":{"Action (High speed)":"Sport","Aperture-priority AE":"Bländarprioritet","Bulb":"Glödlampa","Creative (Slow speed)":"Kreativ","Landscape":"Liggande","Manual":"Manuell exponering","Portrait":"Stående","Program AE":"Normalt program","Shutter speed priority AE":"Slutarprioritet"}}}
+{"kind":"translate","lang":"sv","tag":"ExposureTime","value":"Exponeringstid"}
+{"kind":"translate","lang":"sv","tag":"FNumber","value":"Bländare"}
+{"kind":"translate","lang":"sv","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"Positiv riktning","Rotate 90 CW":"Rotera 90° medurs"}}}
+{"kind":"translate","lang":"sv","tag":"FileFormat","value":"Format"}
+{"kind":"translate","lang":"sv","tag":"FileModifyDate","value":"Uppdateringsdatum"}
+{"kind":"translate","lang":"sv","tag":"FileName","value":"Filnamn"}
+{"kind":"translate","lang":"sv","tag":"FileSize","value":"Filstorlek"}
+{"kind":"translate","lang":"sv","tag":"FileSource","value":{"Description":"Filkälla","PrintConv":{"Digital Camera":"DSC","Film Scanner":"Skanner av transparent typ","Reflection Print Scanner":"Skanner av reflextyp"}}}
+{"kind":"translate","lang":"sv","tag":"FileType","value":"Filtyp"}
+{"kind":"translate","lang":"sv","tag":"Filename","value":"Filnamn"}
+{"kind":"translate","lang":"sv","tag":"Flash","value":{"Description":"Blixt","PrintConv":{"Auto, Fired":"PÅ (automatisk blixt)","Auto, Fired, Red-eye reduction":"\"PÅ (automatisk blixt, reducering av röda ögon)\"","Auto, Fired, Red-eye reduction, Return detected":"\"PÅ (automatisk blixt, reducering av röda ögon, reflekterat ljus)\"","Auto, Fired, Return detected":"\"PÅ (automatisk blixt, reflekterat ljus)\"","Did not fire":"Blixten utlöstes inte","Fired":"Blixten utlöstes","Fired, Red-eye reduction":"PÅ (reducering av röda ögon)","Fired, Red-eye reduction, Return detected":"\"PÅ (reducering av röda ögon, reflekterat ljus)\"","Fired, Return detected":"PÅ (reflekterat ljus)","No Flash":"Ingen blixtfunktion","On, Fired":"PÅ (upplättnad)","On, Red-eye reduction":"\"PÅ (upplättnad, reducering av röda ögon)\"","On, Red-eye reduction, Return detected":"\"PÅ upplättnad reducering av röda ögon, reflekterat ljus)\"","On, Return detected":"\"PÅ (upplättnad, reflekterat ljus)\""}}}
+{"kind":"translate","lang":"sv","tag":"FlashEnergy","value":"Blixtenergi"}
+{"kind":"translate","lang":"sv","tag":"FlashExposureComp","value":"Blixtkompensering"}
+{"kind":"translate","lang":"sv","tag":"FlashpixVersion","value":"Flashpix-version som stöds"}
+{"kind":"translate","lang":"sv","tag":"FocalLength","value":"Brännvidd"}
+{"kind":"translate","lang":"sv","tag":"FocalLength35efl","value":"Brännvidd (i 35 mm format)"}
+{"kind":"translate","lang":"sv","tag":"FocalLengthIn35mmFormat","value":"Brännvidd för 35 mm-film"}
+{"kind":"translate","lang":"sv","tag":"FocalPlaneResolutionUnit","value":{"PrintConv":{"inches":"tum"}}}
+{"kind":"translate","lang":"sv","tag":"FocusMode","value":"Fokustyp"}
+{"kind":"translate","lang":"sv","tag":"FrameRate","value":"Bildfrekvens"}
+{"kind":"translate","lang":"sv","tag":"FrameSize","value":"Bildstorlek"}
+{"kind":"translate","lang":"sv","tag":"GPSAltitude","value":"Höjd"}
+{"kind":"translate","lang":"sv","tag":"GPSAltitudeRef","value":{"Description":"Höjdreferens","PrintConv":{"Above Sea Level":"Havsnivå","Below Sea Level":"Havsnivåref. (negativt värde)"}}}
+{"kind":"translate","lang":"sv","tag":"GPSAreaInformation","value":"Namn på GPS-område"}
+{"kind":"translate","lang":"sv","tag":"GPSDOP","value":"Måttprecision"}
+{"kind":"translate","lang":"sv","tag":"GPSDateStamp","value":"GPS-datum"}
+{"kind":"translate","lang":"sv","tag":"GPSDestBearing","value":"Destination"}
+{"kind":"translate","lang":"sv","tag":"GPSDestBearingRef","value":"Referens för destination"}
+{"kind":"translate","lang":"sv","tag":"GPSDestDistance","value":"Avstånd till destination"}
+{"kind":"translate","lang":"sv","tag":"GPSDestDistanceRef","value":"Referens för avstånd till destination"}
+{"kind":"translate","lang":"sv","tag":"GPSDestLatitude","value":"Destinationsbredd"}
+{"kind":"translate","lang":"sv","tag":"GPSDestLatitudeRef","value":"Referens för destionationsbredd"}
+{"kind":"translate","lang":"sv","tag":"GPSDestLongitude","value":"Destionationslängd"}
+{"kind":"translate","lang":"sv","tag":"GPSDestLongitudeRef","value":"Referens för destinationslängd"}
+{"kind":"translate","lang":"sv","tag":"GPSDifferential","value":{"Description":"GPS-differentialkorrigering","PrintConv":{"Differential Corrected":"Differentialkorrigering använd","No Correction":"Mätning utan differentialkorrigering"}}}
+{"kind":"translate","lang":"sv","tag":"GPSImgDirection","value":"Bildriktning"}
+{"kind":"translate","lang":"sv","tag":"GPSImgDirectionRef","value":"Referens för bildriktning"}
+{"kind":"translate","lang":"sv","tag":"GPSInfo","value":"IFD-pekare för GPS-information"}
+{"kind":"translate","lang":"sv","tag":"GPSLatitude","value":"Bredd"}
+{"kind":"translate","lang":"sv","tag":"GPSLatitudeRef","value":{"Description":"Nordlig eller sydlig bredd","PrintConv":{"North":"Nordlig bredd","South":"Sydlig bredd"}}}
+{"kind":"translate","lang":"sv","tag":"GPSLongitude","value":"Längd"}
+{"kind":"translate","lang":"sv","tag":"GPSLongitudeRef","value":{"Description":"Östlig eller västlig längd","PrintConv":{"East":"Östlig längd","West":"Västlig längd"}}}
+{"kind":"translate","lang":"sv","tag":"GPSMapDatum","value":"Geodetiska mätningsdata använda"}
+{"kind":"translate","lang":"sv","tag":"GPSMeasureMode","value":{"Description":"GPS-mätningsläge","PrintConv":{"3-Dimensional Measurement":"3D-mätning"}}}
+{"kind":"translate","lang":"sv","tag":"GPSProcessingMethod","value":"Namn på GPS-bearbetningsmetod"}
+{"kind":"translate","lang":"sv","tag":"GPSSatellites","value":"GPS-satelliter använda för mätning"}
+{"kind":"translate","lang":"sv","tag":"GPSSpeed","value":"Hastighet på GPS-mottagare"}
+{"kind":"translate","lang":"sv","tag":"GPSSpeedRef","value":{"Description":"Hastighetsenhet","PrintConv":{"km/h":"Km/tim","knots":"Knop","mph":"Miles/tim"}}}
+{"kind":"translate","lang":"sv","tag":"GPSStatus","value":{"Description":"GPS-mottagarstatus","PrintConv":{"Measurement Active":"Mätning pågår","Measurement Void":"Mätningssamverkan"}}}
+{"kind":"translate","lang":"sv","tag":"GPSTimeStamp","value":"GPS-tid (atomur)"}
+{"kind":"translate","lang":"sv","tag":"GPSTrack","value":"Rörelseriktning"}
+{"kind":"translate","lang":"sv","tag":"GPSTrackRef","value":{"Description":"Referens för rörelseriktning","PrintConv":{"Magnetic North":"Magnetisk riktning","True North":"Verklig riktning"}}}
+{"kind":"translate","lang":"sv","tag":"GPSVersionID","value":"GPS tag version"}
+{"kind":"translate","lang":"sv","tag":"GainControl","value":{"Description":"Förstärkningskontroll","PrintConv":{"High gain down":"Hög förstärkning ned","High gain up":"Hög förstärkning upp","Low gain down":"Låg förstärkning ned","Low gain up":"Låg förstärkning upp","None":"Ingen"}}}
+{"kind":"translate","lang":"sv","tag":"Gradation","value":"Effektfull"}
+{"kind":"translate","lang":"sv","tag":"HDR","value":{"Description":"Auto HDR","PrintConv":{"Off":"Av"}}}
+{"kind":"translate","lang":"sv","tag":"Headline","value":"Rubrik"}
+{"kind":"translate","lang":"sv","tag":"HighISONoiseReduction","value":{"Description":"Hög-ISO brusred","PrintConv":{"Auto":"Automatisk","High":"Hög","Low":"Låg","Off":"Av"}}}
+{"kind":"translate","lang":"sv","tag":"Hue","value":"Nyans"}
+{"kind":"translate","lang":"sv","tag":"ICCProfile","value":"ICC profil"}
+{"kind":"translate","lang":"sv","tag":"ISO","value":"ISO värde"}
+{"kind":"translate","lang":"sv","tag":"ImageHeight","value":"Bildhöjd"}
+{"kind":"translate","lang":"sv","tag":"ImageSize","value":"Bildstorlek"}
+{"kind":"translate","lang":"sv","tag":"ImageUniqueID","value":"Unikt bild-ID"}
+{"kind":"translate","lang":"sv","tag":"ImageWidth","value":"Bildbredd"}
+{"kind":"translate","lang":"sv","tag":"Index","value":"Småbilder"}
+{"kind":"translate","lang":"sv","tag":"Instructions","value":"Instruktioner"}
+{"kind":"translate","lang":"sv","tag":"InteropIndex","value":"Interoperability Identification"}
+{"kind":"translate","lang":"sv","tag":"InteropOffset","value":"Interoperability tag"}
+{"kind":"translate","lang":"sv","tag":"InteropVersion","value":"Interoperability Version"}
+{"kind":"translate","lang":"sv","tag":"JPEGQuality","value":{"Description":"Bildkvalitet","PrintConv":{"Extra Fine":"Extra fin","Fine":"Fin","Standard":"Standardkvalitet"}}}
+{"kind":"translate","lang":"sv","tag":"Keywords","value":"Nyckelord"}
+{"kind":"translate","lang":"sv","tag":"Lens","value":"Objektiv"}
+{"kind":"translate","lang":"sv","tag":"LensInfo","value":"Objektivinformation"}
+{"kind":"translate","lang":"sv","tag":"LightSource","value":{"Description":"Ljuskälla","PrintConv":{"Cloudy":"Mulet","Cool White Fluorescent":"Kalljusrör (W 3800 - 4500 k)","Day White Fluorescent":"Dagljusrör, högdager (N 4600 - 5500k)","Daylight":"Dagsljus","Daylight Fluorescent":"Dagljusrör (D 5700 - 7100 k)","Fine Weather":"Fint väder","Flash":"Blixt","Fluorescent":"Lysrörsbelysning","ISO Studio Tungsten":"ISO tungsten studiobelysning","Other":"Annan ljuskälla","Shade":"Skugga","Standard Light A":"Standardljus A","Standard Light B":"Standardljus B","Standard Light C":"Standardljus C","Tungsten (Incandescent)":"Tungsten","Unknown":"Okänt","Warm White Fluorescent":"Varmt vitt fluorescerande (L 2600 - 3250k)","White Fluorescent":"Vit lysrörsbelysning (WW 3250 - 3800 k)"}}}
+{"kind":"translate","lang":"sv","tag":"Lightness","value":"Ljushet"}
+{"kind":"translate","lang":"sv","tag":"Location","value":"Plats"}
+{"kind":"translate","lang":"sv","tag":"LongExposureNoiseReduction","value":{"Description":"Långexp.brusred","PrintConv":{"Off":"Av","On":"På"}}}
+{"kind":"translate","lang":"sv","tag":"Make","value":"Tillverkare"}
+{"kind":"translate","lang":"sv","tag":"MakerNotes","value":"Tillverkare"}
+{"kind":"translate","lang":"sv","tag":"MaxAperture","value":"Största bländare"}
+{"kind":"translate","lang":"sv","tag":"MeteringMode","value":{"Description":"Mätningstyp","PrintConv":{"Average":"Genomsnitt","Center-weighted average":"Centrumvägd genomsnittsmätning","Multi-segment":"Mönster","Multi-spot":"MultiSpot","Other":"Annat","Partial":"Delvis","Unknown":"Okänt"}}}
+{"kind":"translate","lang":"sv","tag":"Model","value":"Kamera"}
+{"kind":"translate","lang":"sv","tag":"ModifyDate","value":"Filändringsdatum och -tid"}
+{"kind":"translate","lang":"sv","tag":"MultiFrameNoiseReduction","value":{"Description":"Multi Frame brusred.","PrintConv":{"Off":"Av","On":"På"}}}
+{"kind":"translate","lang":"sv","tag":"NoiseReduction","value":"Brusreducering"}
+{"kind":"translate","lang":"sv","tag":"Opto-ElectricConvFactor","value":"Optoelektrisk konverteringsfaktor"}
+{"kind":"translate","lang":"sv","tag":"Orientation","value":{"Description":"Orientering","PrintConv":{"Horizontal (normal)":"Positiv riktning","Rotate 90 CW":"Rotera 90° medurs"}}}
+{"kind":"translate","lang":"sv","tag":"PhotometricInterpretation","value":"Pixelsammansättning"}
+{"kind":"translate","lang":"sv","tag":"PlanarConfiguration","value":{"Description":"Bilddataordning","PrintConv":{"Chunky":"Kompakt format","Planar":"Planar format"}}}
+{"kind":"translate","lang":"sv","tag":"PrimaryChromaticities","value":"Kromaticitet för primärfärger"}
+{"kind":"translate","lang":"sv","tag":"Province-State","value":"Län/provins"}
+{"kind":"translate","lang":"sv","tag":"Quality","value":{"Description":"Bildkvalitet","PrintConv":{"Compressed RAW":"cRAW","Compressed RAW + JPEG":"cRAW+JPEG","Extra Fine":"Extra fin","Fine":"Fin","Low":"Låg kvalitet","Normal":"Standardkvalitet","RAW + JPEG":"RAW+JPEG"}}}
+{"kind":"translate","lang":"sv","tag":"RecordMode","value":"Inspelningsläge"}
+{"kind":"translate","lang":"sv","tag":"ReferenceBlackWhite","value":"Par av svartvita referensvärden"}
+{"kind":"translate","lang":"sv","tag":"RelatedImageFileFormat","value":"Tillhörande bildfilsformat"}
+{"kind":"translate","lang":"sv","tag":"RelatedImageHeight","value":"Tillhörande bildlängd"}
+{"kind":"translate","lang":"sv","tag":"RelatedImageWidth","value":"Tillhörande bildbredd"}
+{"kind":"translate","lang":"sv","tag":"RelatedSoundFile","value":"Tillhörande ljudfil"}
+{"kind":"translate","lang":"sv","tag":"ResolutionUnit","value":{"Description":"Enhet för X- och Y-upplösning","PrintConv":{"cm":"centimeter","inches":"tum"}}}
+{"kind":"translate","lang":"sv","tag":"RowsPerStrip","value":"Antal rader"}
+{"kind":"translate","lang":"sv","tag":"SamplesPerPixel","value":"Antal komponenter"}
+{"kind":"translate","lang":"sv","tag":"Saturation","value":{"Description":"Mättnad","PrintConv":{"High":"Hög mättnad","Low":"Låg mättnad","Normal":"Standard"}}}
+{"kind":"translate","lang":"sv","tag":"SceneCaptureType","value":{"Description":"Motivtyp","PrintConv":{"Landscape":"Landskap","Night":"Nattmotiv","Portrait":"Porträtt"}}}
+{"kind":"translate","lang":"sv","tag":"SceneMode","value":{"Description":"Scenval","PrintConv":{"3D Sweep Panorama":"3D","Anti Motion Blur":"Anti-rörelseoskärpa","Auto":"Automatisk","Cont. Priority AE":"Kont. prioritet AE","Handheld Night Shot":"Manuell nattbild","Landscape":"Landskap","Macro":"Makro","Night Portrait":"Nattporträtt","Night Scene":"Nattvy","Night View/Portrait":"Nattvy/porträtt","Portrait":"Porträtt","Sports":"Sporthändelse","Sunset":"Solnedgång","Sweep Panorama":"Panorering"}}}
+{"kind":"translate","lang":"sv","tag":"SceneType","value":{"Description":"Motivtyp","PrintConv":{"Directly photographed":"En direktfotograferad bild"}}}
+{"kind":"translate","lang":"sv","tag":"SensingMethod","value":{"Description":"Avkänningsmetod","PrintConv":{"Color sequential area":"Color sequential area sensor","Color sequential linear":"Color sequential linear sensor","One-chip color area":"One-chip color area sensor","Three-chip color area":"Three-chip color area sensor","Trilinear":"Trilinear sensor","Two-chip color area":"Two-chip color area sensor"}}}
+{"kind":"translate","lang":"sv","tag":"SerialNumber","value":"Kamera-ID"}
+{"kind":"translate","lang":"sv","tag":"ShadingCompensation","value":"Skuggkompensering"}
+{"kind":"translate","lang":"sv","tag":"Sharpness","value":{"Description":"Skärpa","PrintConv":{"Hard":"Hård","Normal":"Standard","Soft":"Mjuk"}}}
+{"kind":"translate","lang":"sv","tag":"ShootingMode","value":"Fotograferingsläge"}
+{"kind":"translate","lang":"sv","tag":"ShutterSpeed","value":"Exponeringstid"}
+{"kind":"translate","lang":"sv","tag":"ShutterSpeedValue","value":"Slutartid"}
+{"kind":"translate","lang":"sv","tag":"Software","value":"Programvara"}
+{"kind":"translate","lang":"sv","tag":"Source","value":"Källa"}
+{"kind":"translate","lang":"sv","tag":"SpatialFrequencyResponse","value":"Frekvensomfång"}
+{"kind":"translate","lang":"sv","tag":"SpectralSensitivity","value":"Spektral känslighet"}
+{"kind":"translate","lang":"sv","tag":"State","value":"Län"}
+{"kind":"translate","lang":"sv","tag":"StripByteCounts","value":"Byte komprimerade"}
+{"kind":"translate","lang":"sv","tag":"StripOffsets","value":"Plats för bilddata"}
+{"kind":"translate","lang":"sv","tag":"SubSecTime","value":"DateTime subseconds"}
+{"kind":"translate","lang":"sv","tag":"SubSecTimeDigitized","value":"DateTimeDigitized subseconds"}
+{"kind":"translate","lang":"sv","tag":"SubSecTimeOriginal","value":"DateTimeOriginal subseconds"}
+{"kind":"translate","lang":"sv","tag":"SubjectArea","value":"Motivyta"}
+{"kind":"translate","lang":"sv","tag":"SubjectDistance","value":"Motivavstånd"}
+{"kind":"translate","lang":"sv","tag":"SubjectDistanceRange","value":{"Description":"Motivavstånd","PrintConv":{"Close":"Nära håll","Distant":"Långt håll","Macro":"Makro"}}}
+{"kind":"translate","lang":"sv","tag":"SubjectLocation","value":"Motivets placering"}
+{"kind":"translate","lang":"sv","tag":"SupplementalCategories","value":"Tilläggskategorier"}
+{"kind":"translate","lang":"sv","tag":"ThumbnailImage","value":"Miniatyr"}
+{"kind":"translate","lang":"sv","tag":"ThumbnailImageSize","value":"Miniatyrstorlek"}
+{"kind":"translate","lang":"sv","tag":"Title","value":"Titel"}
+{"kind":"translate","lang":"sv","tag":"TransferFunction","value":"Överföringsfunktion"}
+{"kind":"translate","lang":"sv","tag":"TransmissionReference","value":"Sändningsreferens"}
+{"kind":"translate","lang":"sv","tag":"Urgency","value":"Prioritet"}
+{"kind":"translate","lang":"sv","tag":"UserComment","value":"Användarkommentarer"}
+{"kind":"translate","lang":"sv","tag":"WhiteBalance","value":{"Description":"Vitbalans","PrintConv":{"Auto":"Automatisk vitbalans","Black & White":"Monokrom","Cloudy":"Mulet","Color Temperature/Color Filter":"Färgtemperatur / Färgfilter","Cool White Fluorescent":"Kalljusrör","Custom":"Special","Custom 1":"ANPASSNING1","Custom 2":"ANPASSNING2","Custom 3":"ANPASSNING3","Custom 4":"ANPASSNING4","Day White Fluorescent":"\"Dagljusrör, högdager\"","Daylight":"Dagsljus","Daylight Fluorescent":"Dagljusrör","Flash":"Blixt","Fluorescent":"Lysrörsbelysning","Manual":"Manuell vitbalans","Shade":"Skugga","Tungsten":"Glödlampa","Unknown":"Okänt","Warm White Fluorescent":"Varmt vitt fluorescerande","White Fluorescent":"Vit lysrörsbelysning"}}}
+{"kind":"translate","lang":"sv","tag":"WhitePoint","value":"Vitpunktskromaticitet"}
+{"kind":"translate","lang":"sv","tag":"Writer-Editor","value":"Bildtextredigerare"}
+{"kind":"translate","lang":"sv","tag":"YCbCrCoefficients","value":"Koefficienter för färgområdesomvandling"}
+{"kind":"translate","lang":"sv","tag":"YCbCrPositioning","value":{"Description":"Y- och C-placering","PrintConv":{"Centered":"Centrerad"}}}
+{"kind":"translate","lang":"sv","tag":"YCbCrSubSampling","value":"Subsampling ratio of Y to C"}
+{"kind":"translate","lang":"sv","tag":"ZoneMatching","value":{"Description":"Zonmatchning","PrintConv":{"High Key":"Hög","ISO Setting Used":"Av","Low Key":"Låg"}}}

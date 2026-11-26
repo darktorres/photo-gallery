@@ -1,0 +1,44 @@
+{"kind":"table","module":"OpenEXR","name":"Image::ExifTool::OpenEXR::Main","special":{"GROUPS":{"0":"OpenEXR","1":"OpenEXR","2":"Image"},"NOTES":"\n        Information extracted from EXR images.  Use the ExtractEmbedded option to\n        extract information from all frames of a multipart image.  See\n        L<http://www.openexr.com/> for the official specification.\n    ","SHORT_NAME":"OpenEXR::Main","TABLE_NAME":"Image::ExifTool::OpenEXR::Main","TAG_PREFIX":"OpenEXR"}}
+{"fields":{"Name":"Flags","PrintConv":{"BITMASK":{"10":"Long names","11":"Deep data","12":"Multipart","9":"Tiled"}}},"id":"_flags","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"EXRVersion","Notes":"low byte of Flags word"},"id":"_ver","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"AdoptedNeutral"},"id":"adoptedNeutral","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSAltitude","PrintConv":"\n            $val = int($val * 10) / 10;\n            return(($val =~ s/^-// ? \"$val m Below\" : \"$val m Above\") . \" Sea Level\");\n        "},"id":"altitude","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Aperture","PrintConv":"sprintf(\"%.1f\",$val)"},"id":"aperture","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)"},"id":"capDate","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Channels"},"id":"channels","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Chromaticities"},"id":"chromaticities","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"ChunkCount"},"id":"chunkCount","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Comments"},"id":"comments","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Compression","PrintConv":{"0":"None","1":"RLE","2":"ZIPS","3":"ZIP","4":"PIZ","5":"PXR24","6":"B44","7":"B44A","8":"DWAA","9":"DWAB"},"PrintConvColumns":2},"id":"compression","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"DataWindow"},"id":"dataWindow","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"DisplayWindow"},"id":"displayWindow","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"EnvironmentMap","PrintConv":{"0":"Latitude/Longitude","1":"Cube"}},"id":"envmap","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"EXIF","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"Start":4,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"exif","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)"},"id":"expTime","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"FocusDistance","PrintConv":"\"$val m\""},"id":"focus","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"FramesPerSecond"},"id":"framesPerSecond","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"ISO"},"id":"isoSpeed","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"KeyCode"},"id":"keyCode","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"latitude","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"LineOrder","PrintConv":{"0":"Increasing Y","1":"Decreasing Y","2":"Random Y"}},"id":"lineOrder","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"longitude","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"LookModTransform"},"id":"lookModTransform","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"MultiView"},"id":"multiView","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Name"},"id":"name","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Owner"},"id":"owner","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"PixelAspectRatio"},"id":"pixelAspectRatio","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Preview"},"Name":"Preview"},"id":"preview","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"RenderingTransform"},"id":"renderingTransform","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"ScreenWindowCenter"},"id":"screenWindowCenter","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"ScreenWindowWidth"},"id":"screenWindowWidth","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Tiles"},"id":"tiles","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"TimeCode"},"id":"timeCode","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Type"},"id":"type","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeZone","PrintConv":"TimeZoneString($val / 60)"},"id":"utcOffset","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"Version"},"id":"version","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"WhiteLuminance"},"id":"whiteLuminance","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"WorldToCamera"},"id":"worldToCamera","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"WorldToNDC"},"id":"worldToNDC","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"WrapModes"},"id":"wrapmodes","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"XResolution"},"id":"xDensity","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"xmp","index":null,"kind":"tag","table":"Image::ExifTool::OpenEXR::Main"}

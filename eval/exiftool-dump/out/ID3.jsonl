@@ -1,0 +1,295 @@
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::GEOB","special":{"GROUPS":{"0":"ID3","1":"ID3v2_3","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessGEOB"},"SHORT_NAME":"ID3::GEOB","TABLE_NAME":"Image::ExifTool::ID3::GEOB","TAG_PREFIX":"ID3_GEOB"}}
+{"fields":{"Name":"GEOB-Data"},"id":"GEOB-Data","index":null,"kind":"tag","table":"Image::ExifTool::ID3::GEOB"}
+{"fields":{"Name":"GEOB-Desc"},"id":"GEOB-Desc","index":null,"kind":"tag","table":"Image::ExifTool::ID3::GEOB"}
+{"fields":{"Name":"GEOB-File"},"id":"GEOB-File","index":null,"kind":"tag","table":"Image::ExifTool::ID3::GEOB"}
+{"fields":{"Name":"GEOB-Mime"},"id":"GEOB-Mime","index":null,"kind":"tag","table":"Image::ExifTool::ID3::GEOB"}
+{"fields":{"Name":"JUMBF","SubDirectory":{"ByteOrder":"BigEndian","TagTable":"Image::ExifTool::Jpeg2000::Main"}},"id":"application/x-c2pa-manifest-store","index":null,"kind":"tag","table":"Image::ExifTool::ID3::GEOB"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::Lyrics3","special":{"GROUPS":{"0":"ID3","1":"Lyrics3","2":"Audio"},"NOTES":"\n        ExifTool extracts Lyrics3 version 1.00 and 2.00 tags from any file that\n        supports ID3.  See L<https://id3.org/Lyrics3> for the specification.\n    ","SHORT_NAME":"ID3::Lyrics3","TABLE_NAME":"Image::ExifTool::ID3::Lyrics3","TAG_PREFIX":"ID3_Lyrics3"}}
+{"fields":{"Name":"AdditionalInfo"},"id":"INF","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"AUT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"CRC"},"id":"CRC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"ExtendedAlbumName"},"id":"EAL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"ExtendedArtistName"},"id":"EAR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"ExtendedTrackTitle"},"id":"ETT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"AssociatedImageFile"},"id":"IMG","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"Indications"},"id":"IND","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"fields":{"Name":"Lyrics"},"id":"LYR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Lyrics3"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::Main","special":{"GROUPS":{"0":"ID3","1":"ID3","2":"Other"},"NOTES":"\n        ExifTool extracts ID3 and Lyrics3 information from MP3, MPEG, WAV, WV, AIFF,\n        OGG, FLAC, APE, DSF, MPC and RealAudio files.  ID3v2 tags which support\n        multiple languages (eg. Comment and Lyrics) are extracted by specifying the\n        tag name, followed by a dash ('-'), then a 3-character ISO 639-2 language\n        code (eg. \"Comment-spa\"). See L<https://id3.org/> for the official ID3\n        specification and L<http://www.loc.gov/standards/iso639-2/php/code_list.php>\n        for a list of ISO 639-2 language codes.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessID3Dir"},"SHORT_NAME":"ID3::Main","TABLE_NAME":"Image::ExifTool::ID3::Main","TAG_PREFIX":"ID3","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"ID3v1","SubDirectory":{"TagTable":"Image::ExifTool::ID3::v1"}},"id":"ID3v1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Main"}
+{"fields":{"Name":"ID3v1_Enh","SubDirectory":{"TagTable":"Image::ExifTool::ID3::v1_Enh"}},"id":"ID3v1Enh","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Main"}
+{"fields":{"Name":"ID3v2_2","SubDirectory":{"TagTable":"Image::ExifTool::ID3::v2_2"}},"id":"ID3v22","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Main"}
+{"fields":{"Name":"ID3v2_3","SubDirectory":{"TagTable":"Image::ExifTool::ID3::v2_3"}},"id":"ID3v23","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Main"}
+{"fields":{"Name":"ID3v2_4","SubDirectory":{"TagTable":"Image::ExifTool::ID3::v2_4"}},"id":"ID3v24","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Main"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::Private","special":{"GROUPS":{"0":"ID3","1":"ID3","2":"Audio"},"NOTES":"\n        ID3 private (PRIV) tags.  ExifTool will decode any private tags found, even\n        if they do not appear in this table.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessPrivate"},"SHORT_NAME":"ID3::Private","TABLE_NAME":"Image::ExifTool::ID3::Private","TAG_PREFIX":"ID3_Private","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"AverageLevel","ValueConv":"length($val)==4 ? unpack(\"V\",$val) : \\$val"},"id":"AverageLevel","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"PeakValue","ValueConv":"length($val)==4 ? unpack(\"V\",$val) : \\$val"},"id":"PeakValue","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_MediaClassPrimaryID","ValueConv":"require Image::ExifTool::ASF; Image::ExifTool::ASF::GetGUID($val)"},"id":"WM_MediaClassPrimaryID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_MediaClassSecondaryID","ValueConv":"require Image::ExifTool::ASF; Image::ExifTool::ASF::GetGUID($val)"},"id":"WM_MediaClassSecondaryID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_Provider","ValueConv":"$self->Decode($val,\"UTF16\",\"II\")"},"id":"WM_Provider","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_CollectionGroupID","ValueConv":"require Image::ExifTool::ASF; Image::ExifTool::ASF::GetGUID($val)"},"id":"WM_WMCollectionGroupID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_CollectionID","ValueConv":"require Image::ExifTool::ASF; Image::ExifTool::ASF::GetGUID($val)"},"id":"WM_WMCollectionID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"WM_ContentID","ValueConv":"require Image::ExifTool::ASF; Image::ExifTool::ASF::GetGUID($val)"},"id":"WM_WMContentID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"fields":{"Name":"XMP","SubDirectory":{"DirName":"XMP","TagTable":"Image::ExifTool::XMP::Main"}},"id":"XMP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::Private"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::SynLyrics","special":{"GROUPS":{"0":"ID3","1":"ID3","2":"Audio"},"NOTES":"The following tags are extracted from synchronized lyrics/text frames.","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessSynText"},"SHORT_NAME":"ID3::SynLyrics","TABLE_NAME":"Image::ExifTool::ID3::SynLyrics","TAG_PREFIX":"ID3_SynLyrics","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"SynchronizedLyricsDescription"},"id":"desc","index":null,"kind":"tag","table":"Image::ExifTool::ID3::SynLyrics"}
+{"fields":{"List":1,"Name":"SynchronizedLyricsText","Notes":"\n            each list item has a leading time stamp in square brackets.  Time stamps may\n            be in seconds with format [MM:SS.ss], or MPEG frames with format [FFFF],\n            depending on how this information was stored\n        ","PrintConv":{"code":"&Image::ExifTool::ID3::ConvertTimeStamp"}},"id":"text","index":null,"kind":"tag","table":"Image::ExifTool::ID3::SynLyrics"}
+{"fields":{"Name":"SynchronizedLyricsType","PrintConv":{"0":"Other","1":"Lyrics","2":"Text Transcription","3":"Movement/part Name","4":"Events","5":"Chord","6":"Trivia/\"pop-up\" Information","7":"Web Page URL","8":"Image URL"}},"id":"type","index":null,"kind":"tag","table":"Image::ExifTool::ID3::SynLyrics"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::v1","special":{"GROUPS":{"0":"ID3","1":"ID3v1","2":"Audio"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ID3::v1","TABLE_NAME":"Image::ExifTool::ID3::v1","TAG_PREFIX":"ID3_v1"}}
+{"fields":{"Format":"string[30]","Name":"Title","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"string[30]","Groups":{"2":"Author"},"Name":"Artist","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"string[30]","Name":"Album","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"63","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"string[4]","Groups":{"2":"Time"},"Name":"Year"},"id":"93","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"string[30]","Name":"Comment","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"97","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"int8u[2]","Name":"Track","Notes":"v1.1 addition -- last 2 bytes of v1.0 Comment field","RawConv":"($val =~ s/^0 // and $val) ? $val : undef"},"id":"125","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"fields":{"Format":"int8u","Name":"Genre","Notes":"CR and RX are ID3v2 only","PrintConv":{"0":"Blues","1":"Classic Rock","10":"New Age","100":"Humour","101":"Speech","102":"Chanson","103":"Opera","104":"Chamber Music","105":"Sonata","106":"Symphony","107":"Booty Bass","108":"Primus","109":"Porn Groove","11":"Oldies","110":"Satire","111":"Slow Jam","112":"Club","113":"Tango","114":"Samba","115":"Folklore","116":"Ballad","117":"Power Ballad","118":"Rhythmic Soul","119":"Freestyle","12":"Other","120":"Duet","121":"Punk Rock","122":"Drum Solo","123":"A Cappella","124":"Euro-House","125":"Dance Hall","126":"Goa","127":"Drum & Bass","128":"Club-House","129":"Hardcore","13":"Pop","130":"Terror","131":"Indie","132":"BritPop","133":"Afro-Punk","134":"Polsk Punk","135":"Beat","136":"Christian Gangsta Rap","137":"Heavy Metal","138":"Black Metal","139":"Crossover","14":"R&B","140":"Contemporary Christian","141":"Christian Rock","142":"Merengue","143":"Salsa","144":"Thrash Metal","145":"Anime","146":"JPop","147":"Synthpop","148":"Abstract","149":"Art Rock","15":"Rap","150":"Baroque","151":"Bhangra","152":"Big Beat","153":"Breakbeat","154":"Chillout","155":"Downtempo","156":"Dub","157":"EBM","158":"Eclectic","159":"Electro","16":"Reggae","160":"Electroclash","161":"Emo","162":"Experimental","163":"Garage","164":"Global","165":"IDM","166":"Illbient","167":"Industro-Goth","168":"Jam Band","169":"Krautrock","17":"Rock","170":"Leftfield","171":"Lounge","172":"Math Rock","173":"New Romantic","174":"Nu-Breakz","175":"Post-Punk","176":"Post-Rock","177":"Psytrance","178":"Shoegaze","179":"Space Rock","18":"Techno","180":"Trop Rock","181":"World Music","182":"Neoclassical","183":"Audiobook","184":"Audio Theatre","185":"Neue Deutsche Welle","186":"Podcast","187":"Indie Rock","188":"G-Funk","189":"Dubstep","19":"Industrial","190":"Garage Rock","191":"Psybient","2":"Country","20":"Alternative","21":"Ska","22":"Death Metal","23":"Pranks","24":"Soundtrack","25":"Euro-Techno","255":"None","26":"Ambient","27":"Trip-Hop","28":"Vocal","29":"Jazz+Funk","3":"Dance","30":"Fusion","31":"Trance","32":"Classical","33":"Instrumental","34":"Acid","35":"House","36":"Game","37":"Sound Clip","38":"Gospel","39":"Noise","4":"Disco","40":"Alt. Rock","41":"Bass","42":"Soul","43":"Punk","44":"Space","45":"Meditative","46":"Instrumental Pop","47":"Instrumental Rock","48":"Ethnic","49":"Gothic","5":"Funk","50":"Darkwave","51":"Techno-Industrial","52":"Electronic","53":"Pop-Folk","54":"Eurodance","55":"Dream","56":"Southern Rock","57":"Comedy","58":"Cult","59":"Gangsta Rap","6":"Grunge","60":"Top 40","61":"Christian Rap","62":"Pop/Funk","63":"Jungle","64":"Native American","65":"Cabaret","66":"New Wave","67":"Psychedelic","68":"Rave","69":"Showtunes","7":"Hip-Hop","70":"Trailer","71":"Lo-Fi","72":"Tribal","73":"Acid Punk","74":"Acid Jazz","75":"Polka","76":"Retro","77":"Musical","78":"Rock & Roll","79":"Hard Rock","8":"Jazz","80":"Folk","81":"Folk-Rock","82":"National Folk","83":"Swing","84":"Fast-Fusion","85":"Bebop","86":"Latin","87":"Revival","88":"Celtic","89":"Bluegrass","9":"Metal","90":"Avantgarde","91":"Gothic Rock","92":"Progressive Rock","93":"Psychedelic Rock","94":"Symphonic Rock","95":"Slow Rock","96":"Big Band","97":"Chorus","98":"Easy Listening","99":"Acoustic","CR":"Cover","RX":"Remix"},"PrintConvColumns":3},"id":"127","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::v1_Enh","special":{"GROUPS":{"0":"ID3","1":"ID3v1_Enh","2":"Audio"},"NOTES":"ID3 version 1 \"Enhanced TAG\" information (not part of the official spec).","PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ID3::v1_Enh","TABLE_NAME":"Image::ExifTool::ID3::v1_Enh","TAG_PREFIX":"ID3_v1_Enh"}}
+{"fields":{"Format":"string[60]","Name":"Title2","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"string[60]","Groups":{"2":"Author"},"Name":"Artist2","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"string[60]","Name":"Album2","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"124","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"int8u","Name":"Speed","PrintConv":{"1":"Slow","2":"Medium","3":"Fast","4":"Hardcore"}},"id":"184","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"string[30]","Name":"Genre","ValueConv":"Image::ExifTool::ID3::ConvertID3v1Text($self,$val)"},"id":"185","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"string[6]","Name":"StartTime"},"id":"215","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"fields":{"Format":"string[6]","Name":"EndTime"},"id":"221","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v1_Enh"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::v2_2","special":{"GROUPS":{"0":"ID3","1":"ID3v2_2","2":"Audio"},"NOTES":"\n        ExifTool extracts mainly text-based tags from ID3v2 information.  The tags\n        in the tables below are those extracted by ExifTool, and don't represent a\n        complete list of available ID3v2 tags.\n\n        ID3 version 2.2 tags.  (These are the tags written by iTunes 5.0.)\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessID3v2"},"SHORT_NAME":"ID3::v2_2","TABLE_NAME":"Image::ExifTool::ID3::v2_2","TAG_PREFIX":"ID3_v2_2"}}
+{"fields":{"Name":"PlayCounter"},"id":"CNT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Comment"},"id":"COM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Grouping"},"id":"GP1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"InvolvedPeople"},"id":"IPL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Binary":1,"Description":"iTunes U","Name":"iTunesU","Unknown":1},"id":"ITU","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"MovementNumber"},"id":"MVI","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"MovementName"},"id":"MVN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Binary":1,"Name":"Podcast","Unknown":1},"id":"PCS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"Picture","Notes":"the 3 tags below are also extracted from this PIC frame"},"id":"PIC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureFormat"},"id":"PIC-1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"id":"shared00208","kind":"shared","value":{"0":"Other","1":"32x32 PNG Icon","10":"Band","11":"Composer","12":"Lyricist","13":"Recording Studio or Location","14":"Recording Session","15":"Performance","16":"Capture from Movie or Video","17":"Bright(ly) Colored Fish","18":"Illustration","19":"Band Logo","2":"Other Icon","20":"Publisher Logo","3":"Front Cover","4":"Back Cover","5":"Leaflet","6":"Media","7":"Lead Artist","8":"Artist","9":"Conductor"}}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureType","PrintConv":{"ref":"shared00208"},"SeparateTable":1},"id":"PIC-2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureDescription"},"id":"PIC-3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Popularimeter","PrintConv":"$val=~s/^(.*?) (\\d+) (\\d+)$/$1 Rating=$2 Count=$3/s; $val"},"id":"POP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"RelativeVolumeAdjustment"},"id":"RVA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"SynLyrics","SubDirectory":{"TagTable":"Image::ExifTool::ID3::SynLyrics"}},"id":"SLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Album"},"id":"TAL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"BeatsPerMinute"},"id":"TBP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Composer"},"id":"TCM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Genre","Notes":"uses same lookup table as ID3v1 Genre","PrintConv":"Image::ExifTool::ID3::PrintGenre($val)"},"id":"TCO","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Compilation","PrintConv":{"0":"No","1":"Yes"}},"id":"TCP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"TCR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Date"},"id":"TDA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"PlaylistDelay"},"id":"TDY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"EncodedBy"},"id":"TEN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"FileType"},"id":"TFT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Time"},"id":"TIM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"InitialKey"},"id":"TKE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Language"},"id":"TLA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Length"},"id":"TLE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Media"},"id":"TMT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Author"},"Name":"OriginalArtist"},"id":"TOA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"OriginalFileName"},"id":"TOF","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"OriginalLyricist"},"id":"TOL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"OriginalReleaseYear"},"id":"TOR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"OriginalAlbum"},"id":"TOT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"TP1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Band"},"id":"TP2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Conductor"},"id":"TP3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"InterpretedBy"},"id":"TP4","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"PartOfSet"},"id":"TPA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Publisher"},"id":"TPB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"ISRC"},"id":"TRC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"RecordingDates"},"id":"TRD","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Track"},"id":"TRK","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"AlbumArtistSortOrder"},"id":"TS2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"AlbumSortOrder"},"id":"TSA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"ComposerSortOrder"},"id":"TSC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Size"},"id":"TSI","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"PerformerSortOrder"},"id":"TSP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"EncoderSettings"},"id":"TSS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"TitleSortOrder"},"id":"TST","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Grouping"},"id":"TT1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Title"},"id":"TT2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Subtitle"},"id":"TT3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Lyricist"},"id":"TXT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"UserDefinedText"},"id":"TXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Year"},"id":"TYE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"Lyrics"},"id":"ULT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"FileURL"},"id":"WAF","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Author"},"Name":"ArtistURL"},"id":"WAR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"SourceURL"},"id":"WAS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"CommercialURL"},"id":"WCM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Groups":{"2":"Author"},"Name":"CopyrightURL"},"id":"WCP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"PublisherURL"},"id":"WPB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"fields":{"Name":"UserDefinedURL"},"id":"WXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_2"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::v2_3","special":{"GROUPS":{"0":"ID3","1":"ID3v2_3","2":"Audio"},"NOTES":"\n        ID3 version 2.3 tags.  Includes some non-standard tags written by other\n        software.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessID3v2"},"SHORT_NAME":"ID3::v2_3","TABLE_NAME":"Image::ExifTool::ID3::v2_3","TAG_PREFIX":"ID3_v2_3"}}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"Picture","Notes":"the 3 tags below are also extracted from this APIC frame"},"id":"APIC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureMIMEType"},"id":"APIC-1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureType","PrintConv":{"ref":"shared00208"},"SeparateTable":1},"id":"APIC-2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureDescription"},"id":"APIC-3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Comment"},"id":"COMM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"id":"shared00209","kind":"shared","value":{"TagTable":"Image::ExifTool::ID3::GEOB"}}
+{"fields":{"Name":"GeneralEncapsulatedObject","SubDirectory":{"ref":"shared00209"}},"id":"GEOB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Grouping"},"id":"GRP1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InvolvedPeople"},"id":"IPLS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Binary":1,"Description":"iTunes U","Name":"iTunesU","Unknown":1},"id":"ITNU","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Binary":1,"Name":"MusicCDIdentifier"},"id":"MCDI","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"MovementNumber"},"id":"MVIN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"MovementName"},"id":"MVNM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Ownership"},"id":"OWNE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PlayCounter"},"id":"PCNT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Binary":1,"Name":"Podcast","Unknown":1},"id":"PCST","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Popularimeter","PrintConv":"$val=~s/^(.*?) (\\d+) (\\d+)$/$1 Rating=$2 Count=$3/s; $val"},"id":"POPM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"id":"shared00210","kind":"shared","value":{"TagTable":"Image::ExifTool::ID3::Private"}}
+{"fields":{"Name":"Private","SubDirectory":{"ref":"shared00210"}},"id":"PRIV","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"id":"shared00211","kind":"shared","value":{"TagTable":"Image::ExifTool::ID3::SynLyrics"}}
+{"fields":{"Name":"SynLyrics","SubDirectory":{"ref":"shared00211"}},"id":"SYLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Album"},"id":"TALB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"BeatsPerMinute"},"id":"TBPM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PodcastCategory"},"id":"TCAT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"id":"shared00212","kind":"shared","value":{"0":"No","1":"Yes"}}
+{"fields":{"Name":"Compilation","PrintConv":{"ref":"shared00212"}},"id":"TCMP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Composer"},"id":"TCOM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Genre","Notes":"uses same lookup table as ID3v1 Genre","PrintConv":"Image::ExifTool::ID3::PrintGenre($val)"},"id":"TCON","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"TCOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Date"},"id":"TDAT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PodcastDescription"},"id":"TDES","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PlaylistDelay"},"id":"TDLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"EncodedBy"},"id":"TENC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Lyricist"},"id":"TEXT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"FileType"},"id":"TFLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PodcastID"},"id":"TGID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Time"},"id":"TIME","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Grouping"},"id":"TIT1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Title"},"id":"TIT2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Subtitle"},"id":"TIT3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InitialKey"},"id":"TKEY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PodcastKeywords"},"id":"TKWD","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Language"},"id":"TLAN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Length","PrintConv":"\"$val s\"","ValueConv":"$val / 1000"},"id":"TLEN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Media"},"id":"TMED","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"OriginalAlbum"},"id":"TOAL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"OriginalFileName"},"id":"TOFN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"OriginalLyricist"},"id":"TOLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Author"},"Name":"OriginalArtist"},"id":"TOPE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"OriginalReleaseYear"},"id":"TORY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"FileOwner"},"id":"TOWN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"TPE1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Band"},"id":"TPE2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Conductor"},"id":"TPE3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InterpretedBy"},"id":"TPE4","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PartOfSet"},"id":"TPOS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Publisher"},"id":"TPUB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Track"},"id":"TRCK","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"RecordingDates"},"id":"TRDA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InternetRadioStationName"},"id":"TRSN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InternetRadioStationOwner"},"id":"TRSO","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Size"},"id":"TSIZ","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"AlbumArtistSortOrder"},"id":"TSO2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"ComposerSortOrder"},"id":"TSOC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"ISRC"},"id":"TSRC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"EncoderSettings"},"id":"TSSE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"UserDefinedText"},"id":"TXXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Year"},"id":"TYER","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"TermsOfUse"},"id":"USER","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"Lyrics"},"id":"USLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"CommercialURL"},"id":"WCOM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"CopyrightURL"},"id":"WCOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PodcastURL"},"id":"WFED","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"FileURL"},"id":"WOAF","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Author"},"Name":"ArtistURL"},"id":"WOAR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"SourceURL"},"id":"WOAS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"InternetRadioStationURL"},"id":"WORS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PaymentURL"},"id":"WPAY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PublisherURL"},"id":"WPUB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"UserDefinedURL"},"id":"WXXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OriginalReleaseTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"XDOR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"id":"shared00213","kind":"shared","value":{"TagTable":"Image::ExifTool::Olympus::DSS"}}
+{"fields":{"Name":"OlympusDSS","SubDirectory":{"ref":"shared00213"}},"id":"XOLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"AlbumSortOrder"},"id":"XSOA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"PerformerSortOrder"},"id":"XSOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"fields":{"Name":"TitleSortOrder"},"id":"XSOT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_3"}
+{"kind":"table","module":"ID3","name":"Image::ExifTool::ID3::v2_4","special":{"GROUPS":{"0":"ID3","1":"ID3v2_4","2":"Audio"},"NOTES":"\n        ID3 version 2.4 tags.  Includes some non-standard tags written by other\n        software.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ID3::ProcessID3v2"},"SHORT_NAME":"ID3::v2_4","TABLE_NAME":"Image::ExifTool::ID3::v2_4","TAG_PREFIX":"ID3_v2_4"}}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"Picture","Notes":"the 3 tags below are also extracted from this APIC frame"},"id":"APIC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureMIMEType"},"id":"APIC-1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureType","PrintConv":{"ref":"shared00208"},"SeparateTable":1},"id":"APIC-2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Image"},"Name":"PictureDescription"},"id":"APIC-3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Comment"},"id":"COMM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"GeneralEncapsulatedObject","SubDirectory":{"ref":"shared00209"}},"id":"GEOB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Grouping"},"id":"GRP1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Binary":1,"Description":"iTunes U","Name":"iTunesU","Unknown":1},"id":"ITNU","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Binary":1,"Name":"MusicCDIdentifier"},"id":"MCDI","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"MovementNumber"},"id":"MVIN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"MovementName"},"id":"MVNM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Ownership"},"id":"OWNE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PlayCounter"},"id":"PCNT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Binary":1,"Name":"Podcast","Unknown":1},"id":"PCST","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Popularimeter","PrintConv":"$val=~s/^(.*?) (\\d+) (\\d+)$/$1 Rating=$2 Count=$3/s; $val"},"id":"POPM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Private","SubDirectory":{"ref":"shared00210"}},"id":"PRIV","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"RelativeVolumeAdjustment"},"id":"RVA2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"SynLyrics","SubDirectory":{"ref":"shared00211"}},"id":"SYLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Album"},"id":"TALB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"BeatsPerMinute"},"id":"TBPM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PodcastCategory"},"id":"TCAT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Compilation","PrintConv":{"ref":"shared00212"}},"id":"TCMP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Composer"},"id":"TCOM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Genre","Notes":"uses same lookup table as ID3v1 Genre","PrintConv":"Image::ExifTool::ID3::PrintGenre($val)"},"id":"TCON","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"TCOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"EncodingTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"TDEN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PodcastDescription"},"id":"TDES","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PlaylistDelay"},"id":"TDLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OriginalReleaseTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"TDOR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"RecordingTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"TDRC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ReleaseTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"TDRL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TaggingTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"TDTG","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"EncodedBy"},"id":"TENC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Lyricist"},"id":"TEXT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"FileType"},"id":"TFLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PodcastID"},"id":"TGID","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InvolvedPeople"},"id":"TIPL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Grouping"},"id":"TIT1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Title"},"id":"TIT2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Subtitle"},"id":"TIT3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InitialKey"},"id":"TKEY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PodcastKeywords"},"id":"TKWD","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Language"},"id":"TLAN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Length","PrintConv":"\"$val s\"","ValueConv":"$val / 1000"},"id":"TLEN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"MusicianCredits"},"id":"TMCL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Media"},"id":"TMED","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Mood"},"id":"TMOO","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"OriginalAlbum"},"id":"TOAL","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"OriginalFileName"},"id":"TOFN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"OriginalLyricist"},"id":"TOLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Author"},"Name":"OriginalArtist"},"id":"TOPE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"FileOwner"},"id":"TOWN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"TPE1","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Band"},"id":"TPE2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Conductor"},"id":"TPE3","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InterpretedBy"},"id":"TPE4","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PartOfSet"},"id":"TPOS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"ProducedNotice"},"id":"TPRO","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Publisher"},"id":"TPUB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Track"},"id":"TRCK","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InternetRadioStationName"},"id":"TRSN","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InternetRadioStationOwner"},"id":"TRSO","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"AlbumArtistSortOrder"},"id":"TSO2","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"AlbumSortOrder"},"id":"TSOA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"ComposerSortOrder"},"id":"TSOC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PerformerSortOrder"},"id":"TSOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"TitleSortOrder"},"id":"TSOT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"ISRC"},"id":"TSRC","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"EncoderSettings"},"id":"TSSE","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"SetSubtitle"},"id":"TSST","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"UserDefinedText"},"id":"TXXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"TermsOfUse"},"id":"USER","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"Lyrics"},"id":"USLT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"CommercialURL"},"id":"WCOM","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"CopyrightURL"},"id":"WCOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PodcastURL"},"id":"WFED","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"FileURL"},"id":"WOAF","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Author"},"Name":"ArtistURL"},"id":"WOAR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"SourceURL"},"id":"WOAS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"InternetRadioStationURL"},"id":"WORS","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PaymentURL"},"id":"WPAY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PublisherURL"},"id":"WPUB","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"UserDefinedURL"},"id":"WXXX","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OriginalReleaseTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"XDOR","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"OlympusDSS","SubDirectory":{"ref":"shared00213"}},"id":"XOLY","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"AlbumSortOrder"},"id":"XSOA","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"PerformerSortOrder"},"id":"XSOP","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}
+{"fields":{"Name":"TitleSortOrder"},"id":"XSOT","index":null,"kind":"tag","table":"Image::ExifTool::ID3::v2_4"}

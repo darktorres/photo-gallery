@@ -1,0 +1,137 @@
+{"kind":"table","module":"MRC","name":"Image::ExifTool::MRC::FEI12","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"Tags extracted from FEI1 and FEI2 extended headers.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MRC::FEI12","TABLE_NAME":"Image::ExifTool::MRC::FEI12","TAG_PREFIX":"MRC_FEI12","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"int32u","Name":"MetadataSize","RawConv":"$$self{MetadataSize} = $val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Format":"int32u","Name":"MetadataVersion"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Format":"int32u","Name":"Bitmask1","PrintConv":"sprintf(\"0x%.8x\", $val)","RawConv":"$$self{BitM} = $val"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x01","Format":"double","Groups":{"2":"Time"},"Name":"TimeStamp","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime(($val-25569)*24*3600)"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x02","Format":"string[16]","Name":"MicroscopeType"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x04","Format":"string[16]","Name":"MicroscopeID"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x08","Format":"string[16]","Name":"Application"},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10","Format":"string[16]","Name":"AppVersion"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20","Format":"double","Name":"HighTension","Notes":"volts"},"id":"84","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40","Format":"double","Name":"Dose","Notes":"electrons/m2"},"id":"92","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80","Format":"double","Name":"AlphaTilt"},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100","Format":"double","Name":"BetaTilt"},"id":"108","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200","Format":"double","Name":"XStage"},"id":"116","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400","Format":"double","Name":"YStage"},"id":"124","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800","Format":"double","Name":"ZStage"},"id":"132","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000","Format":"double","Name":"TiltAxisAngle"},"id":"140","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000","Format":"double","Name":"DualAxisRot"},"id":"148","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000","Format":"double","Name":"PixelSizeX"},"id":"156","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000","Format":"double","Name":"PixelSizeY"},"id":"164","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400000","Format":"double","Name":"Defocus"},"id":"220","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800000","Format":"double","Name":"STEMDefocus"},"id":"228","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000000","Format":"double","Name":"AppliedDefocus"},"id":"236","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000000","Format":"int32u","Name":"InstrumentMode","PrintConv":{"1":"TEM","2":"STEM"}},"id":"244","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000000","Format":"int32u","Name":"ProjectionMode","PrintConv":{"1":"Diffraction","2":"Imaging"}},"id":"248","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000000","Format":"string[16]","Name":"ObjectiveLens"},"id":"252","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10000000","Format":"string[16]","Name":"HighMagnificationMode"},"id":"268","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20000000","Format":"int32u","Name":"ProbeMode","PrintConv":{"1":"Nano","2":"Micro"}},"id":"284","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"id":"shared00223","kind":"shared","value":{"0":"No","1":"Yes"}}
+{"fields":{"Condition":"$$self{BitM} & 0x40000000","Format":"int8u","Name":"EFTEMOn","PrintConv":{"ref":"shared00223"}},"id":"288","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80000000","Format":"double","Name":"Magnification"},"id":"289","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Format":"int32u","Name":"Bitmask2","PrintConv":"sprintf(\"0x%.8x\", $val)","RawConv":"$$self{BitM} = $val"},"id":"297","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x01","Format":"double","Name":"CameraLength"},"id":"301","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x02","Format":"int32u","Name":"SpotIndex"},"id":"309","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x04","Format":"double","Name":"IlluminationArea"},"id":"313","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x08","Format":"double","Name":"Intensity"},"id":"321","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10","Format":"double","Name":"ConvergenceAngle"},"id":"329","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20","Format":"string[16]","Name":"IlluminationMode"},"id":"337","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40","Format":"int8u","Name":"WideConvergenceAngleRange","PrintConv":{"ref":"shared00223"}},"id":"353","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80","Format":"int8u","Name":"SlitInserted","PrintConv":{"ref":"shared00223"}},"id":"354","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100","Format":"double","Name":"SlitWidth"},"id":"355","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200","Format":"double","Name":"AccelVoltOffset"},"id":"363","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400","Format":"double","Name":"DriftTubeVolt"},"id":"371","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800","Format":"double","Name":"EnergyShift"},"id":"379","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000","Format":"double","Name":"ShiftOffsetX"},"id":"387","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000","Format":"double","Name":"ShiftOffsetY"},"id":"395","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000","Format":"double","Name":"ShiftX"},"id":"403","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000","Format":"double","Name":"ShiftY"},"id":"411","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10000","Format":"double","Name":"IntegrationTime"},"id":"419","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20000","Format":"int32u","Name":"BinningWidth"},"id":"427","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40000","Format":"int32u","Name":"BinningHeight"},"id":"431","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80000","Format":"string[16]","Name":"CameraName"},"id":"435","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100000","Format":"int32u","Name":"ReadoutAreaLeft"},"id":"451","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200000","Format":"int32u","Name":"ReadoutAreaTop"},"id":"455","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400000","Format":"int32u","Name":"ReadoutAreaRight"},"id":"459","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800000","Format":"int32u","Name":"ReadoutAreaBottom"},"id":"463","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000000","Format":"int8u","Name":"CetaNoiseReduct","PrintConv":{"ref":"shared00223"}},"id":"467","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000000","Format":"int32u","Name":"CetaFramesSummed"},"id":"468","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000000","Format":"int8u","Name":"DirectDetElectronCounting","PrintConv":{"ref":"shared00223"}},"id":"472","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000000","Format":"int8u","Name":"DirectDetAlignFrames","PrintConv":{"ref":"shared00223"}},"id":"473","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Format":"int32u","Name":"Bitmask3","PrintConv":"sprintf(\"0x%.8x\", $val)","RawConv":"$$self{BitM} = $val"},"id":"490","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40","Format":"int8u","Name":"PhasePlate","PrintConv":{"ref":"shared00223"}},"id":"518","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80","Format":"string[16]","Name":"STEMDetectorName"},"id":"519","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100","Format":"double","Name":"Gain"},"id":"535","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200","Format":"double","Name":"Offset"},"id":"543","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000","Format":"double","Name":"DwellTime"},"id":"571","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10000","Format":"double","Name":"FrameTime"},"id":"579","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20000","Format":"int32u","Name":"ScanSizeLeft"},"id":"587","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40000","Format":"int32u","Name":"ScanSizeTop"},"id":"591","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80000","Format":"int32u","Name":"ScanSizeRight"},"id":"595","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100000","Format":"int32u","Name":"ScanSizeBottom"},"id":"599","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200000","Format":"double","Name":"FullScanFOV_X"},"id":"603","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400000","Format":"double","Name":"FullScanFOV_Y"},"id":"611","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800000","Format":"string[16]","Name":"Element"},"id":"619","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000000","Format":"double","Name":"EnergyIntervalLower"},"id":"635","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000000","Format":"double","Name":"EnergyIntervalHigher"},"id":"643","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000000","Format":"int32u","Name":"Method"},"id":"651","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000000","Format":"int8u","Name":"IsDoseFraction","PrintConv":{"ref":"shared00223"}},"id":"655","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10000000","Format":"int32u","Name":"FractionNumber"},"id":"656","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20000000","Format":"int32u","Name":"StartFrame"},"id":"660","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40000000","Format":"int32u","Name":"EndFrame"},"id":"664","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80000000","Format":"string[80]","Name":"InputStackFilename"},"id":"668","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Format":"int32u","Name":"Bitmask4","PrintConv":"sprintf(\"0x%.8x\", $val)","RawConv":"$$self{BitM} = $val"},"id":"748","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x01","Format":"double","Name":"AlphaTiltMin"},"id":"752","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x02","Format":"double","Name":"AlphaTiltMax"},"id":"760","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x04","Format":"double","Name":"ScanRotation"},"id":"768","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x08","Format":"double","Name":"DiffractionPatternRotation"},"id":"776","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10","Format":"double","Name":"ImageRotation"},"id":"784","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x20","Format":"int32u","Name":"ScanModeEnumeration","PrintConv":{"0":"Other","1":"Raster","2":"Serpentine"}},"id":"792","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x40","Format":"int64u","Groups":{"2":"Time"},"Name":"AcquisitionTimeStamp","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val / 1e6, 1, 6)"},"id":"796","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x80","Format":"string[16]","Name":"DetectorCommercialName"},"id":"804","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x100","Format":"double","Name":"StartTiltAngle"},"id":"820","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x200","Format":"double","Name":"EndTiltAngle"},"id":"828","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x400","Format":"double","Name":"TiltPerImage"},"id":"836","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x800","Format":"double","Name":"TitlSpeed"},"id":"844","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x1000","Format":"int32u","Name":"BeamCenterX"},"id":"852","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x2000","Format":"int32u","Name":"BeamCenterY"},"id":"856","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x4000","Format":"int64u","Groups":{"2":"Time"},"Name":"CFEGFlashTimeStamp","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val / 1e6, 1, 6)"},"id":"860","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x8000","Format":"int32u","Name":"PhasePlatePosition"},"id":"868","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"fields":{"Condition":"$$self{BitM} & 0x10000","Format":"string[16]","Name":"ObjectiveAperture"},"id":"872","index":null,"kind":"tag","table":"Image::ExifTool::MRC::FEI12"}
+{"kind":"table","module":"MRC","name":"Image::ExifTool::MRC::Main","special":{"FORMAT":"int32u","GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"\n        Tags extracted from Medical Research Council (MRC) format imaging files.\n        See L<https://www.ccpem.ac.uk/mrc_format/mrc2014.php> for the specification.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"MRC::Main","TABLE_NAME":"Image::ExifTool::MRC::Main","TAG_PREFIX":"MRC","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageHeight"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageDepth","Notes":"\n            number of sections. Use ExtractEmbedded option to extract metadata for all\n            sections\n        ","RawConv":"$$self{ImageDepth} = $val"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageMode","PrintConv":{"0":"8-bit signed integer","1":"16-bit signed integer","2":"32-bit signed real","3":"complex 16-bit integer","4":"complex 32-bit real","6":"16-bit unsigned integer"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"int32u[3]","Name":"StartPoint"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"int32u[3]","Name":"GridSize"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellWidth","Notes":"cell size in angstroms"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellHeight"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellDepth"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellAlpha"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellBeta"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"CellGamma"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageWidthAxis","PrintConv":{"1":"X","2":"Y","3":"Z"}},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageHeightAxis","PrintConv":{"1":"X","2":"Y","3":"Z"}},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ImageDepthAxis","PrintConv":{"1":"X","2":"Y","3":"Z"}},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"DensityMin"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"DensityMax"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"DensityMean"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"SpaceGroupNumber"},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"ExtendedHeaderSize","RawConv":"$$self{ExtendedHeaderSize} = $val"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"string[4]","Name":"ExtendedHeaderType","RawConv":"$$self{ExtendedHeaderType} = $val"},"id":"26","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"MRCVersion"},"id":"27","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float[3]","Name":"Origin"},"id":"49","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"int8u[4]","Name":"MachineStamp","PrintConv":"sprintf(\"0x%.2x 0x%.2x 0x%.2x 0x%.2x\",split \" \", $val)"},"id":"53","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Format":"float","Name":"RMSDeviation"},"id":"54","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Name":"NumberOfLabels","RawConv":"$$self{NLab} = $val"},"id":"55","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 0","Format":"string[80]","Name":"Label0"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 1","Format":"string[80]","Name":"Label1"},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 2","Format":"string[80]","Name":"Label2"},"id":"96","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 3","Format":"string[80]","Name":"Label3"},"id":"116","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 4","Format":"string[80]","Name":"Label4"},"id":"136","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 5","Format":"string[80]","Name":"Label5"},"id":"156","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 6","Format":"string[80]","Name":"Label6"},"id":"176","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 7","Format":"string[80]","Name":"Label7"},"id":"196","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 8","Format":"string[80]","Name":"Label8"},"id":"216","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}
+{"fields":{"Condition":"$$self{NLab} > 9","Format":"string[80]","Name":"Label9"},"id":"236","index":null,"kind":"tag","table":"Image::ExifTool::MRC::Main"}

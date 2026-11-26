@@ -1,0 +1,29 @@
+{"kind":"table","module":"FLAC","name":"Image::ExifTool::FLAC::Main","special":{"GROUPS":{"0":"FLAC","1":"FLAC","2":"Other"},"NOTES":"\n        Free Lossless Audio Codec (FLAC) meta information.  ExifTool also extracts\n        ID3 information from these files.\n    ","SHORT_NAME":"FLAC::Main","TABLE_NAME":"Image::ExifTool::FLAC::Main","TAG_PREFIX":"FLAC"}}
+{"fields":{"Name":"StreamInfo","SubDirectory":{"TagTable":"Image::ExifTool::FLAC::StreamInfo"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Binary":1,"Name":"Padding","Unknown":1},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Condition":"$$valPt =~ /^riff(?!RIFF)/","Index":0,"Name":"Application_riff","SubDirectory":{"ByteOrder":"LittleEndian","Start":4,"TagTable":"Image::ExifTool::RIFF::Main"}},"id":"2","index":0,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Binary":1,"Index":1,"Name":"ApplicationUnknown","Unknown":1},"id":"2","index":1,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Binary":1,"Name":"SeekTable","Unknown":1},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Name":"VorbisComment","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Comments"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Binary":1,"Name":"CueSheet","Unknown":1},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"fields":{"Name":"Picture","SubDirectory":{"TagTable":"Image::ExifTool::FLAC::Picture"}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Main"}
+{"kind":"table","module":"FLAC","name":"Image::ExifTool::FLAC::Picture","special":{"FORMAT":"int32u","GROUPS":{"0":"FLAC","1":"FLAC","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"FLAC::Picture","TABLE_NAME":"Image::ExifTool::FLAC::Picture","TAG_PREFIX":"FLAC_Picture"}}
+{"fields":{"Name":"PictureType","PrintConv":{"0":"Other","1":"32x32 PNG Icon","10":"Band","11":"Composer","12":"Lyricist","13":"Recording Studio or Location","14":"Recording Session","15":"Performance","16":"Capture from Movie or Video","17":"Bright(ly) Colored Fish","18":"Illustration","19":"Band Logo","2":"Other Icon","20":"Publisher Logo","3":"Front Cover","4":"Back Cover","5":"Leaflet","6":"Media","7":"Lead Artist","8":"Artist","9":"Conductor"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Format":"var_pstr32","Name":"PictureMIMEType"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Format":"var_pstr32","Name":"PictureDescription","ValueConv":"$self->Decode($val, \"UTF8\")"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Name":"PictureWidth"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Name":"PictureHeight"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Name":"PictureBitsPerPixel"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Name":"PictureIndexedColors"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Name":"PictureLength"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"fields":{"Binary":1,"Format":"undef[$val{7}]","Groups":{"2":"Preview"},"Name":"Picture"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::Picture"}
+{"kind":"table","module":"FLAC","name":"Image::ExifTool::FLAC::StreamInfo","special":{"GROUPS":{"0":"FLAC","1":"FLAC","2":"Audio"},"NOTES":"FLAC is big-endian, so bit 0 is the high-order bit in this table.","PROCESS_PROC":{"code":"&Image::ExifTool::FLAC::ProcessBitStream"},"SHORT_NAME":"FLAC::StreamInfo","TABLE_NAME":"Image::ExifTool::FLAC::StreamInfo","TAG_PREFIX":"FLAC_StreamInfo"}}
+{"fields":{"Name":"BlockSizeMin"},"id":"Bit000-015","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"BlockSizeMax"},"id":"Bit016-031","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"FrameSizeMin"},"id":"Bit032-055","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"FrameSizeMax"},"id":"Bit056-079","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"SampleRate"},"id":"Bit080-099","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"Channels","ValueConv":"$val + 1"},"id":"Bit100-102","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"BitsPerSample","ValueConv":"$val + 1"},"id":"Bit103-107","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Name":"TotalSamples"},"id":"Bit108-143","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}
+{"fields":{"Format":"undef","Name":"MD5Signature","ValueConv":"unpack(\"H*\",$val)"},"id":"Bit144-271","index":null,"kind":"tag","table":"Image::ExifTool::FLAC::StreamInfo"}

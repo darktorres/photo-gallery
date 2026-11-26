@@ -1,0 +1,31 @@
+{"kind":"table","module":"Torrent","name":"Image::ExifTool::Torrent::Files","special":{"GROUPS":{"0":"Torrent","1":"Torrent","2":"Document"},"SHORT_NAME":"Torrent::Files","TABLE_NAME":"Image::ExifTool::Torrent::Files","TAG_PREFIX":"Torrent_Files"}}
+{"fields":{"Name":"File1Length","PrintConv":"ConvertFileSize($val)"},"id":"length","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Files"}
+{"fields":{"Name":"File1MD5Sum"},"id":"md5sum","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Files"}
+{"fields":{"JoinPath":1,"Name":"File1Path"},"id":"path","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Files"}
+{"fields":{"JoinPath":1,"Name":"File1PathUTF-8"},"id":"path.utf-8","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Files"}
+{"kind":"table","module":"Torrent","name":"Image::ExifTool::Torrent::Info","special":{"GROUPS":{"0":"Torrent","1":"Torrent","2":"Document"},"SHORT_NAME":"Torrent::Info","TABLE_NAME":"Image::ExifTool::Torrent::Info","TAG_PREFIX":"Torrent_Info"}}
+{"fields":{"Name":"File1Duration"},"id":"file-duration","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"File1Media"},"id":"file-media","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Files","SubDirectory":{"TagTable":"Image::ExifTool::Torrent::Files"}},"id":"files","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Length"},"id":"length","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"MD5Sum"},"id":"md5sum","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Name"},"id":"name","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"NameUTF-8"},"id":"name.utf-8","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"PieceLength"},"id":"piece length","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Pieces","Notes":"concatenation of 20-byte SHA-1 digests for each piece"},"id":"pieces","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Private"},"id":"private","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"fields":{"Name":"Profiles","SubDirectory":{"TagTable":"Image::ExifTool::Torrent::Profiles"}},"id":"profiles","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Info"}
+{"kind":"table","module":"Torrent","name":"Image::ExifTool::Torrent::Main","special":{"GROUPS":{"0":"Torrent","1":"Torrent","2":"Document"},"NOTES":"\n        Below are tags commonly found in BitTorrent files.  As well as these tags,\n        any other existing tags will be extracted.  For convenience, list items are\n        expanded into individual tags with an index in the tag name, but only the\n        tags with index \"1\" are listed in the tables below.  See\n        L<https://wiki.theory.org/BitTorrentSpecification> for the BitTorrent\n        specification.\n    ","SHORT_NAME":"Torrent::Main","TABLE_NAME":"Image::ExifTool::Torrent::Main","TAG_PREFIX":"Torrent"}}
+{"fields":{"Name":"Announce"},"id":"announce","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"AnnounceList1"},"id":"announce-list","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"Comment"},"id":"comment","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"Creator"},"id":"created by","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val,1)"},"id":"creation date","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"Encoding"},"id":"encoding","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"Info","Notes":"extracted as a structure with the Struct option","SubDirectory":{"TagTable":"Image::ExifTool::Torrent::Info"}},"id":"info","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"fields":{"Name":"URLList1"},"id":"url-list","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Main"}
+{"kind":"table","module":"Torrent","name":"Image::ExifTool::Torrent::Profiles","special":{"GROUPS":{"0":"Torrent","1":"Torrent","2":"Document"},"SHORT_NAME":"Torrent::Profiles","TABLE_NAME":"Image::ExifTool::Torrent::Profiles","TAG_PREFIX":"Torrent_Profiles"}}
+{"fields":{"Name":"Profile1AudioCodec"},"id":"acodec","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Profiles"}
+{"fields":{"Name":"Profile1Height"},"id":"height","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Profiles"}
+{"fields":{"Name":"Profile1VideoCodec"},"id":"vcodec","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Profiles"}
+{"fields":{"Name":"Profile1Width"},"id":"width","index":null,"kind":"tag","table":"Image::ExifTool::Torrent::Profiles"}

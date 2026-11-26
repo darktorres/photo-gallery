@@ -1,0 +1,78 @@
+{"kind":"table","module":"Red","name":"Image::ExifTool::Red::Main","special":{"GROUPS":{"0":"Red","1":"Red","2":"Camera"},"NOTES":"Tags extracted from Redcode R3D video files.","SHORT_NAME":"Red::Main","TABLE_NAME":"Image::ExifTool::Red::Main","TAG_PREFIX":"Red","VARS":{"ALPHA_FIRST":1}}}
+{"fields":{"Name":"StartEdgeCode"},"id":"4096","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"StartTimecode"},"id":"4097","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OtherDate1","ValueConv":"$val =~ s/(\\d{4})_(\\d{2})_/$1:$2:/; $val =~ tr/_/ /; $val"},"id":"4098","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OtherDate2","ValueConv":"$val =~ s/(\\d{4})_(\\d{2})_/$1:$2:/; $val =~ tr/_/ /; $val"},"id":"4099","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OtherDate3","ValueConv":"$val =~ s/(\\d{4})_(\\d{2})_/$1:$2:/; $val =~ tr/_/ /; $val"},"id":"4100","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ s/(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})/$1:$2:$3 $4:$5:/; $val"},"id":"4101","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"SerialNumber"},"id":"4102","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"CameraType"},"id":"4121","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Video"},"Name":"ReelNumber"},"id":"4122","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Video"},"Name":"Take"},"id":"4123","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateCreated","ValueConv":"$val =~ s/(\\d{4})(\\d{2})/$1:$2:/; $val"},"id":"4131","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeCreated","ValueConv":"$val =~ s/(\\d{2})(\\d{2})/$1:$2:/; $val"},"id":"4132","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FirmwareVersion"},"id":"4133","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ReelTimecode"},"id":"4137","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"StorageType"},"id":"4138","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"StorageFormatDate","ValueConv":"$val =~ s/(\\d{4})(\\d{2})/$1:$2:/; $val"},"id":"4144","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"StorageFormatTime","ValueConv":"$val =~ s/(\\d{2})(\\d{2})/$1:$2:/; $val"},"id":"4145","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"StorageSerialNumber"},"id":"4146","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"StorageModel"},"id":"4147","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"AspectRatio"},"id":"4150","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Revision"},"id":"4162","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"CameraPosition"},"id":"4177","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"ClipID"},"id":"4178","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"OriginalFileName"},"id":"4182","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"LensMake"},"id":"4206","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"LensNumber"},"id":"4207","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"LensModel"},"id":"4208","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Description":"Camera Model Name","Name":"Model"},"id":"4209","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"CameraOperator"},"id":"4220","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Video"},"Name":"VideoFormat"},"id":"4230","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Filter"},"id":"4246","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Brain"},"id":"4256","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Sensor"},"id":"4257","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"StartEdgeCode"},"id":"4269","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"StartTimeCode"},"id":"4270","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Quality"},"id":"4286","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Camera3D_LUT"},"id":"4289","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"AudioFileName"},"id":"4292","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"NDFilterType"},"id":"4295","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)","ValueConv":"$val / 1e6"},"id":"8200","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"ColorTemperature"},"id":"8205","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Tint"},"id":"8206","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Contrast"},"id":"8211","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"RGBCurves"},"id":"8267","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Groups":{"2":"Video"},"Name":"OriginalFrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000"},"id":"8294","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"OutputToneMap"},"id":"8364","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"LensMount"},"id":"12373","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"ImagePipeline"},"id":"12436","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"HighlightRollOff"},"id":"12453","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"OutputToneMap"},"id":"12456","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"SensorSensitivityID"},"id":"12463","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"CropArea"},"id":"16439","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"ISO"},"id":"16443","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"NDStops","ValueConv":"$val =~ s/ .*//; $val / 100"},"id":"16489","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FNumber","ValueConv":"$val / 10"},"id":"16490","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FocalLength"},"id":"16491","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"SensorSize"},"id":"16539","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FirmwareRevision","PrintConv":"sprintf(\"%x\",$val)"},"id":"24677","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FocusDistance","PrintConv":"$val > 0 ? \"$val m\" : \"inf\"","ValueConv":"$val/1000"},"id":"24684","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FocusDistanceNear","PrintConv":"$val > 0 ? \"$val m\" : \"inf\"","ValueConv":"$val/1000"},"id":"24692","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FocusDistanceFar","PrintConv":"$val > 0 ? \"$val m\" : \"inf\"","ValueConv":"$val/1000"},"id":"24693","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FrameRate","ValueConv":"$val / 1001"},"id":"24752","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"RecordFrameRate","ValueConv":"$val / 1001"},"id":"24767","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"FocalLength","PrintConv":"\"$val mm\"","ValueConv":"$val / 1000"},"id":"24784","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Red1Header","SubDirectory":{"TagTable":"Image::ExifTool::Red::RED1"}},"id":"RED1","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"fields":{"Name":"Red2Header","SubDirectory":{"TagTable":"Image::ExifTool::Red::RED2"}},"id":"RED2","index":null,"kind":"tag","table":"Image::ExifTool::Red::Main"}
+{"kind":"table","module":"Red","name":"Image::ExifTool::Red::RED1","special":{"GROUPS":{"0":"Red","1":"Red","2":"Video"},"NOTES":"Redcode version 1 header.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Red::RED1","TABLE_NAME":"Image::ExifTool::Red::RED1","TAG_PREFIX":"Red_RED1"}}
+{"fields":{"Format":"string[1]","Name":"RedcodeVersion"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED1"}
+{"fields":{"Format":"int16u","Name":"ImageWidth"},"id":"54","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED1"}
+{"fields":{"Format":"int16u","Name":"ImageHeight"},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED1"}
+{"fields":{"Format":"rational32u","Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000"},"id":"62","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED1"}
+{"fields":{"Format":"string[32]","Name":"OriginalFileName"},"id":"67","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED1"}
+{"kind":"table","module":"Red","name":"Image::ExifTool::Red::RED2","special":{"GROUPS":{"0":"Red","1":"Red","2":"Video"},"NOTES":"Redcode version 2 header.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Red::RED2","TABLE_NAME":"Image::ExifTool::Red::RED2","TAG_PREFIX":"Red_RED2"}}
+{"fields":{"Format":"string[1]","Name":"RedcodeVersion"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED2"}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED2"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"80","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED2"}
+{"fields":{"Format":"int16u[3]","Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000","ValueConv":"my @a = split \" \",$val; ($a[1] * 0x10000 + $a[2]) / $a[0]"},"id":"86","index":null,"kind":"tag","table":"Image::ExifTool::Red::RED2"}

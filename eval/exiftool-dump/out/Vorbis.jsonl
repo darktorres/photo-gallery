@@ -1,0 +1,43 @@
+{"kind":"table","module":"Vorbis","name":"Image::ExifTool::Vorbis::Comments","special":{"GROUPS":{"0":"Vorbis","1":"Vorbis","2":"Audio"},"NOTES":"\n        The tags below are only some common tags found in the Vorbis comments of Ogg\n        Vorbis and Ogg FLAC audio files, however ExifTool will extract values from\n        any tag found, even if not listed here.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::Vorbis::ProcessComments"},"SHORT_NAME":"Vorbis::Comments","TABLE_NAME":"Image::ExifTool::Vorbis::Comments","TAG_PREFIX":"Vorbis_Comments"}}
+{"fields":{"Name":"Actor"},"id":"ACTOR","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Album"},"id":"ALBUM","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"List":1,"Name":"Artist"},"id":"ARTIST","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Comment"},"id":"COMMENT","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Composer"},"id":"COMPOSER","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"List":1,"Name":"Contact"},"id":"CONTACT","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"COPYRIGHT","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Preview"},"Name":"CoverArt","Notes":"base64-encoded image","ValueConv":"\n            require Image::ExifTool::XMP;\n            Image::ExifTool::XMP::DecodeBase64($val);\n        "},"id":"COVERART","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"CoverArtMIMEType"},"id":"COVERARTMIME","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Date"},"id":"DATE","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Description"},"id":"DESCRIPTION","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Director"},"id":"DIRECTOR","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"EncodedBy"},"id":"ENCODED_BY","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"EncodedUsing"},"id":"ENCODED_USING","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Encoder"},"id":"ENCODER","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"EncoderOptions"},"id":"ENCODER_OPTIONS","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Genre"},"id":"GENRE","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"ISRCNumber"},"id":"ISRC","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"Name":"License"},"id":"LICENSE","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Location"},"Name":"Location"},"id":"LOCATION","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Binary":1,"Name":"Picture","RawConv":"\n            require Image::ExifTool::XMP;\n            Image::ExifTool::XMP::DecodeBase64($val);\n        ","SubDirectory":{"ByteOrder":"BigEndian","TagTable":"Image::ExifTool::FLAC::Picture"}},"id":"METADATA_BLOCK_PICTURE","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Organization"},"id":"ORGANIZATION","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Groups":{"2":"Author"},"List":1,"Name":"Performer"},"id":"PERFORMER","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Producer"},"id":"PRODUCER","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"ReplayGainAlbumGain"},"id":"REPLAYGAIN_ALBUM_GAIN","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"ReplayGainAlbumPeak"},"id":"REPLAYGAIN_ALBUM_PEAK","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"ReplayGainTrackGain"},"id":"REPLAYGAIN_TRACK_GAIN","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"ReplayGainTrackPeak"},"id":"REPLAYGAIN_TRACK_PEAK","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Title"},"id":"TITLE","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"TrackNumber"},"id":"TRACKNUMBER","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Version"},"id":"VERSION","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"fields":{"Name":"Vendor","Notes":"from comment header"},"id":"vendor","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Comments"}
+{"kind":"table","module":"Vorbis","name":"Image::ExifTool::Vorbis::Identification","special":{"GROUPS":{"0":"Vorbis","1":"Vorbis","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Vorbis::Identification","TABLE_NAME":"Image::ExifTool::Vorbis::Identification","TAG_PREFIX":"Vorbis_Identification"}}
+{"fields":{"Format":"int32u","Name":"VorbisVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"fields":{"Name":"AudioChannels"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"fields":{"Format":"int32u","Name":"SampleRate"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"fields":{"Format":"int32u","Name":"MaximumBitrate","PrintConv":"ConvertBitrate($val)","RawConv":"$val || undef"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"fields":{"Format":"int32u","Name":"NominalBitrate","PrintConv":"ConvertBitrate($val)","RawConv":"$val || undef"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"fields":{"Format":"int32u","Name":"MinimumBitrate","PrintConv":"ConvertBitrate($val)","RawConv":"$val || undef"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Identification"}
+{"kind":"table","module":"Vorbis","name":"Image::ExifTool::Vorbis::Main","special":{"GROUPS":{"0":"Vorbis","1":"Vorbis","2":"Other"},"NOTES":"\n        Information extracted from Ogg Vorbis files.  See\n        L<http://www.xiph.org/vorbis/doc/> for the Vorbis specification.\n    ","SHORT_NAME":"Vorbis::Main","TABLE_NAME":"Image::ExifTool::Vorbis::Main","TAG_PREFIX":"Vorbis"}}
+{"fields":{"Name":"Identification","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Identification"}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Main"}
+{"fields":{"Name":"Comments","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Comments"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Vorbis::Main"}

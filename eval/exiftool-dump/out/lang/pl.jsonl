@@ -1,0 +1,436 @@
+{"kind":"translate","lang":"pl","tag":"A100DataOffset","value":"Przesunięcie danych A100"}
+{"kind":"translate","lang":"pl","tag":"AEAperture","value":"Priorytet AE"}
+{"kind":"translate","lang":"pl","tag":"AEExposureTime","value":"Czas ekspozycji AE"}
+{"kind":"translate","lang":"pl","tag":"AEInfo","value":"Informacja o automatycznej ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"AELock","value":{"Description":"Blokada AE","PrintConv":{"Off":"Wyłączona","On":"Włączona"}}}
+{"kind":"translate","lang":"pl","tag":"AEMeteringMode","value":"Tryb pomiaru AE"}
+{"kind":"translate","lang":"pl","tag":"AEMeteringSegments","value":"Segmenty pomiaru AE"}
+{"kind":"translate","lang":"pl","tag":"AEProgramMode","value":"Tryb programu AE"}
+{"kind":"translate","lang":"pl","tag":"AFAdjustment","value":"Korekta AF"}
+{"kind":"translate","lang":"pl","tag":"AFInfo","value":"Informacje autofocusa"}
+{"kind":"translate","lang":"pl","tag":"AFIntegrationTime","value":"Czas integracji AF"}
+{"kind":"translate","lang":"pl","tag":"AFPoint","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"AFPointMode","value":"Tryb Autofokusa"}
+{"kind":"translate","lang":"pl","tag":"AFPointSelected","value":{"Description":"Wybrany punkt AF","PrintConv":{"Auto":"Automatyczny","Automatic Tracking AF":"Śledzący AF","Bottom":"Dolny","Center":"Centralny","Face Detect AF":"Wykrywanie twarzy","Fixed Center":"Centralny","Left":"Lewy","Lower-left":"Dolny-lewy","Lower-right":"Dolny-prawy","Mid-left":"Środek-lewy","Mid-right":"Środek-prawy","Right":"Prawy","Top":"Górny","Upper-left":"Górny-lewy","Upper-right":"Górny-prawy"}}}
+{"kind":"translate","lang":"pl","tag":"AFPointSelected2","value":"Wybrany punkt autofokusa 2"}
+{"kind":"translate","lang":"pl","tag":"AFPointsInFocus","value":{"Description":"Punkty AF w ostrości","PrintConv":{"Bottom-center":"Dolny-centralny","Bottom-left":"Dolny-lewy","Bottom-right":"Dolny-prawy","Center":"Centralny","Fixed Center or Multiple":"Centralny lub wiele","Left":"Lewy","None":"Brak","Right":"Prawy","Top-center":"Górny-centralny","Top-left":"Górny-lewy","Top-right":"Górny-prawy"}}}
+{"kind":"translate","lang":"pl","tag":"AFPointsSelected","value":"Wybrane punkty AF"}
+{"kind":"translate","lang":"pl","tag":"AFPredictor","value":"Przewidujący AF"}
+{"kind":"translate","lang":"pl","tag":"Aperture","value":"Przysłona"}
+{"kind":"translate","lang":"pl","tag":"ApertureRingUse","value":"Użycie pierścienia przysłony"}
+{"kind":"translate","lang":"pl","tag":"ApertureValue","value":"Przysłona"}
+{"kind":"translate","lang":"pl","tag":"Artist","value":"Artysta"}
+{"kind":"translate","lang":"pl","tag":"Author","value":"Autor"}
+{"kind":"translate","lang":"pl","tag":"AuthorsPosition","value":"Pozycja autora"}
+{"kind":"translate","lang":"pl","tag":"AutoAperture","value":"Automatyczna przysłona"}
+{"kind":"translate","lang":"pl","tag":"AutoBracketing","value":"Bracketing automatyczny"}
+{"kind":"translate","lang":"pl","tag":"AutoRotate","value":{"PrintConv":{"None":"Brak","Rotate 180":"180° (dół/prawo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"AvApertureSetting","value":"Ustawienia priorytetu przysłony Av"}
+{"kind":"translate","lang":"pl","tag":"BadFaxLines","value":"Uszkodzone wiersze transmisji Fax"}
+{"kind":"translate","lang":"pl","tag":"BannerImageType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"BaseExposureCompensation","value":"Podstawowa kompensacja ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"BitsPerSample","value":"Liczba bitów na składnik"}
+{"kind":"translate","lang":"pl","tag":"BlackPoint","value":"Punkt czerni"}
+{"kind":"translate","lang":"pl","tag":"BlueBalance","value":"Balans niebieskiego"}
+{"kind":"translate","lang":"pl","tag":"BlurWarning","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"BracketShotNumber","value":"Ilość zdjęć w bracketingu"}
+{"kind":"translate","lang":"pl","tag":"Brightness","value":"Jasność"}
+{"kind":"translate","lang":"pl","tag":"By-line","value":"Autor"}
+{"kind":"translate","lang":"pl","tag":"CFAPattern","value":"Wzorzec CFA"}
+{"kind":"translate","lang":"pl","tag":"CMMFlags","value":"Flagi CMM"}
+{"kind":"translate","lang":"pl","tag":"CPUFirmwareVersion","value":"Wersja firmware CPU"}
+{"kind":"translate","lang":"pl","tag":"CPUType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"Zachmurzone niebo","Cool White Fluorescent":"Zimna biała jarzeniówka (W 3800 - 4500K)","Day White Fluorescent":"Jarzeniówka z naturalnym białym światłem (N 4600 - 5500K)","Daylight":"Światło dzienne","Daylight Fluorescent":"Jarzeniówka dająca światło dzienne (D 5700 - 7100K)","Fine Weather":"Dobra pogoda","Flash":"Lampa błyskowa","Fluorescent":"Jarzeniowy","ISO Studio Tungsten":"ISO dla studyjnych lamp żarowych","Other":"Inne źródło światła","Shade":"Cień","Standard Light A":"Standardowe światło A","Standard Light B":"Standardowe światło B","Standard Light C":"Standardowe światło C","Tungsten (Incandescent)":"Światło żarowe","Unknown":"Nieznane","White Fluorescent":"Biała jarzeniówka (WW3250 - 3800K)"}}}
+{"kind":"translate","lang":"pl","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"Zachmurzone niebo","Cool White Fluorescent":"Zimna biała jarzeniówka (W 3800 - 4500K)","Day White Fluorescent":"Jarzeniówka z naturalnym białym światłem (N 4600 - 5500K)","Daylight":"Światło dzienne","Daylight Fluorescent":"Jarzeniówka dająca światło dzienne (D 5700 - 7100K)","Fine Weather":"Dobra pogoda","Flash":"Lampa błyskowa","Fluorescent":"Jarzeniowy","ISO Studio Tungsten":"ISO dla studyjnych lamp żarowych","Other":"Inne źródło światła","Shade":"Cień","Standard Light A":"Standardowe światło A","Standard Light B":"Standardowe światło B","Standard Light C":"Standardowe światło C","Tungsten (Incandescent)":"Światło żarowe","Unknown":"Nieznane","White Fluorescent":"Biała jarzeniówka (WW3250 - 3800K)"}}}
+{"kind":"translate","lang":"pl","tag":"CameraOrientation","value":{"Description":"Orientacja obrazu","PrintConv":{"Horizontal (normal)":"0° (góra/lewo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"CameraSettings","value":"Ustawienia aparatu"}
+{"kind":"translate","lang":"pl","tag":"CameraTemperature","value":"Temperatura aparatu"}
+{"kind":"translate","lang":"pl","tag":"Caption-Abstract","value":"Podpis"}
+{"kind":"translate","lang":"pl","tag":"CaptionWriter","value":"Autor podpisu"}
+{"kind":"translate","lang":"pl","tag":"Categories","value":"Kategorie"}
+{"kind":"translate","lang":"pl","tag":"Category","value":"Kategorie"}
+{"kind":"translate","lang":"pl","tag":"CellLength","value":"Długość komórki"}
+{"kind":"translate","lang":"pl","tag":"CellWidth","value":"Szerokość komórki"}
+{"kind":"translate","lang":"pl","tag":"City","value":"Miasto"}
+{"kind":"translate","lang":"pl","tag":"CleanFaxData","value":{"Description":"Poprawne wiersze transmisji Fax","PrintConv":{"Clean":"Dobry","Regenerated":"Ponowiony","Unclean":"Niedobry"}}}
+{"kind":"translate","lang":"pl","tag":"ClipPath","value":"Ścieżka obcięcia"}
+{"kind":"translate","lang":"pl","tag":"CodingMethods","value":{"Description":"Metody kompresji","PrintConv":{"Baseline JPEG":"JPEG podstawowa","JBIG color":"JBIG kolor","Modified Huffman":"Huffmana zmodyfikowana","Modified MR":"Zmodyfikowany MR","Modified Read":"Zmodyfikowany odczyt","Unspecified compression":"Nie podane"}}}
+{"kind":"translate","lang":"pl","tag":"ColorFilter","value":"Filtr kolorowy"}
+{"kind":"translate","lang":"pl","tag":"ColorInfo","value":"Informacje o kolorze"}
+{"kind":"translate","lang":"pl","tag":"ColorMap","value":"Mapa kolorów"}
+{"kind":"translate","lang":"pl","tag":"ColorMatrix1","value":"Macierz kolorów 1"}
+{"kind":"translate","lang":"pl","tag":"ColorMatrix2","value":"Macierz kolorów 2"}
+{"kind":"translate","lang":"pl","tag":"ColorSpace","value":{"Description":"Informacja o przestrzeni barwowej","PrintConv":{"Uncalibrated":"Nie skalibrowany"}}}
+{"kind":"translate","lang":"pl","tag":"ColorSpaceData","value":"Dane przestrzeni barw"}
+{"kind":"translate","lang":"pl","tag":"ColorTemperature","value":"Temperatura barwowa"}
+{"kind":"translate","lang":"pl","tag":"Comment","value":"Komentarz"}
+{"kind":"translate","lang":"pl","tag":"ComponentsConfiguration","value":"Znaczenie każdego komponentu"}
+{"kind":"translate","lang":"pl","tag":"CompressedBitsPerPixel","value":"Tryb kompresji obrazu"}
+{"kind":"translate","lang":"pl","tag":"Compression","value":{"Description":"Algorytm kompresji","PrintConv":{"Epson ERF Compressed":"Skompresowany Epson ERF","JBIG B&W":"JBIG Czarno Biały","JBIG Color":"JBIG Kolorowy","JPEG":"Kompresja JPEG","JPEG (old-style)":"JPEG (w starym stylu)","Kodak DCR Compressed":"Skompresowany Kodak DCR","Kodak KDC Compressed":"Skompresowany Kodak KDC","Next":"Kodowanie 2-bitowe NeXT","Nikon NEF Compressed":"Skompresowany Nikon NEF","None":"Brak","Packed RAW":"Spakowany RAW","Pentax PEF Compressed":"Skompresowany Pentax PEF","SGILog":"Kodowanie 32-bitowe SGI Log Luminance","SGILog24":"Kodowanie 24-bitowe SGI Log Luminance","Samsung SRW Compressed":"Skompresowany Samsung SRW","Sony ARW Compressed":"Skompresowany Sony ARW","Thunderscan":"Kodowanie 4-bitowe ThunderScan","Uncompressed":"Bez kompresji"}}}
+{"kind":"translate","lang":"pl","tag":"CompressionType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"ConsecutiveBadFaxLines","value":"Sekwencja uszkodzonych wierszy transmisji Fax"}
+{"kind":"translate","lang":"pl","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Ostre","Low":"Miękkie","Normal":"Standard"}}}
+{"kind":"translate","lang":"pl","tag":"Copyright","value":"Posiadacz praw autorskich"}
+{"kind":"translate","lang":"pl","tag":"CopyrightNotice","value":"Informacja o prawach autorskich"}
+{"kind":"translate","lang":"pl","tag":"Country","value":"Kraj"}
+{"kind":"translate","lang":"pl","tag":"Country-PrimaryLocationName","value":"Kraj"}
+{"kind":"translate","lang":"pl","tag":"CreateDate","value":"Data utworzenia"}
+{"kind":"translate","lang":"pl","tag":"CreationDate","value":"Data utworzenia"}
+{"kind":"translate","lang":"pl","tag":"Credit","value":"Podziękowania"}
+{"kind":"translate","lang":"pl","tag":"CropUnit","value":{"PrintConv":{"inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"CropUnits","value":{"PrintConv":{"inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"CustomRendered","value":{"Description":"Przetwarzanie zdjęć według ustawień własnych","PrintConv":{"Custom":"Proces zdefiniowany przez użytkownika","Normal":"Normalny proces"}}}
+{"kind":"translate","lang":"pl","tag":"DNGBackwardVersion","value":"Poprzednia wersja DNG"}
+{"kind":"translate","lang":"pl","tag":"DNGVersion","value":"Wersja DNG"}
+{"kind":"translate","lang":"pl","tag":"DSPFirmwareVersion","value":"Wersja firmware DSP"}
+{"kind":"translate","lang":"pl","tag":"DataDump","value":"Zrzut danych?"}
+{"kind":"translate","lang":"pl","tag":"DataImprint","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"DataType","value":"Typ daty"}
+{"kind":"translate","lang":"pl","tag":"Date","value":"Data"}
+{"kind":"translate","lang":"pl","tag":"DateCreated","value":"Data utworzenia"}
+{"kind":"translate","lang":"pl","tag":"DateSent","value":"Wysłano datę"}
+{"kind":"translate","lang":"pl","tag":"DateTimeOriginal","value":"Pierwotna data i godzina"}
+{"kind":"translate","lang":"pl","tag":"Decode","value":"Zdekodowany"}
+{"kind":"translate","lang":"pl","tag":"DefaultImageColor","value":"Domyślny kolor w obrazie"}
+{"kind":"translate","lang":"pl","tag":"Description","value":"Opis"}
+{"kind":"translate","lang":"pl","tag":"DestinationCity","value":"Miasto przeznaczenia"}
+{"kind":"translate","lang":"pl","tag":"DestinationCityCode","value":"Kod miasta przeznaczenia"}
+{"kind":"translate","lang":"pl","tag":"DestinationDST","value":{"Description":"Czas letni miasta przeznaczenia","PrintConv":{"No":"Nie","Yes":"Tak"}}}
+{"kind":"translate","lang":"pl","tag":"DeviceAttributes","value":"Atrybuty urządzenia"}
+{"kind":"translate","lang":"pl","tag":"DeviceManufacturer","value":"Producent urządzenia"}
+{"kind":"translate","lang":"pl","tag":"DeviceModel","value":"Model urządzenia"}
+{"kind":"translate","lang":"pl","tag":"DeviceSettingDescription","value":"Opis ustawień urządzenia"}
+{"kind":"translate","lang":"pl","tag":"DigitalZoom","value":"Cyfrowy zoom"}
+{"kind":"translate","lang":"pl","tag":"DigitalZoomRatio","value":"Współczynnik cyfrowego zoomu"}
+{"kind":"translate","lang":"pl","tag":"Directory","value":"Lokalizacja pliku"}
+{"kind":"translate","lang":"pl","tag":"DisplayUnits","value":{"PrintConv":{"inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"DisplayedUnitsX","value":{"PrintConv":{"inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"DisplayedUnitsY","value":{"PrintConv":{"inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"DocumentName","value":"Nazwa dokumentu"}
+{"kind":"translate","lang":"pl","tag":"DriveMode","value":"Tryb przesuwu"}
+{"kind":"translate","lang":"pl","tag":"DriveMode2","value":"Tryb zdjęć 2"}
+{"kind":"translate","lang":"pl","tag":"Duration","value":"Czas"}
+{"kind":"translate","lang":"pl","tag":"DynamicRangeExpansion","value":{"Description":"Rozszerzenie zakresu dynamiki","PrintConv":{"Off":"Wyłączone","On":"Włączone"}}}
+{"kind":"translate","lang":"pl","tag":"E-DialInProgram","value":"Program E-Dial"}
+{"kind":"translate","lang":"pl","tag":"EVStepInfo","value":"Informacja o krokach EV"}
+{"kind":"translate","lang":"pl","tag":"EVSteps","value":"Krok EV"}
+{"kind":"translate","lang":"pl","tag":"EffectiveLV","value":"Efektywne LV"}
+{"kind":"translate","lang":"pl","tag":"Emphasis","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"EnvelopePriority","value":{"PrintConv":{"0 (reserved)":"0 (zarezerwowane na przyszłość)","1 (most urgent)":"1 (najpilniejszy)","5 (normal urgency)":"5 (zwykły)","8 (least urgent)":"8 (niezbyt pilny)","9 (user-defined priority)":"9 (priorytet określony przez użytkownika)"}}}
+{"kind":"translate","lang":"pl","tag":"ExifImageHeight","value":"Wysokość obrazu"}
+{"kind":"translate","lang":"pl","tag":"ExifImageWidth","value":"Szerokość obrazu"}
+{"kind":"translate","lang":"pl","tag":"ExifOffset","value":"Wskaźnik Exif IFD"}
+{"kind":"translate","lang":"pl","tag":"ExifVersion","value":"Wersja Exif"}
+{"kind":"translate","lang":"pl","tag":"ExposureBracketStepSize","value":"Krok bracketingu ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"ExposureCompensation","value":"Różnica ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"ExposureIndex","value":"Wskaźnik ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"ExposureMode","value":{"Description":"Tryb ekspozycji","PrintConv":{"Auto":"Automatyczna ekspozycja","Auto bracket":"Funkcja Autobracketing","Manual":"Manualna ekspozycja"}}}
+{"kind":"translate","lang":"pl","tag":"ExposureProgram","value":{"Description":"Program ekspozycji","PrintConv":{"Action (High speed)":"Program akcji","Aperture-priority AE":"Priorytet przysłony","Creative (Slow speed)":"Program kreatywny","Landscape":"Krajobraz","Manual":"Manualna ekspozycja","Portrait":"Portret","Program AE":"Normalny program","Shutter speed priority AE":"Priorytet migawki"}}}
+{"kind":"translate","lang":"pl","tag":"ExposureTime","value":"Czas ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"ExternalFlashExposureComp","value":"Kompensacja ekspozycji zewnetrznej lampy"}
+{"kind":"translate","lang":"pl","tag":"ExternalFlashGuideNumber","value":"Liczba przewodnia lampy zewnętrznej"}
+{"kind":"translate","lang":"pl","tag":"ExternalFlashMode","value":"Tryb lampy zewnętrznej"}
+{"kind":"translate","lang":"pl","tag":"FNumber","value":"Przysłona"}
+{"kind":"translate","lang":"pl","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"0° (góra/lewo)","Rotate 180":"180° (dół/prawo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"FaxProfile","value":{"Description":"Profil faxu (rodzaj zawartości)","PrintConv":{"Extended B&W lossless, F":"Rozszerzony cz.b. bezstratny, F","Lossless JBIG B&W, J":"Bezstratny JBIG cz.b., J","Lossless color and grayscale, L":"Bezstratne kolor i skala szarości, L","Lossy color and grayscale, C":"Stratne kolor i skala szarości, C","Minimal B&W lossless, S":"Minimalny cz.b. bezstratny, S","Mixed raster content, M":"Raster — zawartość mieszana, M","Multi Profiles":"Wiele profili","Unknown":"Nieznany"}}}
+{"kind":"translate","lang":"pl","tag":"FileFormat","value":"Format"}
+{"kind":"translate","lang":"pl","tag":"FileModifyDate","value":"Data aktualizacji"}
+{"kind":"translate","lang":"pl","tag":"FileName","value":"Nazwa pliku"}
+{"kind":"translate","lang":"pl","tag":"FileSize","value":"Wielkość pliku"}
+{"kind":"translate","lang":"pl","tag":"FileSource","value":{"Description":"Źródło pliku","PrintConv":{"Digital Camera":"DSC","Film Scanner":"Skaner do materiałów transparentnych","Reflection Print Scanner":"Skaner do zdjęć"}}}
+{"kind":"translate","lang":"pl","tag":"FileType","value":"Typ pliku"}
+{"kind":"translate","lang":"pl","tag":"Filename","value":"Nazwa pliku"}
+{"kind":"translate","lang":"pl","tag":"FillOrder","value":{"Description":"Kolejność wypełniania","PrintConv":{"Normal":"Normalna","Reversed":"Zajęte"}}}
+{"kind":"translate","lang":"pl","tag":"FilterEffectMonochrome","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Flash","value":{"Description":"Lampa","PrintConv":{"Auto, Fired":"Włączony (Automatyczny błysk lampy)","Auto, Fired, Red-eye reduction":"\"Włączony (Błysk automatyczny, Redukcja efektu czerwonych oczu)\"","Auto, Fired, Red-eye reduction, Return detected":"\"Włączony (Błysk automatyczny, Redukcja efektu czerwonych oczu, rejestracja światła odbitego)\"","Auto, Fired, Return detected":"\"Włączony (Automatyczny błysk lampy, rejestracja światła odbitego)\"","Did not fire":"Nie nastąpił błysk lampy","Fired":"Nastąpił błysk lampy","Fired, Red-eye reduction":"Włączony (Redukcja efektu czerwonych oczu)","Fired, Red-eye reduction, Return detected":"\"Włączony (Redukcja efektu czerwonych oczu, rejestracja światła odbitego)\"","Fired, Return detected":"Włączony (Rejestracja światła odbitego)","No Flash":"Brak funkcji lampy błyskowej","On, Fired":"Włączony (Błysk dopełniający)","On, Red-eye reduction":"\"Włączony (Błysk dopełniający, Redukcja efektu czerwonych oczu)\"","On, Red-eye reduction, Return detected":"\"Włączony (Błysk dopełniający, Redukcja efektu czerwonych oczu, rejestracja światła odbitego)\"","On, Return detected":"\"Włączony (Błysk dopełniający, rejestracja światła odbitego)\""}}}
+{"kind":"translate","lang":"pl","tag":"FlashDevice","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"FlashEnergy","value":"Siła lampy błyskowej"}
+{"kind":"translate","lang":"pl","tag":"FlashExposureComp","value":"Kompensacja lampy"}
+{"kind":"translate","lang":"pl","tag":"FlashMeteringSegments","value":"Segmenty pomiaru błysku"}
+{"kind":"translate","lang":"pl","tag":"FlashMode","value":"Tryb lampy"}
+{"kind":"translate","lang":"pl","tag":"FlashModel","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"FlashOptions","value":"Opcje lampy"}
+{"kind":"translate","lang":"pl","tag":"FlashStatus","value":"Stan lampy"}
+{"kind":"translate","lang":"pl","tag":"FlashType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"FlashpixVersion","value":"Obsługiwana wersja Flashpix"}
+{"kind":"translate","lang":"pl","tag":"FocalLength","value":"Ogniskowa"}
+{"kind":"translate","lang":"pl","tag":"FocalLength35efl","value":"Długość ogniskowej (w wartościach dla formatu małoobrazkowego)"}
+{"kind":"translate","lang":"pl","tag":"FocalLengthIn35mmFormat","value":"Długość ogniskowej dla aparatów małoobrazkowych"}
+{"kind":"translate","lang":"pl","tag":"FocalPlaneResolutionUnit","value":{"Description":"Jednostka rozdzielczości w płaszczyźnie ogniskowej","PrintConv":{"None":"Brak","inches":"Cal","um":"µm (mikrometr)"}}}
+{"kind":"translate","lang":"pl","tag":"FocalPlaneXResolution","value":"Rozdzielczość w płaszczyźnie ogniskowej - oś x"}
+{"kind":"translate","lang":"pl","tag":"FocalPlaneYResolution","value":"Rozdzielczość w płaszczyźnie ogniskowej - oś y"}
+{"kind":"translate","lang":"pl","tag":"FocusMode","value":"Tryb ostrzenia"}
+{"kind":"translate","lang":"pl","tag":"FocusMode2","value":"Tryb Autofokusa 2"}
+{"kind":"translate","lang":"pl","tag":"FrameNumber","value":"Numer zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"FrameRate","value":"Częstotliwość zmiany kadrów"}
+{"kind":"translate","lang":"pl","tag":"FrameSize","value":"Wielkość kadru"}
+{"kind":"translate","lang":"pl","tag":"FreeByteCounts","value":"Liczba wolnych bajtów"}
+{"kind":"translate","lang":"pl","tag":"FreeOffsets","value":"Wolne offsety"}
+{"kind":"translate","lang":"pl","tag":"GDALMetadata","value":"Metadane GDAL"}
+{"kind":"translate","lang":"pl","tag":"GDALNoData","value":"Brak danych GDAL"}
+{"kind":"translate","lang":"pl","tag":"GPSAltitude","value":"Wysokość"}
+{"kind":"translate","lang":"pl","tag":"GPSAltitudeRef","value":{"Description":"Wysokość odniesienia","PrintConv":{"Above Sea Level":"Poziom morza","Below Sea Level":"Względem poziomu morza (wartość ujemna)"}}}
+{"kind":"translate","lang":"pl","tag":"GPSAreaInformation","value":"Nazwa obszaru GPS"}
+{"kind":"translate","lang":"pl","tag":"GPSDOP","value":"Precyzja pomiaru"}
+{"kind":"translate","lang":"pl","tag":"GPSDateStamp","value":"Dane GPS"}
+{"kind":"translate","lang":"pl","tag":"GPSDestBearing","value":"Azymut punktu docelowego"}
+{"kind":"translate","lang":"pl","tag":"GPSDestBearingRef","value":"Wartość odniesienia dla azymutu punktu docelowego."}
+{"kind":"translate","lang":"pl","tag":"GPSDestDistance","value":"Odległość do punktu docelowego."}
+{"kind":"translate","lang":"pl","tag":"GPSDestDistanceRef","value":"Wartość odniesienia dla odległości do punktu docelowego."}
+{"kind":"translate","lang":"pl","tag":"GPSDestLatitude","value":"Szerokość geograficzna punktu docelowego"}
+{"kind":"translate","lang":"pl","tag":"GPSDestLatitudeRef","value":"Wartość odniesienia dla szerokości geograficznej punktu docelowego."}
+{"kind":"translate","lang":"pl","tag":"GPSDestLongitude","value":"Długość geograficzna punktu docelowego"}
+{"kind":"translate","lang":"pl","tag":"GPSDestLongitudeRef","value":"Wartość odniesienia dla długości geograficznej punktu docelowego."}
+{"kind":"translate","lang":"pl","tag":"GPSDifferential","value":{"Description":"Różnicowa korekcja GPS","PrintConv":{"Differential Corrected":"Zastosowanie korekcji różnicowej","No Correction":"Pomiar bez korekcji różnicowej"}}}
+{"kind":"translate","lang":"pl","tag":"GPSHPositioningError","value":"Błąd poziomy wyznaczenia pozycji"}
+{"kind":"translate","lang":"pl","tag":"GPSImgDirection","value":"Kierunek obrazu"}
+{"kind":"translate","lang":"pl","tag":"GPSImgDirectionRef","value":"Wartość odniesienia dla kierunku obrazu"}
+{"kind":"translate","lang":"pl","tag":"GPSInfo","value":"Wskaźnik GPS Info IFD"}
+{"kind":"translate","lang":"pl","tag":"GPSLatitude","value":"Szerokość geograficzna"}
+{"kind":"translate","lang":"pl","tag":"GPSLatitudeRef","value":{"Description":"Szerokość geograficzna północna lub południowa","PrintConv":{"North":"Szerokości północnej","South":"Szerokości południowej"}}}
+{"kind":"translate","lang":"pl","tag":"GPSLongitude","value":"Długość geograficzna"}
+{"kind":"translate","lang":"pl","tag":"GPSLongitudeRef","value":{"Description":"Długość geograficzna wschodnia lub zachodnia","PrintConv":{"East":"Długości wschodniej","West":"Długości zachodniej"}}}
+{"kind":"translate","lang":"pl","tag":"GPSMapDatum","value":"Wykorzystane dane z badań geodezyjnych"}
+{"kind":"translate","lang":"pl","tag":"GPSMeasureMode","value":{"Description":"Tryb pomiaru GPS","PrintConv":{"3-Dimensional Measurement":"Pomiar 3-wymiarowy"}}}
+{"kind":"translate","lang":"pl","tag":"GPSProcessingMethod","value":"Nazwa metody przetwarzania GPS"}
+{"kind":"translate","lang":"pl","tag":"GPSSatellites","value":"Satelity GPS używane do pomiaru"}
+{"kind":"translate","lang":"pl","tag":"GPSSpeed","value":"Prędkość odbiornika GPS"}
+{"kind":"translate","lang":"pl","tag":"GPSSpeedRef","value":{"Description":"Jednostka prędkości","PrintConv":{"km/h":"Kilometrów na godzinę","knots":"Węzły","mph":"Mil na godzinę"}}}
+{"kind":"translate","lang":"pl","tag":"GPSStatus","value":{"Description":"Stan odbiornika GPS","PrintConv":{"Measurement Active":"Trwa pomiar","Measurement Void":"Wzajemna niesprzeczność pomiarów"}}}
+{"kind":"translate","lang":"pl","tag":"GPSTimeStamp","value":"Czas GPS (zegar atomowy)"}
+{"kind":"translate","lang":"pl","tag":"GPSTrack","value":"Kierunek przesunięcia"}
+{"kind":"translate","lang":"pl","tag":"GPSTrackRef","value":{"Description":"Wartość odniesienia dla kierunku ruchu","PrintConv":{"Magnetic North":"Kierunek strzałki magnetycznej","True North":"Rzeczywisty kierunek"}}}
+{"kind":"translate","lang":"pl","tag":"GPSVersionID","value":"Wersja znacznika GPS"}
+{"kind":"translate","lang":"pl","tag":"GainControl","value":{"Description":"Sterowanie krokiem","PrintConv":{"High gain down":"Z dużym krokiem do dołu","High gain up":"Z dużym krokiem w górę","Low gain down":"Z małym krokiem do dołu","Low gain up":"Z małym krokiem w górę","None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Genre","value":"Gatunek"}
+{"kind":"translate","lang":"pl","tag":"Gradation","value":"Gradacja"}
+{"kind":"translate","lang":"pl","tag":"GrayResponseCurve","value":"Krzywa odpowiedzi Szarości"}
+{"kind":"translate","lang":"pl","tag":"GrayResponseUnit","value":"Wielkość jednostki dla krzywej odpowiedzi szarości"}
+{"kind":"translate","lang":"pl","tag":"HalftoneHints","value":"Półtony"}
+{"kind":"translate","lang":"pl","tag":"Headline","value":"Nagłówek"}
+{"kind":"translate","lang":"pl","tag":"HighISONoiseReduction","value":"Redukcja szumu przy wysokim ISO"}
+{"kind":"translate","lang":"pl","tag":"HometownCity","value":"Miasto domowe"}
+{"kind":"translate","lang":"pl","tag":"HometownCityCode","value":"Kod miasta domowego"}
+{"kind":"translate","lang":"pl","tag":"HometownDST","value":{"Description":"Czas letni miasta domowego","PrintConv":{"No":"Nie","Yes":"Tak"}}}
+{"kind":"translate","lang":"pl","tag":"HostComputer","value":"Komputer użyty do wygenerowania obrazu"}
+{"kind":"translate","lang":"pl","tag":"Hue","value":"Barwa"}
+{"kind":"translate","lang":"pl","tag":"ICCProfile","value":"Profil ICC"}
+{"kind":"translate","lang":"pl","tag":"ISO","value":"Czułość ISO"}
+{"kind":"translate","lang":"pl","tag":"ISOFloor","value":"Minimalne ISO"}
+{"kind":"translate","lang":"pl","tag":"ISOSetting","value":"Ustawienia ISO"}
+{"kind":"translate","lang":"pl","tag":"ImageAreaOffset","value":"Przesunięcie obszaru obrazu"}
+{"kind":"translate","lang":"pl","tag":"ImageDescription","value":"Opis obrazu"}
+{"kind":"translate","lang":"pl","tag":"ImageEditCount","value":"Licznik przetworzonych zdjęć"}
+{"kind":"translate","lang":"pl","tag":"ImageHeight","value":"Wysokość obrazu"}
+{"kind":"translate","lang":"pl","tag":"ImageID","value":"Identyfikator obrazu"}
+{"kind":"translate","lang":"pl","tag":"ImageProcessing","value":"Przetwarzanie obrazu"}
+{"kind":"translate","lang":"pl","tag":"ImageSize","value":"Rozmiar zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"ImageTone","value":{"Description":"Odcień zdjęcia","PrintConv":{"Bright":"Jasny","Landscape":"Krajobraz","Monochrome":"Monochromatyczny","Natural":"Naturalny","Portrait":"Portret"}}}
+{"kind":"translate","lang":"pl","tag":"ImageType","value":{"Description":"Rodzaj obrazu","PrintConv":{"Page":"Strona"}}}
+{"kind":"translate","lang":"pl","tag":"ImageUniqueID","value":"Unikalny kod ID zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"ImageWidth","value":"Szerokość obrazu"}
+{"kind":"translate","lang":"pl","tag":"Index","value":"Indeks"}
+{"kind":"translate","lang":"pl","tag":"Indexed","value":{"Description":"Indeksowane","PrintConv":{"Indexed":"Indeksowane","Not indexed":"Nie indeksowane"}}}
+{"kind":"translate","lang":"pl","tag":"InkNames","value":"Nazwy tuszy"}
+{"kind":"translate","lang":"pl","tag":"InkSet","value":{"Description":"Zestaw tuszy","PrintConv":{"Not CMYK":"Nie CMYK"}}}
+{"kind":"translate","lang":"pl","tag":"Instructions","value":"Instrukcje"}
+{"kind":"translate","lang":"pl","tag":"InternalFlashMode","value":"Tryb wewnętrznej lampy"}
+{"kind":"translate","lang":"pl","tag":"InternalFlashStrength","value":"Moc wewnętrznej lampy"}
+{"kind":"translate","lang":"pl","tag":"InteropIndex","value":{"Description":"Identyfikacja wzajemnej zgodności","PrintConv":{"R03 - DCF option file (Adobe RGB)":"R03: Plik pomocniczy DCF (Adobe RGB)","R98 - DCF basic file (sRGB)":"R98: Plik zasadniczy DCF (sRGB)","THM - DCF thumbnail file":"THM: Plik miniatury DCF"}}}
+{"kind":"translate","lang":"pl","tag":"InteropOffset","value":"Znacznik wzajemnej zgodności"}
+{"kind":"translate","lang":"pl","tag":"InteropVersion","value":"Wersja wzajemnej zgodności"}
+{"kind":"translate","lang":"pl","tag":"JPEGProc","value":{"PrintConv":{"Baseline":"JPEG Podstawowy","Lossless":"Bezstratny"}}}
+{"kind":"translate","lang":"pl","tag":"JPEGQuality","value":{"Description":"Jakość","PrintConv":{"Standard":"Standardowa jakość"}}}
+{"kind":"translate","lang":"pl","tag":"JPEGRestartInterval","value":"JPEG odstęp restartów"}
+{"kind":"translate","lang":"pl","tag":"Keywords","value":"Słowa kluczowe"}
+{"kind":"translate","lang":"pl","tag":"Lens","value":"Obiektyw"}
+{"kind":"translate","lang":"pl","tag":"LensID","value":"ID obiektywu"}
+{"kind":"translate","lang":"pl","tag":"LensInfo","value":"Informacja o obiektywie"}
+{"kind":"translate","lang":"pl","tag":"LensMake","value":"Producent obiektywu"}
+{"kind":"translate","lang":"pl","tag":"LensModel","value":"Model obiektywu"}
+{"kind":"translate","lang":"pl","tag":"LensSerialNumber","value":"Numer seryjny obiektywu"}
+{"kind":"translate","lang":"pl","tag":"LightReading","value":"Pomiar światła"}
+{"kind":"translate","lang":"pl","tag":"LightSource","value":{"Description":"Źródło światła","PrintConv":{"Cloudy":"Zachmurzone niebo","Cool White Fluorescent":"Zimna biała jarzeniówka (W 3800 - 4500K)","Day White Fluorescent":"Jarzeniówka z naturalnym białym światłem (N 4600 - 5500K)","Daylight":"Światło dzienne","Daylight Fluorescent":"Jarzeniówka dająca światło dzienne (D 5700 - 7100K)","Fine Weather":"Dobra pogoda","Flash":"Lampa błyskowa","Fluorescent":"Jarzeniowy","ISO Studio Tungsten":"ISO dla studyjnych lamp żarowych","Other":"Inne źródło światła","Shade":"Cień","Standard Light A":"Standardowe światło A","Standard Light B":"Standardowe światło B","Standard Light C":"Standardowe światło C","Tungsten (Incandescent)":"Światło żarowe","Unknown":"Nieznane","White Fluorescent":"Biała jarzeniówka (WW3250 - 3800K)"}}}
+{"kind":"translate","lang":"pl","tag":"Lightness","value":"Jasność"}
+{"kind":"translate","lang":"pl","tag":"LocalizedCameraModel","value":"Lokalizowany model aparatu"}
+{"kind":"translate","lang":"pl","tag":"Location","value":"Miejsce"}
+{"kind":"translate","lang":"pl","tag":"Luminance","value":"Luminancja"}
+{"kind":"translate","lang":"pl","tag":"Macro","value":"Makro"}
+{"kind":"translate","lang":"pl","tag":"Make","value":"Producent"}
+{"kind":"translate","lang":"pl","tag":"MakeAndModel","value":"Producent i model"}
+{"kind":"translate","lang":"pl","tag":"MakerNote","value":"Prywatne dane DNG"}
+{"kind":"translate","lang":"pl","tag":"MakerNotes","value":"Dane producenta"}
+{"kind":"translate","lang":"pl","tag":"MaxAperture","value":"Maks. przysłona obiektywu"}
+{"kind":"translate","lang":"pl","tag":"MaxSampleValue","value":"Maksymalny rozmiar próbki"}
+{"kind":"translate","lang":"pl","tag":"MeasurementGeometry","value":{"Description":"Geometria pomiaru","PrintConv":{"0/45 or 45/0":"0/45 lub 45/0","0/d or d/0":"0/d lub d/0"}}}
+{"kind":"translate","lang":"pl","tag":"MediaBlackPoint","value":"Punkt czerni materiału"}
+{"kind":"translate","lang":"pl","tag":"MediaWhitePoint","value":"Punkt bieli materiału"}
+{"kind":"translate","lang":"pl","tag":"MeteringMode","value":{"Description":"Tryb pomiaru","PrintConv":{"Average":"Średni","Center-weighted average":"Centralnie ważony uśredniony","Multi-segment":"Wzór","Multi-spot":"Wielopunktowy","Other":"Inne","Partial":"Częściowy","Spot":"Punktowy","Unknown":"Nieznane"}}}
+{"kind":"translate","lang":"pl","tag":"MinSampleValue","value":"Minimalny rozmiar próbki"}
+{"kind":"translate","lang":"pl","tag":"ModeNumber","value":"Numer trybu"}
+{"kind":"translate","lang":"pl","tag":"Model","value":"Aparat"}
+{"kind":"translate","lang":"pl","tag":"ModifiedPictureStyle","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"ModifyDate","value":"Data i godzina zmiany pliku"}
+{"kind":"translate","lang":"pl","tag":"MonochromeFilterEffect","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"MonochromeToningEffect","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"MultipleExposureSet","value":"Wielokrotna ekspozycja"}
+{"kind":"translate","lang":"pl","tag":"NEFCompression","value":{"PrintConv":{"Uncompressed":"Bez kompresji"}}}
+{"kind":"translate","lang":"pl","tag":"NativeDisplayInfo","value":"Informacja o natywnym(?) wyświetlaczu"}
+{"kind":"translate","lang":"pl","tag":"Noise","value":"Szumy"}
+{"kind":"translate","lang":"pl","tag":"NoiseReduction","value":{"Description":"Redukcja szumów","PrintConv":{"Off":"Wyłączona","On":"Włączona"}}}
+{"kind":"translate","lang":"pl","tag":"NumberofInks","value":"Liczba tuszy"}
+{"kind":"translate","lang":"pl","tag":"ObjectFileType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"OldSubfileType","value":{"Description":"Stary typ podsekcji","PrintConv":{"Full-resolution image":"Obraz w pełnej rozdzielczości","Reduced-resolution image":"Obraz o zredukowanej rozdzielczości","Single page of multi-page image":"Jedna strona obrazu wielostronicowego"}}}
+{"kind":"translate","lang":"pl","tag":"Opto-ElectricConvFactor","value":"Współczynnik przekształcenia optyczno-elektrycznego"}
+{"kind":"translate","lang":"pl","tag":"Orientation","value":{"Description":"Orientacja obrazu","PrintConv":{"Horizontal (normal)":"0° (góra/lewo)","Mirror horizontal":"0° (góra/prawo)","Mirror horizontal and rotate 270 CW":"90° CW (lewo/góra)","Mirror horizontal and rotate 90 CW":"90° CCW (prawo/dół)","Mirror vertical":"180° (dół/lewo)","Rotate 180":"180° (dół/prawo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"OwnerName","value":"Nazwa właściciela"}
+{"kind":"translate","lang":"pl","tag":"PageName","value":"Nazwa strony"}
+{"kind":"translate","lang":"pl","tag":"PageNumber","value":"Numer strony"}
+{"kind":"translate","lang":"pl","tag":"PentaxImageSize","value":{"Description":"Rozmiar obrazu Pentax'a","PrintConv":{"2304x1728 or 2592x1944":"2304 x 1728 lub 2592 x 1944","2560x1920 or 2304x1728":"2560 x 1920 lub 2304 x 1728","2816x2212 or 2816x2112":"2816 x 2212 lub 2816 x 2112","3008x2008 or 3040x2024":"3008 x 2008 lub 3040 x 2024","Full":"Pełny"}}}
+{"kind":"translate","lang":"pl","tag":"PentaxVersion","value":"Wersja Pentax'a"}
+{"kind":"translate","lang":"pl","tag":"PhotoEffectsType","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"PhotometricInterpretation","value":{"Description":"Schemat pikseli","PrintConv":{"BlackIsZero":"Czarny jest zerem","Color Filter Array":"CFA (Filtr kolorów matrycy)","Pixar LogL":"CIE Log2(L) (Log luminancji)","Pixar LogLuv":"CIE Log2(l)(u',v') (Log luminancji i chrominancji)","RGB Palette":"Paleta kolorów","Transparency Mask":"Maska przeźroczystości","WhiteIsZero":"Biały jest zerem"}}}
+{"kind":"translate","lang":"pl","tag":"PictureMode","value":"Tryb obrazu"}
+{"kind":"translate","lang":"pl","tag":"PictureMode2","value":"Tryb obrazu 2"}
+{"kind":"translate","lang":"pl","tag":"PictureStyle","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"PixelFormat","value":{"Description":"Format zapisu koloru","PrintConv":{"128-bit PRGBA Float":"128-bitów PRGBA (zapis zmienno przecinkowy)","128-bit RGB Float":"128-bitów RGB (zapis zmienno przecinkowy)","128-bit RGBA Float":"128-bitów RGBA (zapis zmienno przecinkowy)","16-bit Gray":"16-bitów Szarość","32-bit Gray Float":"32-bity Szarość (zapis zmienno przecinkowy)","48-bit RGB Fixed Point":"48-bitów RGB (zapis stałopozycyjny)","8-bit Gray":"8-bitów Szarość","96-bit RGB Fixed Point":"96-bitów RGB (zapis stałopozycyjny)","Black & White":"Czarno Biały"}}}
+{"kind":"translate","lang":"pl","tag":"PlanarConfiguration","value":{"Description":"Układ danych obrazu","PrintConv":{"Chunky":"Format \"chunky\" (z przeplotem)","Planar":"Format \"planar\""}}}
+{"kind":"translate","lang":"pl","tag":"PowerSource","value":"Zasilanie"}
+{"kind":"translate","lang":"pl","tag":"Predictor","value":{"Description":"Przelicznik","PrintConv":{"Horizontal differencing":"W oparciu o różnicę w poziomie","None":"Bez przelicznika"}}}
+{"kind":"translate","lang":"pl","tag":"Preview0","value":"Podgląd 0"}
+{"kind":"translate","lang":"pl","tag":"Preview1","value":"Podgląd 1"}
+{"kind":"translate","lang":"pl","tag":"Preview2","value":"Podgląd 2"}
+{"kind":"translate","lang":"pl","tag":"PreviewColorSpace","value":{"PrintConv":{"Unknown":"Nieznany"}}}
+{"kind":"translate","lang":"pl","tag":"PreviewImage","value":"Podgląd"}
+{"kind":"translate","lang":"pl","tag":"PreviewImageBorders","value":"Ramka podglądu"}
+{"kind":"translate","lang":"pl","tag":"PreviewImageData","value":"Dane podglądu obrazu"}
+{"kind":"translate","lang":"pl","tag":"PreviewImageLength","value":"Długość miniatury z podglądem"}
+{"kind":"translate","lang":"pl","tag":"PreviewImageSize","value":"Rozmiar podglądu"}
+{"kind":"translate","lang":"pl","tag":"PreviewImageStart","value":"Początek miniatury z podglądem"}
+{"kind":"translate","lang":"pl","tag":"PrimaryChromaticities","value":"Tonalność kolorów podstawowych"}
+{"kind":"translate","lang":"pl","tag":"ProcessingSoftware","value":"Oprogramowanie wykorzystane do przetwarzania"}
+{"kind":"translate","lang":"pl","tag":"ProductID","value":"ID produktu"}
+{"kind":"translate","lang":"pl","tag":"ProfileCMMType","value":"Typ profilu CMM"}
+{"kind":"translate","lang":"pl","tag":"ProfileClass","value":{"Description":"Klasa profilu","PrintConv":{"Abstract Profile":"Profil abstrakcyjny","ColorSpace Conversion Profile":"Profil konwersji przestrzeni barw","DeviceLink Profile":"Profil DeviceLink","Display Device Profile":"Profil urządzenia wyświetlającego","Input Device Profile":"Profil urządzenia wejściowego","NamedColor Profile":"Nazwany profil kolorów","Nikon Input Device Profile (NON-STANDARD!)":"Profil Nikon (\"nkpf\")","Output Device Profile":"Profil urządzenia wyjściowego"}}}
+{"kind":"translate","lang":"pl","tag":"ProfileConnectionSpace","value":"Profil Connection Space"}
+{"kind":"translate","lang":"pl","tag":"ProfileDateTime","value":"Data i czas profilu"}
+{"kind":"translate","lang":"pl","tag":"ProfileDescription","value":"Opis profilu"}
+{"kind":"translate","lang":"pl","tag":"ProfileDescriptionML","value":"Wielojęzyczny opis profilu."}
+{"kind":"translate","lang":"pl","tag":"ProfileSequenceDesc","value":"Opis sekwencji profilu"}
+{"kind":"translate","lang":"pl","tag":"ProfileType","value":{"Description":"Typ profilu","PrintConv":{"Unspecified":"Nie podany"}}}
+{"kind":"translate","lang":"pl","tag":"ProfileVersion","value":"Wersja profilu"}
+{"kind":"translate","lang":"pl","tag":"ProgramLine","value":"Linia programu"}
+{"kind":"translate","lang":"pl","tag":"ProgramMode","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Province-State","value":"Region"}
+{"kind":"translate","lang":"pl","tag":"Quality","value":{"Description":"Jakość","PrintConv":{"Best":"Najlepsza","Better":"Lepsza","Good":"Dobra","Low":"Niska jakość","Normal":"Standardowa jakość"}}}
+{"kind":"translate","lang":"pl","tag":"Rating","value":"Ocena"}
+{"kind":"translate","lang":"pl","tag":"RatingPercent","value":"Ocena procentowo"}
+{"kind":"translate","lang":"pl","tag":"RawImageSize","value":"Rozmiar obrazu RAW"}
+{"kind":"translate","lang":"pl","tag":"RecordMode","value":"Tryb zapisu"}
+{"kind":"translate","lang":"pl","tag":"RedBalance","value":"Balans czerwonego"}
+{"kind":"translate","lang":"pl","tag":"RedMatrixColumn","value":"Kolumna matrycy czerwieni"}
+{"kind":"translate","lang":"pl","tag":"RedTRC","value":"Krzywa reprodukcji czerwieni"}
+{"kind":"translate","lang":"pl","tag":"ReferenceBlackWhite","value":"Para wartości odniesienia dla czarno-białego obrazu"}
+{"kind":"translate","lang":"pl","tag":"RelatedImageFileFormat","value":"Format pliku powiązanego zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"RelatedImageHeight","value":"Długość powiązanego zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"RelatedImageWidth","value":"Szerokość powiązanego zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"RelatedSoundFile","value":"Powiązany plik audio"}
+{"kind":"translate","lang":"pl","tag":"ResolutionUnit","value":{"Description":"Jednostka rozdzielczości X i Y","PrintConv":{"None":"Brak","cm":"centymetry","inches":"Cal"}}}
+{"kind":"translate","lang":"pl","tag":"RetouchHistory","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Rotation","value":{"Description":"Obrót","PrintConv":{"Horizontal":"0° (góra/lewo)","Horizontal (normal)":"0° (góra/lewo)","Rotate 180":"180° (dół/prawo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)","Rotated 180":"180° (dół/prawo)","Rotated 270 CW":"90° CW (lewo/dół)","Rotated 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"RowsPerStrip","value":"Liczba rzędów w pasku"}
+{"kind":"translate","lang":"pl","tag":"SRFocalLength","value":"Długość fokalna SR"}
+{"kind":"translate","lang":"pl","tag":"SRResult","value":"Stabilizacja obrazu"}
+{"kind":"translate","lang":"pl","tag":"SampleFormat","value":{"Description":"Format próbki","PrintConv":{"Float":"Zmienno przecinkowa","Signed":"Całkowita ze znakiem","Undefined":"Nie podano","Unsigned":"Całkowita bez znaku"}}}
+{"kind":"translate","lang":"pl","tag":"SamplesPerPixel","value":"Liczba składników"}
+{"kind":"translate","lang":"pl","tag":"Saturation","value":{"Description":"Nasycenie","PrintConv":{"High":"Wysokie nasycenie","Low":"Niskie nasycenie","Normal":"Standardowy"}}}
+{"kind":"translate","lang":"pl","tag":"SceneCaptureType","value":{"Description":"Ujęcie z programem tematycznym","PrintConv":{"Landscape":"Krajobraz","Night":"Sceny nocne","Portrait":"Portret","Standard":"Standardowy"}}}
+{"kind":"translate","lang":"pl","tag":"SceneMode","value":{"Description":"Tryby tematyczne","PrintConv":{"Sunset":"Zachód słońca"}}}
+{"kind":"translate","lang":"pl","tag":"SceneType","value":{"Description":"Rodzaj sceny","PrintConv":{"Directly photographed":"Zdjęcie uzyskane bezpośrednio"}}}
+{"kind":"translate","lang":"pl","tag":"SensingMethod","value":{"Description":"Metoda pomiaru","PrintConv":{"Color sequential area":"Sekwencyjny sensor obszaru koloru","Color sequential linear":"Sekwencyjny liniowy sensor koloru","One-chip color area":"Jednoprocesorowy sensor obszaru koloru","Three-chip color area":"Trójprocesorowy sensor obszaru koloru","Trilinear":"Trój liniowy sensor","Two-chip color area":"Dwuprocesorowy sensor obszaru koloru"}}}
+{"kind":"translate","lang":"pl","tag":"SensitivityAdjust","value":"Regulacja czułości"}
+{"kind":"translate","lang":"pl","tag":"SensitivitySteps","value":"Krok ustawienia czułości"}
+{"kind":"translate","lang":"pl","tag":"SequentialShot","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"SerialNumber","value":"ID aparatu fotograficznego"}
+{"kind":"translate","lang":"pl","tag":"ServiceIdentifier","value":"Identyfikator usługi"}
+{"kind":"translate","lang":"pl","tag":"ShadingCompensation","value":"Kompensacja zacienienia"}
+{"kind":"translate","lang":"pl","tag":"Sharpness","value":{"Description":"Ostrość","PrintConv":{"Hard":"Ostry","Normal":"Standardowy","Soft":"Miękki"}}}
+{"kind":"translate","lang":"pl","tag":"ShootingMode","value":"Tryb fotografowania"}
+{"kind":"translate","lang":"pl","tag":"ShutterCount","value":"Licznik migawki"}
+{"kind":"translate","lang":"pl","tag":"ShutterSpeed","value":"Czas ekspozycji"}
+{"kind":"translate","lang":"pl","tag":"ShutterSpeedValue","value":"Prędkość migawki"}
+{"kind":"translate","lang":"pl","tag":"SlaveFlashMeteringSegments","value":"Segmenty pomiarowe lampy podrzędnej"}
+{"kind":"translate","lang":"pl","tag":"SlowShutter","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Software","value":"Oprogramowanie"}
+{"kind":"translate","lang":"pl","tag":"Source","value":"Źródło"}
+{"kind":"translate","lang":"pl","tag":"SpatialFrequencyResponse","value":"Przestrzenno - częstotliwościowa charakterystyka"}
+{"kind":"translate","lang":"pl","tag":"SpecialEffectsOpticalFilter","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"SpectralSensitivity","value":"Czułość spektralna"}
+{"kind":"translate","lang":"pl","tag":"State","value":"Region"}
+{"kind":"translate","lang":"pl","tag":"StripByteCounts","value":"Bajtów na skompresowany pasek"}
+{"kind":"translate","lang":"pl","tag":"StripOffsets","value":"Lokalizacja danych zdjęcia"}
+{"kind":"translate","lang":"pl","tag":"SubSecTime","value":"\"Data i godzina, subsekundy\""}
+{"kind":"translate","lang":"pl","tag":"SubSecTimeDigitized","value":"\"Cyfrowa data i godzina, subsekundy\""}
+{"kind":"translate","lang":"pl","tag":"SubSecTimeOriginal","value":"\"Pierwotna data i godzina, sub-sekundy\""}
+{"kind":"translate","lang":"pl","tag":"SubfileType","value":{"Description":"Typ podsekcji","PrintConv":{"Full-resolution image":"Obraz w pełnej rozdzielczości","Reduced-resolution image":"Obraz o zredukowanej rozdzielczości","Single page of multi-page image":"Jedna strona obrazu wielostronicowego","Single page of multi-page reduced-resolution image":"Jedna strona obrazu wielostronicowego o zredukowanej rozdzielczości","TIFF/IT final page":"Ostatnia strona TIFF/IT","Transparency mask":"Maska przezroczystości","Transparency mask of multi-page image":"Maska przezroczystości obrazu wielostronicowego","Transparency mask of reduced-resolution image":"Maska przezroczystości obrazu o zredukowanej rozdzielczości","Transparency mask of reduced-resolution multi-page image":"Maska przezroczystości obrazu wielostronicowego o zredukowanej rozdzielczości","invalid":"Błędny"}}}
+{"kind":"translate","lang":"pl","tag":"SubjectArea","value":"Obszar obiektu"}
+{"kind":"translate","lang":"pl","tag":"SubjectDistance","value":"Odległość od obiektu"}
+{"kind":"translate","lang":"pl","tag":"SubjectDistanceRange","value":{"Description":"Zakres odległości do obiektu","PrintConv":{"Close":"Zbliżenie","Distant":"Odległy plan","Macro":"Makro"}}}
+{"kind":"translate","lang":"pl","tag":"SubjectLocation","value":"Lokalizacja obiektu"}
+{"kind":"translate","lang":"pl","tag":"SubjectProgram","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"SupplementalCategories","value":"Kategorie dodatkowe"}
+{"kind":"translate","lang":"pl","tag":"SvISOSetting","value":"Ustawienia ISO Sv"}
+{"kind":"translate","lang":"pl","tag":"T6Options","value":{"PrintConv":{"Uncompressed":"Nieskompresowany"}}}
+{"kind":"translate","lang":"pl","tag":"TargetPrinter","value":"Docelowa drukarka"}
+{"kind":"translate","lang":"pl","tag":"Technology","value":{"Description":"Technologia","PrintConv":{"Active Matrix Display":"Wyświetlacz z matrycą aktywną","Cathode Ray Tube Display":"Wyświetlacz kineskopowy","Digital Camera":"Aparat cyfrowy","Dye Sublimation Printer":"Drukarka termosublimacyjna","Electrophotographic Printer":"Drukarka laserowa","Film Scanner":"Skaner do filmów","Film Writer":"Zapis na filmie","Ink Jet Printer":"Drukarka atramentowa","Passive Matrix Display":"Wyświetlacz z matrycą pasywną","Photo CD":"Foto-CD","Photographic Paper Printer":"Drukarka z papierem fotograficznym","Projection Television":"Projektor telewizyjny","Reflective Scanner":"Skaner","Video Camera":"Kamera wideo","Video Monitor":"Monitor wideo"}}}
+{"kind":"translate","lang":"pl","tag":"Teleconverter","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Text","value":"Tekst"}
+{"kind":"translate","lang":"pl","tag":"Thresholding","value":"Progowanie"}
+{"kind":"translate","lang":"pl","tag":"ThumbnailImage","value":"Miniatura"}
+{"kind":"translate","lang":"pl","tag":"ThumbnailImageSize","value":"Rozmiar miniaturki"}
+{"kind":"translate","lang":"pl","tag":"TileByteCounts","value":"Liczba bajtów na kafelek"}
+{"kind":"translate","lang":"pl","tag":"TileLength","value":"Wysokość kafelka"}
+{"kind":"translate","lang":"pl","tag":"TileOffsets","value":"Przesunięcie kafelków"}
+{"kind":"translate","lang":"pl","tag":"TileWidth","value":"Szerokość kafelka"}
+{"kind":"translate","lang":"pl","tag":"Time","value":"Czas"}
+{"kind":"translate","lang":"pl","tag":"Title","value":"Tytuł"}
+{"kind":"translate","lang":"pl","tag":"ToneCurve","value":"Krzywa barwy"}
+{"kind":"translate","lang":"pl","tag":"ToneCurves","value":"Krzywe barwy"}
+{"kind":"translate","lang":"pl","tag":"ToningEffectMonochrome","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"Track","value":"Ścieżka"}
+{"kind":"translate","lang":"pl","tag":"TransferFunction","value":"Funkcja transferu"}
+{"kind":"translate","lang":"pl","tag":"Transformation","value":{"Description":"Przekształcenie","PrintConv":{"Horizontal (normal)":"0° (góra/lewo)","Mirror horizontal":"0° (góra/prawo)","Mirror horizontal and rotate 270 CW":"90° CW (lewo/góra)","Mirror horizontal and rotate 90 CW":"90° CCW (prawo/dół)","Mirror vertical":"180° (dół/lewo)","Rotate 180":"180° (dół/prawo)","Rotate 270 CW":"90° CW (lewo/dół)","Rotate 90 CW":"90° CCW (prawo/góra)"}}}
+{"kind":"translate","lang":"pl","tag":"TransmissionReference","value":"Odnośnik transmisji"}
+{"kind":"translate","lang":"pl","tag":"TvExposureTimeSetting","value":"Ustawienia czasu ekspozycji TV"}
+{"kind":"translate","lang":"pl","tag":"Uncompressed","value":"Nieskompresowany"}
+{"kind":"translate","lang":"pl","tag":"UniqueCameraModel","value":"Unikatowy model aparatu"}
+{"kind":"translate","lang":"pl","tag":"Unknown","value":"Nieznany"}
+{"kind":"translate","lang":"pl","tag":"Urgency","value":"Priorytet"}
+{"kind":"translate","lang":"pl","tag":"UserComment","value":"Komentarz użytkownika"}
+{"kind":"translate","lang":"pl","tag":"VersionYear","value":"Rok wersji"}
+{"kind":"translate","lang":"pl","tag":"VideoCardGamma","value":"Gamma karty graficznej"}
+{"kind":"translate","lang":"pl","tag":"WBAdjLighting","value":{"PrintConv":{"None":"Brak"}}}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsCloudy","value":"Poziomy WB RGGB - zachmurzenie "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsDaylight","value":"Poziomy WB RGGB - światło dzienne "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsFlash","value":"Poziomy WB RGGB - lampa błyskowa "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsFluorescentD","value":"Poziomy WB RGGB - światło fluorescencyjne "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsFluorescentN","value":"Poziomy WB RGGB - światło fluorescencyjne N "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsFluorescentW","value":"Poziomy WB RGGB - światło fluorescencyjne W "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsShade","value":"Poziomy WB RGGB - cień "}
+{"kind":"translate","lang":"pl","tag":"WB_RGGBLevelsTungsten","value":"Poziomy WB RGGB - światło żarowe "}
+{"kind":"translate","lang":"pl","tag":"WhiteBalance","value":{"Description":"Balans bieli","PrintConv":{"Auto":"Automatyczny balans bieli","Black & White":"Monochromatyczny","Cloudy":"Pochmurna pogoda","Cool White Fluorescent":"Jarzeniówka z zimnym białym światłem","Custom 1":"WŁASNE 1","Custom 2":"WŁASNE 2","Custom 3":"WŁASNE 3","Custom 4":"WŁASNE 4","Day White Fluorescent":"Jarzeniówka z naturalnym białym światłem","Daylight":"Światło dzienne","Daylight Fluorescent":"Jarzeniówka ze światłem dziennym","Fluorescent":"Jarzeniowy","Manual":"Manualny balans bieli","Shade":"Cień","Tungsten":"Światło żarówek"}}}
+{"kind":"translate","lang":"pl","tag":"WhiteBalanceMode","value":{"Description":"Tryb balansu bieli","PrintConv":{"Auto (Cloudy)":"Automatyczny (zachmurzenie)","Auto (Day White Fluorescent)":"Automatyczny (białe fluorescencyjne światło dzienne)","Auto (Daylight Fluorescent)":"Automatyczny (fluorescencyjne światło dzienne)","Auto (Daylight)":"Automatyczny (światło dzienne)","Auto (Flash)":"Automatyczny (lampa błyskowa)","Auto (Shade)":"Automatyczny (cień)","Auto (Tungsten)":"Automatyczny (światło żarowe)","Auto (White Fluorescent)":"Automatyczny (białe światło fluorescencyjne)","Unknown":"Automatyczny (nie wykryty)","User-Selected":"Użytkownika"}}}
+{"kind":"translate","lang":"pl","tag":"WhiteBalanceSet","value":"Ustawienie balansu bieli"}
+{"kind":"translate","lang":"pl","tag":"WhitePoint","value":"Chromatyczność białego punktu"}
+{"kind":"translate","lang":"pl","tag":"WorldTimeLocation","value":{"Description":"Miejsca czasu światowego","PrintConv":{"Destination":"Przeznaczenie","Hometown":"Miasto domowe"}}}
+{"kind":"translate","lang":"pl","tag":"Writer-Editor","value":"Autor podpisu"}
+{"kind":"translate","lang":"pl","tag":"XClipPathUnits","value":"Jednostki wzdłuż osi X dla ścieżki obcięcia"}
+{"kind":"translate","lang":"pl","tag":"XPosition","value":"Współrzędna X"}
+{"kind":"translate","lang":"pl","tag":"XResolution","value":"Rozdzielczość obrazu w poziomie"}
+{"kind":"translate","lang":"pl","tag":"YCbCrCoefficients","value":"Współczynniki matrycy transformacji przestrzeni barwowej"}
+{"kind":"translate","lang":"pl","tag":"YCbCrPositioning","value":{"Description":"Pozycje Y i C","PrintConv":{"Centered":"Wyśrodkowane","Co-sited":"Obok siebie (?)"}}}
+{"kind":"translate","lang":"pl","tag":"YCbCrSubSampling","value":"Współczynnik podpróbkowania(?) Y do C"}
+{"kind":"translate","lang":"pl","tag":"YClipPathUnits","value":"Jednostki wzdłuż osi Y dla ścieżki obcięcia"}
+{"kind":"translate","lang":"pl","tag":"YPosition","value":"Współrzędna Y"}
+{"kind":"translate","lang":"pl","tag":"YResolution","value":"Rozdzielczość obrazu w pionie"}
+{"kind":"translate","lang":"pl","tag":"Year","value":"Rok"}

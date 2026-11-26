@@ -1,0 +1,33 @@
+{"kind":"table","module":"Stim","name":"Image::ExifTool::Stim::CropX","special":{"GROUPS":{"0":"Stim","1":"Stim","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Stim::CropX","TABLE_NAME":"Image::ExifTool::Stim::CropX","TAG_PREFIX":"Stim_CropX"}}
+{"fields":{"Format":"int16u","Name":"CropXCommonOffset","PrintConv":{"0":"Common Offset Setting","1":"Individual Offset Setting"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropX"}
+{"fields":{"Name":"CropXViewpointNumber"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropX"}
+{"fields":{"Format":"int32s","Name":"CropXOffset"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropX"}
+{"fields":{"Name":"CropXViewpointNumber2"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropX"}
+{"fields":{"Format":"int32s","Name":"CropXOffset2"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropX"}
+{"kind":"table","module":"Stim","name":"Image::ExifTool::Stim::CropY","special":{"GROUPS":{"0":"Stim","1":"Stim","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Stim::CropY","TABLE_NAME":"Image::ExifTool::Stim::CropY","TAG_PREFIX":"Stim_CropY"}}
+{"fields":{"Format":"int16u","Name":"CropYCommonOffset","PrintConv":{"0":"Common Offset Setting","1":"Individual Offset Setting"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropY"}
+{"fields":{"Name":"CropYViewpointNumber"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropY"}
+{"fields":{"Format":"int32s","Name":"CropYOffset"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropY"}
+{"fields":{"Name":"CropYViewpointNumber2"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropY"}
+{"fields":{"Format":"int32s","Name":"CropYOffset2"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Stim::CropY"}
+{"kind":"table","module":"Stim","name":"Image::ExifTool::Stim::Main","special":{"GROUPS":{"0":"Stim","1":"Stim","2":"Image"},"NOTES":"\n        These tags are part of the CIPA Stereo Still Image specification, and are\n        found in the APP3 \"Stim\" segment of JPEG images.  See\n        L<https://web.archive.org/web/20190718152459/http://www.cipa.jp/std/documents/e/DC-006_E.pdf>\n        for the official specification.\n    ","SHORT_NAME":"Stim::Main","TABLE_NAME":"Image::ExifTool::Stim::Main","TAG_PREFIX":"Stim"}}
+{"fields":{"Name":"StimVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Binary":1,"Name":"ApplicationData"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ImageArrangement","PrintConv":{"0":"Parallel View Alignment","1":"Cross View Alignment"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ImageRotation","PrintConv":{"1":"None"}},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ScalingFactor"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"CropXSize"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"CropYSize"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"CropX","SubDirectory":{"TagTable":"Image::ExifTool::Stim::CropX"}},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"CropY","SubDirectory":{"TagTable":"Image::ExifTool::Stim::CropY"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ViewType","PrintConv":{"0":"No Pop-up Effect","1":"Pop-up Effect"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"RepresentativeImage","PrintConv":{"0":"Left Viewpoint","1":"Right Viewpoint"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ConvergenceBaseImage","PrintConv":{"0":"Left Viewpoint","1":"Right Viewpoint","255":"Equivalent for Both Viewpoints"}},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"AssumedDisplaySize","PrintConv":"\"$val mm\""},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"AssumedDistanceView","PrintConv":"\"$val mm\""},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"RepresentativeDisparityNear"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"RepresentativeDisparityFar"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"InitialDisplayEffect","PrintConv":{"0":"Off","1":"On"}},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ConvergenceDistance","PrintConv":"$val ? \"$val mm\" : \"inf\""},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"CameraArrangementInterval","PrintConv":"\"$val mm\""},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}
+{"fields":{"Name":"ShootingCount"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::Stim::Main"}

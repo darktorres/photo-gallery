@@ -1,0 +1,10 @@
+{"kind":"table","module":"JSON","name":"Image::ExifTool::JSON::Main","special":{"GROUPS":{"0":"JSON","1":"JSON","2":"Other"},"NOTES":"\n        Other than a few tags in the table below, JSON tags have not been\n        pre-defined.  However, ExifTool will read any existing tags from basic\n        JSON-formatted files.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::JSON::ProcessJSON"},"SHORT_NAME":"JSON::Main","TABLE_NAME":"Image::ExifTool::JSON::Main","TAG_PREFIX":"JSON","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"ON1_SettingsData","RawConv":"\n            require Image::ExifTool::XMP;\n            $val = Image::ExifTool::XMP::DecodeBase64($val);\n        ","SubDirectory":{"TagTable":"Image::ExifTool::PLIST::Main"}},"id":"ON1_SettingsData","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ON1_SettingsMetadataCreated"},"id":"ON1_SettingsMetadataCreated","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ON1_SettingsMetadataModified"},"id":"ON1_SettingsMetadataModified","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Name":"ON1_SettingsMetadataName"},"id":"ON1_SettingsMetadataName","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Name":"ON1_SettingsMetadataPluginID"},"id":"ON1_SettingsMetadataPluginID","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ON1_SettingsMetadataTimestamp"},"id":"ON1_SettingsMetadataTimestamp","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Name":"ON1_SettingsMetadataUsage"},"id":"ON1_SettingsMetadataUsage","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Name":"ON1_SettingsMetadataVisibleToUser"},"id":"ON1_SettingsMetadataVisibleToUser","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}
+{"fields":{"Name":"AdjustmentsSettingsStatisticsLightMap","ValueConv":"Image::ExifTool::XMP::DecodeBase64($val)"},"id":"adjustmentsSettingsStatisticsLightMap","index":null,"kind":"tag","table":"Image::ExifTool::JSON::Main"}

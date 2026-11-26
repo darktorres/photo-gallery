@@ -1,0 +1,32 @@
+{"kind":"table","module":"PLIST","name":"Image::ExifTool::PLIST::Main","special":{"GROUPS":{"0":"PLIST","1":"XML","2":"Document"},"NOTES":"\n        Apple Property List tags.  ExifTool reads both XML and binary-format PLIST\n        files, and will extract any existing tags even if they aren't listed below.\n        These tags belong to the family 0 \"PLIST\" group, but family 1 group may be\n        either \"XML\" or \"PLIST\" depending on whether the format is XML or binary.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::PLIST::ProcessPLIST"},"SHORT_NAME":"PLIST::Main","TABLE_NAME":"Image::ExifTool::PLIST::Main","TAG_PREFIX":"PLIST","VARS":{"LONG_TAGS":18}}}
+{"fields":{"Name":"CMCaptureCoreVersion"},"id":"FrameworkVersions/CMCaptureCore","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"CoreMediaVersion"},"id":"FrameworkVersions/CoreMedia","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"CoreMotionVersion"},"id":"FrameworkVersions/CoreMotion","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"H16ISPServicesVersion"},"id":"FrameworkVersions/H16ISPServices","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"LivePhotoMetadataSetupDataVersion"},"id":"LivePhotoMetadataSetupDataVersion","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"IsFloat($val) ? ConvertUnixTime(($val - 25569) * 24 * 3600) : $val"},"id":"MetaDataList//DateTimeOriginal","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Groups":{"2":"Video"},"Name":"Duration","PrintConv":"ConvertDuration($val)"},"id":"MetaDataList//Duration","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")"},"id":"MetaDataList//Geolocation/Latitude","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")"},"id":"MetaDataList//Geolocation/Longitude","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"GPSMapDatum"},"id":"MetaDataList//Geolocation/MapDatum","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"ProductBuildVersion"},"id":"SystemVersion/ProductBuildVersion","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"ProductName"},"id":"SystemVersion/ProductName","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"ProductVersion"},"id":"SystemVersion/ProductVersion","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"XMLFileType","RawConv":"\n            if ($val eq 'ModdXML' and $$self{FILE_TYPE} eq 'XMP') {\n                $self->OverrideFileType('MODD');\n            }\n            return $val;\n        "},"id":"XMLFileType","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"CompressedPLIST":1,"Name":"AdjustmentData","SubDirectory":{"TagTable":"Image::ExifTool::PLIST::Main"}},"id":"adjustmentData","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Cast"},"id":"cast//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Codirectors"},"id":"codirectors//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Directors"},"id":"directors//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Producers"},"id":"producers//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Screenwriters"},"id":"screenwriters//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRate"},"id":"slowMotion/rate","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegions"},"id":"slowMotion/regions","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsDurationEpoch"},"id":"slowMotion/regions/timeRange/duration/epoch","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsDurationFlags","PrintConv":{"BITMASK":{"0":"Valid","1":"Has been rounded","2":"Positive infinity","3":"Negative infinity","4":"Indefinite"}}},"id":"slowMotion/regions/timeRange/duration/flags","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsDurationTimeScale"},"id":"slowMotion/regions/timeRange/duration/timescale","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsDurationValue"},"id":"slowMotion/regions/timeRange/duration/value","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsStartTimeEpoch"},"id":"slowMotion/regions/timeRange/start/epoch","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsStartTimeFlags","PrintConv":{"BITMASK":{"0":"Valid","1":"Has been rounded","2":"Positive infinity","3":"Negative infinity","4":"Indefinite"}}},"id":"slowMotion/regions/timeRange/start/flags","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsStartTimeScale"},"id":"slowMotion/regions/timeRange/start/timescale","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"Name":"SlowMotionRegionsStartTimeValue"},"id":"slowMotion/regions/timeRange/start/value","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}
+{"fields":{"List":1,"Name":"Studio"},"id":"studio//name","index":null,"kind":"tag","table":"Image::ExifTool::PLIST::Main"}

@@ -1,0 +1,744 @@
+{"kind":"translate","lang":"nl","tag":"AEBAutoCancel","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AELock","value":{"Description":"AE-vergrendeling","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AELockButton","value":{"Description":"AE-L/AF-L","PrintConv":{"AE Lock (hold)":"AE-vergrendeling vast","AE Lock Only":"AE-vergrendeling","AE-L/AF Area":"AE-L/AF veld","AE-L/AF-L/AF Area":"AE-L/AF-L/AF veld","AE/AF Lock":"AE/AF-vergrendeling","AF Lock Only":"AF-vergrendeling","AF-L/AF Area":"AF-L/AF veld","AF-ON/AF Area":"AF-ON/AF veld","FV Lock":"FV-vergrendeling","Focus Area Selection":"AF-veld"}}}
+{"kind":"translate","lang":"nl","tag":"AEMeteringMode","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"nl","tag":"AEProgramMode","value":{"PrintConv":{"Landscape":"Landschap","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"AF-CPrioritySelection","value":{"Description":"Selectie AF-C-prioriteit","PrintConv":{"Focus":"Scherpstelling","Release":"Ontspannen","Release + Focus":"Ontspannen + scherpstelling"}}}
+{"kind":"translate","lang":"nl","tag":"AF-OnForMB-D10","value":{"Description":"Functie AF-ON-knop MBD10","PrintConv":{"AE Lock (hold)":"AE-vergrendeling (vast)","AE Lock (reset on release)":"AE-vergr. (herstel na ontspan.)","AE Lock Only":"AE-vergrendeling","AE/AF Lock":"AE/AF-vergrendeling","AF Lock Only":"AF-vergrendeling","AF-On":"AF-ON","Same as FUNC Button":"Zelfde als FUNC.-knop"}}}
+{"kind":"translate","lang":"nl","tag":"AF-SPrioritySelection","value":{"Description":"Selectie AF-S-prioriteit","PrintConv":{"Focus":"Scherpstelling","Release":"Ontspannen"}}}
+{"kind":"translate","lang":"nl","tag":"AFActivation","value":{"Description":"AF activering","PrintConv":{"AF-On Only":"Alleen AF-ON","Shutter/AF-On":"Ontspanknop/AF-ON"}}}
+{"kind":"translate","lang":"nl","tag":"AFAreaIllumination","value":{"Description":"AF-veld verlichting","PrintConv":{"Auto":"Automatisch","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AFAreaMode","value":{"Description":"AF-veldstand","PrintConv":{"Auto-area":"Automatischveld AF","Dynamic Area":"Dynamisch veld","Single Area":"Enkelveld"}}}
+{"kind":"translate","lang":"nl","tag":"AFAreaModeSetting","value":{"Description":"AF-veldstand","PrintConv":{"Closest Subject":"Dichtstbz. onderw.","Dynamic Area":"Dynamisch veld","Single Area":"Enkelveld"}}}
+{"kind":"translate","lang":"nl","tag":"AFAssist","value":{"Description":"AF-hulpverlichting","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AFPoint","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointActivationArea","value":{"PrintConv":{"Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointBrightness","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointDisplayDuringFocus","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointIllumination","value":{"Description":"Verlichting scherpstelpunt","PrintConv":{"Auto":"Automatisch","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointMode","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointRegistration","value":{"PrintConv":{"Automatic":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointSelected","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointSelected2","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointSelection","value":{"Description":"Selectie scherpstelpunt","PrintConv":{"11 Points":"11 punten","51 Points":"51 punten (3D-tracking)"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointSelectionMethod","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointsInFocus","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"AFPointsUnknown2","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"AIServoTrackingSensitivity","value":{"PrintConv":{"Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"APEVersion","value":"APE versie"}
+{"kind":"translate","lang":"nl","tag":"ARMIdentifier","value":"ARM herkenningscode"}
+{"kind":"translate","lang":"nl","tag":"ARMVersion","value":"ARM versie"}
+{"kind":"translate","lang":"nl","tag":"ActionAdvised","value":{"Description":"Actie advies","PrintConv":{"Object Append":"Object toevoegen","Object Kill":"Object verwijderen","Object Reference":"Object referentie","Object Replace":"Object vervangen","Ojbect Append":"Object toevoegen"}}}
+{"kind":"translate","lang":"nl","tag":"ActiveD-Lighting","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Normal":"Normaal","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ActiveD-LightingMode","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Normal":"Normaal","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"AddAspectRatioInfo","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"AddOriginalDecisionData","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AdultContentWarning","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"AdvancedRaw","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AlphaByteCount","value":"Aantal alphagegevens in bytes"}
+{"kind":"translate","lang":"nl","tag":"AlphaDataDiscard","value":{"Description":"Afgedankte alphagegevens","PrintConv":{"Flexbits Discarded":"Afgedankte flexbits","Full Resolution":"Volledige resolutie","HighPass Frequency Data Discarded":"Afgedankte hoogdoorlaat frequentiegegevens","Highpass and LowPass Frequency Data Discarded":"Afgedankte hoogdoorlaat en laagdoorlaat frequentiegegevens"}}}
+{"kind":"translate","lang":"nl","tag":"AlphaOffset","value":"Alphaverplaatsing"}
+{"kind":"translate","lang":"nl","tag":"Anti-Blur","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"Aperture","value":"Diafragma"}
+{"kind":"translate","lang":"nl","tag":"ApertureValue","value":"Diafragma"}
+{"kind":"translate","lang":"nl","tag":"ApplicationRecordVersion","value":"Gegevensversie"}
+{"kind":"translate","lang":"nl","tag":"Artist","value":"Maker van de afbeelding"}
+{"kind":"translate","lang":"nl","tag":"AssistButtonFunction","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"Audio","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"AudioDuration","value":"Audio duur"}
+{"kind":"translate","lang":"nl","tag":"AudioOutcue","value":"Audio eindaftiteling"}
+{"kind":"translate","lang":"nl","tag":"AudioSamplingRate","value":"Audio bemonsteringssnelheid"}
+{"kind":"translate","lang":"nl","tag":"AudioSamplingResolution","value":"Audio bemonsteringsresolutie"}
+{"kind":"translate","lang":"nl","tag":"AudioType","value":{"Description":"Type audio","PrintConv":{"Mono Actuality":"Actualiteit (mono (1 kanaal) audio)","Mono Music":"Muziek, zelf verstuurd (mono (1 kanaal) audio)","Mono Question and Answer Session":"Vraag en antwoord sessie (mono (1 kanaal) audio)","Mono Raw Sound":"Ruwe geluid (mono (1 kanaal) audio)","Mono Response to a Question":"Beantwoord een vraag (mono (1 kanaal) audio)","Mono Scener":"Toneel (mono (1 kanaal) audio)","Mono Voicer":"Stem (mono (1 kanaals) audio)","Mono Wrap":"Wrap (mono (1 kanaals) audio)","Stereo Actuality":"Actualiteit (stereo (2 kanalen) audio)","Stereo Music":"Muziek, zelf verstuurd (stereo (2 kanalen) audio)","Stereo Question and Answer Session":"Vraag en antwoord sessie (stereo (2 kanalen) audio)","Stereo Raw Sound":"Ruwe geluid (stereo (2 kanalen) audio)","Stereo Response to a Question":"Beantwoord een vraag (stereo (2 kanalen) audio)","Stereo Scener":"Toneel (stereo (2 kanaals) audio)","Stereo Voicer":"Stem (stereo (2 kanaals) audio)","Stereo Wrap":"Wrap (stereo (2 kanaals) audio)","Text Only":"Alleen tekst (geen objectgegevens)"}}}
+{"kind":"translate","lang":"nl","tag":"Author","value":"Auteur"}
+{"kind":"translate","lang":"nl","tag":"AuthorsPosition","value":"Positie van de auteur"}
+{"kind":"translate","lang":"nl","tag":"AutoAperture","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoBracketModeM","value":{"Description":"Auto bracketing (M-stand)","PrintConv":{"Flash Only":"Alleen flits","Flash/Aperture":"Flits/diafragma","Flash/Speed":"Flits/sluitertijd","Flash/Speed/Aperture":"Flits/sluitertijd/diafragma"}}}
+{"kind":"translate","lang":"nl","tag":"AutoBracketOrder","value":"Bracketingvolgorde"}
+{"kind":"translate","lang":"nl","tag":"AutoBracketSet","value":{"Description":"Inst. voor auto bracketing","PrintConv":{"AE & Flash":"AE & flits","AE Only":"Alleen AE","Flash Only":"Alleen flits","WB Bracketing":"Witbalans bracketing"}}}
+{"kind":"translate","lang":"nl","tag":"AutoBracketing","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"AutoBracketingSet","value":"Inst. voor auto bracketing"}
+{"kind":"translate","lang":"nl","tag":"AutoExposureBracketing","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoFP","value":{"Description":"Auto FP","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoFocus","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoISO","value":{"Description":"ISO auto","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoISOMax","value":"ISO auto Maximale"}
+{"kind":"translate","lang":"nl","tag":"AutoISOMinShutterSpeed","value":"ISO auto Langste sluitertijd"}
+{"kind":"translate","lang":"nl","tag":"AutoLightingOptimizer","value":{"PrintConv":{"Low":"Laag","Off":"Uit","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"AutoLightingOptimizerOn","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"AutoRedEye","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"AutoRotate","value":{"PrintConv":{"None":"Geen","Rotate 180":"180° (onder/rechts)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)","n/a":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"BWMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"BackgroundColorIndicator","value":"Achtergrond kleur indicator"}
+{"kind":"translate","lang":"nl","tag":"BackgroundColorValue","value":"Achtergrond kleur waarde"}
+{"kind":"translate","lang":"nl","tag":"BackgroundTiling","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"BannerImageType","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"BatteryLevel","value":"Batterij status"}
+{"kind":"translate","lang":"nl","tag":"BatteryOrder","value":{"Description":"Batterijvolgorde","PrintConv":{"Camera Battery First":"Camerabatterij eerst","MB-D10 First":"MB-D10 batterijen eerst"}}}
+{"kind":"translate","lang":"nl","tag":"Beep","value":{"Description":"Signaal","PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"BitsPerSample","value":"Aantal Bits per component"}
+{"kind":"translate","lang":"nl","tag":"BlueMatrixColumn","value":"Blauwe matrixkolom"}
+{"kind":"translate","lang":"nl","tag":"BlueTRC","value":"Blauwe toon reproductie curve"}
+{"kind":"translate","lang":"nl","tag":"BlurWarning","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"BracketMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"BracketStep","value":{"PrintConv":{"1 EV":"1 stop","1/3 EV":"1/3 stop","2/3 EV":"2/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"Brightness","value":"Helderheid"}
+{"kind":"translate","lang":"nl","tag":"BrightnessValue","value":"Helderheid"}
+{"kind":"translate","lang":"nl","tag":"BurstMode","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"By-line","value":"Maker"}
+{"kind":"translate","lang":"nl","tag":"By-lineTitle","value":"Beroep van de maker"}
+{"kind":"translate","lang":"nl","tag":"CFAPattern","value":"Kleur filter matrix"}
+{"kind":"translate","lang":"nl","tag":"CFAPattern2","value":"Kleurfiltermatrix 2"}
+{"kind":"translate","lang":"nl","tag":"CFARepeatPatternDim","value":"Kleurfiltermatrix grootte"}
+{"kind":"translate","lang":"nl","tag":"CLModeShootingSpeed","value":"Opnamesnelheid"}
+{"kind":"translate","lang":"nl","tag":"CMMFlags","value":"CMM vlaggen"}
+{"kind":"translate","lang":"nl","tag":"CPUType","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"Bewolkt","Cool White Fluorescent":"Koel wit TL-licht","Day White Fluorescent":"Daglicht wit TL-licht","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Fine Weather":"Onbewolkt","Flash":"Flits","Fluorescent":"Fluoresceren","ISO Studio Tungsten":"ISO studio kunstlicht (gloeilamp)","Other":"Andere lichtbron","Shade":"Schaduw","Standard Light A":"Standaard licht A","Standard Light B":"Standaard licht B","Standard Light C":"Standaard licht C","Tungsten (Incandescent)":"Kunstlicht (gloeilamp)","Unknown":"Onbekend","Warm White Fluorescent":"Warm wit TL-licht","White Fluorescent":"Wit TL-licht"}}}
+{"kind":"translate","lang":"nl","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"Bewolkt","Cool White Fluorescent":"Koel wit TL-licht","Day White Fluorescent":"Daglicht wit TL-licht","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Fine Weather":"Onbewolkt","Flash":"Flits","Fluorescent":"Fluoresceren","ISO Studio Tungsten":"ISO studio kunstlicht (gloeilamp)","Other":"Andere lichtbron","Shade":"Schaduw","Standard Light A":"Standaard licht A","Standard Light B":"Standaard licht B","Standard Light C":"Standaard licht C","Tungsten (Incandescent)":"Kunstlicht (gloeilamp)","Unknown":"Onbekend","Warm White Fluorescent":"Warm wit TL-licht","White Fluorescent":"Wit TL-licht"}}}
+{"kind":"translate","lang":"nl","tag":"CameraOrientation","value":{"Description":"Oriëntatie van de afbeelding","PrintConv":{"Horizontal (normal)":"0° (boven/links)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)"}}}
+{"kind":"translate","lang":"nl","tag":"CanonExposureMode","value":{"PrintConv":{"Aperture-priority AE":"Diafragmaprioriteit","Manual":"Handmatig","Shutter speed priority AE":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"CanonFlashMode","value":{"PrintConv":{"Auto":"Automatisch","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Caption-Abstract","value":"Titel/Beschrijving"}
+{"kind":"translate","lang":"nl","tag":"CaptionWriter","value":"Schrijver van het onderschrift"}
+{"kind":"translate","lang":"nl","tag":"CaptureXResolutionUnit","value":{"PrintConv":{"um":"µm (micrometer)"}}}
+{"kind":"translate","lang":"nl","tag":"CaptureYResolutionUnit","value":{"PrintConv":{"um":"µm (micrometer)"}}}
+{"kind":"translate","lang":"nl","tag":"Categories","value":"Categorieën"}
+{"kind":"translate","lang":"nl","tag":"Category","value":"Categorie"}
+{"kind":"translate","lang":"nl","tag":"CellLength","value":"Cel lengte"}
+{"kind":"translate","lang":"nl","tag":"CellWidth","value":"Cel breedte"}
+{"kind":"translate","lang":"nl","tag":"CenterAFArea","value":{"Description":"Centrale AF-veld","PrintConv":{"Normal Zone":"Normaal","Wide Zone":"Breed"}}}
+{"kind":"translate","lang":"nl","tag":"CenterWeightedAreaSize","value":{"Description":"Grootte meetgebied","PrintConv":{"Average":"Gemiddeld"}}}
+{"kind":"translate","lang":"nl","tag":"CharacterSet","value":"Tekenset"}
+{"kind":"translate","lang":"nl","tag":"ChrominanceNR_TIFF_JPEG","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ChrominanceNoiseReduction","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"City","value":"Plaats"}
+{"kind":"translate","lang":"nl","tag":"ClassifyState","value":"Rangschik status"}
+{"kind":"translate","lang":"nl","tag":"CodedCharacterSet","value":"Gecodeerde character set"}
+{"kind":"translate","lang":"nl","tag":"ColorAberrationControl","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ColorAdjustmentMode","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ColorBalanceAdj","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ColorBooster","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ColorEffect","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ColorFilter","value":{"Description":"Kleurfilter","PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ColorMode","value":{"Description":"Instellingen","PrintConv":{"Autumn Leaves":"Herfstbladeren","B&W":"Zwart-wit","Clear":"Doorzichtig","Deep":"Diep","Evening":"Avond","Landscape":"Landschap","Light":"Licht","Neutral":"Neutraal","Night View":"Nacht","Night View/Portrait":"Nachtportret","Normal":"Normaal","Off":"Uit","Portrait":"Portret","Standard":"Standaard","Sunset":"Zonsondergang","Vivid":"Levendige kleuren"}}}
+{"kind":"translate","lang":"nl","tag":"ColorMoireReduction","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ColorMoireReductionMode","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ColorSpace","value":{"Description":"Kleur ruimte","PrintConv":{"ICC Profile":"ICC-profiel","Uncalibrated":"Niet vastgelegd"}}}
+{"kind":"translate","lang":"nl","tag":"ColorSpaceData","value":"Gegevenskleurenruimte"}
+{"kind":"translate","lang":"nl","tag":"ColorTable","value":"Kleur tabel"}
+{"kind":"translate","lang":"nl","tag":"ColorTemperature","value":"Kleurtemperatuur"}
+{"kind":"translate","lang":"nl","tag":"ColorTone","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"CommandDials","value":{"Description":"Instelschijven","PrintConv":{"Reversed (Main Aperture, Sub Shutter)":"Verwissel hoofd/sec.","Standard (Main Shutter, Sub Aperture)":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"CommandDialsApertureSetting","value":{"Description":"Functie instelschijven inst. Instellen diafragma","PrintConv":{"Aperture Ring":"Diafragmaring","Sub-command Dial":"Secundaire instelschijf"}}}
+{"kind":"translate","lang":"nl","tag":"CommandDialsChangeMainSub","value":{"Description":"Functie instelschijven inst. Verwissel hoofd/secundair","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"CommandDialsMenuAndPlayback","value":{"Description":"Functie instelschijven inst. Menu’s en weergave","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"CommandDialsReverseRotation","value":{"Description":"Functie instelschijven inst. Rotatie omkeren","PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"CommanderChannel","value":"Commanderstand Kanaal"}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupAManualOutput","value":"Commanderstand Groep A M Corrct"}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupAMode","value":{"Description":"Commanderstand Groep A Stand","PrintConv":{"Manual":"Handmatig","Off":"Uit","TTL":"DDL"}}}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupA_TTL-AAComp","value":"Commanderstand Groep A DDL/AA Corrct"}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupBManualOutput","value":"Commanderstand Groep B M Corrct"}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupBMode","value":{"Description":"Commanderstand Groep B Stand","PrintConv":{"Manual":"Handmatig","Off":"Uit","TTL":"DDL"}}}
+{"kind":"translate","lang":"nl","tag":"CommanderGroupB_TTL-AAComp","value":"Commanderstand Groep B DDL/AA Corrct"}
+{"kind":"translate","lang":"nl","tag":"CommanderInternalFlash","value":{"Description":"Commanderstand Ingb. flitsr Stand","PrintConv":{"Manual":"Handmatig","Off":"Uit","TTL":"DDL"}}}
+{"kind":"translate","lang":"nl","tag":"CommanderInternalManualOutput","value":"Commanderstand Ingb. flitsr M Corrct"}
+{"kind":"translate","lang":"nl","tag":"CommanderInternalTTLComp","value":"Commanderstand Ingb. flitsr DDL Corrct"}
+{"kind":"translate","lang":"nl","tag":"Comment","value":"Kommentaar"}
+{"kind":"translate","lang":"nl","tag":"Compilation","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ComponentsConfiguration","value":"Betekenis van elke component"}
+{"kind":"translate","lang":"nl","tag":"CompressedBitsPerPixel","value":"Afbeelding compressie modus"}
+{"kind":"translate","lang":"nl","tag":"Compression","value":{"Description":"Compressie schema","PrintConv":{"JPEG":"JPEG-compressie","JPEG (old-style)":"JPEG (oude versie)","Kodak DCR Compressed":"Kodak DCR gcomprimeerd","Kodak KDC Compressed":"Kodak KDC gecomprimeerd","Next":"NeXT 2-Bit codering","Nikon NEF Compressed":"Nikon NEF gecomprimeerd","None":"Geen","Pentax PEF Compressed":"Pentax PEF gecomprimeerd","SGILog":"SGI 32-Bit Log Luminance gecodeerd","SGILog24":"SGI 24-Bit Log Luminance gecodeerd","Sony ARW Compressed":"Sony ARW gecomprimeerd","Thunderscan":"ThunderScan 4-Bit codering","Uncompressed":"Niet gecomprimeerd"}}}
+{"kind":"translate","lang":"nl","tag":"CompressionType","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"ConnectionSpaceIlluminant","value":"Witpunt van connectiekleurruimte"}
+{"kind":"translate","lang":"nl","tag":"ContentLocationCode","value":"Locatiecode van inhoud"}
+{"kind":"translate","lang":"nl","tag":"ContentLocationName","value":"Locatienaam van inhoud"}
+{"kind":"translate","lang":"nl","tag":"ContinuousDrive","value":{"PrintConv":{"Continuous":"Continu"}}}
+{"kind":"translate","lang":"nl","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Hoog","Low":"Laag","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"ConversionLens","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"Copyright","value":"Copyright houder"}
+{"kind":"translate","lang":"nl","tag":"CopyrightNotice","value":"Copyright vermelding"}
+{"kind":"translate","lang":"nl","tag":"CopyrightStatus","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"Country","value":"Land"}
+{"kind":"translate","lang":"nl","tag":"Country-PrimaryLocationCode","value":"ISO landcode"}
+{"kind":"translate","lang":"nl","tag":"Country-PrimaryLocationName","value":"Land"}
+{"kind":"translate","lang":"nl","tag":"CreateDate","value":"Datum van de originele data generatie"}
+{"kind":"translate","lang":"nl","tag":"CreationDate","value":"Opname datum"}
+{"kind":"translate","lang":"nl","tag":"Creator","value":"Maker"}
+{"kind":"translate","lang":"nl","tag":"CreatorAddress","value":"Maker - Adres"}
+{"kind":"translate","lang":"nl","tag":"CreatorCity","value":"Maker - Plaats"}
+{"kind":"translate","lang":"nl","tag":"CreatorCountry","value":"Maker - Land"}
+{"kind":"translate","lang":"nl","tag":"CreatorPostalCode","value":"Maker - Postcode"}
+{"kind":"translate","lang":"nl","tag":"CreatorRegion","value":"Maker - Provincie"}
+{"kind":"translate","lang":"nl","tag":"CreatorWorkEmail","value":"Maker - E-mail"}
+{"kind":"translate","lang":"nl","tag":"CreatorWorkTelephone","value":"Maker - Telefoonnummer"}
+{"kind":"translate","lang":"nl","tag":"CreatorWorkURL","value":"Maker - Website(s)"}
+{"kind":"translate","lang":"nl","tag":"Credit","value":"Leverancier"}
+{"kind":"translate","lang":"nl","tag":"CropActive","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"Curves","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"CustomRendered","value":{"Description":"Gebruiker gedefineerde beeldverwerking","PrintConv":{"Custom":"Gebruiker gedefineerd proces","Normal":"Standaard proces"}}}
+{"kind":"translate","lang":"nl","tag":"D-LightingHQ","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"D-LightingHQSelected","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"D-LightingHS","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"DataImprint","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"DateCreated","value":"Opnamedatum"}
+{"kind":"translate","lang":"nl","tag":"DateSent","value":"Datum van zenden"}
+{"kind":"translate","lang":"nl","tag":"DateStampMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"DateTime","value":"Datum bestand wijziging"}
+{"kind":"translate","lang":"nl","tag":"DateTimeOriginal","value":"Datum van de originele data generatie"}
+{"kind":"translate","lang":"nl","tag":"DaylightSavings","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"Description","value":"Beschrijving"}
+{"kind":"translate","lang":"nl","tag":"Destination","value":"Bestemming"}
+{"kind":"translate","lang":"nl","tag":"DestinationDST","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"DeviceAttributes","value":"Apparaateigenschappen"}
+{"kind":"translate","lang":"nl","tag":"DeviceManufacturer","value":"Apparaatproducent"}
+{"kind":"translate","lang":"nl","tag":"DeviceMfgDesc","value":"Apparaatproducent kenmerk"}
+{"kind":"translate","lang":"nl","tag":"DeviceModel","value":"Apparaatmodel"}
+{"kind":"translate","lang":"nl","tag":"DeviceModelDesc","value":"Apparaatmodel kenmerk"}
+{"kind":"translate","lang":"nl","tag":"DeviceSettingDescription","value":"Toestelinstellingen"}
+{"kind":"translate","lang":"nl","tag":"DialDirectionTvAv","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"DigitalCreationDate","value":"Digitale opnamedatum"}
+{"kind":"translate","lang":"nl","tag":"DigitalCreationTime","value":"Digitaal opnametijdstip"}
+{"kind":"translate","lang":"nl","tag":"DigitalZoom","value":{"Description":"Digitaal zoomen","PrintConv":{"None":"Geen","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"DigitalZoomOn","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"DigitalZoomRatio","value":"Digitale zoom factor"}
+{"kind":"translate","lang":"nl","tag":"Directory","value":"Plaats van het bestand"}
+{"kind":"translate","lang":"nl","tag":"DisplaySize","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"DisplayXResolutionUnit","value":{"PrintConv":{"um":"µm (micrometer)"}}}
+{"kind":"translate","lang":"nl","tag":"DisplayYResolutionUnit","value":{"PrintConv":{"um":"µm (micrometer)"}}}
+{"kind":"translate","lang":"nl","tag":"DistortionCorrection","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"DistortionCorrection2","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"DjVuVersion","value":"DjVu versie"}
+{"kind":"translate","lang":"nl","tag":"DocumentHistory","value":"Documentgeschiedenis"}
+{"kind":"translate","lang":"nl","tag":"DocumentName","value":"Document naam"}
+{"kind":"translate","lang":"nl","tag":"DocumentNotes","value":"Documentopmerkingen"}
+{"kind":"translate","lang":"nl","tag":"DriveMode","value":{"Description":"Ontspannermodus","PrintConv":{"Continuous":"Continu","Continuous Shooting":"Continu","Off":"Uit","Self-timer":"Zelfontspanner","Self-timer Operation":"Zelfontspanner","Single":"Enkel beeld","Single Frame":"Enkel beeld","Single Shot":"Enkel beeld","Single-frame Shooting":"Enkel beeld"}}}
+{"kind":"translate","lang":"nl","tag":"DynamicAFArea","value":{"Description":"Dynamisch AF-veld","PrintConv":{"21 Points":"21 punten","51 Points":"51 punten","51 Points (3D-tracking)":"51 punten (3D-tracking)","9 Points":"9 punten"}}}
+{"kind":"translate","lang":"nl","tag":"DynamicRange","value":{"PrintConv":{"Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"DynamicRangeExpansion","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"DynamicRangeOptimizer","value":{"Description":"Dyn.-bereikoptim","PrintConv":{"Advanced Auto":"Geavancrd Auto","Advanced Lv1":"Geavanceerd-1","Advanced Lv2":"Geavanceerd-2","Advanced Lv3":"Geavanceerd-3","Advanced Lv4":"Geavanceerd-4","Advanced Lv5":"Geavanceerd-5","Auto":"Automatisch","Off":"Uit","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ETTLII","value":{"PrintConv":{"Average":"Gemiddeld"}}}
+{"kind":"translate","lang":"nl","tag":"EVStepSize","value":{"Description":"LW stapgrootte","PrintConv":{"1/2 EV":"1/2 stop","1/3 EV":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"EasyExposureCompensation","value":{"Description":"Eenv. belichtingscorrectie","PrintConv":{"Off":"Uit","On":"Aan","On (auto reset)":"Aan (autoherstel)"}}}
+{"kind":"translate","lang":"nl","tag":"EasyMode","value":{"PrintConv":{"Landscape":"Landschap","Manual":"Handmatig","Night":"Nachtscene","Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"EdgeNoiseReduction","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"EditStatus","value":"Bewerkingsstatus"}
+{"kind":"translate","lang":"nl","tag":"EditorialUpdate","value":{"Description":"Redactionele bewerking","PrintConv":{"Additional language":"Extra taal"}}}
+{"kind":"translate","lang":"nl","tag":"Emphasis","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"EnhanceDarkTones","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Enhancement","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"EnvelopeNumber","value":"Basisdatanummer"}
+{"kind":"translate","lang":"nl","tag":"EnvelopePriority","value":{"Description":"Prioriteit","PrintConv":{"0 (reserved)":"0 (Gereserveerd voor toekomstig gebruik)","1 (most urgent)":"1 (Meest belangrijk)","5 (normal urgency)":"5 (Normaal)","8 (least urgent)":"8 (Minst belangrijk)","9 (user-defined priority)":"9 (Door gebruiker aangegeven prioriteit)"}}}
+{"kind":"translate","lang":"nl","tag":"EnvelopeRecordVersion","value":"Recordversie"}
+{"kind":"translate","lang":"nl","tag":"ExifCameraInfo","value":"Exif Camera-informatie"}
+{"kind":"translate","lang":"nl","tag":"ExifImageHeight","value":"Afbeelding hoogte"}
+{"kind":"translate","lang":"nl","tag":"ExifImageWidth","value":"Afbeelding breedte"}
+{"kind":"translate","lang":"nl","tag":"ExifOffset","value":"Exif IFD-wijzer"}
+{"kind":"translate","lang":"nl","tag":"ExifToolVersion","value":"ExifTool versie"}
+{"kind":"translate","lang":"nl","tag":"ExifVersion","value":"Exif versie"}
+{"kind":"translate","lang":"nl","tag":"ExpandFilm","value":"Breid film uit"}
+{"kind":"translate","lang":"nl","tag":"ExpandFilterLens","value":"Breid filterlens uit"}
+{"kind":"translate","lang":"nl","tag":"ExpandFlashLamp","value":"Breid flitser uit"}
+{"kind":"translate","lang":"nl","tag":"ExpandLens","value":"Breid objectief"}
+{"kind":"translate","lang":"nl","tag":"ExpandScanner","value":"Breid scanner uit"}
+{"kind":"translate","lang":"nl","tag":"ExpandSoftware","value":"Breid software uit"}
+{"kind":"translate","lang":"nl","tag":"ExpirationDate","value":"Verloopdatum"}
+{"kind":"translate","lang":"nl","tag":"ExpirationTime","value":"Verlooptijdstip"}
+{"kind":"translate","lang":"nl","tag":"ExposureCompStepSize","value":{"Description":"Stapgrootte belichtingscorr.","PrintConv":{"1 EV":"1 stop","1/2 EV":"1/2 stop","1/3 EV":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureCompensation","value":"Belichtingscorrectie"}
+{"kind":"translate","lang":"nl","tag":"ExposureControlStepSize","value":{"Description":"Stapgrootte inst. belichting","PrintConv":{"1 EV":"1 stop","1/2 EV":"1/2 stop","1/3 EV":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureDelayMode","value":{"Description":"Spiegelvoorontspanning","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureIndex","value":"Belichtingsindex"}
+{"kind":"translate","lang":"nl","tag":"ExposureLevelIncrements","value":{"Description":"Stapgrootte inst. belichting","PrintConv":{"1/2 Stop":"1/2 stop","1/3 Stop":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureMode","value":{"Description":"Belichting modus","PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Aperture-priority AE":"Diafragmaprioriteit","Auto":"Automatische belichting","Auto bracket":"Belichting serie","Landscape":"Landschap","Manual":"Handmatige belichting","Portrait":"Portret","Shutter Priority":"Sluiterprioriteit","Shutter speed priority AE":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureModeInManual","value":{"PrintConv":{"Center-weighted average":"Centrum gemiddelde","Partial metering":"Gedeelte"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureProgram","value":{"Description":"Belichtingsprogramma","PrintConv":{"Action (High speed)":"Actie programma (georiënteerd op snelle sluitertijden)","Aperture Priority":"Diafragmaprioriteit","Aperture-priority AE":"Diafragmaprioriteit","Creative (Slow speed)":"Creatief programma (georiënteerd op scherptediepte)","Landscape":"Landschap modus","Manual":"Handmatig","Not Defined":"Niet gedefinieerd","Portrait":"Portret modus","Program AE":"Normaal programma","Shutter Priority":"Sluiterprioriteit","Shutter speed priority AE":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"ExposureTime","value":"Belichtingstijd"}
+{"kind":"translate","lang":"nl","tag":"ExposureTime2","value":"Belichtingstijd 2"}
+{"kind":"translate","lang":"nl","tag":"ExtendedWBDetect","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ExternalFlash","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ExternalFlashBounce","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ExternalFlashMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ExtraSamples","value":"Extra componenten"}
+{"kind":"translate","lang":"nl","tag":"FNumber","value":"F waarde"}
+{"kind":"translate","lang":"nl","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"0° (boven/links)","Rotate 180":"180° (onder/rechts)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)"}}}
+{"kind":"translate","lang":"nl","tag":"FastSeek","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"FaxProfile","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"FaxRecvParams","value":"Fax ontvangst parameters"}
+{"kind":"translate","lang":"nl","tag":"FaxRecvTime","value":"Fax ontvangst tijd"}
+{"kind":"translate","lang":"nl","tag":"FaxSubAddress","value":"Fax sub adres"}
+{"kind":"translate","lang":"nl","tag":"FileFormat","value":"Fileformaat"}
+{"kind":"translate","lang":"nl","tag":"FileModifyDate","value":"Datum actualisering"}
+{"kind":"translate","lang":"nl","tag":"FileName","value":"Bestandnaam"}
+{"kind":"translate","lang":"nl","tag":"FileNumberMemory","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FileNumberSequence","value":{"Description":"Opeenvolgende nummering","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FileSize","value":"Bestandgrootte"}
+{"kind":"translate","lang":"nl","tag":"FileSource","value":{"Description":"Bestand bron","PrintConv":{"Digital Camera":"Digitale camera","Film Scanner":"Film scanner","Reflection Print Scanner":"Scanner"}}}
+{"kind":"translate","lang":"nl","tag":"FileType","value":"Bestandtype"}
+{"kind":"translate","lang":"nl","tag":"FileVersion","value":"Fileformaat versie"}
+{"kind":"translate","lang":"nl","tag":"Filename","value":"Bestandnaam"}
+{"kind":"translate","lang":"nl","tag":"FillOrder","value":{"Description":"Vul volgorde","PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"Filter","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"FilterEffect","value":{"PrintConv":{"None":"Geen","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"FilterEffectMonochrome","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"FinderDisplayDuringExposure","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FineTuneOptCenterWeighted","value":"Fijnafst. voor opt. belichting Centrumgericht"}
+{"kind":"translate","lang":"nl","tag":"FineTuneOptMatrixMetering","value":"Fijnafst. voor opt. belichting Matrixmeting"}
+{"kind":"translate","lang":"nl","tag":"FineTuneOptSpotMetering","value":"Fijnafst. voor opt. belichting Spotmeting"}
+{"kind":"translate","lang":"nl","tag":"FixtureIdentifier","value":"Kenmerk"}
+{"kind":"translate","lang":"nl","tag":"Flash","value":{"Description":"Flits","PrintConv":{"Auto, Did not fire":"Flits werd niet ontstoken, automodus","Auto, Did not fire, Red-eye reduction":"Flits werd niet ontstoken, rode ogen reductie","Auto, Fired":"Flits werd ontstoken, automodus","Auto, Fired, Red-eye reduction":"Flits werd ontstoken, automodus, rode ogen reductie","Auto, Fired, Red-eye reduction, Return detected":"Flits werd ontstoken, automodus, gereflecteerd flitslicht, rode ogen reductie","Auto, Fired, Red-eye reduction, Return not detected":"Flits werd ontstoken, automodus, geen gereflecteerd flitslicht, rode ogen reductie","Auto, Fired, Return detected":"Flits werd ontstoken, automodus, gereflecteerd flitslicht","Auto, Fired, Return not detected":"Flits werd ontstoken, automodus, geen gereflecteerd flitslicht","Did not fire":"Geen flits","Fired":"Flits afgevuurd","Fired, Red-eye reduction":"Flits werd ontstoken, Rode ogen reductie","Fired, Red-eye reduction, Return detected":"Flits werd ontstoken, rode ogen reductie, gereflecteerd flitslicht","Fired, Red-eye reduction, Return not detected":"Flits werd ontstoken, rode oen reductie, geen gereflecteerd flitslicht","Fired, Return detected":"Gereflecteerd flitslicht gedetecteerd","Fired, Return not detected":"Geen gereflecteerd flitslicht gedetecteerd","No Flash":"Geen flits","No flash function":"Geen flits functie","Off":"Uit","Off, Did not fire":"Flits werd niet ontstoken, flits onderdruk modus","Off, Did not fire, Return not detected":"Gedeactiveerd, flits werd niet ontstoken, geen gereflecteerd flitslicht","Off, No flash function":"Gedeactiveerd, geen flits functie","Off, Red-eye reduction":"Gedeactiveerd, rode ogen reductie","On":"Aan","On, Did not fire":"Aan, flits werd niet ontstoken","On, Fired":"Flits werd ontstoken, flits afdwing modus","On, Red-eye reduction":"Flits werd ontstoken, flits afdwing modus, rode ogen reductie","On, Red-eye reduction, Return detected":"Flits werd ontstoken, flits afdwing modus, rode ogen reductie, gereflecteerd flitslicht","On, Red-eye reduction, Return not detected":"Flits werd ontstoken, flits afdwing modus, rode ogen reductie, geen gereflecteerd flitslicht","On, Return detected":"Flits werd ontstoken, flits afdwing modus, gereflecteerd flitslicht gedetecteerd","On, Return not detected":"Flits werd ontstoken, flits afdwing modus, geen gereflecteerd flitslicht gedetecteerd"}}}
+{"kind":"translate","lang":"nl","tag":"FlashCommanderMode","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FlashCompensation","value":"Flitscorrectie"}
+{"kind":"translate","lang":"nl","tag":"FlashControlMode","value":{"PrintConv":{"Manual":"Handmatig","Off":"Uit","Repeating Flash":"Stroboscopisch flitsen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashDevice","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashEnergy","value":"Flits energie"}
+{"kind":"translate","lang":"nl","tag":"FlashExposureComp","value":"Flitscompensatie"}
+{"kind":"translate","lang":"nl","tag":"FlashExposureLock","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FlashFired","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"FlashGroupAControlMode","value":{"PrintConv":{"Manual":"Handmatig","Off":"Uit","Repeating Flash":"Stroboscopisch flitsen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashGroupBControlMode","value":{"PrintConv":{"Manual":"Handmatig","Off":"Uit","Repeating Flash":"Stroboscopisch flitsen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashGroupCControlMode","value":{"PrintConv":{"Manual":"Handmatig","Off":"Uit","Repeating Flash":"Stroboscopisch flitsen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashIntensity","value":{"PrintConv":{"High":"Hoog","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"FlashLevel","value":"Flitscorrectie"}
+{"kind":"translate","lang":"nl","tag":"FlashMode","value":{"PrintConv":{"Auto":"Automatisch","Normal":"Normaal","Off":"Uit","On":"Aan","Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"FlashModel","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashOptions","value":{"PrintConv":{"Auto":"Automatisch","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"FlashOptions2","value":{"PrintConv":{"Auto":"Automatisch","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"FlashShutterSpeed","value":"Langste sluitertijd bij flits"}
+{"kind":"translate","lang":"nl","tag":"FlashStatus","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"FlashSyncSpeed","value":"Flitssynchronisatie snelheid"}
+{"kind":"translate","lang":"nl","tag":"FlashSyncSpeedAv","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"FlashType","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"FlashWarning","value":{"Description":"Flitswaarschuwing","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FlashpixVersion","value":"Ondersteunde Flashpix versie"}
+{"kind":"translate","lang":"nl","tag":"FlickerReduce","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"FlipHorizontal","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"FocalLength","value":"Brandpuntafstand"}
+{"kind":"translate","lang":"nl","tag":"FocalLength35efl","value":"Brandpuntafstand"}
+{"kind":"translate","lang":"nl","tag":"FocalLengthIn35mmFormat","value":"Brandpuntafstand in 35 mm kleinbeeld formaat"}
+{"kind":"translate","lang":"nl","tag":"FocalPlaneResolutionUnit","value":{"Description":"Sensor resolutie eenheid","PrintConv":{"None":"Geen","inches":"inch","um":"µm (micrometer)"}}}
+{"kind":"translate","lang":"nl","tag":"FocalPlaneXResolution","value":"Horizontale sensor resolutie"}
+{"kind":"translate","lang":"nl","tag":"FocalPlaneYResolution","value":"Verticale sensor resolutie"}
+{"kind":"translate","lang":"nl","tag":"Focus","value":{"Description":"Scherpstelling","PrintConv":{"Manual":"Handmatig"}}}
+{"kind":"translate","lang":"nl","tag":"FocusArea","value":"Scherpstelveld"}
+{"kind":"translate","lang":"nl","tag":"FocusAreaSelection","value":{"Description":"Doorloop scherpstelpunt","PrintConv":{"No Wrap":"Geen doorloop","Wrap":"Doorloop"}}}
+{"kind":"translate","lang":"nl","tag":"FocusContinuous","value":{"PrintConv":{"Continuous":"Continu","Manual":"Handmatig"}}}
+{"kind":"translate","lang":"nl","tag":"FocusMode","value":{"Description":"Focus modus","PrintConv":{"Auto":"Automatisch","Continuous":"Continu","Manual":"Handmatig","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"FocusMode2","value":{"PrintConv":{"Manual":"Handmatig"}}}
+{"kind":"translate","lang":"nl","tag":"FocusModeSetting","value":{"Description":"Scherpstelstand","PrintConv":{"AF-A":"Automatische AF","AF-C":"Continue AF","AF-S":"Enkelvoudige AF","Manual":"Handmatig"}}}
+{"kind":"translate","lang":"nl","tag":"FocusPointWrap","value":{"Description":"Doorloop scherpstelpunt","PrintConv":{"No Wrap":"Geen doorloop","Wrap":"Doorloop"}}}
+{"kind":"translate","lang":"nl","tag":"FocusRange","value":{"PrintConv":{"Auto":"Automatisch","Manual":"Handmatig","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"FocusTrackingLockOn","value":{"Description":"Focus Tracking met Lock-On","PrintConv":{"Long":"Lang","Normal":"Normaal","Off":"Uit","Short":"Kort"}}}
+{"kind":"translate","lang":"nl","tag":"FrameRate","value":"Beeldwisselsnelheid"}
+{"kind":"translate","lang":"nl","tag":"FrameSize","value":"Beeldformaat"}
+{"kind":"translate","lang":"nl","tag":"FreeByteCounts","value":"Aantal bytes van het lege databereik"}
+{"kind":"translate","lang":"nl","tag":"FreeOffsets","value":"Vrije data posities"}
+{"kind":"translate","lang":"nl","tag":"FujiFlashMode","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"FunctionButton","value":{"Description":"FUNC. knop","PrintConv":{"AF-area Mode":"AF-veldstand","Center AF Area":"Centrale AF-veld","Center-weighted":"Centrumgericht","FV Lock":"FV-vergrendeling","Flash Off":"Flitser uit","Framing Grid":"Rasterweergave","ISO Display":"ISO-weergave","Matrix Metering":"Matrixmeting","Spot Metering":"Spotmeting"}}}
+{"kind":"translate","lang":"nl","tag":"GIFVersion","value":"GIF versie"}
+{"kind":"translate","lang":"nl","tag":"GPSAltitude","value":"Hoogte"}
+{"kind":"translate","lang":"nl","tag":"GPSAltitudeRef","value":{"Description":"GPS hoogte - referentie","PrintConv":{"Above Sea Level":"Boven zeeniveau","Below Sea Level":"Onder zeeniveau"}}}
+{"kind":"translate","lang":"nl","tag":"GPSAreaInformation","value":"GPS naam van het gebied"}
+{"kind":"translate","lang":"nl","tag":"GPSDOP","value":"GPS meetnauwkeurigheid"}
+{"kind":"translate","lang":"nl","tag":"GPSDateStamp","value":"GPS UTC datum"}
+{"kind":"translate","lang":"nl","tag":"GPSDateTime","value":"GPS UTC datum en tijd"}
+{"kind":"translate","lang":"nl","tag":"GPSDestBearing","value":"GPS peiling van bestemming"}
+{"kind":"translate","lang":"nl","tag":"GPSDestBearingRef","value":{"Description":"GPS peiling van bestemming - referentie","PrintConv":{"Magnetic North":"Magnetische noorden","True North":"Geografische noorden"}}}
+{"kind":"translate","lang":"nl","tag":"GPSDestDistance","value":"GPS afstand tot bestemming"}
+{"kind":"translate","lang":"nl","tag":"GPSDestDistanceRef","value":{"Description":"GPS afstand tot bestemming - referentie","PrintConv":{"Miles":"Engelse mijlen","Nautical Miles":"Zeemijlen"}}}
+{"kind":"translate","lang":"nl","tag":"GPSDestLatitude","value":"GPS breedtegraad van bestemming"}
+{"kind":"translate","lang":"nl","tag":"GPSDestLatitudeRef","value":{"Description":"GPS breedtegraad van bestemming - referentie","PrintConv":{"North":"Noorderbreedte","South":"Zuiderbreedte"}}}
+{"kind":"translate","lang":"nl","tag":"GPSDestLongitude","value":"GPS lengtegraad van bestemming"}
+{"kind":"translate","lang":"nl","tag":"GPSDestLongitudeRef","value":{"Description":"GPS lengtegraad van bestemming - referentie","PrintConv":{"East":"Oosterlengte","West":"Westerlengte"}}}
+{"kind":"translate","lang":"nl","tag":"GPSDifferential","value":{"Description":"GPS differentiaal correctie","PrintConv":{"Differential Corrected":"Met differentiaal correctie","No Correction":"Zonder differentiaal correctie"}}}
+{"kind":"translate","lang":"nl","tag":"GPSImgDirection","value":"GPS peiling van de afbeelding"}
+{"kind":"translate","lang":"nl","tag":"GPSImgDirectionRef","value":{"Description":"GPS peiling van de afbeelding - referentie","PrintConv":{"Magnetic North":"Magnetische noorden","True North":"Geografische noorden"}}}
+{"kind":"translate","lang":"nl","tag":"GPSInfo","value":"GPS Info"}
+{"kind":"translate","lang":"nl","tag":"GPSLatitude","value":"GPS breedtegraad"}
+{"kind":"translate","lang":"nl","tag":"GPSLatitudeRef","value":{"Description":"GPS breedtegraad - referentie","PrintConv":{"North":"Noorderbreedte","South":"Zuiderbreedte"}}}
+{"kind":"translate","lang":"nl","tag":"GPSLongitude","value":"GPS lengtegraad"}
+{"kind":"translate","lang":"nl","tag":"GPSLongitudeRef","value":{"Description":"GPS lengtegraad - referentie","PrintConv":{"East":"Oosterlengte","West":"Westerlengte"}}}
+{"kind":"translate","lang":"nl","tag":"GPSMapDatum","value":"GPS geodetisch datum"}
+{"kind":"translate","lang":"nl","tag":"GPSMeasureMode","value":{"Description":"GPS meetmethode","PrintConv":{"2-D":"Tweedimensionale meting","2-Dimensional":"Tweedimensionale meting","2-Dimensional Measurement":"Tweedimensionale meting","3-D":"Driedimensionale meting","3-Dimensional":"Driedimensionale meting","3-Dimensional Measurement":"Driedimensionale meting"}}}
+{"kind":"translate","lang":"nl","tag":"GPSPosition","value":"GPS positie"}
+{"kind":"translate","lang":"nl","tag":"GPSProcessingMethod","value":"GPS verwerkingsmethode"}
+{"kind":"translate","lang":"nl","tag":"GPSSatellites","value":"GPS satellieten gebruikt voor de meting"}
+{"kind":"translate","lang":"nl","tag":"GPSSpeed","value":"GPS ontvanger bewegingssnelheid"}
+{"kind":"translate","lang":"nl","tag":"GPSSpeedRef","value":{"Description":"GPS ontvanger bewegingssnelheid - referentie","PrintConv":{"km/h":"Kilometer per uur","knots":"Knopen","mph":"Mijl per uur"}}}
+{"kind":"translate","lang":"nl","tag":"GPSStatus","value":{"Description":"GPS ontvanger status","PrintConv":{"Measurement Active":"Actuele meting beschikbaar","Measurement Void":"Actuele meting niet beschikbaar"}}}
+{"kind":"translate","lang":"nl","tag":"GPSTimeStamp","value":"GPS UTC tijd"}
+{"kind":"translate","lang":"nl","tag":"GPSTrack","value":"GPS ontvanger bewegingsrichting"}
+{"kind":"translate","lang":"nl","tag":"GPSTrackRef","value":{"Description":"GPS ontvanger bewegingsrichting - referentie","PrintConv":{"Magnetic North":"Magnetische noorden","True North":"Geografische noorden"}}}
+{"kind":"translate","lang":"nl","tag":"GPSVersionID","value":"GPS versie ID"}
+{"kind":"translate","lang":"nl","tag":"GainControl","value":{"Description":"Belichtingsversterking","PrintConv":{"High gain down":"Hoge helderheidsverminderring","High gain up":"Hoge helderheidsvesterking","Low gain down":"Kleine helderheidsverminderring","Low gain up":"Kleine helderheidsvesterking","None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"Gapless","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"Gradation","value":"Levendig"}
+{"kind":"translate","lang":"nl","tag":"GrayResponseUnit","value":{"PrintConv":{"0.0001":"Nummer stelt een 1000ste van een eenheid voor","0.001":"Nummer stelt een 100ste van een eenheid voor","0.1":"Nummer stelt een 10de van een eenheid voor","1e-05":"Nummer stelt een 10000ste van een eenheid voor","1e-06":"Nummer stelt een 100000ste van een eenheid voor"}}}
+{"kind":"translate","lang":"nl","tag":"GrayTRC","value":"Grijze toon reproductie curve"}
+{"kind":"translate","lang":"nl","tag":"GreenMatrixColumn","value":"Groene matrixkolom"}
+{"kind":"translate","lang":"nl","tag":"GreenTRC","value":"Groene toon reproductie curve"}
+{"kind":"translate","lang":"nl","tag":"GridDisplay","value":{"Description":"Rasterweergave in zoeker","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"HDR","value":{"Description":"Auto HDR","PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"Headline","value":"Opschrift"}
+{"kind":"translate","lang":"nl","tag":"HeightResolution","value":"Beeldresolutie verticaal"}
+{"kind":"translate","lang":"nl","tag":"HighISONoiseReduction","value":{"Description":"NR bij hoge-ISO","PrintConv":{"Auto":"Automatisch","High":"Hi","Low":"Laag","Normal":"Normaal","Off":"Uit","On":"Aan","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"HighlightTonePriority","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"HometownDST","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"Hue","value":"Kleurtoon"}
+{"kind":"translate","lang":"nl","tag":"ICCProfile","value":"ICC Profiel"}
+{"kind":"translate","lang":"nl","tag":"IPTC-NAA","value":"IPTC-NAA metadata"}
+{"kind":"translate","lang":"nl","tag":"ISO","value":"ISO gevoeligheid"}
+{"kind":"translate","lang":"nl","tag":"ISOAuto","value":"ISO auto"}
+{"kind":"translate","lang":"nl","tag":"ISODisplay","value":"ISO-weergave"}
+{"kind":"translate","lang":"nl","tag":"ISOExpansion","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ISOExpansion2","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ISOSetting","value":{"PrintConv":{"Auto":"Automatisch","Manual":"Handmatig"}}}
+{"kind":"translate","lang":"nl","tag":"ISOSpeedExpansion","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ISOSpeedIncrements","value":{"Description":"ISO-stapgrootte","PrintConv":{"1 Stop":"1 stop","1/3 Stop":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"ISOStepSize","value":{"Description":"ISO-stapgrootte","PrintConv":{"1 EV":"1 stop","1/2 EV":"1/2 stop","1/3 EV":"1/3 stop"}}}
+{"kind":"translate","lang":"nl","tag":"Illumination","value":{"Description":"Verlichting","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ImageAuthentication","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ImageByteCount","value":"Aantal beeldgegevens in bytes"}
+{"kind":"translate","lang":"nl","tag":"ImageColorIndicator","value":"Afbeelding kleur indicator"}
+{"kind":"translate","lang":"nl","tag":"ImageColorValue","value":"Afbeelding kleur waarde"}
+{"kind":"translate","lang":"nl","tag":"ImageDataDiscard","value":{"Description":"Afgedankte beeldgegevens","PrintConv":{"Flexbits Discarded":"Afgedankte flexbits","Full Resolution":"Volledige resolutie","HighPass Frequency Data Discarded":"Afgedankte hoogdoorlaat frequentiegegevens","Highpass and LowPass Frequency Data Discarded":"Afgedankte hoogdoorlaat en laagdoorlaat frequentiegegevens"}}}
+{"kind":"translate","lang":"nl","tag":"ImageDescription","value":"Afbeelding beschrijving"}
+{"kind":"translate","lang":"nl","tag":"ImageDustOff","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ImageHeight","value":"Afbeeldingshoogte"}
+{"kind":"translate","lang":"nl","tag":"ImageHistory","value":"Afbeelding geschiedenis"}
+{"kind":"translate","lang":"nl","tag":"ImageNumber","value":"Afbeelding nummer"}
+{"kind":"translate","lang":"nl","tag":"ImageOffset","value":"Beeldverplaatsing"}
+{"kind":"translate","lang":"nl","tag":"ImageOrientation","value":{"Description":"Foto oriëntatie","PrintConv":{"Landscape":"Landschap","Portrait":"Portret","Square":"Vierkant"}}}
+{"kind":"translate","lang":"nl","tag":"ImageQuality","value":{"Description":"Bldkwaliteit","PrintConv":{"High":"Hoog","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"ImageQuality2","value":"Bldkwaliteit 2"}
+{"kind":"translate","lang":"nl","tag":"ImageReview","value":{"Description":"Beeld terugspelen","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ImageReviewTime","value":"Timers uit Beeld terugspelen"}
+{"kind":"translate","lang":"nl","tag":"ImageRotated","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ImageSize","value":"Beeldformaat"}
+{"kind":"translate","lang":"nl","tag":"ImageStabilization","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ImageTone","value":{"PrintConv":{"Landscape":"Landschap","Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"ImageType","value":"Beeldtype"}
+{"kind":"translate","lang":"nl","tag":"ImageUniqueID","value":"Uniek afbeeldings ID"}
+{"kind":"translate","lang":"nl","tag":"ImageWidth","value":"Afbeeldingsbreedte"}
+{"kind":"translate","lang":"nl","tag":"InitialZoomSetting","value":{"Description":"Aanvankelijke zoominstelling","PrintConv":{"High Magnification":"Hoge zoom","Low Magnification":"Lage zoom","Medium Magnification":"Gemiddelde zoom"}}}
+{"kind":"translate","lang":"nl","tag":"Instructions","value":"Instructies"}
+{"kind":"translate","lang":"nl","tag":"IntellectualGenre","value":"Genre"}
+{"kind":"translate","lang":"nl","tag":"IntensityStereo","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"InternalFlash","value":{"Description":"Flitssturing ingeb. flitser","PrintConv":{"Commander Mode":"Commanderstand","Fired":"Flits afgevuurd","Manual":"Handmatig","No":"Geen flits","Off":"Uit","On":"Aan","Repeating Flash":"Stroboscopisch flitsen","TTL":"DDL"}}}
+{"kind":"translate","lang":"nl","tag":"InternalFlashMode","value":{"PrintConv":{"On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"InteropIndex","value":{"Description":"Interoperabiliteits Identificatie","PrintConv":{"R03 - DCF option file (Adobe RGB)":"R03: DCF Optie formaat (Adobe RGB)","R98 - DCF basic file (sRGB)":"R98: DCF Basis formaat (sRGB)","THM - DCF thumbnail file":"THM: DCF Miniatuur formaat"}}}
+{"kind":"translate","lang":"nl","tag":"InteropOffset","value":"Interoperabiliteit-tag"}
+{"kind":"translate","lang":"nl","tag":"InteropVersion","value":"Interoperabiliteits versie"}
+{"kind":"translate","lang":"nl","tag":"JFIFVersion","value":"JFIF versie"}
+{"kind":"translate","lang":"nl","tag":"JPEGQuality","value":{"Description":"Beeldkwaliteit","PrintConv":{"Extra Fine":"Extra fijn","Fine":"Fijn","Standard":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"JobID","value":"ID van baan"}
+{"kind":"translate","lang":"nl","tag":"Keyword","value":"Trefwoorden"}
+{"kind":"translate","lang":"nl","tag":"Keywords","value":"Trefwoord"}
+{"kind":"translate","lang":"nl","tag":"LCDIllumination","value":{"Description":"LCD-verlichting","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"LCDIlluminationDuringBulb","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"LCHEditor","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"LanguageIdentifier","value":"Taalherkenning"}
+{"kind":"translate","lang":"nl","tag":"Lens","value":"Objectief"}
+{"kind":"translate","lang":"nl","tag":"LensInfo","value":"Lensgegevens"}
+{"kind":"translate","lang":"nl","tag":"LicenseType","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"LightSource","value":{"Description":"Lichtbron","PrintConv":{"Cloudy":"Bewolkt","Cool White Fluorescent":"Koel wit TL-licht","Day White Fluorescent":"Daglicht wit TL-licht","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Fine Weather":"Onbewolkt","Flash":"Flits","Fluorescent":"Fluoresceren","ISO Studio Tungsten":"ISO studio kunstlicht (gloeilamp)","Other":"Andere lichtbron","Shade":"Schaduw","Standard Light A":"Standaard licht A","Standard Light B":"Standaard licht B","Standard Light C":"Standaard licht C","Tungsten (Incandescent)":"Kunstlicht (gloeilamp)","Unknown":"Onbekend","Warm White Fluorescent":"Warm wit TL-licht","White Fluorescent":"Wit TL-licht"}}}
+{"kind":"translate","lang":"nl","tag":"LightSourceSpecial","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Lightness","value":"Helderheid"}
+{"kind":"translate","lang":"nl","tag":"Lit","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"LiveViewShooting","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Location","value":"Lokatie"}
+{"kind":"translate","lang":"nl","tag":"LongExposureNoiseReduction","value":{"Description":"NR lang-belicht","PrintConv":{"Auto":"Automatisch","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"LoopStyle","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"LuminanceNoiseReduction","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"MB-D10Batteries","value":"MB-D10 batterijen"}
+{"kind":"translate","lang":"nl","tag":"MB-D10BatteryType","value":"MB-D10 batterijen"}
+{"kind":"translate","lang":"nl","tag":"MB-D80Batteries","value":"MB-D80 batterijen"}
+{"kind":"translate","lang":"nl","tag":"MIEVersion","value":"MIE versie"}
+{"kind":"translate","lang":"nl","tag":"MSStereo","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Macro","value":{"PrintConv":{"Manual":"Handmatig","Normal":"Normaal","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MacroMode","value":{"PrintConv":{"Normal":"Normaal","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MainDialExposureComp","value":{"Description":"Main Dial Belichtingscorrectie","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Make","value":"Fabrikant"}
+{"kind":"translate","lang":"nl","tag":"MakeAndModel","value":"Producent en model"}
+{"kind":"translate","lang":"nl","tag":"MakerNote","value":"Fabrikant informatie"}
+{"kind":"translate","lang":"nl","tag":"MakerNotes","value":"Wenken van de fabrikant"}
+{"kind":"translate","lang":"nl","tag":"ManualFlashOutput","value":{"Description":"Ingebouwde flitser Handmatig Sterkte","PrintConv":{"Low":"Laag"}}}
+{"kind":"translate","lang":"nl","tag":"MasterDocumentID","value":"ID van hoofddocument"}
+{"kind":"translate","lang":"nl","tag":"MatrixMetering","value":"Matrixmeting"}
+{"kind":"translate","lang":"nl","tag":"MaxAperture","value":"Maximale lensopening"}
+{"kind":"translate","lang":"nl","tag":"MaxApertureValue","value":"Grootste diafragma"}
+{"kind":"translate","lang":"nl","tag":"MaxContinuousRelease","value":"Max. aant. continuopnamen"}
+{"kind":"translate","lang":"nl","tag":"MaxSampleValue","value":"Max sample waarde"}
+{"kind":"translate","lang":"nl","tag":"MediaBlackPoint","value":"Media zwartpunt"}
+{"kind":"translate","lang":"nl","tag":"MediaType","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"MediaWhitePoint","value":"Media Witpunt"}
+{"kind":"translate","lang":"nl","tag":"Metering","value":{"Description":"Lichtmeting","PrintConv":{"Center-weighted":"Centrumgericht","Matrix":"Matrixmeting"}}}
+{"kind":"translate","lang":"nl","tag":"MeteringMode","value":{"Description":"Belichting meet methode","PrintConv":{"Average":"Gemiddeld","Center-weighted average":"Centrum gemiddelde","Multi-segment":"Multi segment","Multi-spot":"MultiSpot","Other":"Andere","Partial":"Gedeelte","Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"MeteringMode2","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"nl","tag":"MeteringMode3","value":{"PrintConv":{"Multi-segment":"Multi segment"}}}
+{"kind":"translate","lang":"nl","tag":"MeteringTime","value":{"Description":"Timers uit Belichtingsmeters","PrintConv":{"No Limit":"Altijd aan"}}}
+{"kind":"translate","lang":"nl","tag":"MinSampleValue","value":"Min sample waarde"}
+{"kind":"translate","lang":"nl","tag":"MinoltaQuality","value":{"PrintConv":{"Normal":"Normaal","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"Model","value":"Camera model"}
+{"kind":"translate","lang":"nl","tag":"Model2","value":"Camera model (2)"}
+{"kind":"translate","lang":"nl","tag":"ModelingFlash","value":{"Description":"Instellicht","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ModifiedPictureStyle","value":{"PrintConv":{"Landscape":"Landschap","None":"Geen","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ModifiedSaturation","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"ModifiedSharpnessFreq","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ModifiedToneCurve","value":{"PrintConv":{"Manual":"Handmatig","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ModifiedWhiteBalance","value":{"PrintConv":{"Auto":"Automatisch","Cloudy":"Bewolkt","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Flash":"Flits","Fluorescent":"Fluoresceren","Shade":"Schaduw","Tungsten":"Kunstlicht (gloeilamp)"}}}
+{"kind":"translate","lang":"nl","tag":"ModifyDate","value":"Datum bestand wijziging"}
+{"kind":"translate","lang":"nl","tag":"MoireFilter","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MonitorOffTime","value":"Monitor uit"}
+{"kind":"translate","lang":"nl","tag":"MonochromeFilterEffect","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"MonochromeLinear","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"MonochromeToningEffect","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"MultiExposureAutoGain","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MultiExposureMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"MultiFrameNoiseReduction","value":{"Description":"Ruisond. Multi Frame","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MultiSelector","value":{"Description":"Multi-selector","PrintConv":{"Do Nothing":"Doe niets","Reset Meter-off Delay":"Activeer lichtmeter"}}}
+{"kind":"translate","lang":"nl","tag":"MultiSelectorPlaybackMode","value":{"Description":"Centrale knop multiselector Weergavestand","PrintConv":{"Choose Folder":"Map selecteren","Thumbnail On/Off":"Miniatuur aan/uit","View Histograms":"Histogrammen weergeven","Zoom On/Off":"Zoom aan/uit"}}}
+{"kind":"translate","lang":"nl","tag":"MultiSelectorShootMode","value":{"Description":"Centrale knop multiselector Opnamestand","PrintConv":{"Highlight Active Focus Point":"Actieve AF-punt markeren","Not Used":"Geen functie","Select Center Focus Point":"Middelste AF-punt selecteren"}}}
+{"kind":"translate","lang":"nl","tag":"MultipleExposureSet","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Mute","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"MyColorMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"NDFilter","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"NEFCompression","value":{"PrintConv":{"Uncompressed":"Niet gecomprimeerd"}}}
+{"kind":"translate","lang":"nl","tag":"NikonImageSize","value":"Beeldformaat"}
+{"kind":"translate","lang":"nl","tag":"NoMemoryCard","value":{"Description":"Geen geheugenkaart","PrintConv":{"Enable Release":"Ontgrendel ontspanknop","Release Locked":"Vergrendel ontspanknop"}}}
+{"kind":"translate","lang":"nl","tag":"Noise","value":"Ruis"}
+{"kind":"translate","lang":"nl","tag":"NoiseFilter","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Off":"Uit","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"NoiseReduction","value":{"Description":"Ruisreductie","PrintConv":{"Auto":"Automatisch","Normal":"Normaal","Off":"Uit","On":"Aan","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ObjectAttributeReference","value":"Intellectuele genre"}
+{"kind":"translate","lang":"nl","tag":"ObjectCycle","value":{"Description":"Objectcyclus","PrintConv":{"Both Morning and Evening":"Beide","Evening":"Avond","Morning":"Ochtend"}}}
+{"kind":"translate","lang":"nl","tag":"ObjectFileType","value":{"PrintConv":{"None":"Geen","Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"ObjectName","value":"Titel"}
+{"kind":"translate","lang":"nl","tag":"ObjectPreviewData","value":"Voorvertoning objectgegevens"}
+{"kind":"translate","lang":"nl","tag":"ObjectPreviewFileFormat","value":"Voorvertoning objectgegevens bestandsformaat"}
+{"kind":"translate","lang":"nl","tag":"ObjectPreviewFileVersion","value":"Voorvertoning objectgegevens bestandsformaatversie"}
+{"kind":"translate","lang":"nl","tag":"ObjectTypeReference","value":"Referentie van Object type"}
+{"kind":"translate","lang":"nl","tag":"OldSubfileType","value":"Subbestand type"}
+{"kind":"translate","lang":"nl","tag":"OneTouchWB","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"OpticalZoomMode","value":{"PrintConv":{"Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"OpticalZoomOn","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Opto-ElectricConvFactor","value":"Opto elektronische omreken factor"}
+{"kind":"translate","lang":"nl","tag":"Orientation","value":{"Description":"Oriëntatie van de afbeelding","PrintConv":{"Horizontal (normal)":"0° (boven/links)","Mirror horizontal":"Horizontaal gespiegeld","Mirror horizontal and rotate 270 CW":"Spiegel horizontaal en draai 270° met de klok mee","Mirror horizontal and rotate 90 CW":"Spiegel horizontaal en draai 90° met de klok mee","Mirror vertical":"Vertikaal gespiegeld","Rotate 180":"180° (onder/rechts)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)"}}}
+{"kind":"translate","lang":"nl","tag":"OriginalTransmissionReference","value":"Werknummer"}
+{"kind":"translate","lang":"nl","tag":"OriginatingProgram","value":"Oorspronkelijk programma"}
+{"kind":"translate","lang":"nl","tag":"OwnerID","value":"ID van eigenaar"}
+{"kind":"translate","lang":"nl","tag":"PEFVersion","value":"PEF versie"}
+{"kind":"translate","lang":"nl","tag":"Padding","value":"Plaatshouder"}
+{"kind":"translate","lang":"nl","tag":"PageName","value":"Pagina naam"}
+{"kind":"translate","lang":"nl","tag":"PageNumber","value":"Pagina nummer"}
+{"kind":"translate","lang":"nl","tag":"PhotoEffect","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"PhotoEffects","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"PhotoEffectsType","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"PhotoInfoPlayback","value":{"Description":"Functie van multi-selector","PrintConv":{"Info Left-right, Playback Up-down":"Info <> / Foto’s","Info Up-down, Playback Left-right":"Info / Foto’s <>"}}}
+{"kind":"translate","lang":"nl","tag":"PhotometricInterpretation","value":{"Description":"Pixel schema","PrintConv":{"BlackIsZero":"Zwart is nul","Color Filter Array":"CFA (Kleur Filter Matrix)","Pixar LogL":"CIE Log2(L) (Log Luminantie)","Pixar LogLuv":"CIE Log2(L)(u',v') (Log Luminantie en Chrominantie)","RGB Palette":"RGB palet","Transparency Mask":"Transparent masker","WhiteIsZero":"Wit is nul"}}}
+{"kind":"translate","lang":"nl","tag":"PhotoshopFormat","value":{"PrintConv":{"Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"PictureControl","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"PictureControlActive","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"PictureFinish","value":{"PrintConv":{"Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"PictureMode","value":{"PrintConv":{"Aperture-priority AE":"Diafragmaprioriteit","Auto":"Automatisch","Landscape":"Landschap","Manual":"Handmatig","Portrait":"Portret","Shutter speed priority AE":"Sluiterprioriteit","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"PictureMode2","value":{"PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Manual":"Handmatig","Shutter Speed Priority":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"PictureStyle","value":{"PrintConv":{"Landscape":"Landschap","None":"Geen","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"PixelFormat","value":"Pixelformaat"}
+{"kind":"translate","lang":"nl","tag":"PixelUnits","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"PlanarConfiguration","value":{"Description":"Afbeelding data arrangement","PrintConv":{"Chunky":"Chunky Formaat (Interleaved)","Planar":"Planar Formaat"}}}
+{"kind":"translate","lang":"nl","tag":"Predictor","value":{"PrintConv":{"Horizontal differencing":"Horizontale differencering","None":"Geen prodictor schema in gebruik"}}}
+{"kind":"translate","lang":"nl","tag":"PreviewColorSpace","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"PreviewImage","value":"Voorbeeld"}
+{"kind":"translate","lang":"nl","tag":"PreviewImageValid","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"PreviewQuality","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"PrimaryChromaticities","value":"Chromaticiteit van primaire kleuren"}
+{"kind":"translate","lang":"nl","tag":"PrimaryPlatform","value":"Primaire platform"}
+{"kind":"translate","lang":"nl","tag":"ProcessingSoftware","value":"Verwerkingssoftware"}
+{"kind":"translate","lang":"nl","tag":"ProductID","value":"Produkt ID"}
+{"kind":"translate","lang":"nl","tag":"ProfileCMMType","value":"Profiel CMM-type"}
+{"kind":"translate","lang":"nl","tag":"ProfileClass","value":{"Description":"Profielklasse","PrintConv":{"Abstract Profile":"Abstractprofiel","ColorSpace Conversion Profile":"Kleurenruimteprofiel","DeviceLink Profile":"Apparaatverbindingsprofiel","Display Device Profile":"Beeldschermapparaatprofiel","Input Device Profile":"Invoerapparaatprofiel","NamedColor Profile":"Genoemd kleurenprofiel","Nikon Input Device Profile (NON-STANDARD!)":"Nikonprofiel (\"nkpf\")","Output Device Profile":"Uitvoerapparaatprofiel"}}}
+{"kind":"translate","lang":"nl","tag":"ProfileConnectionSpace","value":"Profielconnectieruimte"}
+{"kind":"translate","lang":"nl","tag":"ProfileCopyright","value":"Profielcopyright"}
+{"kind":"translate","lang":"nl","tag":"ProfileCreator","value":"Profielproducent"}
+{"kind":"translate","lang":"nl","tag":"ProfileDateTime","value":"Datum 1e aanmaak profiel"}
+{"kind":"translate","lang":"nl","tag":"ProfileDescription","value":"Profielbeschrijving"}
+{"kind":"translate","lang":"nl","tag":"ProfileDescriptionML","value":"Profielbeschrijving ML"}
+{"kind":"translate","lang":"nl","tag":"ProfileFileSignature","value":"Profiel filekenmerk"}
+{"kind":"translate","lang":"nl","tag":"ProfileID","value":"Profiel-ID"}
+{"kind":"translate","lang":"nl","tag":"ProfileSequenceDesc","value":"Profielvolgorde beschrijving"}
+{"kind":"translate","lang":"nl","tag":"ProfileVersion","value":"Profielversie"}
+{"kind":"translate","lang":"nl","tag":"ProgramLine","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"ProgramMode","value":{"PrintConv":{"None":"Geen","Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"ProgramVersion","value":"Programmaversie"}
+{"kind":"translate","lang":"nl","tag":"Province-State","value":"Provincie"}
+{"kind":"translate","lang":"nl","tag":"Quality","value":{"Description":"Beeldkwaliteit","PrintConv":{"Compressed RAW":"cRAW","Compressed RAW + JPEG":"cRAW+JPEG","Extra Fine":"Extra fijn","Fine":"Fijn","High":"Hoog","Low":"Laag","Normal":"Normaal","RAW + JPEG":"RAW+JPEG","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"QualityMode","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"QuickShot","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"RAFVersion","value":"RAF versie"}
+{"kind":"translate","lang":"nl","tag":"RasterizedCaption","value":"Gerasterde titel"}
+{"kind":"translate","lang":"nl","tag":"Rating","value":"Waardering"}
+{"kind":"translate","lang":"nl","tag":"RatingPercent","value":"Waardering in procent"}
+{"kind":"translate","lang":"nl","tag":"RawDevAutoGradation","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"RawJpgQuality","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"RecordMode","value":{"Description":"Opnamemodus","PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Manual":"Handmatig","Shutter Priority":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"RecordingMode","value":{"PrintConv":{"Auto":"Automatisch","Landscape":"Landschap","Manual":"Handmatig","Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"RedEyeCorrection","value":{"PrintConv":{"Automatic":"Automatisch","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"RedEyeReduction","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"RedMatrixColumn","value":"Rode matrixkolom"}
+{"kind":"translate","lang":"nl","tag":"RedTRC","value":"Rode toon reproductie curve"}
+{"kind":"translate","lang":"nl","tag":"ReferenceBlackWhite","value":"Zwart/wit referentie punten"}
+{"kind":"translate","lang":"nl","tag":"ReferenceDate","value":"Referentiedatum"}
+{"kind":"translate","lang":"nl","tag":"ReferenceNumber","value":"Referentienummer"}
+{"kind":"translate","lang":"nl","tag":"ReferenceService","value":"Referentieservice"}
+{"kind":"translate","lang":"nl","tag":"RelatedImageFileFormat","value":"Bestandsformaat van de afbeelding"}
+{"kind":"translate","lang":"nl","tag":"RelatedImageHeight","value":"Afbeeldingshoogte"}
+{"kind":"translate","lang":"nl","tag":"RelatedImageWidth","value":"Afbeeldingsbreedte"}
+{"kind":"translate","lang":"nl","tag":"RelatedSoundFile","value":"Bijbehorend audio bestand"}
+{"kind":"translate","lang":"nl","tag":"ReleaseButtonToUseDial","value":{"Description":"Knop loslaten voor instelsch.","PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ReleaseDate","value":"Datum van vrijgave"}
+{"kind":"translate","lang":"nl","tag":"ReleaseTime","value":"Tijdstip van vrijgave"}
+{"kind":"translate","lang":"nl","tag":"RemoteOnDuration","value":"Afstandsbediening"}
+{"kind":"translate","lang":"nl","tag":"RenderingIntent","value":{"Description":"Rendermethode","PrintConv":{"ICC-Absolute Colorimetric":"Absoluut colorimetrisch","Media-Relative Colorimetric":"Relatieve colorimetrisch","Perceptual":"Waarnemend","Saturation":"Verzadiging"}}}
+{"kind":"translate","lang":"nl","tag":"RepeatingFlashCount","value":"Stroboscopisch flitsen Aantal"}
+{"kind":"translate","lang":"nl","tag":"RepeatingFlashOutput","value":"Stroboscopisch flitsen Sterkte"}
+{"kind":"translate","lang":"nl","tag":"RepeatingFlashRate","value":"Stroboscopisch flitsen Freq."}
+{"kind":"translate","lang":"nl","tag":"ResampleParamsQuality","value":{"PrintConv":{"High":"Hoog","Low":"Laag"}}}
+{"kind":"translate","lang":"nl","tag":"Resaved","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ResolutionUnit","value":{"Description":"Eenheid van de X und Y resolutie","PrintConv":{"None":"Geen","cm":"centimeter"}}}
+{"kind":"translate","lang":"nl","tag":"RetouchHistory","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"ReverseIndicators","value":"Aanduidingen omkeren"}
+{"kind":"translate","lang":"nl","tag":"Rotation","value":{"PrintConv":{"Horizontal":"0° (boven/links)","Horizontal (normal)":"0° (boven/links)","Rotate 180":"180° (onder/rechts)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)","Rotated 180":"180° (onder/rechts)","Rotated 270 CW":"Draai 270° met de klok mee","Rotated 90 CW":"90° tegen de klok in (rechts/boven)"}}}
+{"kind":"translate","lang":"nl","tag":"RowsPerStrip","value":"Aantal lijnen in de afbeelding"}
+{"kind":"translate","lang":"nl","tag":"SPIFFVersion","value":"SPIFF versie"}
+{"kind":"translate","lang":"nl","tag":"SRActive","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"SVGVersion","value":"SVG versie"}
+{"kind":"translate","lang":"nl","tag":"SampleFormat","value":{"Description":"Sample Formaat","PrintConv":{"Complex int":"Complexe integer","Float":"Drijvende komma waarde","Signed":"Integer met voorteken","Undefined":"Niet gedefinierd","Unsigned":"Integer zonder voorteken"}}}
+{"kind":"translate","lang":"nl","tag":"SamplesPerPixel","value":"Aantal van de componenten"}
+{"kind":"translate","lang":"nl","tag":"Saturation","value":{"Description":"Kleurverzadiging","PrintConv":{"High":"Hoge kleurvezadiging","Low":"Lage kleurverzadiging","Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"ScanImageEnhancer","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"SceneCaptureType","value":{"Description":"Scene opname type","PrintConv":{"Landscape":"Landschap","Night":"Nachtscene","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"SceneMode","value":{"Description":"Scènekeuze","PrintConv":{"3D Sweep Panorama":"3D","Anti Motion Blur":"Anti-bewegingswaas","Aperture Priority":"Diafragmaprioriteit","Auto":"Automatisch","Cont. Priority AE":"Continuvoork. AE","Handheld Night Shot":"Nachtopname uit hand","Landscape":"Landschap","Manual":"Handmatig","Night Portrait":"Nachtportret","Night Scene":"Nacht","Night View/Portrait":"Nacht/portret","Normal":"Normaal","Off":"Uit","Portrait":"Portret","Shutter Priority":"Sluiterprioriteit","Sports":"Sportactie","Standard":"Standaard","Sunset":"Zonsondergang","Sweep Panorama":"Panorama d. beweg."}}}
+{"kind":"translate","lang":"nl","tag":"SceneModeUsed","value":{"PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Landscape":"Landschap","Manual":"Handmatig","Portrait":"Portret","Shutter Priority":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"SceneSelect","value":{"PrintConv":{"Night":"Nachtscene","Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"SceneType","value":{"Description":"Scene type","PrintConv":{"Directly photographed":"Direkt opgenomen afbeelding"}}}
+{"kind":"translate","lang":"nl","tag":"SecurityClassification","value":{"Description":"Veiligheid classificering","PrintConv":{"Confidential":"Vertrouwelijk","Restricted":"Begrensd","Secret":"Geheim","Top Secret":"Streng geheim","Unclassified":"Niet geclassificeerd"}}}
+{"kind":"translate","lang":"nl","tag":"SelfTimer","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"SelfTimerMode","value":"Zelfontspanner mode"}
+{"kind":"translate","lang":"nl","tag":"SelfTimerTime","value":"Vertraging zelfontspanner"}
+{"kind":"translate","lang":"nl","tag":"SensingMethod","value":{"Description":"Meet methode","PrintConv":{"Color sequential area":"Color sequential area sensor","Color sequential linear":"Kleur sequentiële lineaire sensor","Monochrome area":"Monochrome sensor","Monochrome linear":"Monochrome lineaire sensor","Not defined":"Niet gedefineerd","One-chip color area":"Één chip kleur sensor","Three-chip color area":"Drie chip kleur sensor","Trilinear":"Trilineaire sensor","Two-chip color area":"Twee chip kleur sensor"}}}
+{"kind":"translate","lang":"nl","tag":"SequentialShot","value":{"PrintConv":{"None":"Geen","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"SerialNumber","value":"Camera-ID"}
+{"kind":"translate","lang":"nl","tag":"ServiceIdentifier","value":"Service ID"}
+{"kind":"translate","lang":"nl","tag":"SetButtonCrossKeysFunc","value":{"PrintConv":{"Normal":"Normaal"}}}
+{"kind":"translate","lang":"nl","tag":"ShadingCompensation","value":{"Description":"Schaduwcompensatie","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ShadingCompensation2","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ShakeReduction","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Sharpness","value":{"Description":"Scherpte","PrintConv":{"Hard":"+","Normal":"Normaal","Soft":"Zacht"}}}
+{"kind":"translate","lang":"nl","tag":"SharpnessFrequency","value":{"PrintConv":{"High":"Hoog","Low":"Laag","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ShootingInfoDisplay","value":{"Description":"Weergave opname-info","PrintConv":{"Auto":"Automatisch","Manual (dark on light)":"Handmatig - Donker op licht","Manual (light on dark)":"Handmatig - Licht op donker"}}}
+{"kind":"translate","lang":"nl","tag":"ShootingMode","value":{"Description":"Opnamestand","PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Manual":"Handmatig","Normal":"Normaal","Portrait":"Portret","Shutter Priority":"Sluiterprioriteit"}}}
+{"kind":"translate","lang":"nl","tag":"ShootingModeSetting","value":{"Description":"Opnamestand","PrintConv":{"Continuous":"Continu","Delayed Remote":"Vertraagd op afstand","Quick-response Remote":"Direct op afstand","Self-timer":"Zelfontspanner","Single Frame":"Enkel beeld"}}}
+{"kind":"translate","lang":"nl","tag":"ShortDocumentID","value":"Korte foto ID"}
+{"kind":"translate","lang":"nl","tag":"ShutterMode","value":{"PrintConv":{"Aperture Priority":"Diafragmaprioriteit","Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"ShutterReleaseButtonAE-L","value":{"Description":"AE-vergr. ontspanknop","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ShutterReleaseNoCFCard","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ShutterSpeed","value":"Belichtingstijd"}
+{"kind":"translate","lang":"nl","tag":"ShutterSpeedValue","value":"Belichtingstijd"}
+{"kind":"translate","lang":"nl","tag":"SimilarityIndex","value":"Fotogelijkheidsindex"}
+{"kind":"translate","lang":"nl","tag":"SlideShow","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"SlowShutter","value":{"PrintConv":{"None":"Geen","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"SlowSync","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"Software","value":"Gebruikte software"}
+{"kind":"translate","lang":"nl","tag":"Source","value":"Bron"}
+{"kind":"translate","lang":"nl","tag":"SpatialFrequencyResponse","value":"Spatial frequency response"}
+{"kind":"translate","lang":"nl","tag":"SpecialEffectsOpticalFilter","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"SpecialInstructions","value":"Instructies"}
+{"kind":"translate","lang":"nl","tag":"SpectralSensitivity","value":"Spectrale gevoeligheid"}
+{"kind":"translate","lang":"nl","tag":"State","value":"Staat"}
+{"kind":"translate","lang":"nl","tag":"StripByteCounts","value":"Aantal bytes per gecomprimeerd afbeelding deel"}
+{"kind":"translate","lang":"nl","tag":"StripOffsets","value":"Positie van afbeelding data"}
+{"kind":"translate","lang":"nl","tag":"Sub-location","value":"Locatie"}
+{"kind":"translate","lang":"nl","tag":"SubSecCreateDate","value":"Datum van de originele data generatie"}
+{"kind":"translate","lang":"nl","tag":"SubSecDateTimeOriginal","value":"Datum van de originele data generatie"}
+{"kind":"translate","lang":"nl","tag":"SubSecModifyDate","value":"Datum bestand wijziging"}
+{"kind":"translate","lang":"nl","tag":"SubSecTime","value":"DateTime 1/100 seconden"}
+{"kind":"translate","lang":"nl","tag":"SubSecTimeDigitized","value":"DateTimeDigitized 1/100 seconden"}
+{"kind":"translate","lang":"nl","tag":"SubSecTimeOriginal","value":"DateTimeOriginal 1/100 seconden"}
+{"kind":"translate","lang":"nl","tag":"SubfileType","value":"Nieuw subbestand type"}
+{"kind":"translate","lang":"nl","tag":"Subject","value":"Onderwerp"}
+{"kind":"translate","lang":"nl","tag":"SubjectArea","value":"Positie hoofdobject"}
+{"kind":"translate","lang":"nl","tag":"SubjectDistance","value":"Object afstand"}
+{"kind":"translate","lang":"nl","tag":"SubjectDistanceRange","value":{"Description":"Objectief afstandsbereik","PrintConv":{"Close":"Dichtbij","Distant":"Verweg","Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"SubjectLocation","value":"Positie hoofdobject"}
+{"kind":"translate","lang":"nl","tag":"SubjectProgram","value":{"PrintConv":{"None":"Geen","Portrait":"Portret"}}}
+{"kind":"translate","lang":"nl","tag":"SubjectReference","value":"Onderwerp code"}
+{"kind":"translate","lang":"nl","tag":"Subsystem","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"SuperMacro","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"SuperimposedDisplay","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"SupplementalCategories","value":"Aanvullende categorie"}
+{"kind":"translate","lang":"nl","tag":"T4Options","value":"Opvul bit toegevoegd"}
+{"kind":"translate","lang":"nl","tag":"T6Options","value":"T6 Opties"}
+{"kind":"translate","lang":"nl","tag":"Tagged","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"TargetPrinter","value":"Doel Printer"}
+{"kind":"translate","lang":"nl","tag":"Technology","value":{"Description":"Technologie","PrintConv":{"Active Matrix Display":"Actieve matrixdisplay","Cathode Ray Tube Display":"CRT-beeldscherm","Digital Camera":"Digitale camera","Dye Sublimation Printer":"Dye sublimation printer","Electrophotographic Printer":"Laserprinter","Electrostatic Printer":"Electrostatische printer","Film Scanner":"Filmscanner","Film Writer":"Filmprinter","Flexography":"Flexografie","Gravure":"Fotogravure - koperdiepdruk","Ink Jet Printer":"Inkjet printer","Offset Lithography":"Offset Lithografie","Passive Matrix Display":"Passieve matrixdisplay","Photo CD":"Photo-CD","Photo Image Setter":"Fotofilmbelichter","Photographic Paper Printer":"Fotopapier printer","Projection Television":"Projectietelevisie","Reflective Scanner":"Reflectieve Scanner","Thermal Wax Printer":"Thermische was printer","Video Camera":"Videocamera","Video Monitor":"Videomonitor"}}}
+{"kind":"translate","lang":"nl","tag":"Teleconverter","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"TextStamp","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ThumbnailImage","value":"Miniatuur"}
+{"kind":"translate","lang":"nl","tag":"ThumbnailImageSize","value":"Thumbnail formaat"}
+{"kind":"translate","lang":"nl","tag":"TimeCreated","value":"Opnametijdstip"}
+{"kind":"translate","lang":"nl","tag":"TimeScaleParamsQuality","value":{"PrintConv":{"High":"Hoog","Low":"Laag"}}}
+{"kind":"translate","lang":"nl","tag":"TimeSent","value":"Tijdstip van zenden"}
+{"kind":"translate","lang":"nl","tag":"TimerFunctionButton","value":{"Description":"Fn-knop","PrintConv":{"ISO":"ISO-gevoeligheid","Image Quality/Size":"Bldkwaliteit/-formaat","Self-timer":"Zelfontspanner","Shooting Mode":"Opnamestand","White Balance":"Witbalans"}}}
+{"kind":"translate","lang":"nl","tag":"Title","value":"Titel"}
+{"kind":"translate","lang":"nl","tag":"ToneCurve","value":{"PrintConv":{"Manual":"Handmatig","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"ToneCurveActive","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"ToningEffect","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"ToningEffectMonochrome","value":{"PrintConv":{"None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"TransferFunction","value":"Transformatie functie"}
+{"kind":"translate","lang":"nl","tag":"Transformation","value":{"PrintConv":{"Horizontal (normal)":"0° (boven/links)","Mirror horizontal":"Horizontaal gespiegeld","Mirror horizontal and rotate 270 CW":"Spiegel horizontaal en draai 270° met de klok mee","Mirror horizontal and rotate 90 CW":"Spiegel horizontaal en draai 90° met de klok mee","Mirror vertical":"Vertikaal gespiegeld","Rotate 180":"180° (onder/rechts)","Rotate 270 CW":"Draai 270° met de klok mee","Rotate 90 CW":"90° tegen de klok in (rechts/boven)"}}}
+{"kind":"translate","lang":"nl","tag":"TransmissionReference","value":"Transmissiereferentie"}
+{"kind":"translate","lang":"nl","tag":"Trapped","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"Uncompressed","value":{"Description":"Niet gecomprimeerd","PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"UniqueDocumentID","value":"Uniek foto ID"}
+{"kind":"translate","lang":"nl","tag":"UniqueObjectName","value":"Unieke Naam van het Object"}
+{"kind":"translate","lang":"nl","tag":"Unknown","value":"Onbekend"}
+{"kind":"translate","lang":"nl","tag":"UnsharpMask","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"Urgency","value":{"Description":"Urgentie","PrintConv":{"0 (reserved)":"0 (Gereserveerd voor toekomstig gebruik)","1 (most urgent)":"1 (zeer dringend)","5 (normal urgency)":"5 (dringend)","8 (least urgent)":"8 (minst dringend)","9 (user-defined priority)":"9 (Gereserveerd voor toekomstig gebruik)"}}}
+{"kind":"translate","lang":"nl","tag":"UserComment","value":"Gebruiker kommentaar"}
+{"kind":"translate","lang":"nl","tag":"UserDef1PictureStyle","value":{"PrintConv":{"Landscape":"Landschap","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"UserDef2PictureStyle","value":{"PrintConv":{"Landscape":"Landschap","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"UserDef3PictureStyle","value":{"PrintConv":{"Landscape":"Landschap","Portrait":"Portret","Standard":"Standaard"}}}
+{"kind":"translate","lang":"nl","tag":"VRDVersion","value":"VRD versie"}
+{"kind":"translate","lang":"nl","tag":"VR_0x66","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"Version","value":"Versie"}
+{"kind":"translate","lang":"nl","tag":"VibrationReduction","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"ViewfinderWarning","value":{"Description":"Zoekerwaarschuwing","PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"VignetteControl","value":{"PrintConv":{"High":"Hoog","Normal":"Normaal","Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"VoiceMemo","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"WBAdjLighting","value":{"PrintConv":{"Daylight (cloudy)":"Daglicht (2)","Daylight (direct sunlight)":"Daglicht (0)","Daylight (shade)":"Daglicht (1)","Flash":"Flits","None":"Geen"}}}
+{"kind":"translate","lang":"nl","tag":"WBBracketMode","value":{"PrintConv":{"Off":"Uit"}}}
+{"kind":"translate","lang":"nl","tag":"WBFineTuneActive","value":{"PrintConv":{"No":"Nee","Yes":"Ja"}}}
+{"kind":"translate","lang":"nl","tag":"WBMode","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"WCSProfiles","value":"Windows kleursysteemprofiel"}
+{"kind":"translate","lang":"nl","tag":"WhiteBalance","value":{"Description":"Witbalans","PrintConv":{"Auto":"Automatisch","Black & White":"Monochroom","Cloudy":"Bewolkt","Color Temperature/Color Filter":"Kleurtemperatuur / Kleurfilter","Cool White Fluorescent":"Koelwit TL-licht","Custom":"Eigen instel.","Custom 1":"VOORKEUR 1","Custom 2":"VOORKEUR 2","Custom 3":"VOORKEUR 3","Custom 4":"VOORKEUR 4","Day White Fluorescent":"Daglicht wit TL-licht","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Flash":"Flits","Fluorescent":"Fluoresceren","Manual":"Handmatig","Shade":"Schaduw","Tungsten":"Kunstlicht (gloeilamp)","Unknown":"Onbekend","Warm White Fluorescent":"Warm wit TL-licht","White Fluorescent":"Wit TL-licht"}}}
+{"kind":"translate","lang":"nl","tag":"WhiteBalance2","value":{"PrintConv":{"Auto":"Automatisch"}}}
+{"kind":"translate","lang":"nl","tag":"WhiteBalanceAdj","value":{"PrintConv":{"Auto":"Automatisch","Cloudy":"Bewolkt","Daylight":"Daglicht","Flash":"Flits","Fluorescent":"Fluoresceren","Off":"Uit","On":"Aan","Shade":"Schaduw","Tungsten":"Kunstlicht (gloeilamp)"}}}
+{"kind":"translate","lang":"nl","tag":"WhiteBalanceMode","value":{"PrintConv":{"Unknown":"Onbekend"}}}
+{"kind":"translate","lang":"nl","tag":"WhiteBalanceSet","value":{"PrintConv":{"Auto":"Automatisch","Cloudy":"Bewolkt","Daylight":"Daglicht","Daylight Fluorescent":"Daglicht TL-licht","Flash":"Flits","Manual":"Handmatig","Shade":"Schaduw","Tungsten":"Kunstlicht (gloeilamp)","White Fluorescent":"Warm wit TL-licht"}}}
+{"kind":"translate","lang":"nl","tag":"WhitePoint","value":"Wit punt chromaticiteit"}
+{"kind":"translate","lang":"nl","tag":"WideRange","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}
+{"kind":"translate","lang":"nl","tag":"WidthResolution","value":"Beeldresolutie horizontaal"}
+{"kind":"translate","lang":"nl","tag":"Writer-Editor","value":"Titel/Beschrijving auteur"}
+{"kind":"translate","lang":"nl","tag":"XMP","value":"XMP metadata"}
+{"kind":"translate","lang":"nl","tag":"XPAuthor","value":"Auteur"}
+{"kind":"translate","lang":"nl","tag":"XPComment","value":"Kommentaar"}
+{"kind":"translate","lang":"nl","tag":"XPKeywords","value":"Trefwoorden"}
+{"kind":"translate","lang":"nl","tag":"XPSubject","value":"Onderwerp"}
+{"kind":"translate","lang":"nl","tag":"XPTitle","value":"Titel"}
+{"kind":"translate","lang":"nl","tag":"XPosition","value":"X positie"}
+{"kind":"translate","lang":"nl","tag":"XResolution","value":"Horizontale afbeelding resolutie"}
+{"kind":"translate","lang":"nl","tag":"YCbCrCoefficients","value":"YCbCr coëfficiënt"}
+{"kind":"translate","lang":"nl","tag":"YCbCrPositioning","value":{"Description":"Y en C positie","PrintConv":{"Centered":"Gecentreerd","Co-sited":"Naast liggend"}}}
+{"kind":"translate","lang":"nl","tag":"YCbCrSubSampling","value":"Subsampling ratio van Y tot C"}
+{"kind":"translate","lang":"nl","tag":"YPosition","value":"Y positie"}
+{"kind":"translate","lang":"nl","tag":"YResolution","value":"Vertikale afbeelding resolutie"}
+{"kind":"translate","lang":"nl","tag":"ZoneMatching","value":{"Description":"Zoneaanpassing","PrintConv":{"High Key":"Hi","ISO Setting Used":"Uit","Low Key":"Lo"}}}
+{"kind":"translate","lang":"nl","tag":"ZoneMatchingOn","value":{"PrintConv":{"Off":"Uit","On":"Aan"}}}

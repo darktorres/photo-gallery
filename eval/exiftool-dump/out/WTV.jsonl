@@ -1,0 +1,77 @@
+{"kind":"table","module":"WTV","name":"Image::ExifTool::WTV::Main","special":{"GROUPS":{"0":"WTV","1":"WTV","2":"Video"},"NOTES":"Tags found in Windows recorded TV (WTV) videos.","SHORT_NAME":"WTV::Main","TABLE_NAME":"Image::ExifTool::WTV::Main","TAG_PREFIX":"WTV"}}
+{"fields":{"Name":"Metdata","SubDirectory":{"TagTable":"Image::ExifTool::WTV::Metadata"}},"id":"table.0.entries.legacy_attrib","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Main"}
+{"kind":"table","module":"WTV","name":"Image::ExifTool::WTV::Metadata","special":{"GROUPS":{"0":"WTV","1":"WTV","2":"Video"},"NOTES":"ExifTool will extract any tag found, even if not in this table.","PROCESS_PROC":{"code":"&Image::ExifTool::WTV::ProcessMetadata"},"SHORT_NAME":"WTV::Metadata","TABLE_NAME":"Image::ExifTool::WTV::Metadata","TAG_PREFIX":"WTV_Metadata","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"Duration","PrintConv":"ConvertDuration($val)","ValueConv":"$val/1e7"},"id":"Duration","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Title"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Genre"},"id":"WM/Genre","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Language"},"id":"WM/Language","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaClassPrimaryID"},"id":"WM/MediaClassPrimaryID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaClassSecondaryID"},"id":"WM/MediaClassSecondaryID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaCredits"},"id":"WM/MediaCredits","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"id":"shared00365","kind":"shared","value":{"0":"No","1":"Yes"}}
+{"fields":{"Name":"MediaIsDelay","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsDelay","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsFinale","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsFinale","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsLive","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsLive","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsMovie","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsMovie","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsPremiere","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsPremiere","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsRepeat","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsRepeat","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsSAP","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsSAP","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsSport","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsSport","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"MediaIsStereo","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsStereo","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsSubtitled","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsSubtitled","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaIsTape","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/MediaIsTape","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaNetworkAffiliation"},"id":"WM/MediaNetworkAffiliation","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Time"},"Name":"MediaOriginalBroadcastDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val =~ tr/-T/: /; $val"},"id":"WM/MediaOriginalBroadcastDateTime","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaOriginalChannel"},"id":"WM/MediaOriginalChannel","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaOriginalChannelSubNumber"},"id":"WM/MediaOriginalChannelSubNumber","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaOriginalRunTime","PrintConv":"ConvertDuration($val)","ValueConv":"$val / 1e7"},"id":"WM/MediaOriginalRunTime","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaStationCallSign"},"id":"WM/MediaStationCallSign","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaStationName"},"id":"WM/MediaStationName","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbAspectRatioX"},"id":"WM/MediaThumbAspectRatioX","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbAspectRatioY"},"id":"WM/MediaThumbAspectRatioY","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbHeight"},"id":"WM/MediaThumbHeight","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbRatingAttributes"},"id":"WM/MediaThumbRatingAttributes","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbRatingLevel"},"id":"WM/MediaThumbRatingLevel","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbRatingSystem"},"id":"WM/MediaThumbRatingSystem","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbRet"},"id":"WM/MediaThumbRet","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbStride"},"id":"WM/MediaThumbStride","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbTimeStamp","Notes":"unknown units","Unknown":1},"id":"WM/MediaThumbTimeStamp","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"MediaThumbWidth"},"id":"WM/MediaThumbWidth","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Time"},"Name":"OriginalReleaseTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$val=~tr/-T/: /; $val"},"id":"WM/OriginalReleaseTime","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ParentalRating"},"id":"WM/ParentalRating","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ParentalRatingReason"},"id":"WM/ParentalRatingReason","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Provider"},"id":"WM/Provider","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ProviderCopyright"},"id":"WM/ProviderCopyright","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ProviderRating"},"id":"WM/ProviderRating","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Subtitle"},"id":"WM/SubTitle","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"SubtitleDescription"},"id":"WM/SubTitleDescription","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"VideoClosedCaptioning","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/VideoClosedCaptioning","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ATSCContent","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/WMRVATSCContent","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ActualSoftPostPadding"},"id":"WM/WMRVActualSoftPostPadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ActualSoftPrePadding"},"id":"WM/WMRVActualSoftPrePadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Bitrate","Notes":"unknown units","Unknown":1},"id":"WM/WMRVBitrate","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"BrandingImageID"},"id":"WM/WMRVBrandingImageID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"BrandingName"},"id":"WM/WMRVBrandingName","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ContentProtected","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/WMRVContentProtected","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ContentProtectedPercent"},"id":"WM/WMRVContentProtectedPercent","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"DTVContent","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/WMRVDTVContent","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Time"},"Name":"EncodeTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":" # (719162 days from 0001:01:01 to 1970:01:01)\n        my $t = $val / 1e7 - 719162*24*3600;\n        return Image::ExifTool::ConvertUnixTime($t) . 'Z';\n    "},"id":"WM/WMRVEncodeTime","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Time"},"Name":"EndTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":" # (719162 days from 0001:01:01 to 1970:01:01)\n        my $t = $val / 1e7 - 719162*24*3600;\n        return Image::ExifTool::ConvertUnixTime($t) . 'Z';\n    "},"id":"WM/WMRVEndTime","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ExpirationDate","PrintConv":"$self->ConvertDateTime($val)","Unknown":1,"ValueConv":" # (719162 days from 0001:01:01 to 1970:01:01)\n        my $t = $val / 1e7 - 719162*24*3600;\n        return Image::ExifTool::ConvertUnixTime($t) . 'Z';\n    "},"id":"WM/WMRVExpirationDate","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ExpirationSpan","Notes":"unknown units","Unknown":1},"id":"WM/WMRVExpirationSpan","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"HDContent","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/WMRVHDContent","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"HardPostPadding"},"id":"WM/WMRVHardPostPadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"HardPrePadding"},"id":"WM/WMRVHardPrePadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"InBandRatingAttributes"},"id":"WM/WMRVInBandRatingAttributes","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"InBandRatingLevel"},"id":"WM/WMRVInBandRatingLevel","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"InBandRatingSystem"},"id":"WM/WMRVInBandRatingSystem","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"KeepUntil"},"id":"WM/WMRVKeepUntil","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"OriginalSoftPostPadding"},"id":"WM/WMRVOriginalSoftPostPadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"OriginalSoftPrePadding"},"id":"WM/WMRVOriginalSoftPrePadding","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ProgramID"},"id":"WM/WMRVProgramID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Quality"},"id":"WM/WMRVQuality","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"RequestID"},"id":"WM/WMRVRequestID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ScheduleItemID"},"id":"WM/WMRVScheduleItemID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"SeriesUID"},"id":"WM/WMRVSeriesUID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"ServiceID"},"id":"WM/WMRVServiceID","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}
+{"fields":{"Name":"Watched","PrintConv":{"ref":"shared00365"},"PrintConvColumns":2},"id":"WM/WMRVWatched","index":null,"kind":"tag","table":"Image::ExifTool::WTV::Metadata"}

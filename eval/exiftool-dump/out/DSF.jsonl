@@ -1,0 +1,9 @@
+{"kind":"table","module":"DSF","name":"Image::ExifTool::DSF::Main","special":{"FORMAT":"int32u","GROUPS":{"0":"File","1":"File","2":"Audio"},"NOTES":"\n        Tags read from the 'fmt ' header of a DSF (DSD Stream File) audio files. As\n        well, ID3 metadata may also exist in these files. See\n        L<https://dsd-guide.com/sites/default/files/white-papers/DSFFileFormatSpec_E.pdf>\n        for the specification.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"DSF::Main","TABLE_NAME":"Image::ExifTool::DSF::Main","TAG_PREFIX":"DSF"}}
+{"fields":{"Name":"FormatVersion"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"FormatID","PrintConv":{"0":"DSD Raw"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"ChannelType","PrintConv":{"1":"Mono","2":"Stereo (Left, Right)","3":"3 Channels (Left, Right, Center)","4":"Quad (Left, Right, Back L, Back R)","5":"4 Channels (Left, Right, Center, Bass)","6":"5 Channels (Left, Right, Center, Back L, Back R)","7":"5.1 Channels (Left, Right, Center, Bass, Back L, Back R)"}},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"ChannelCount"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"SampleRate"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"BitsPerSample"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Format":"int64u","Name":"SampleCount"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}
+{"fields":{"Name":"BlockSize"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::DSF::Main"}

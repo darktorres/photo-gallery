@@ -1,0 +1,12 @@
+{"kind":"table","module":"Radiance","name":"Image::ExifTool::Radiance::Main","special":{"GROUPS":{"0":"Radiance","1":"Radiance","2":"Image"},"NOTES":"\n        Information extracted from Radiance RGBE HDR images.  Tag ID's are all\n        uppercase as stored in the file, but converted to lowercase by when\n        extracting to avoid conflicts with internal ExifTool variables.  See\n        L<http://radsite.lbl.gov/radiance/refer/filefmts.pdf> and\n        L<http://www.graphics.cornell.edu/online/formats/rgbe/> for the\n        specification.\n    ","SHORT_NAME":"Radiance::Main","TABLE_NAME":"Image::ExifTool::Radiance::Main","TAG_PREFIX":"Radiance"}}
+{"fields":{"Name":"Command"},"id":"_command","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Comment"},"id":"_comment","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Orientation","PrintConv":{"+X +Y":"Rotate 90 CW","+X -Y":"Mirror horizontal and rotate 270 CW","+Y +X":"Mirror vertical","+Y -X":"Rotate 180","-X +Y":"Mirror horizontal and rotate 90 CW","-X -Y":"Rotate 270 CW","-Y +X":"Horizontal (normal)","-Y -X":"Mirror horizontal"}},"id":"_orient","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"ColorCorrection"},"id":"colorcorr","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Exposure","Notes":"divide pixel values by this to get watts/steradian/meter^2"},"id":"exposure","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Format"},"id":"format","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Gamma"},"id":"gamma","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"PixelAspectRatio"},"id":"pixaspect","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"ColorPrimaries"},"id":"primaries","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"Software"},"id":"software","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}
+{"fields":{"Name":"View"},"id":"view","index":null,"kind":"tag","table":"Image::ExifTool::Radiance::Main"}

@@ -1,0 +1,55 @@
+{"kind":"table","module":"SonyIDC","name":"Image::ExifTool::SonyIDC::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"SonyIDC","2":"Image"},"NOTES":"Tags written by the Sony Image Data Converter utility in ARW images.","SET_GROUP1":1,"SHORT_NAME":"SonyIDC::Main","TABLE_NAME":"Image::ExifTool::SonyIDC::Main","TAG_PREFIX":"SonyIDC","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"DataTag":"IDCPreview","IsOffset":1,"Name":"IDCPreviewStart","OffsetPair":514,"Permanent":1,"Protected":2,"Writable":"int32u"},"id":"513","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"DataTag":"IDCPreview","Name":"IDCPreviewLength","OffsetPair":513,"Permanent":1,"Protected":2,"Writable":"int32u"},"id":"514","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"IDCCreativeStyle","Permanent":1,"PrintConv":{"1":"Camera Setting","10":"Clear","11":"Deep","12":"Light","13":"Sunset","14":"Night View","15":"Autumn Leaves","16":"B&W","17":"Sepia","2":"Standard","3":"Real","4":"Vivid","5":"Adobe RGB","6":"A100 Standard","7":"Neutral","8":"Portrait","9":"Landscape"},"PrintConvColumns":2,"Writable":"int32u"},"id":"32768","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"CreativeStyleWasChanged","Notes":"set if the creative style was ever changed","Permanent":1,"PrintConv":{"0":"No","1":"Yes"},"Writable":"int32u"},"id":"32769","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PresetWhiteBalance","Permanent":1,"PrintConv":{"1":"Camera Setting","10":"Warm White Fluorescent","11":"Tungsten","12":"Flash","13":"Auto","2":"Color Temperature","3":"Specify Gray Point","4":"Daylight","5":"Cloudy","6":"Shade","7":"Cool White Fluorescent","8":"Day Light Fluorescent","9":"Day White Fluorescent"},"Writable":"int32u"},"id":"32770","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ColorTemperatureAdj","Permanent":1,"Writable":"int16u"},"id":"32787","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PresetWhiteBalanceAdj","Permanent":1,"Writable":"int32s"},"id":"32788","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ColorCorrection","Permanent":1,"Writable":"int32s"},"id":"32789","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"SaturationAdj","Permanent":1,"Writable":"int32s"},"id":"32790","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ContrastAdj","Permanent":1,"Writable":"int32s"},"id":"32791","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"BrightnessAdj","Permanent":1,"PrintConv":"sprintf(\"%.2f\", $val/300)","PrintConvInv":"$val * 300","Writable":"int32s"},"id":"32792","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"HueAdj","Permanent":1,"Writable":"int32s"},"id":"32793","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"SharpnessAdj","Permanent":1,"Writable":"int32s"},"id":"32794","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"SharpnessOvershoot","Permanent":1,"Writable":"int32s"},"id":"32795","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"SharpnessUndershoot","Permanent":1,"Writable":"int32s"},"id":"32796","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"SharpnessThreshold","Permanent":1,"Writable":"int32s"},"id":"32797","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"NoiseReductionMode","Permanent":1,"PrintConv":{"0":"Off","1":"On"},"Writable":"int16u"},"id":"32798","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":4,"Name":"GrayPoint","Permanent":1,"Writable":"int16u"},"id":"32801","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"D-RangeOptimizerMode","Permanent":1,"PrintConv":{"0":"Off","1":"Auto","2":"Manual"},"Writable":"int16u"},"id":"32802","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"D-RangeOptimizerValue","Permanent":1,"Writable":"int32s"},"id":"32803","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"D-RangeOptimizerHighlight","Permanent":1,"Writable":"int32s"},"id":"32804","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"HighlightColorDistortReduct","Permanent":1,"PrintConv":{"0":"Standard","1":"Advanced"},"Writable":"int16u"},"id":"32806","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"NoiseReductionValue","Permanent":1,"ValueConv":"($val + 100) / 2","ValueConvInv":"$val * 2 - 100","Writable":"int32s"},"id":"32807","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"EdgeNoiseReduction","Permanent":1,"ValueConv":"($val + 100) / 2","ValueConvInv":"$val * 2 - 100","Writable":"int32s"},"id":"32808","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ColorNoiseReduction","Permanent":1,"ValueConv":"($val + 100) / 2","ValueConvInv":"$val * 2 - 100","Writable":"int32s"},"id":"32809","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"D-RangeOptimizerShadow","Permanent":1,"Writable":"int32s"},"id":"32813","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PeripheralIllumCentralRadius","Permanent":1,"Writable":"int32s"},"id":"32816","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PeripheralIllumCentralValue","Permanent":1,"Writable":"int32s"},"id":"32817","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PeripheralIllumPeriphValue","Permanent":1,"Writable":"int32s"},"id":"32818","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"DistortionCompensation","Permanent":1,"PrintConv":{"-1":"n/a","1":"On","2":"Off"},"Writable":"int32s"},"id":"32832","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveBrightnessX","Permanent":1,"Writable":"int16u"},"id":"36864","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveRedX","Permanent":1,"Writable":"int16u"},"id":"36865","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveGreenX","Permanent":1,"Writable":"int16u"},"id":"36866","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveBlueX","Permanent":1,"Writable":"int16u"},"id":"36867","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveBrightnessY","Permanent":1,"Writable":"int16u"},"id":"36868","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveRedY","Permanent":1,"Writable":"int16u"},"id":"36869","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveGreenY","Permanent":1,"Writable":"int16u"},"id":"36870","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":-1,"Name":"ToneCurveBlueY","Permanent":1,"Writable":"int16u"},"id":"36871","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ChromaticAberrationCorrection","Permanent":1,"PrintConv":{"1":"On","2":"Off"},"Writable":"int32s"},"id":"36877","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"InclinationCorrection","Permanent":1,"PrintConv":{"0":"Off","1":"On"},"Writable":"int32u"},"id":"36878","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"InclinationAngle","Permanent":1,"PrintConv":"sprintf(\"%.1f deg\", $val/1000)","PrintConvInv":"ToFloat($val) * 1000","Writable":"int32s"},"id":"36879","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"Cropping","Permanent":1,"PrintConv":{"0":"Off","1":"On"},"Writable":"int32u"},"id":"36880","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":4,"Name":"CropArea","Permanent":1,"Writable":"int32u"},"id":"36881","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Count":2,"Name":"PreviewImageSize","Permanent":1,"Writable":"int32u"},"id":"36882","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PxShiftPeriphEdgeNR","Permanent":1,"PrintConv":{"0":"Off","1":"On"},"Writable":"int32s"},"id":"36883","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"PxShiftPeriphEdgeNRValue","Permanent":1,"PrintConv":"sprintf(\"%.1f\", $val/10)","PrintConvInv":"$val * 10","Writable":"int32s"},"id":"36884","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"WhitesAdj","Permanent":1,"Writable":"int32s"},"id":"36887","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"BlacksAdj","Permanent":1,"Writable":"int32s"},"id":"36888","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"HighlightsAdj","Permanent":1,"Writable":"int32s"},"id":"36889","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"ShadowsAdj","Permanent":1,"Writable":"int32s"},"id":"36890","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Name":"CurrentVersion","Permanent":1,"Writable":"int32u"},"id":"53248","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Flags":"SubIFD","Groups":{"1":"Version0"},"Name":"VersionIFD","Notes":"there is one VersionIFD for each entry in the \"Version Stack\"","Permanent":1,"SubDirectory":{"Base":"$start","DirName":"Version0","MaxSubdirs":20,"RelativeBase":1,"Start":"$val","TagTable":"Image::ExifTool::SonyIDC::Main"},"SubIFD":1},"id":"53249","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"VersionCreateDate","Notes":"date/time when this entry was created in the \"Version Stack\"","Permanent":1,"PrintConv":"$self->ConvertDateTime($val)","PrintConvInv":"$self->InverseDateTime($val,0)","Shift":"Time","Writable":"string"},"id":"53504","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"VersionModifyDate","Permanent":1,"PrintConv":"$self->ConvertDateTime($val)","PrintConvInv":"$self->InverseDateTime($val,0)","Shift":"Time","Writable":"string"},"id":"53505","index":null,"kind":"tag","table":"Image::ExifTool::SonyIDC::Main"}

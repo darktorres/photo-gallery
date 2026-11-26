@@ -1,0 +1,87 @@
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::Factory","special":{"GROUPS":{"0":"APP4","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP4 IJPEG camera factory\n        defaults and calibration data.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::Factory","TABLE_NAME":"Image::ExifTool::InfiRay::Factory","TAG_PREFIX":"InfiRay_Factory","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"int8u[4]","Name":"IJPEGTempVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactDefEmissivity"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactDefTau"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactDefTa"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactDefTu"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactDefDist"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefA0"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefB0"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefA1"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefB1"},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefP0"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefP1"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int32s","Name":"FactDefP2"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactRelSensorTemp"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactRelShutterTemp"},"id":"70","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int16s","Name":"FactRelLensTemp"},"id":"72","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactStatusGain"},"id":"100","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactStatusEnvOK"},"id":"101","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactStatusDistOK"},"id":"102","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"fields":{"Format":"int8s","Name":"FactStatusTempMap"},"id":"103","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Factory"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::Isothermal","special":{"GROUPS":{"0":"APP8","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP8 IJPEG picture isothermal\n        information.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::Isothermal","TABLE_NAME":"Image::ExifTool::InfiRay::Isothermal","TAG_PREFIX":"InfiRay_Isothermal","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"float","Name":"IsothermalMax"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Isothermal"}
+{"fields":{"Format":"float","Name":"IsothermalMin"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Isothermal"}
+{"fields":{"Format":"float","Name":"ChromaBarMax"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Isothermal"}
+{"fields":{"Format":"float","Name":"ChromaBarMin"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Isothermal"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::MixMode","special":{"GROUPS":{"0":"APP6","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP6 IJPEG visual-infrared mixing\n        mode section.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::MixMode","TABLE_NAME":"Image::ExifTool::InfiRay::MixMode","TAG_PREFIX":"InfiRay_MixMode","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"int8u","Name":"MixMode"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::MixMode"}
+{"fields":{"Format":"float","Name":"FusionIntensity","PrintConv":"sprintf(\"%.1f %%\", $val * 100)"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::MixMode"}
+{"fields":{"Format":"float","Name":"OffsetAdjustment"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::MixMode"}
+{"fields":{"Format":"float[30]","Name":"CorrectionAsix"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::MixMode"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::OpMode","special":{"GROUPS":{"0":"APP7","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP7 IJPEG camera operation mode\n        section.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::OpMode","TABLE_NAME":"Image::ExifTool::InfiRay::OpMode","TAG_PREFIX":"InfiRay_OpMode","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"int8u","Name":"WorkingMode"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"fields":{"Format":"int32u","Name":"IntegralTime"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"fields":{"Format":"int32u","Name":"IntegratTimeHdr"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"fields":{"Format":"int8u","Name":"GainStable"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"fields":{"Format":"int8u","Name":"TempControlEnable"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"fields":{"Format":"float","Name":"DeviceTemp","PrintConv":"sprintf(\"%.2f C\", $val)"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::OpMode"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::Picture","special":{"GROUPS":{"0":"APP5","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP5 IJPEG picture temperature\n        information.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::Picture","TABLE_NAME":"Image::ExifTool::InfiRay::Picture","TAG_PREFIX":"InfiRay_Picture","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"float","Name":"EnvironmentTemp","PrintConv":"sprintf(\"%.2f C\", $val)"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"float","Name":"Distance","PrintConv":"sprintf(\"%.2f m\", $val)"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"float","Name":"Emissivity","PrintConv":"sprintf(\"%.2f\", $val)"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"float","Name":"Humidity","PrintConv":"sprintf(\"%.1f %%\", $val * 100)"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"float","Name":"ReferenceTemp","PrintConv":"sprintf(\"%.2f C\", $val)"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"int8u","Name":"TempUnit"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"int8u","Name":"ShowCenterTemp"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"int8u","Name":"ShowMaxTemp"},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"int8u","Name":"ShowMinTemp"},"id":"35","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"fields":{"Format":"int16u","Name":"TempMeasureCount"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Picture"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::Sensor","special":{"GROUPS":{"0":"APP9","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP9 IJPEG sensor information\n        chunk.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::Sensor","TABLE_NAME":"Image::ExifTool::InfiRay::Sensor","TAG_PREFIX":"InfiRay_Sensor","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"string[12]","Name":"IRSensorManufacturer"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[12]","Name":"IRSensorName"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[32]","Name":"IRSensorPartNumber"},"id":"128","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[32]","Name":"IRSensorSerialNumber"},"id":"192","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[12]","Name":"IRSensorFirmware"},"id":"256","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"float","Name":"IRSensorAperture","PrintConv":"sprintf(\"%.2f\", $val)"},"id":"320","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"float","Name":"IRFocalLength","PrintConv":"sprintf(\"%.2f\", $val)"},"id":"324","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[12]","Name":"VisibleSensorManufacturer"},"id":"384","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[12]","Name":"VisibleSensorName"},"id":"448","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[32]","Name":"VisibleSensorPartNumber"},"id":"512","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[32]","Name":"VisibleSensorSerialNumber"},"id":"576","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"string[12]","Name":"VisibleSensorFirmware"},"id":"640","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"float","Name":"VisibleSensorAperture"},"id":"704","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"fields":{"Format":"float","Name":"VisibleFocalLength"},"id":"708","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Sensor"}
+{"kind":"table","module":"InfiRay","name":"Image::ExifTool::InfiRay::Version","special":{"GROUPS":{"0":"APP2","1":"InfiRay","2":"Image"},"NOTES":"\n        This table lists tags found in the InfiRay APP2 IJPEG version header, found\n        in JPEGs taken with the P2 Pro camera app.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"InfiRay::Version","TABLE_NAME":"Image::ExifTool::InfiRay::Version","TAG_PREFIX":"InfiRay_Version","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Format":"int8u[4]","Name":"IJPEGVersion"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"IJPEGOrgType"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"IJPEGDispType"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"IJPEGRotate"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"IJPEGMirrorFlip"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"ImageColorSwitchable"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"ThermalColorPalette"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int64u","Name":"IRDataSize"},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"IRDataFormat"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"IRImageWidth"},"id":"42","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"IRImageHeight"},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"IRImageBpp"},"id":"46","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int64u","Name":"TempDataSize"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"TempDataFormat"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"TempImageWidth"},"id":"58","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"TempImageHeight"},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"TempImageBpp"},"id":"62","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int64u","Name":"VisibleDataSize"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"VisibleDataFormat"},"id":"72","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"VisibleImageWidth"},"id":"74","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int16u","Name":"VisibleImageHeight"},"id":"76","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}
+{"fields":{"Format":"int8u","Name":"VisibleImageBpp"},"id":"78","index":null,"kind":"tag","table":"Image::ExifTool::InfiRay::Version"}

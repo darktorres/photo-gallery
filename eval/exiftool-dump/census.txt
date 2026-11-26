@@ -1,0 +1,244 @@
+# Classifier census of the dump
+strings: 13027; classified: 10561 (81.1%); hand ports: 2466 occurrences, 1120 distinct texts
+value tables carrying more than values: {'Notes': 61, 'BITMASK': 120, 'OTHER': 453}
+regex features beyond a plain engine: {'lookaround, backreference or code in a regex': 16}
+subs called by name from strings: 170 distinct, 2806 calls
+
+## Condition: 2299 strings, 1183 distinct
+  predicate: regex on context         611  (292 distinct)
+  predicate: compare context          563  (216 distinct)
+  predicate: combined                 422  (244 distinct)
+  predicate: regex on bytes           383  (293 distinct)
+  predicate: bit test on context       92  (32 distinct)
+  predicate: context set               77  (29 distinct)
+  predicate: compare local             75  (28 distinct)
+  hand port                            58  (43 distinct)
+  predicate: compare bytes              9  (2 distinct)
+  predicate: option                     5  (1 distinct)
+  predicate: regex on value             2  (2 distinct)
+  predicate: length of bytes            2  (1 distinct)
+
+## RawConv: 1300 strings, 528 distinct
+  ternary on a predicate              515  (113 distinct)
+  hand port                           395  (218 distinct)
+  store into context                  335  (177 distinct)
+  call of a named sub                  28  (14 distinct)
+  substitution                         14  (4 distinct)
+  constant                              8  (1 distinct)
+  identity                              5  (1 distinct)
+
+## ValueConv: 2976 strings, 725 distinct
+  formula                            1667  (191 distinct)
+  hand port                           878  (409 distinct)
+  call of a named sub                 213  (39 distinct)
+  ternary on a predicate              114  (44 distinct)
+  substitution                         98  (37 distinct)
+  sprintf of formula                    3  (3 distinct)
+  identity                              2  (1 distinct)
+  constant                              1  (1 distinct)
+
+## PrintConv: 3474 strings, 459 distinct
+  call of a named sub                1063  (36 distinct)
+  interpolated text                   960  (77 distinct)
+  sprintf of formula                  632  (86 distinct)
+  ternary on a predicate              378  (56 distinct)
+  hand port                           315  (177 distinct)
+  substitution                         81  (20 distinct)
+  formula                              45  (7 distinct)
+
+## RawConvInv: 57 strings, 31 distinct
+  hand port                            48  (26 distinct)
+  call of a named sub                   6  (2 distinct)
+  identity                              1  (1 distinct)
+  substitution                          1  (1 distinct)
+  interpolated text                     1  (1 distinct)
+
+## ValueConvInv: 1442 strings, 337 distinct
+  formula                             738  (107 distinct)
+  hand port                           367  (145 distinct)
+  ternary on a predicate              176  (40 distinct)
+  call of a named sub                  69  (15 distinct)
+  identity                             42  (1 distinct)
+  interpolated text                    35  (19 distinct)
+  substitution                         14  (9 distinct)
+  constant                              1  (1 distinct)
+
+## PrintConvInv: 1432 strings, 161 distinct
+  identity                            387  (1 distinct)
+  hand port                           358  (79 distinct)
+  substitution                        314  (42 distinct)
+  call of a named sub                 307  (16 distinct)
+  ternary on a predicate               43  (14 distinct)
+  formula                              19  (6 distinct)
+  interpolated text                     4  (3 distinct)
+
+## Hook: 47 strings, 40 distinct
+  hand port                            47  (40 distinct)
+
+## Most called subs (from strings)
+    487  ConvertDateTime
+    208  Image::ExifTool::GPS::ToDMS
+    190  Image::ExifTool::Exif::ConvertFraction
+    166  Image::ExifTool::Exif::PrintExposureTime
+    163  InverseDateTime
+    100  ConvertUnixTime
+     98  ConvertDuration
+     77  Decode
+     67  Image::ExifTool::ConvertUnixTime
+     64  IsFloat
+     64  Image::ExifTool::GPS::ToDegrees
+     50  Image::ExifTool::Samsung::Crypt
+     45  Options
+     42  GetUnixTime
+     42  Image::ExifTool::Exif::PrintFraction
+     41  ConvertBitrate
+     41  A
+     38  Image::ExifTool::Canon::CanonEv
+     38  Image::ExifTool::Canon::CanonEvInv
+     37  ValidateImage
+     37  Image::ExifTool::Exif::PrintFNumber
+     30  Image::ExifTool::XMP::ConvertXMPDate
+     28  Encode
+     26  Z
+     24  Image::ExifTool::XMP::DecodeBase64
+     23  Image::ExifTool::Nikon::PrintPC
+     22  Image::ExifTool::Nikon::PrintPCInv
+     19  Image::ExifTool::ASF::GetGUID
+     19  Image::ExifTool::Canon::FindFirmVer
+     18  Warn
+
+## Most frequent hand ports: Condition
+     4  $$valPt =~ /^\x15[\0\1]/ and substr($$valPt, 0x57, 1) eq "\0" and substr($$valPt, 0x78, 1) eq "\0"
+     4  $$self{CoordUnits} = 1
+     2  $$valPt =~ m{^IIII[\x02\x03]\0.{14}\d{4}/\d{2}/\d{2} }s
+     2  $$valPt =~ /^(MINOL|CAMER)\0/ and $$self{OlympusCAMER} = 1
+     2  return undef unless $$valPt =~ /^(IIII.waR|MMMMRaw.)/s; $self->OverrideFileType($$self{TIFF_TYPE} = 'IIQ') if $count > 1000000; return 1
+     2  $$valPt =~ /^\x01\xf1([\x02\x03]\x00)?/ and ($1 or $$self{Make} eq "RECONYX")
+     2  uc $$self{Make} eq 'SAMSUNG' and ($$self{TIFF_TYPE} eq 'SRW' or $$valPt=~/^(\0.\0\x01\0\x07\0{3}\x04|.\0\x01\0\x07\0\x04\0{3})0100/s)
+     2  return undef unless $$self{Make}=~/^(SIGMA|FOVEON)/i; $$self{MakerNoteSigmaVer} = $$valPt=~/^SIGMA\0\0\0.(.)/s ? ord($1) : -1; return 1
+     2  $$valPt=~/^SONY PI\0/ and $$self{OlympusCAMER}=1
+     2  $$valPt=~/^(PREMI)\0/ and $$self{OlympusCAMER}=1
+     2  $$self{TIFF_TYPE} eq 'SRW' and $$self{DIR_NAME} eq 'SubIFD' and $$self{PATH}[-2] eq 'IFD1'
+     1  length($$valPt) == 328
+     1  GetByteOrder() eq "MM"
+     1  $$self{Model} =~ /\bEOS R(\d|P\b|a\b|\b)/ and ($$self{LensType} || 0) == 61182
+     1  ($$self{CameraInfoCount} = $count) and $$self{Model} =~ /\b1DS?$/
+
+## Most frequent hand ports: RawConv
+    32  $val || undef
+    20  $self->ValidateImage(\$val,$tag)
+    20  ($val!~/^\0/ or $$self{OPTIONS}{Unknown}) ? join(" ",unpack("Cc*",$val)) : undef
+    14  $val & 0x00ffffff
+    10  length($val) ? $val : undef
+     9  my @a = split " ", $val; return(($a[0] or $a[1]) && $a[2] < 1000 ? $val : undef)
+     8  ToggleByteOrder() if $val >= 0x0100; undef
+     7  $self->ValidateImage(ref $val ? $val : \$val, $tag)
+     7  Image::ExifTool::Samsung::Crypt($self,$val,$tagInfo,0,"-0")
+     6  if ($val) { my $offset = (66 * 365 + 17) * 24 * 3600; if ($val >= $offset or $$self{OPTIONS}{QuickTimeUTC}) { $val -= $offset; } elsif (not $$self{IsW
+     6  $$self{FoundGPSLatitude} = 1; $val
+     6  Image::ExifTool::Samsung::Crypt($self,$val,$tagInfo,0)
+     4  $self->Decode($val, ($$self{URIFlags} & 0x80) ? "UTF16" : "Latin"
+     4  GetFloat(\$val,0) . " " . GetFloat(\$val,5) . " " . GetFloat(\$val,10)
+     4  substr($val, 8)
+
+## Most frequent hand ports: ValueConv
+    46  Image::ExifTool::ConvertUnixTime($val + 631065600, 1)
+    30  ($val > 0x7 ? $val - 0x10 : $val) / 6
+    26  unpack("H*",$val)
+    23  exp(4*log(2)*(1-Image::ExifTool::Canon::CanonEv($val-24)))
+    20  my @v=split(" ",$val); $_*=15 foreach @v; "$v[1] $v[0] $v[3] $v[2]"
+    19  my @a=split " ",$val;$a[0]*=2;$a[3]*=2;"@a"
+    16  $val =~ s{http://ns.useplus.org/ldf/vocab/}{}; $val
+    15  length($val) > 64 ? \$val : $val
+    14  $val =~ s/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g; $val =~ s/(\d{4})(\d{2})(\d{2})/$1:$2:$3/g; $val =~ s/(\d{4})-(\d{2})
+    12  require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)
+    12  Image::ExifTool::ConvertUnixTime($val + 631065600)
+    11  unpack("H*", $val)
+    10  $val=$val/1e7-11644473600; ConvertUnixTime($val,1)
+     9  my @a = split " ", $val; return ConvertUnixTime($a[0] + $a[1] * 65536 + $a[2] / 1000, 0, 3)
+     9  $val =~ s/^(\d{4})-(\d{2})-/$1:$2:/; $val
+
+## Most frequent hand ports: PrintConv
+    18  sprintf("%3d %4d %6d" . " %3d %4d %6d" x 10, split(" ",$val))
+    15  sprintf("%4d %4d %4d (%dK)", split(" ",$val))
+    15  sprintf("%4d %4d %4d %4d (%dK)", split(" ",$val))
+    15  return 'Full' if $val > 0.99; Image::ExifTool::Exif::PrintExposureTime($val)
+    14  sprintf("%19d %4d %6d" . " %3d %4d %6d" x 8, split(" ",$val))
+     6  unpack "H*", pack "C*", split " ", $val
+     5  sprintf "%g", $val
+     5  my @v=split " ",$val; "$v[0] (min $v[1], max $v[2])"
+     4  sprintf("%x.%.2x",$val>>8,$val&0xff)
+     4  Image::ExifTool::GoPro::AddUnits($self, $val, $tag)
+     4  return 'Off' if $val == 0 ; my $i = sprintf("Interval %.0f of %.0f",$val, $$self{IntervalShootingIntervals}||0); my $f = ($$self{IntervalShootingShots
+     4  $val=sprintf("%x",$val);$val=~s/(.{3})$/\.$1/;$val
+     4  ucfirst(lc($val))
+     3  my @a = split ' ', $val; $_ = sprintf('%.6f', $_) foreach @a; "@a"
+     3  Image::ExifTool::DecodeBits($val, undef, 16)
+
+## Most frequent hand ports: RawConvInv
+     7  if ($val and $$self{FileType} eq 'CR3' and not $self->Options('QuickTimeUTC')) { my $offset = (66 * 365 + 17) * 24 * 3600; $val = ConvertUnixTime($val
+     7  Image::ExifTool::Samsung::Crypt($self,$val,$tagInfo,"-0",0)
+     6  Image::ExifTool::Samsung::Crypt($self,$val,$tagInfo,"-0")
+     3  Image::ExifTool::Samsung::Crypt($self,$val,$tagInfo,0)
+     2  $val * ($$self{FocalUnits} || 1)
+     2  $val . "\0"
+     2  return $val if $$self{FILE_TYPE} eq "JPEG"; warn "\n"; return undef
+     1  my $focalUnits = $$self{FocalUnits}; unless ($focalUnits) { $focalUnits = 1; $self->Warn("FocalUnits not available for FocalLength conversion (1 assum
+     1  substr("\x4c\0\0\0".$val.("\0"x72), 0, 76)
+     1  GetByteOrder() eq "MM" ? $val : pack("N",unpack("V",$val))
+     1  return $val if length $val < 2; my $order = substr($val, -2); return $val unless $order eq 'II' or $order eq 'MM'; $val = substr($val, 0, -2); return 
+     1  return $val if length $val < 2; my $order = substr($val, -2); return $val unless $order eq 'II' or $order eq 'MM'; $val = substr($val, 0, -2); return 
+     1  my @a = split ' ', $val; return $val if @a <= 2; return pack(GetByteOrder() eq 'II' ? 'v2C*' : 'n2C*', @a)
+     1  $$self{TextEncoding} ? $self->Encode($val,$$self{TextEncoding},"MM") : $val
+     1  my $val = Image::ExifTool::Pentax::CryptShutterCount($val,$self); return pack('N', $val)
+
+## Most frequent hand ports: ValueConvInv
+    30  int($val*6+($val>0?0.5:-0.5))
+    23  Image::ExifTool::Canon::CanonEvInv(1-log($val)/(4*log(2)))+24
+    20  return "\0" x 17 if $val eq "0"; $val = pack("Cc*", $val=~/[-+]?\d+/g); length($val)==17 or warn("Expecting 17 values\n"), return undef; return $val
+    20  my @v=split(" ",$val); $_=int($_/15+0.5) foreach @v; "$v[1] $v[0] $v[3] $v[2]"
+    19  my @a=split " ",$val;$a[0]/=2;$a[3]/=2;"@a"
+    18  $val=~tr/ //d; pack("H*",$val)
+     9  my $t = GetUnixTime($val); return undef unless defined $t; my $s = int($t); my $ms = int(($t - $s) * 1000 + 0.5); $ms = 999 if $ms > 999; return join 
+     7  pack("H*", $val)
+     7  require Image::ExifTool::XMP; my $tmp = Image::ExifTool::XMP::FormatXMPDate($val); ($val = $tmp) =~ s/([-+]\d{2}):(\d{2})$/$1$2/ if defined $tmp; retu
+     7  $val = GetUnixTime($val, $self->Options("QuickTimeUTC")); return undef unless defined $val; return $val unless $val; return $val + (66 * 365 + 17) * 2
+     7  ($val & 0xff00) == 0x8000 ? 0 : int($val)
+     6  my @v = $val =~ /^([0-9a-f]+)\.([0-9a-f]+) (\d{4}):(\d{2}):(\d{2})\s*Rev\.(\w)/i or return undef; pack('CCvCCa', map(hex, @v[0..4]), $v[5])
+     5  $self->Encode($val,"UCS2","II") . "\0\0"
+     5  int(($val <= 10 ? $val - 1 : $val / 10 + 8) + 0.5)
+     4  Image::ExifTool::Canon::CanonEvInv(log($val)*2/log(2))
+
+## Most frequent hand ports: PrintConvInv
+    78  $self->InverseDateTime($val,undef,1)
+    42  $val =~ s/ ?m$//; IsFloat($val) ? $val : 655.35
+    33  $val=~/(\d+)/ ? $1/100 : 1
+    30  $val=~s/\s+/ /g; $val=~tr/()K//d; $val
+    19  $val=~/(\d+)/; $1 || 0
+    18  lc($val) eq "bulb" ? 0 : Image::ExifTool::Exif::ConvertFraction($val)
+    10  $val=~/(-?\d+)/ ? $1 : $val
+     7  return $val if $val eq '0000:00:00 00:00:00'; return $self->InverseDateTime($val)
+     6  ToFloat($val) / 100
+     6  uc($val)
+     6  $val =~ s/\s*V$//
+     5  $val =~ /^(\d(\.?\d*))/ ? $1 / 100 : 255
+     5  join(" ", $val=~/\d+/g)
+     5  $val=~s/ ?%$//; $val * 10.24
+     4  $val eq "inf" ? 0 : $val =~ s/\s*m$//, $val
+
+## Most frequent hand ports: Hook
+     3  $$self{MediaHeaderVersion} and $format = "int64u", $varSize += 4
+     3  $$self{MovieHeaderVersion} and $format = "int64u", $varSize += 4
+     3  $$self{TrackHeaderVersion} and $format = "int64u", $varSize += 4
+     2  $varSize += ($$self{CanonFirm} ? -4 : 0x10000) if $$self{CanonFirm} < 2
+     1  $varSize += $size if $$self{BMPVersion} == 68
+     1  $varSize -= 3 if $$self{CanonFirm} < 3
+     1  $varSize -= 4 if $$self{CanonFirm} < 3; $varSize += 5 if $$self{CanonFirm} == 4
+     1  $varSize += ($$self{CanonFirm} ? -8 : 0x10000) if $$self{CanonFirm} < 2
+     1  $varSize += ($$self{CanonFirm} ? -1 : 0x10000) if $$self{CanonFirm} < 2
+     1  $varSize -= 4 if $$self{CanonFirm} < 2
+     1  $varSize += ($$self{CanonFirm} ? -36 : 0x10000) if $$self{CanonFirm} < 2
+     1  $varSize += ($$self{CanonFirm} ? -1 : 0x10000) if $$self{CanonFirm} < 3
+     1  $varSize -= 3 if $$self{CanonFirm} == 1; $varSize -= 2 if $$self{CanonFirm} == 2; $varSize += 6 if $$self{CanonFirm} >= 4
+     1  $varSize -= 4 if $$self{CanonFirm} < 3; $varSize += 5 if $$self{CanonFirm} > 4
+     1  $varSize -= 8 if $$self{CanonFirm} < 3

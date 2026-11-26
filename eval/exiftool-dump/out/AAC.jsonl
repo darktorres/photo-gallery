@@ -1,0 +1,5 @@
+{"kind":"table","module":"AAC","name":"Image::ExifTool::AAC::Main","special":{"GROUPS":{"0":"AAC","1":"AAC","2":"Audio"},"NOTES":"Tags extracted from Advanced Audio Coding (AAC) files.","PROCESS_PROC":{"code":"&Image::ExifTool::FLAC::ProcessBitStream"},"SHORT_NAME":"AAC::Main","TABLE_NAME":"Image::ExifTool::AAC::Main","TAG_PREFIX":"AAC"}}
+{"fields":{"Name":"ProfileType","PrintConv":{"0":"Main","1":"Low Complexity","2":"Scalable Sampling Rate"}},"id":"Bit016-017","index":null,"kind":"tag","table":"Image::ExifTool::AAC::Main"}
+{"fields":{"Name":"SampleRate","ValueConv":{"0":96000,"1":88200,"10":11025,"11":8000,"12":7350,"2":64000,"3":48000,"4":44100,"5":32000,"6":24000,"7":22050,"8":16000,"9":12000}},"id":"Bit018-021","index":null,"kind":"tag","table":"Image::ExifTool::AAC::Main"}
+{"fields":{"Name":"Channels","PrintConv":{"0":"?","1":1,"2":2,"3":3,"4":4,"5":5,"6":"5+1","7":"7+1"}},"id":"Bit023-025","index":null,"kind":"tag","table":"Image::ExifTool::AAC::Main"}
+{"fields":{"Name":"Encoder","Notes":"taken from filler payload of first frame"},"id":"Encoder","index":null,"kind":"tag","table":"Image::ExifTool::AAC::Main"}

@@ -1,0 +1,25 @@
+{"kind":"table","module":"RTF","name":"Image::ExifTool::RTF::Main","special":{"GROUPS":{"0":"RTF","1":"RTF","2":"Document"},"NOTES":"\n        This table lists standard tags of the RTF information group, but ExifTool\n        will also extract any non-standard tags found in this group.  As well,\n        ExifTool will extract any custom properties that are found.  See\n        L<http://www.microsoft.com/en-ca/download/details.aspx?id=10725> for the\n        specification.\n    ","SHORT_NAME":"RTF::Main","TABLE_NAME":"Image::ExifTool::RTF::Main","TAG_PREFIX":"RTF"}}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"author","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Format":"date","Groups":{"2":"Time"},"Name":"BackupTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"buptim","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Category"},"id":"category","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Comment"},"id":"comment","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Company"},"id":"company","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"copyright","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Format":"date","Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"creatim","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Comments"},"id":"doccomm","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"TotalEditTime","PrintConv":"ConvertTimeSpan($val, 60)"},"id":"edmins","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"HyperlinkBase"},"id":"hlinkbase","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"InternalIDNumber"},"id":"id","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Keywords"},"id":"keywords","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Manager"},"id":"manager","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Characters"},"id":"nofchars","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"CharactersWithSpaces","Notes":"\n            according to the 2007 Microsoft RTF specification this is clearly the number\n            of characters NOT including spaces, but Microsoft Word writes this as the\n            number WITH spaces, so ExifTool names this tag according to the de facto\n            standard\n        "},"id":"nofcharsws","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Pages"},"id":"nofpages","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Words"},"id":"nofwords","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"LastModifiedBy"},"id":"operator","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Format":"date","Groups":{"2":"Time"},"Name":"LastPrinted","PrintConv":"$self->ConvertDateTime($val)"},"id":"printim","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Format":"date","Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)"},"id":"revtim","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Subject"},"id":"subject","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"Title"},"id":"title","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"InternalVersionNumber"},"id":"vern","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}
+{"fields":{"Name":"RevisionNumber"},"id":"version","index":null,"kind":"tag","table":"Image::ExifTool::RTF::Main"}

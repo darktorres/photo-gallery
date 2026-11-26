@@ -1,0 +1,279 @@
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::ALPH","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"WebP alpha chunk.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::ALPH","TABLE_NAME":"Image::ExifTool::RIFF::ALPH","TAG_PREFIX":"RIFF_ALPH"}}
+{"fields":{"BitShift":0,"Mask":3,"Name":"AlphaPreprocessing","PrintConv":{"0":"none","1":"Level Reduction"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ALPH"}
+{"fields":{"BitShift":0,"Mask":3,"Name":"AlphaFiltering","PrintConv":{"0":"none","1":"Horizontal","2":"Vertical","3":"Gradient"}},"id":"0.1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ALPH"}
+{"fields":{"BitShift":0,"Mask":3,"Name":"AlphaCompression","PrintConv":{"0":"none","1":"Lossless"}},"id":"0.2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ALPH"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::ANIM","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"WebP animation chunk.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::ANIM","TABLE_NAME":"Image::ExifTool::RIFF::ANIM","TAG_PREFIX":"RIFF_ANIM"}}
+{"fields":{"Format":"int8u[4]","Name":"BackgroundColor"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ANIM"}
+{"fields":{"Name":"AnimationLoopCount","PrintConv":"$val || \"inf\""},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ANIM"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::ANMF","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"WebP animation frame chunk.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::ANMF","TABLE_NAME":"Image::ExifTool::RIFF::ANMF","TAG_PREFIX":"RIFF_ANMF"}}
+{"fields":{"Format":"int32u","Name":"Duration","Notes":"extracted as the sum of durations of all animation frames","PrintConv":"ConvertDuration($val)","RawConv":"\n            if (defined $$self{VALUE}{Duration}) {\n                $$self{VALUE}{Duration} += $val & 0x0fff;\n                return undef;\n            }\n            return $val & 0x0fff;\n        ","ValueConv":"$val / 1000"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ANMF"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::AVIHeader","special":{"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::AVIHeader","TABLE_NAME":"Image::ExifTool::RIFF::AVIHeader","TAG_PREFIX":"RIFF_AVIHeader"}}
+{"fields":{"Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000","RawConv":"$val ? 1e6 / $val : undef"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"fields":{"Name":"MaxDataRate","Notes":"\n            converted using SI byte prefixes unles the API ByteUnit option is set to\n            \"Binary\"\n        ","PrintConv":"\n            my ($unit, $div) = $self->Options('ByteUnit') eq 'Binary' ? ('KiB/s',1024) : ('kB/s',1000);\n            my $tmp = $val / $div;\n            $tmp > 9999 and $tmp /= $div, $unit =~ s/^./M/;\n            sprintf('%.4g %s', $tmp, $unit);\n        "},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"fields":{"Name":"FrameCount"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"fields":{"Name":"StreamCount"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"fields":{"Name":"ImageWidth"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"fields":{"Name":"ImageHeight"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AVIHeader"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Acidizer","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::Acidizer","TABLE_NAME":"Image::ExifTool::RIFF::Acidizer","TAG_PREFIX":"RIFF_Acidizer"}}
+{"fields":{"Format":"int32u","Name":"AcidizerFlags","PrintConv":{"BITMASK":{"0":"One shot","1":"Root note set","2":"Stretch","3":"Disk-based","4":"High octave"}}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Acidizer"}
+{"fields":{"Format":"int16u","Name":"RootNote","PrintConv":{"48":"C","49":"C#","50":"D","51":"D#","52":"E","53":"F","54":"F#","55":"G","56":"G#","57":"A","58":"A#","59":"B","60":"High C","61":"High C#","62":"High D","63":"High D#","64":"High E","65":"High F","66":"High F#","67":"High G","68":"High G#","69":"High A","70":"High A#","71":"High B"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Acidizer"}
+{"fields":{"Format":"int32u","Name":"Beats"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Acidizer"}
+{"fields":{"Format":"int16u[2]","Name":"Meter","PrintConv":"$val =~ s/(\\d+) (\\d+)/$2\\/$1/; $val"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Acidizer"}
+{"fields":{"Format":"float","Name":"Tempo"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Acidizer"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::AudioFormat","special":{"FORMAT":"int16u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::AudioFormat","TABLE_NAME":"Image::ExifTool::RIFF::AudioFormat","TAG_PREFIX":"RIFF_AudioFormat"}}
+{"fields":{"Name":"Encoding","PrintConv":{"ref":"%Image::ExifTool::RIFF::audioEncoding"},"PrintHex":1,"SeparateTable":"AudioEncoding"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AudioFormat"}
+{"fields":{"Name":"NumChannels"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AudioFormat"}
+{"fields":{"Format":"int32u","Name":"SampleRate"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AudioFormat"}
+{"fields":{"Format":"int32u","Name":"AvgBytesPerSec"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AudioFormat"}
+{"fields":{"Name":"BitsPerSample"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::AudioFormat"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::BroadcastExt","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"NOTES":"\n        Information found in the Broadcast Audio Extension chunk (see\n        L<http://tech.ebu.ch/docs/tech/tech3285.pdf>).\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::BroadcastExt","TABLE_NAME":"Image::ExifTool::RIFF::BroadcastExt","TAG_PREFIX":"RIFF_BroadcastExt"}}
+{"fields":{"Format":"string[256]","Name":"Description"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"string[32]","Name":"Originator"},"id":"256","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"string[32]","Name":"OriginatorReference"},"id":"288","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Description":"Date/Time Original","Format":"string[18]","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$_=$val; tr/-/:/; s/^(\\d{4}:\\d{2}:\\d{2})/$1 /; $_"},"id":"320","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"int32u[2]","Name":"TimeReference","Notes":"first sample count since midnight","ValueConv":"my @v=split(\" \",$val); $v[0] + $v[1] * 4294967296"},"id":"338","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"int16u","Name":"BWFVersion"},"id":"346","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"undef[64]","Name":"BWF_UMID","ValueConv":"$_=unpack(\"H*\",$val); s/0{64}$//; uc $_"},"id":"348","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"fields":{"Format":"string[$size-602]","Name":"CodingHistory"},"id":"602","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::BroadcastExt"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::CSET","special":{"FORMAT":"int16u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::CSET","TABLE_NAME":"Image::ExifTool::RIFF::CSET","TAG_PREFIX":"RIFF_CSET"}}
+{"fields":{"Name":"CodePage","RawConv":"$$self{CodePage} = $val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::CSET"}
+{"fields":{"Name":"CountryCode"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::CSET"}
+{"fields":{"Name":"LanguageCode"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::CSET"}
+{"fields":{"Name":"Dialect"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::CSET"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::DS64","special":{"FORMAT":"int64u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"NOTES":"\n        64-bit data sizes for MBWF/RF64 files.  See\n        L<https://tech.ebu.ch/docs/tech/tech3306-2009.pdf> for the specification.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::DS64","TABLE_NAME":"Image::ExifTool::RIFF::DS64","TAG_PREFIX":"RIFF_DS64"}}
+{"fields":{"Name":"RIFFSize64","PrintConv":{"code":"&Image::ExifTool::ConvertFileSize"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::DS64"}
+{"fields":{"DataMember":"DataSize64","Name":"DataSize64","PrintConv":{"code":"&Image::ExifTool::ConvertFileSize"},"RawConv":"$$self{DataSize64} = $val"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::DS64"}
+{"fields":{"Name":"NumberOfSamples64"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::DS64"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Exif","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"NOTES":"These tags are part of the EXIF 2.3 specification for WAV audio files.","PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Exif","TABLE_NAME":"Image::ExifTool::RIFF::Exif","TAG_PREFIX":"RIFF_Exif"}}
+{"fields":{"Groups":{"2":"Camera"},"Name":"Make"},"id":"ecor","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Description":"Camera Model Name","Groups":{"2":"Camera"},"Name":"Model"},"id":"emdl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Binary":1,"Name":"MakerNotes"},"id":"emnt","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Name":"RelatedImageFile"},"id":"erel","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeCreated"},"id":"etim","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Name":"UserComment","PrintConv":"Image::ExifTool::Exif::ConvertExifText($self,$val,\"RIFF:UserComment\")"},"id":"eucm","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"fields":{"Name":"ExifVersion"},"id":"ever","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Exif"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::ExtAVIHdr","special":{"FORMAT":"int32u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::ExtAVIHdr","TABLE_NAME":"Image::ExifTool::RIFF::ExtAVIHdr","TAG_PREFIX":"RIFF_ExtAVIHdr"}}
+{"fields":{"Name":"TotalFrameCount"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::ExtAVIHdr"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Hdrl","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Hdrl","TABLE_NAME":"Image::ExifTool::RIFF::Hdrl","TAG_PREFIX":"RIFF_Hdrl"}}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"Image::ExifTool::RIFF::ConvertRIFFDate($val)"},"id":"IDIT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Hdrl"}
+{"fields":{"Name":"TimeCode"},"id":"ISMP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Hdrl"}
+{"fields":{"Name":"OpenDML","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::OpenDML"}},"id":"LIST_odml","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Hdrl"}
+{"fields":{"Name":"Stream","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Stream"}},"id":"LIST_strl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Hdrl"}
+{"fields":{"Name":"AVIHeader","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::AVIHeader"}},"id":"avih","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Hdrl"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Info","special":{"FORMAT":"string","GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"NOTES":"\n        RIFF INFO tags found in AVI video and WAV audio files.  Tags which are part\n        of the EXIF 2.3 specification have an underlined Tag Name in the HTML\n        version of this documentation.  Other tags are found in AVI files generated\n        by some software.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Info","TABLE_NAME":"Image::ExifTool::RIFF::Info","TAG_PREFIX":"RIFF_Info"}}
+{"fields":{"Name":"Rated"},"id":"AGES","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"Comment"},"id":"CMNT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"EncodedBy"},"id":"CODE","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Comments"},"id":"COMM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Directory"},"id":"DIRC","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SoundSchemeTitle"},"id":"DISP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n            my @v = split ' ', $val;\n            return undef unless @v == 2;\n            # the Kodak EASYSHARE Sport stores this incorrectly as a string:\n            return $val if $val =~ /^\\d{4}:\\d{2}:\\d{2} \\d{2}:\\d{2}:\\d{2}$/;\n            # get time in seconds\n            $val = 1e-7 * ($v[0] * 4294967296 + $v[1]);\n            # shift from Jan 1, 1601 to Jan 1, 1970\n            $val -= 134774 * 24 * 3600 if $val != 0;\n            return Image::ExifTool::ConvertUnixTime($val);\n        "},"id":"DTIM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Genre"},"id":"GENR","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"ArchivalLocation"},"id":"IARL","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"IART","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"FirstLanguage"},"id":"IAS1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SecondLanguage"},"id":"IAS2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"ThirdLanguage"},"id":"IAS3","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"FourthLanguage"},"id":"IAS4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"FifthLanguage"},"id":"IAS5","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SixthLanguage"},"id":"IAS6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SeventhLanguage"},"id":"IAS7","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"EighthLanguage"},"id":"IAS8","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"NinthLanguage"},"id":"IAS9","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"BaseURL"},"id":"IBSU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"DefaultAudioStream"},"id":"ICAS","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"CostumeDesigner"},"id":"ICDS","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Commissioned"},"id":"ICMS","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Comment"},"id":"ICMT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Cinematographer"},"id":"ICNM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Country"},"id":"ICNT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"ICOP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateCreated","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"$_=$val; s/-/:/g; $_"},"id":"ICRD","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Cropped"},"id":"ICRP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Dimensions"},"id":"IDIM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"Image::ExifTool::RIFF::ConvertRIFFDate($val)"},"id":"IDIT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"DotsPerInch"},"id":"IDPI","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"DistributedBy"},"id":"IDST","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"EditedBy"},"id":"IEDT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"EncodedBy"},"id":"IENC","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Engineer"},"id":"IENG","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Genre"},"id":"IGNR","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Keywords"},"id":"IKEY","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Lightness"},"id":"ILGT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"LogoURL"},"id":"ILGU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"LogoIconURL"},"id":"ILIU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Language"},"id":"ILNG","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"MoreInfoBannerImage"},"id":"IMBI","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"MoreInfoBannerURL"},"id":"IMBU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Medium"},"id":"IMED","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"MoreInfoText"},"id":"IMIT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"MoreInfoURL"},"id":"IMIU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"MusicBy"},"id":"IMUS","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Title"},"id":"INAM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"ProductionDesigner"},"id":"IPDS","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"NumColors"},"id":"IPLT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Product"},"id":"IPRD","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"ProducedBy"},"id":"IPRO","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"RippedBy"},"id":"IRIP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Rating"},"id":"IRTD","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Subject"},"id":"ISBJ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Software","ValueConv":"$_=$val; s/(\\s*\\0)+$//; s/(\\s*\\0)/, /; s/\\0+//g; $_"},"id":"ISFT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SecondaryGenre"},"id":"ISGN","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Sharpness"},"id":"ISHP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"TimeCode"},"id":"ISMP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Source"},"id":"ISRC","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"SourceForm"},"id":"ISRF","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"ProductionStudio"},"id":"ISTD","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Starring"},"id":"ISTR","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Technician"},"id":"ITCH","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"TrackNumber"},"id":"ITRK","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"WatermarkURL"},"id":"IWMU","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"WrittenBy"},"id":"IWRI","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Language"},"id":"LANG","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Location"},"id":"LOCA","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Part"},"id":"PRT1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"NumberOfParts"},"id":"PRT2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"Rate"},"id":"RATE","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Starring"},"id":"STAR","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"Statistics","PrintConv":["\"$val frames captured\"","\"$val dropped\"","\"Data rate $val\"",{"0":"Bad","1":"OK"}]},"id":"STAT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"TapeName"},"id":"TAPE","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"EndTimecode","PrintConv":{"code":"&Image::ExifTool::RIFF::ConvertTimecode"},"ValueConv":"$val * 1e-7"},"id":"TCDO","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"StartTimecode","PrintConv":{"code":"&Image::ExifTool::RIFF::ConvertTimecode"},"ValueConv":"$val * 1e-7"},"id":"TCOD","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Title"},"id":"TITL","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Length","PrintConv":"\"$val s\"","ValueConv":"$val/1000"},"id":"TLEN","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Organization"},"id":"TORG","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"TrackNumber"},"id":"TRCK","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"URL"},"id":"TURL","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Version"},"id":"TVER","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"VegasVersionMajor"},"id":"VMAJ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Groups":{"2":"Video"},"Name":"VegasVersionMinor"},"id":"VMIN","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"fields":{"Name":"Year"},"id":"YEAR","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Info"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Instrument","special":{"FORMAT":"int8s","GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::Instrument","TABLE_NAME":"Image::ExifTool::RIFF::Instrument","TAG_PREFIX":"RIFF_Instrument"}}
+{"fields":{"Name":"UnshiftedNote"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"FineTune"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"Gain"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"LowNote"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"HighNote"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"LowVelocity"},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"fields":{"Name":"HighVelocity"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Instrument"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Main","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Other"},"NOTES":"\n        The RIFF container format is used various types of fines including AVI, WAV,\n        WEBP, LA, OFR, PAC and WV.  According to the EXIF specification, Meta\n        information is embedded in two types of RIFF C<LIST> chunks: C<INFO> and\n        C<exif>, and information about the audio content is stored in the C<fmt >\n        chunk.  As well as this information, some video information and proprietary\n        manufacturer-specific information is also extracted.\n\n        Large AVI videos may be a concatenation of two or more RIFF chunks.  For\n        these files, information is extracted from subsequent RIFF chunks as\n        sub-documents, but the Duration is calculated for the full video.\n\n        ExifTool currently has the ability to write EXIF, XMP and ICC_Profile\n        metadata to WEBP images, but can't yet write to other RIFF-based formats.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Main","TABLE_NAME":"Image::ExifTool::RIFF::Main","TAG_PREFIX":"RIFF"}}
+{"fields":{"Name":"ALPH","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::ALPH"}},"id":"ALPH","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ANIM","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::ANIM"}},"id":"ANIM","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ANMF","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::ANMF"}},"id":"ANMF","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Deletable":1,"Name":"JUMBF","SubDirectory":{"TagTable":"Image::ExifTool::Jpeg2000::Main"}},"id":"C2PA","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"CharacterSet","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::CSET"}},"id":"CSET","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^(II\\x2a\\0|MM\\0\\x2a)/","Index":0,"Name":"EXIF","Notes":"WebP files","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"TagTable":"Image::ExifTool::Exif::Main"}},"id":"EXIF","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^Exif\\0\\0(II\\x2a\\0|MM\\0\\x2a)/ and ($self->Warn(\"Improper EXIF header\",1) or 1)","Index":1,"Name":"EXIF","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"Start":6,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"EXIF","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Binary":1,"Index":2,"Name":"UnknownEXIF"},"id":"EXIF","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ICC_Profile","Notes":"WebP files","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"ICCP","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ID3-2","SubDirectory":{"TagTable":"Image::ExifTool::ID3::Main"}},"id":"ID3 ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"Image::ExifTool::RIFF::ConvertRIFFDate($val)"},"id":"IDIT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^OLYMDigital Camera/","Index":0,"Name":"OlympusJunk","SubDirectory":{"TagTable":"Image::ExifTool::Olympus::AVI"}},"id":"JUNK","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^QVMI/","Index":1,"Name":"CasioJunk","SubDirectory":{"ByteOrder":"BigEndian","DirName":"IFD0","Multi":0,"Start":10,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"JUNK","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^ucmt/","Index":2,"Name":"RicohJunk","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"TagTable":"Image::ExifTool::Ricoh::AVI"}},"id":"JUNK","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^IIII\\x01\\0/","Index":3,"Name":"PentaxJunk","SubDirectory":{"TagTable":"Image::ExifTool::Pentax::Junk"}},"id":"JUNK","index":3,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^PENTDigital Camera/","Index":4,"Name":"PentaxJunk2","SubDirectory":{"TagTable":"Image::ExifTool::Pentax::Junk2"}},"id":"JUNK","index":4,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^0G(DA|PS)/","Index":5,"Name":"LucasJunk","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessLucas"},"TagTable":"Image::ExifTool::QuickTime::Stream"}},"id":"JUNK","index":5,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Index":6,"Name":"TextJunk","RawConv":"$val =~ /^([^\\0-\\x1f\\x7f-\\xff]+)\\0*$/ ? $1 : undef"},"id":"JUNK","index":6,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Binary":1,"Name":"OldXMP"},"id":"JUNQ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Info","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Info"}},"id":"LIST_INF0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Info","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Info"}},"id":"LIST_INFO","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Tdat","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Tdat"}},"id":"LIST_Tdat","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"AssociatedDataList","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Main"}},"id":"LIST_adtl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Exif","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Exif"}},"id":"LIST_exif","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Hdrl","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Hdrl"}},"id":"LIST_hdrl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"PentaxData","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"TagTable":"Image::ExifTool::Pentax::AVI"}},"id":"LIST_hydt","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"NikonData","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"TagTable":"Image::ExifTool::Nikon::AVI"}},"id":"LIST_ncdt","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"PentaxData2","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"TagTable":"Image::ExifTool::Pentax::AVI"}},"id":"LIST_pntx","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"SEAL","SubDirectory":{"TagTable":"Image::ExifTool::XMP::SEAL"}},"id":"SEAL","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"BikeBroAccel","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessSGLT"},"TagTable":"Image::ExifTool::QuickTime::Stream"}},"id":"SGLT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"BikeBroGPS","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::RIFF::ProcessSLLT"},"TagTable":"Image::ExifTool::QuickTime::Stream"}},"id":"SLLT","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^...\\x9d\\x01\\x2a/s","Name":"VP8Bitstream","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::VP8"}},"id":"VP8 ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$$valPt =~ /^\\x2f/","Name":"VP8L","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::VP8L"}},"id":"VP8L","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"VP8X","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::VP8X"}},"id":"VP8X","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Condition":"$self->Warn(\"Incorrect XMP tag ID\", 1) or 1","Name":"XMP","Notes":"incorrectly written WebP files","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"XMP\u0000","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"XMP","Notes":"WebP files","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"XMP ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"XMP","Notes":"AVI and WAV files","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"_PMX","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"AXML","SubDirectory":{"TagTable":"Image::ExifTool::XMP::XML"}},"id":"aXML","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Acidizer","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Acidizer"}},"id":"acid","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Afsp"},"id":"afsp","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"BroadcastExtension","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::BroadcastExt"}},"id":"bext","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Binary":1,"Name":"CuePoints","Notes":"\n            config_files/cutepointlist.config from full distribution will decode this\n            and generate a list of cue points with labels\n        "},"id":"cue ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"DataSize64","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::DS64"}},"id":"ds64","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"NumberOfSamples","RawConv":"Get32u(\\$val, 0)"},"id":"fact","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"AudioFormat","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::AudioFormat"}},"id":"fmt ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"GPSTrack","SetGroups":"RIFF","SubDirectory":{"ProcessProc":"Image::ExifTool::QuickTime::Process_gps0","TagTable":"Image::ExifTool::QuickTime::Stream"}},"id":"gps0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"GSensor","SetGroups":"RIFF","SubDirectory":{"ProcessProc":"Image::ExifTool::QuickTime::Process_gsen","TagTable":"Image::ExifTool::QuickTime::Stream"}},"id":"gsen","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Guano"},"id":"guan","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"IXML","SubDirectory":{"TagTable":"Image::ExifTool::XMP::XML"}},"id":"iXML","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ID3","SubDirectory":{"TagTable":"Image::ExifTool::ID3::Main"}},"id":"id3 ","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Instrument","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Instrument"}},"id":"inst","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"CuePointLabel","Priority":0,"ValueConv":"my $str=substr($val,4); $str=~s/\\0+$//; unpack(\"V\",$val) . \" \" . $str"},"id":"labl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"ListType"},"id":"list","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"LabeledText","Notes":"CuePointID Length Purpose Country Language Dialect Codepage Text","Priority":0,"ValueConv":"\n            my @a = unpack('VVa4vvvv', $val);\n            $a[2] = \"'$a[2]'\";\n            my $txt = substr($val, 18);\n            $txt =~ s/\\0+$//;   # remove null terminator\n            return join(' ', @a, $txt);\n        "},"id":"ltxt","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"CuePointNote","Priority":0,"ValueConv":"my $str=substr($val,4); $str=~s/\\0+$//; unpack(\"V\",$val) . \" \" . $str"},"id":"note","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Olym","SubDirectory":{"TagTable":"Image::ExifTool::Olympus::WAV"}},"id":"olym","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Binary":1,"Name":"Playlist"},"id":"plst","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Sampler","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::Sampler"}},"id":"smpl","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"UserText","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::UserText"}},"id":"tx_USER","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"fields":{"Name":"Text","Notes":"streamed text, extracted when the ExtractEmbedded option is used"},"id":"tx_Unknown","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Main"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::OpenDML","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::OpenDML","TABLE_NAME":"Image::ExifTool::RIFF::OpenDML","TAG_PREFIX":"RIFF_OpenDML"}}
+{"fields":{"Name":"ExtendedAVIHeader","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::ExtAVIHdr"}},"id":"dmlh","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::OpenDML"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Sampler","special":{"FORMAT":"int32u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::Sampler","TABLE_NAME":"Image::ExifTool::RIFF::Sampler","TAG_PREFIX":"RIFF_Sampler"}}
+{"fields":{"Name":"Manufacturer"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"Product"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"SamplePeriod"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"MIDIUnityNote"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"MIDIPitchFraction"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"SMPTEFormat","PrintConv":{"0":"none","24":"24 fps","25":"25 fps","29":"29 fps","30":"30 fps"}},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"SMPTEOffset","Notes":"HH:MM:SS:FF","ValueConv":"\n            my $str = sprintf('%.8x', $val);\n            $str =~ s/(..)(..)(..)(..)/$1:$2:$3:$4/;\n            return $str;\n        "},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"NumSampleLoops"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Name":"SamplerDataLen"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"fields":{"Binary":1,"Format":"undef[$size-40]","Name":"SamplerData"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Sampler"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Stream","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Stream","TABLE_NAME":"Image::ExifTool::RIFF::Stream","TAG_PREFIX":"RIFF_Stream"}}
+{"fields":{"Name":"StreamData","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::StreamData"}},"id":"strd","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"auds\"","Index":0,"Name":"AudioFormat","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::AudioFormat"}},"id":"strf","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"vids\"","Index":1,"Name":"VideoFormat","SubDirectory":{"TagTable":"Image::ExifTool::BMP::Main"}},"id":"strf","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"txts\"","Hidden":1,"Index":2,"Name":"TextFormat","RawConv":"$self->Options(\"ExtractEmbedded\") or $self->Warn(\"Use ExtractEmbedded option to extract timed text\",3); undef"},"id":"strf","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"fields":{"Name":"StreamHeader","SubDirectory":{"TagTable":"Image::ExifTool::RIFF::StreamHeader"}},"id":"strh","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"fields":{"Name":"StreamName"},"id":"strn","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::Stream"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::StreamData","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"NOTES":"\n        This chunk is used to store proprietary information in AVI videos from some\n        cameras.  The first 4 characters of the data are used as the Tag ID below.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessStreamData"},"SHORT_NAME":"RIFF::StreamData","TABLE_NAME":"Image::ExifTool::RIFF::StreamData","TAG_PREFIX":"RIFF_StreamData"}}
+{"fields":{"Name":"AVIF","SubDirectory":{"ByteOrder":"LittleEndian","DirName":"IFD0","Start":8,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"AVIF","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamData"}
+{"fields":{"Name":"CasioData","SubDirectory":{"TagTable":"Image::ExifTool::Casio::AVI"}},"id":"CASI","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamData"}
+{"fields":{"Name":"VendorName"},"id":"Zora","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamData"}
+{"fields":{"Name":"UnknownData","RawConv":"$_=$val; /^[^\\0-\\x1f\\x7f-\\xff]+$/ ? $_ : undef"},"id":"unknown","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamData"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::StreamHeader","special":{"FIRST_ENTRY":0,"FORMAT":"int32u","GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::StreamHeader","TABLE_NAME":"Image::ExifTool::RIFF::StreamHeader","TAG_PREFIX":"RIFF_StreamHeader"}}
+{"fields":{"Format":"string[4]","Name":"StreamType","PrintConv":{"auds":"Audio","iavs":"Interleaved Audio+Video","mids":"MIDI","txts":"Text","vids":"Video"},"RawConv":"$$self{RIFFStreamNum} = ($$self{RIFFStreamNum} || 0) + 1; $$self{RIFFStreamType} = $val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"auds\"","Format":"string[4]","Index":0,"Name":"AudioCodec","RawConv":"$$self{RIFFStreamCodec}[$$self{RIFFStreamNum}-1] = $val"},"id":"1","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"vids\"","Format":"string[4]","Index":1,"Name":"VideoCodec","RawConv":"$$self{RIFFStreamCodec}[$$self{RIFFStreamNum}-1] = $val"},"id":"1","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Format":"string[4]","Index":2,"Name":"Codec","RawConv":"$$self{RIFFStreamCodec}[$$self{RIFFStreamNum}-1] = $val"},"id":"1","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"auds\"","Format":"rational64u","Index":0,"Name":"AudioSampleRate","PrintConv":"int($val * 100 + 0.5) / 100","ValueConv":"$val ? 1/$val : 0"},"id":"5","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"vids\"","Format":"rational64u","Index":1,"Name":"VideoFrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000","RawConv":"$val ? 1/$val : undef"},"id":"5","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Format":"rational64u","Index":2,"Name":"StreamSampleRate","PrintConv":"int($val * 1000 + 0.5) / 1000","ValueConv":"$val ? 1/$val : 0"},"id":"5","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"auds\"","Index":0,"Name":"AudioSampleCount"},"id":"8","index":0,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Condition":"$$self{RIFFStreamType} eq \"vids\"","Index":1,"Name":"VideoFrameCount"},"id":"8","index":1,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Index":2,"Name":"StreamSampleCount"},"id":"8","index":2,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Name":"Quality","PrintConv":"$val eq 0xffffffff ? \"Default\" : $val"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"fields":{"Name":"SampleSize","PrintConv":"$val ? \"$val byte\" . ($val==1 ? \"\" : \"s\") : \"Variable\""},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::StreamHeader"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::Tdat","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Video"},"PROCESS_PROC":{"code":"&Image::ExifTool::RIFF::ProcessChunks"},"SHORT_NAME":"RIFF::Tdat","TABLE_NAME":"Image::ExifTool::RIFF::Tdat","TAG_PREFIX":"RIFF_Tdat"}}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::UserText","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Location"},"NOTES":"\n        Tags decoded from the USER-format txts stream written by Momento M6 dashcam.\n        Extracted only if the ExtractEmbedded option is used.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::UserText","TABLE_NAME":"Image::ExifTool::RIFF::UserText","TAG_PREFIX":"RIFF_UserText"}}
+{"fields":{"Format":"int32u","Name":"GPSAltitude","ValueConv":"$val / 10"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"fields":{"Format":"float[3]","Name":"Accelerometer"},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"fields":{"Format":"float","Name":"GPSSpeed"},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"fields":{"Format":"float","Name":"GPSLatitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"N\")","ValueConv":"my $deg = int($val / 100); $deg + ($val - $deg * 100) / 60"},"id":"60","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"fields":{"Format":"float","Name":"GPSLongitude","PrintConv":"Image::ExifTool::GPS::ToDMS($self, $val, 1, \"E\")","ValueConv":"my $deg = int($val / 100); -($deg + ($val - $deg * 100) / 60)"},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"fields":{"Description":"GPS Date/Time","Format":"int32u","Groups":{"2":"Time"},"Name":"GPSDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val)"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::UserText"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::VP8","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"\n        This chunk is found in simple-format (lossy) WebP files. See\n        L<https://developers.google.com/speed/webp/docs/riff_container> for the WebP\n        container specification.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::VP8","TABLE_NAME":"Image::ExifTool::RIFF::VP8","TAG_PREFIX":"RIFF_VP8"}}
+{"fields":{"BitShift":1,"Mask":14,"Name":"VP8Version","PrintConv":{"0":"0 (bicubic reconstruction, normal loop)","1":"1 (bilinear reconstruction, simple loop)","2":"2 (bilinear reconstruction, no loop)","3":"3 (no reconstruction, no loop)"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8"}
+{"fields":{"BitShift":0,"Format":"int16u","Mask":16383,"Name":"ImageWidth","Priority":0},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8"}
+{"fields":{"BitShift":14,"Format":"int16u","Mask":49152,"Name":"HorizontalScale"},"id":"6.1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8"}
+{"fields":{"BitShift":0,"Format":"int16u","Mask":16383,"Name":"ImageHeight","Priority":0},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8"}
+{"fields":{"BitShift":14,"Format":"int16u","Mask":49152,"Name":"VerticalScale"},"id":"8.1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::VP8L","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"This chunk is found in lossless WebP files.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::VP8L","TABLE_NAME":"Image::ExifTool::RIFF::VP8L","TAG_PREFIX":"RIFF_VP8L"}}
+{"fields":{"Format":"int16u","Name":"ImageWidth","Priority":0,"RawConv":"\n            $self->OverrideFileType($$self{VALUE}{FileType} . ' (lossless)', undef, 'webp');\n            return $val;\n        ","ValueConv":"($val & 0x3fff) + 1"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8L"}
+{"fields":{"Format":"int32u","Name":"ImageHeight","Priority":0,"ValueConv":"(($val >> 6) & 0x3fff) + 1"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8L"}
+{"fields":{"BitShift":4,"Mask":16,"Name":"AlphaIsUsed","PrintConv":{"0":"No","1":"Yes"}},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8L"}
+{"kind":"table","module":"RIFF","name":"Image::ExifTool::RIFF::VP8X","special":{"GROUPS":{"0":"RIFF","1":"RIFF","2":"Image"},"NOTES":"This chunk is found in extended WebP files.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"RIFF::VP8X","TABLE_NAME":"Image::ExifTool::RIFF::VP8X","TAG_PREFIX":"RIFF_VP8X"}}
+{"fields":{"Description":"WebP Flags","Format":"int32u","Name":"WebP_Flags","Notes":"flags used in Extended WebP images","PrintConv":{"BITMASK":{"1":"Animation","2":"XMP","3":"EXIF","4":"Alpha","5":"ICC Profile"}}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8X"}
+{"fields":{"Format":"int32u","Name":"ImageWidth","ValueConv":"($val & 0xffffff) + 1"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8X"}
+{"fields":{"Format":"int32u","Name":"ImageHeight","ValueConv":"($val >> 8) + 1"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::RIFF::VP8X"}

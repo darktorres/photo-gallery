@@ -1,0 +1,10 @@
+{"kind":"table","module":"FLIF","name":"Image::ExifTool::FLIF::Main","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"\n        Information extracted from Free Lossless Image Format files.  See\n        L<http://flif.info/> for more information.\n    ","SHORT_NAME":"FLIF::Main","TABLE_NAME":"Image::ExifTool::FLIF::Main","TAG_PREFIX":"FLIF","VARS":{"ID_FMT":"dec"}}}
+{"fields":{"Name":"ImageType","PrintConv":{"1":"Grayscale (non-interlaced)","3":"RGB (non-interlaced)","4":"RGBA (non-interlaced)","A":"Grayscale (interlaced)","C":"RGB (interlaced)","D":"RGBA (interlaced)","Q":"Grayscale Animation (non-interlaced)","S":"RGB Animation (non-interlaced)","T":"RGBA Animation (non-interlaced)","a":"Grayscale Animation (interlaced)","c":"RGB Animation (interlaced)","d":"RGBA Animation (interlaced)"}},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"BitDepth","PrintConv":{"0":"Custom","1":8,"2":16}},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"ImageWidth"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"ImageHeight"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"AnimationFrames"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"Encoding","PrintConv":{"0":"FLIF16"}},"id":"5","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"EXIF","SubDirectory":{"Header":"Exif\u0000\u0000","ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"Start":6,"TagTable":"Image::ExifTool::Exif::Main","WriteProc":{"code":"&Image::ExifTool::WriteTIFF"}}},"id":"eXif","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"eXmp","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}
+{"fields":{"Name":"ICC_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"iCCP","index":null,"kind":"tag","table":"Image::ExifTool::FLIF::Main"}

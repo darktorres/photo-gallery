@@ -1,0 +1,2 @@
+{"kind":"table","module":"Unknown","name":"Image::ExifTool::Unknown::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"MakerUnknown","2":"Camera"},"SHORT_NAME":"Unknown::Main","TABLE_NAME":"Image::ExifTool::Unknown::Main","TAG_PREFIX":"Unknown","WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Description":"Print Image Matching","Name":"PrintIM","SubDirectory":{"TagTable":"Image::ExifTool::PrintIM::Main"}},"id":"3584","index":null,"kind":"tag","table":"Image::ExifTool::Unknown::Main"}

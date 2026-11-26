@@ -1,0 +1,24 @@
+{"kind":"table","module":"AIFF","name":"Image::ExifTool::AIFF::Comment","special":{"GROUPS":{"0":"AIFF","1":"AIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::AIFF::ProcessComment"},"SHORT_NAME":"AIFF::Comment","TABLE_NAME":"Image::ExifTool::AIFF::Comment","TAG_PREFIX":"AIFF_Comment"}}
+{"id":"shared00001","kind":"shared","value":{"2":"Time"}}
+{"fields":{"Groups":{"ref":"shared00001"},"Name":"CommentTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val - ((66 * 365 + 17) * 24 * 3600))"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Comment"}
+{"fields":{"Name":"MarkerID"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Comment"}
+{"fields":{"Name":"Comment","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Comment"}
+{"kind":"table","module":"AIFF","name":"Image::ExifTool::AIFF::Common","special":{"FORMAT":"int16u","GROUPS":{"0":"AIFF","1":"AIFF","2":"Audio"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"AIFF::Common","TABLE_NAME":"Image::ExifTool::AIFF::Common","TAG_PREFIX":"AIFF_Common"}}
+{"fields":{"Name":"NumChannels"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"fields":{"Format":"int32u","Name":"NumSampleFrames"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"fields":{"Name":"SampleSize"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"fields":{"Format":"extended","Name":"SampleRate"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"fields":{"Format":"string[4]","Name":"CompressionType","PrintConv":{"ACE2":"ACE 2-to-1","ACE8":"ACE 8-to-3","ALAW":"A-law","G722":"G722","G726":"G726","G728":"G728","GSM ":"GSM","MAC3":"MAC 3-to-1","MAC6":"MAC 6-to-1","NONE":"None","ULAW":"Mu-law","alaw":"a-law","sowt":"Little-endian, no compression","ulaw":"mu-law"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"fields":{"Format":"pstring","Name":"CompressorName","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Common"}
+{"kind":"table","module":"AIFF","name":"Image::ExifTool::AIFF::FormatVers","special":{"FORMAT":"int32u","GROUPS":{"0":"AIFF","1":"AIFF","2":"Other"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"AIFF::FormatVers","TABLE_NAME":"Image::ExifTool::AIFF::FormatVers","TAG_PREFIX":"AIFF_FormatVers"}}
+{"fields":{"Groups":{"ref":"shared00001"},"Name":"FormatVersionTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"ConvertUnixTime($val - ((66 * 365 + 17) * 24 * 3600))"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::FormatVers"}
+{"kind":"table","module":"AIFF","name":"Image::ExifTool::AIFF::Main","special":{"GROUPS":{"0":"AIFF","1":"AIFF","2":"Audio"},"NOTES":"\n        Tags extracted from Audio Interchange File Format (AIFF) files.  See\n        L<http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/AIFF/AIFF.html> for\n        the AIFF specification.\n    ","SHORT_NAME":"AIFF::Main","TABLE_NAME":"Image::ExifTool::AIFF::Main","TAG_PREFIX":"AIFF"}}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"(c) ","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"Annotation","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"ANNO","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"ApplicationData"},"id":"APPL","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"AUTH","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"Common","SubDirectory":{"TagTable":"Image::ExifTool::AIFF::Common"}},"id":"COMM","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"Comment","SubDirectory":{"TagTable":"Image::ExifTool::AIFF::Comment"}},"id":"COMT","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"FormatVersion","SubDirectory":{"TagTable":"Image::ExifTool::AIFF::FormatVers"}},"id":"FVER","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"ID3","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ID3::ProcessID3"},"TagTable":"Image::ExifTool::ID3::Main"}},"id":"ID3 ","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}
+{"fields":{"Name":"Name","ValueConv":"$self->Decode($val, \"MacRoman\")"},"id":"NAME","index":null,"kind":"tag","table":"Image::ExifTool::AIFF::Main"}

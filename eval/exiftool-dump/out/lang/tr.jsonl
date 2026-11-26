@@ -1,0 +1,189 @@
+{"kind":"translate","lang":"tr","tag":"Album","value":"Albüm"}
+{"kind":"translate","lang":"tr","tag":"Aperture","value":"Açıklık"}
+{"kind":"translate","lang":"tr","tag":"ApertureValue","value":"Açıklık"}
+{"kind":"translate","lang":"tr","tag":"Artist","value":"Sanatçı"}
+{"kind":"translate","lang":"tr","tag":"Author","value":"Yazar"}
+{"kind":"translate","lang":"tr","tag":"AuthorsPosition","value":"Yazarın Pozisyonu"}
+{"kind":"translate","lang":"tr","tag":"BitsPerSample","value":"Komponent başına bit sayısı"}
+{"kind":"translate","lang":"tr","tag":"Brightness","value":"Parlaklık"}
+{"kind":"translate","lang":"tr","tag":"By-line","value":"Yazar"}
+{"kind":"translate","lang":"tr","tag":"CFAPattern","value":"CFA deseni"}
+{"kind":"translate","lang":"tr","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"Bulutlu Hava","Cool White Fluorescent":"Soğuk beyaz floresan (W 3800 - 4500K)","Day White Fluorescent":"Gün beyaz floresan (N 4600 - 5500K)","Daylight":"Günışığı","Daylight Fluorescent":"Günışığı floresan (D 5700 - 7100K)","Fine Weather":"İyi hava","Flash":"Flaş","Fluorescent":"Floresan","ISO Studio Tungsten":"ISO stüdyo tungsten","Other":"Diğer ışık kaynağı","Shade":"Gölge","Standard Light A":"Standard Işık A","Standard Light B":"Standard Işık B","Standard Light C":"Standard Işık C","Tungsten (Incandescent)":"Tungsten","Unknown":"Bilinmeyen","White Fluorescent":"Beyaz floresan (WW 3250 - 3800K)"}}}
+{"kind":"translate","lang":"tr","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"Bulutlu Hava","Cool White Fluorescent":"Soğuk beyaz floresan (W 3800 - 4500K)","Day White Fluorescent":"Gün beyaz floresan (N 4600 - 5500K)","Daylight":"Günışığı","Daylight Fluorescent":"Günışığı floresan (D 5700 - 7100K)","Fine Weather":"İyi hava","Flash":"Flaş","Fluorescent":"Floresan","ISO Studio Tungsten":"ISO stüdyo tungsten","Other":"Diğer ışık kaynağı","Shade":"Gölge","Standard Light A":"Standard Işık A","Standard Light B":"Standard Işık B","Standard Light C":"Standard Işık C","Tungsten (Incandescent)":"Tungsten","Unknown":"Bilinmeyen","White Fluorescent":"Beyaz floresan (WW 3250 - 3800K)"}}}
+{"kind":"translate","lang":"tr","tag":"Caption-Abstract","value":"Açıklama"}
+{"kind":"translate","lang":"tr","tag":"CaptionWriter","value":"Açıklama Yazarı"}
+{"kind":"translate","lang":"tr","tag":"Categories","value":"Kategoriler"}
+{"kind":"translate","lang":"tr","tag":"Category","value":"Kategoriler"}
+{"kind":"translate","lang":"tr","tag":"City","value":"Şehir"}
+{"kind":"translate","lang":"tr","tag":"ColorFilter","value":"Renk Filtresi"}
+{"kind":"translate","lang":"tr","tag":"ColorSpace","value":{"Description":"Renk alanı bilgisi","PrintConv":{"Uncalibrated":"Kalibre edilmemiş"}}}
+{"kind":"translate","lang":"tr","tag":"ColorTemperature","value":"Renk Sıcaklığı"}
+{"kind":"translate","lang":"tr","tag":"Comment","value":"Yorum"}
+{"kind":"translate","lang":"tr","tag":"ComponentsConfiguration","value":"Her komponentin anlamı"}
+{"kind":"translate","lang":"tr","tag":"CompressedBitsPerPixel","value":"İmaj sıkıştıma modu"}
+{"kind":"translate","lang":"tr","tag":"Compression","value":{"Description":"Sıkıştırma planı","PrintConv":{"JPEG":"JPEG Sıkıştırma","Uncompressed":"Sıkıştırılmamış"}}}
+{"kind":"translate","lang":"tr","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Sert","Low":"Yumuşak","Normal":"Standard"}}}
+{"kind":"translate","lang":"tr","tag":"Copyright","value":"Telif hakkı sahibi"}
+{"kind":"translate","lang":"tr","tag":"CopyrightNotice","value":"Telif Hakkı Uyarısı"}
+{"kind":"translate","lang":"tr","tag":"Country","value":"Ülke"}
+{"kind":"translate","lang":"tr","tag":"Country-PrimaryLocationName","value":"Ülke"}
+{"kind":"translate","lang":"tr","tag":"CreateDate","value":"Oluşturma Tarihi"}
+{"kind":"translate","lang":"tr","tag":"CreationDate","value":"Yaratılış tarihi"}
+{"kind":"translate","lang":"tr","tag":"Credit","value":"Jenerik"}
+{"kind":"translate","lang":"tr","tag":"CustomRendered","value":{"Description":"Özel imaj işleme","PrintConv":{"Custom":"Özel işlem","Normal":"Normal işlem"}}}
+{"kind":"translate","lang":"tr","tag":"DateCreated","value":"Oluşturma Tarihi"}
+{"kind":"translate","lang":"tr","tag":"DateTimeOriginal","value":"Orjinal Tarih & Zaman"}
+{"kind":"translate","lang":"tr","tag":"DeviceSettingDescription","value":"Cihaz ayar tanımları"}
+{"kind":"translate","lang":"tr","tag":"DigitalZoom","value":"Dijital Zoom"}
+{"kind":"translate","lang":"tr","tag":"DigitalZoomRatio","value":"Dijital zoom oranı"}
+{"kind":"translate","lang":"tr","tag":"Directory","value":"Dosya Konumu"}
+{"kind":"translate","lang":"tr","tag":"DriveMode","value":"Sürüş Modu"}
+{"kind":"translate","lang":"tr","tag":"ExifImageHeight","value":"Geçerli imaj yüksekliği"}
+{"kind":"translate","lang":"tr","tag":"ExifImageWidth","value":"Geçerli imaj eni"}
+{"kind":"translate","lang":"tr","tag":"ExifOffset","value":"Exif IFD İmleci"}
+{"kind":"translate","lang":"tr","tag":"ExifVersion","value":"Exif sürüm"}
+{"kind":"translate","lang":"tr","tag":"ExposureCompensation","value":"Pozlama Sapması"}
+{"kind":"translate","lang":"tr","tag":"ExposureIndex","value":"Pozlama indeksi"}
+{"kind":"translate","lang":"tr","tag":"ExposureMode","value":{"Description":"Pozlama modu","PrintConv":{"Auto":"Otomatik","Auto bracket":"Otomatik çerçeve","Manual":"Manuel pozlama"}}}
+{"kind":"translate","lang":"tr","tag":"ExposureProgram","value":{"Description":"Pozlama program","PrintConv":{"Action (High speed)":"Hareket programı","Aperture-priority AE":"Apertür önceliği","Bulb":"Ampul","Creative (Slow speed)":"Yaratıcı program","Landscape":"Manzara","Manual":"Manuel Pozlama","Portrait":"Portre","Program AE":"Normal program","Shutter speed priority AE":"Deklanşör önceliği"}}}
+{"kind":"translate","lang":"tr","tag":"ExposureTime","value":"Poz süresi"}
+{"kind":"translate","lang":"tr","tag":"FNumber","value":"Açıklık"}
+{"kind":"translate","lang":"tr","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"Pozitif yön","Rotate 90 CW":"Saat yönünde 90° döndür"}}}
+{"kind":"translate","lang":"tr","tag":"FileFormat","value":"Format"}
+{"kind":"translate","lang":"tr","tag":"FileModifyDate","value":"Güncellenen Tarih"}
+{"kind":"translate","lang":"tr","tag":"FileName","value":"Dosya adı"}
+{"kind":"translate","lang":"tr","tag":"FileSize","value":"Dosya boyutu"}
+{"kind":"translate","lang":"tr","tag":"FileSource","value":{"Description":"Dosya kaynağı","PrintConv":{"Digital Camera":"DSC","Film Scanner":"Transparan tip tarayıcı","Reflection Print Scanner":"Refleks tipi tarayıcı"}}}
+{"kind":"translate","lang":"tr","tag":"FileType","value":"Dosya türü"}
+{"kind":"translate","lang":"tr","tag":"Filename","value":"Dosya adı"}
+{"kind":"translate","lang":"tr","tag":"Flash","value":{"Description":"Flaş","PrintConv":{"Auto, Fired":"AÇIK (Otom-flaş)","Auto, Fired, Red-eye reduction":"\"AÇIK (Otom-flaş, Kırmızı-Göz Azaltma)\"","Auto, Fired, Red-eye reduction, Return detected":"\"AÇIK (Otom-flaş, Kırmızı-Göz Azaltma, Geri dönen ışık bulundu)\"","Auto, Fired, Return detected":"\"AÇIK (Otom-flaş, Geri dönen ışık bulundu)\"","Did not fire":"Flaş patlamadı","Fired":"Flaş patladı","Fired, Red-eye reduction":"AÇIK (Kırmızı-Göz Azaltma)","Fired, Red-eye reduction, Return detected":"\"AÇIK (Kırmızı-Göz Azaltma, Geri dönen ışık bulundu)\"","Fired, Return detected":"AÇIK (Geri dönen ışık bulundu)","No Flash":"Flaş fonksiyonu yok","On, Fired":"AÇIK (Doldurma)","On, Red-eye reduction":"\"AÇIK (Doldurma, Kırmızı-Göz Önleme)\"","On, Red-eye reduction, Return detected":"\"AÇIK (Doldurma, Kırmızı-Göz Önleme, Geri dönen ışık bulundu)\"","On, Return detected":"\"AÇIK (Doldurma, Geri dönen ışık bulundu)\""}}}
+{"kind":"translate","lang":"tr","tag":"FlashEnergy","value":"Flaş enerjisi"}
+{"kind":"translate","lang":"tr","tag":"FlashExposureComp","value":"Flaş Telafisi"}
+{"kind":"translate","lang":"tr","tag":"FlashpixVersion","value":"Desteklenen Flashpix sürümü"}
+{"kind":"translate","lang":"tr","tag":"FocalLength","value":"Odak uzunluğu"}
+{"kind":"translate","lang":"tr","tag":"FocalLength35efl","value":"Odak Uzaklığı (35 mm dengi)"}
+{"kind":"translate","lang":"tr","tag":"FocalLengthIn35mmFormat","value":"35mm filmde odak uzaklığı"}
+{"kind":"translate","lang":"tr","tag":"FocalPlaneResolutionUnit","value":{"Description":"Odak düzlemi çözünürlük birimi","PrintConv":{"inches":"inç"}}}
+{"kind":"translate","lang":"tr","tag":"FocalPlaneXResolution","value":"Odak düzlemi X çözünürlüğü"}
+{"kind":"translate","lang":"tr","tag":"FocalPlaneYResolution","value":"Odak düzlemi Y çözünürlüğü"}
+{"kind":"translate","lang":"tr","tag":"FocusMode","value":"Odak modu"}
+{"kind":"translate","lang":"tr","tag":"FrameRate","value":"Kare Hızı"}
+{"kind":"translate","lang":"tr","tag":"FrameSize","value":"Kare Boyutu"}
+{"kind":"translate","lang":"tr","tag":"GPSAltitude","value":"Yükseklik"}
+{"kind":"translate","lang":"tr","tag":"GPSAltitudeRef","value":{"Description":"Yükselti referansı","PrintConv":{"Above Sea Level":"Deniz düzeyi","Below Sea Level":"Deniz düzeyi referansı (negatif değer)"}}}
+{"kind":"translate","lang":"tr","tag":"GPSAreaInformation","value":"GPS Alanının ismi"}
+{"kind":"translate","lang":"tr","tag":"GPSDOP","value":"Ölçüm hassaslığı"}
+{"kind":"translate","lang":"tr","tag":"GPSDateStamp","value":"GPS alanı"}
+{"kind":"translate","lang":"tr","tag":"GPSDestBearing","value":"Varış yönü"}
+{"kind":"translate","lang":"tr","tag":"GPSDestBearingRef","value":"Varış yönü için referans"}
+{"kind":"translate","lang":"tr","tag":"GPSDestDistance","value":"Varışa uzaklık"}
+{"kind":"translate","lang":"tr","tag":"GPSDestDistanceRef","value":"Varışa uzaklık için referans"}
+{"kind":"translate","lang":"tr","tag":"GPSDestLatitude","value":"Varışın enlemi"}
+{"kind":"translate","lang":"tr","tag":"GPSDestLatitudeRef","value":"Varışın enlemi için referans"}
+{"kind":"translate","lang":"tr","tag":"GPSDestLongitude","value":"Varışın boylamı"}
+{"kind":"translate","lang":"tr","tag":"GPSDestLongitudeRef","value":"Varışın boylamı için referans"}
+{"kind":"translate","lang":"tr","tag":"GPSDifferential","value":{"Description":"GPS diferansiyel düzeltme","PrintConv":{"Differential Corrected":"Difrensiyel düzeltme uygulandı","No Correction":"Difrensiyel düzeltme olmadan ölçüm"}}}
+{"kind":"translate","lang":"tr","tag":"GPSImgDirection","value":"İmajın yönü"}
+{"kind":"translate","lang":"tr","tag":"GPSImgDirectionRef","value":"İmajın yönü için referans"}
+{"kind":"translate","lang":"tr","tag":"GPSInfo","value":"GPS Info IDF İmleci"}
+{"kind":"translate","lang":"tr","tag":"GPSLatitude","value":"Enlem"}
+{"kind":"translate","lang":"tr","tag":"GPSLatitudeRef","value":{"Description":"Kuzey veya Güney Enlemi","PrintConv":{"North":"Kuzey enlemi","South":"Güney enlemi"}}}
+{"kind":"translate","lang":"tr","tag":"GPSLongitude","value":"Boylam"}
+{"kind":"translate","lang":"tr","tag":"GPSLongitudeRef","value":{"Description":"Doğu veya Batı Boylamı","PrintConv":{"East":"Doğu boylamı","West":"Batı boylamı"}}}
+{"kind":"translate","lang":"tr","tag":"GPSMapDatum","value":"Geodetik veri kullanıldı"}
+{"kind":"translate","lang":"tr","tag":"GPSMeasureMode","value":{"Description":"GPS ölçüm modu","PrintConv":{"3-Dimensional Measurement":"3-boyutlu ölçüm"}}}
+{"kind":"translate","lang":"tr","tag":"GPSProcessingMethod","value":"GPS işlem metodunun ismi"}
+{"kind":"translate","lang":"tr","tag":"GPSSatellites","value":"Ölçüm için kullanılan GPS uyduları"}
+{"kind":"translate","lang":"tr","tag":"GPSSpeed","value":"GSP alıcının hızı"}
+{"kind":"translate","lang":"tr","tag":"GPSSpeedRef","value":{"Description":"Hız Ünitesi","PrintConv":{"km/h":"km / saat","knots":"Knot","mph":"Mil / saat"}}}
+{"kind":"translate","lang":"tr","tag":"GPSStatus","value":{"Description":"GPS alıcı durumu","PrintConv":{"Measurement Active":"İlerlemeli ölçüm","Measurement Void":"Ölçü Birlikte İşlerliği"}}}
+{"kind":"translate","lang":"tr","tag":"GPSTimeStamp","value":"GPS saati (atomik saat)"}
+{"kind":"translate","lang":"tr","tag":"GPSTrack","value":"Hareket yönü"}
+{"kind":"translate","lang":"tr","tag":"GPSTrackRef","value":{"Description":"Hareket yönü için referans","PrintConv":{"Magnetic North":"Manyetik yön","True North":"Gerçek yön"}}}
+{"kind":"translate","lang":"tr","tag":"GPSVersionID","value":"GSP etiket sürümü"}
+{"kind":"translate","lang":"tr","tag":"GainControl","value":{"Description":"Kontrol Kazan","PrintConv":{"High gain down":"Yüksek kazanç aşağı","High gain up":"Yüksek kazanç yukarı","Low gain down":"Düşek kazanç aşağı","Low gain up":"Düşük kazanç yukarı","None":"Hiçbiri"}}}
+{"kind":"translate","lang":"tr","tag":"Gradation","value":"Dereceleme"}
+{"kind":"translate","lang":"tr","tag":"Headline","value":"Başlık"}
+{"kind":"translate","lang":"tr","tag":"Hue","value":"Renk"}
+{"kind":"translate","lang":"tr","tag":"ICCProfile","value":"ICC Profili"}
+{"kind":"translate","lang":"tr","tag":"ISO","value":"ISO değeri"}
+{"kind":"translate","lang":"tr","tag":"ImageHeight","value":"İmaj yüksekliği"}
+{"kind":"translate","lang":"tr","tag":"ImageSize","value":"İmaj Boyutu"}
+{"kind":"translate","lang":"tr","tag":"ImageUniqueID","value":"Kendine has imaj ID"}
+{"kind":"translate","lang":"tr","tag":"ImageWidth","value":"İmaj genişliği"}
+{"kind":"translate","lang":"tr","tag":"Index","value":"İndeks"}
+{"kind":"translate","lang":"tr","tag":"Instructions","value":"Talimatlar"}
+{"kind":"translate","lang":"tr","tag":"InteropIndex","value":"Interoperabilite Tanımı"}
+{"kind":"translate","lang":"tr","tag":"InteropOffset","value":"Interoperabilite etiketi"}
+{"kind":"translate","lang":"tr","tag":"InteropVersion","value":"Interoperabilite Sürümü"}
+{"kind":"translate","lang":"tr","tag":"JPEGQuality","value":{"PrintConv":{"Standard":"Standart Kalite"}}}
+{"kind":"translate","lang":"tr","tag":"Keywords","value":"Anahtar sözcükler"}
+{"kind":"translate","lang":"tr","tag":"Lens","value":"Objektif"}
+{"kind":"translate","lang":"tr","tag":"LensInfo","value":"Lens Bilgisi"}
+{"kind":"translate","lang":"tr","tag":"LightSource","value":{"Description":"Işık kaynağı","PrintConv":{"Cloudy":"Bulutlu Hava","Cool White Fluorescent":"Soğuk beyaz floresan (W 3800 - 4500K)","Day White Fluorescent":"Gün beyaz floresan (N 4600 - 5500K)","Daylight":"Günışığı","Daylight Fluorescent":"Günışığı floresan (D 5700 - 7100K)","Fine Weather":"İyi hava","Flash":"Flaş","Fluorescent":"Floresan","ISO Studio Tungsten":"ISO stüdyo tungsten","Other":"Diğer ışık kaynağı","Shade":"Gölge","Standard Light A":"Standard Işık A","Standard Light B":"Standard Işık B","Standard Light C":"Standard Işık C","Tungsten (Incandescent)":"Tungsten","Unknown":"Bilinmeyen","White Fluorescent":"Beyaz floresan (WW 3250 - 3800K)"}}}
+{"kind":"translate","lang":"tr","tag":"Lightness","value":"Işık"}
+{"kind":"translate","lang":"tr","tag":"Location","value":"Mevki"}
+{"kind":"translate","lang":"tr","tag":"Make","value":"Üretici"}
+{"kind":"translate","lang":"tr","tag":"MakerNotes","value":"Üretici notları"}
+{"kind":"translate","lang":"tr","tag":"MaxAperture","value":"Maksimum lens açıklığı"}
+{"kind":"translate","lang":"tr","tag":"MeteringMode","value":{"Description":"Ölçü modu","PrintConv":{"Average":"Ortalama","Center-weighted average":"CenterWeightedAverage","Multi-segment":"Desen","Multi-spot":"Multispot","Other":"Diğer","Partial":"Kısmen","Unknown":"Bilinmeyen"}}}
+{"kind":"translate","lang":"tr","tag":"Model","value":"Kamera"}
+{"kind":"translate","lang":"tr","tag":"ModifyDate","value":"Dosya değişim tarih ve zamanı"}
+{"kind":"translate","lang":"tr","tag":"NoiseReduction","value":"Parazit azaltımı"}
+{"kind":"translate","lang":"tr","tag":"Opto-ElectricConvFactor","value":"Optoelektrik çevrim faktörü"}
+{"kind":"translate","lang":"tr","tag":"Orientation","value":{"Description":"Yönelim","PrintConv":{"Horizontal (normal)":"Pozitif yön","Rotate 90 CW":"Saat yönünde 90° döndür"}}}
+{"kind":"translate","lang":"tr","tag":"PhotometricInterpretation","value":"Piksel kompozisyonu"}
+{"kind":"translate","lang":"tr","tag":"PlanarConfiguration","value":{"Description":"İmaj veri aranjmanı","PrintConv":{"Chunky":"Chunky format","Planar":"Planar format"}}}
+{"kind":"translate","lang":"tr","tag":"PrimaryChromaticities","value":"İlklerin kromatikleri"}
+{"kind":"translate","lang":"tr","tag":"Province-State","value":"Eyalet/Bölge"}
+{"kind":"translate","lang":"tr","tag":"Quality","value":{"PrintConv":{"Low":"Düşük Kalite","Normal":"Standart Kalite"}}}
+{"kind":"translate","lang":"tr","tag":"RecordMode","value":"Kayıt modu"}
+{"kind":"translate","lang":"tr","tag":"ReferenceBlackWhite","value":"Bir çift siyah ve beyaz referans değerleri"}
+{"kind":"translate","lang":"tr","tag":"RelatedImageFileFormat","value":"İlgili Görüntü Dosya Formatı"}
+{"kind":"translate","lang":"tr","tag":"RelatedImageHeight","value":"İlgili İmaj Yüksekliği"}
+{"kind":"translate","lang":"tr","tag":"RelatedImageWidth","value":"İlgili İmaj Genişliği"}
+{"kind":"translate","lang":"tr","tag":"RelatedSoundFile","value":"İlgili ses dosyası"}
+{"kind":"translate","lang":"tr","tag":"ResolutionUnit","value":{"Description":"X ve Y birim çözünürlüğü","PrintConv":{"cm":"santimetre","inches":"inç"}}}
+{"kind":"translate","lang":"tr","tag":"RowsPerStrip","value":"Şerit başına satır sayısı"}
+{"kind":"translate","lang":"tr","tag":"SamplesPerPixel","value":"Komponent sayısı"}
+{"kind":"translate","lang":"tr","tag":"Saturation","value":{"Description":"Doyma","PrintConv":{"High":"Yüksek Doyma","Low":"Düşük Doyma","Normal":"Standard"}}}
+{"kind":"translate","lang":"tr","tag":"SceneCaptureType","value":{"Description":"Senaryo yakalama tipi","PrintConv":{"Landscape":"Manzara","Night":"Gece çekimi","Portrait":"Portre"}}}
+{"kind":"translate","lang":"tr","tag":"SceneMode","value":{"PrintConv":{"Sunset":"Günbatımı"}}}
+{"kind":"translate","lang":"tr","tag":"SceneType","value":{"Description":"Senaryo tipi","PrintConv":{"Directly photographed":"Doğrudan fotograflanmış imaj"}}}
+{"kind":"translate","lang":"tr","tag":"SensingMethod","value":{"Description":"Alıcı metodu","PrintConv":{"Color sequential area":"Renk ardaşık alan alıcısı","Color sequential linear":"Renk ardışık çizgisel alıcı","One-chip color area":"Tek-çip renk alanı alıcı","Three-chip color area":"Üç-çip renk alanı alıcı","Trilinear":"Triple çizgisel alıcı","Two-chip color area":"İki-çip renk alanı alıcı"}}}
+{"kind":"translate","lang":"tr","tag":"SerialNumber","value":"Kamera ID"}
+{"kind":"translate","lang":"tr","tag":"ShadingCompensation","value":"Gölgelendirme Telafisi"}
+{"kind":"translate","lang":"tr","tag":"Sharpness","value":{"Description":"Keskinlik","PrintConv":{"Hard":"Sert","Normal":"Standard","Soft":"Yumuşak"}}}
+{"kind":"translate","lang":"tr","tag":"ShootingMode","value":"Çekim Modu"}
+{"kind":"translate","lang":"tr","tag":"ShutterSpeed","value":"Poz süresi"}
+{"kind":"translate","lang":"tr","tag":"ShutterSpeedValue","value":"Deklanşör hızı"}
+{"kind":"translate","lang":"tr","tag":"Software","value":"Kullanılan yazılım"}
+{"kind":"translate","lang":"tr","tag":"Source","value":"Kaynak"}
+{"kind":"translate","lang":"tr","tag":"SpatialFrequencyResponse","value":"Uzaysal frekans cevabı"}
+{"kind":"translate","lang":"tr","tag":"SpectralSensitivity","value":"Uzaysal hassaslık"}
+{"kind":"translate","lang":"tr","tag":"State","value":"Eyalet"}
+{"kind":"translate","lang":"tr","tag":"StripByteCounts","value":"Sıkıştırılmış şerit başına bayt"}
+{"kind":"translate","lang":"tr","tag":"StripOffsets","value":"İmaj veri konumu"}
+{"kind":"translate","lang":"tr","tag":"SubSecTime","value":"TarihZaman altsaniyeler"}
+{"kind":"translate","lang":"tr","tag":"SubSecTimeDigitized","value":"TarihZamanDijitize altsaniyeler"}
+{"kind":"translate","lang":"tr","tag":"SubSecTimeOriginal","value":"TarihZamanOrjinal altsaniyeler"}
+{"kind":"translate","lang":"tr","tag":"SubjectArea","value":"Obje alanı"}
+{"kind":"translate","lang":"tr","tag":"SubjectDistance","value":"Obje uzaklığı"}
+{"kind":"translate","lang":"tr","tag":"SubjectDistanceRange","value":{"Description":"Obje uzaklık menzili","PrintConv":{"Close":"Yakın görüntü","Distant":"Uzak görüntü","Macro":"Makro"}}}
+{"kind":"translate","lang":"tr","tag":"SubjectLocation","value":"Obje konumu"}
+{"kind":"translate","lang":"tr","tag":"SupplementalCategories","value":"Tamamlayıcı Kategoriler"}
+{"kind":"translate","lang":"tr","tag":"ThumbnailImage","value":"Küçük Resim"}
+{"kind":"translate","lang":"tr","tag":"ThumbnailImageSize","value":"Küçük resim boyutu"}
+{"kind":"translate","lang":"tr","tag":"Title","value":"Başlık"}
+{"kind":"translate","lang":"tr","tag":"TransferFunction","value":"Transfer fonksiyonu"}
+{"kind":"translate","lang":"tr","tag":"TransmissionReference","value":"İletim Başvurusu"}
+{"kind":"translate","lang":"tr","tag":"Urgency","value":"Acil"}
+{"kind":"translate","lang":"tr","tag":"UserComment","value":"Kullanıcı yorumları"}
+{"kind":"translate","lang":"tr","tag":"WhiteBalance","value":{"Description":"Beyaz ayarı","PrintConv":{"Auto":"Otomatik beyaz ayarı","Black & White":"Monokrom","Cloudy":"Bulutlu hava","Cool White Fluorescent":"Soğuk beyaz floresan","Custom 1":"ÖZEL1","Custom 2":"ÖZEL2","Custom 3":"ÖZEL3","Custom 4":"ÖZEL4","Day White Fluorescent":"Gün beyaz floresan","Daylight":"Günışığı","Daylight Fluorescent":"Günışığı floresan","Fluorescent":"Floresan","Manual":"Elle beyaz ayarı","Shade":"Gölge","Tungsten":"Tungsten ışık"}}}
+{"kind":"translate","lang":"tr","tag":"WhitePoint","value":"Beya nokta kromatik"}
+{"kind":"translate","lang":"tr","tag":"Writer-Editor","value":"Açıklama Yazarı"}
+{"kind":"translate","lang":"tr","tag":"XResolution","value":"X çözünürlüğü"}
+{"kind":"translate","lang":"tr","tag":"YCbCrCoefficients","value":"Renk alanı transformasyon matriks katsayısı"}
+{"kind":"translate","lang":"tr","tag":"YCbCrPositioning","value":{"Description":"Y ve C konumlama","PrintConv":{"Centered":"Ortalanmış","Co-sited":"Birlikte-konumlanmış"}}}
+{"kind":"translate","lang":"tr","tag":"YCbCrSubSampling","value":"Y den C'ye alt örnekleme oranı"}
+{"kind":"translate","lang":"tr","tag":"YResolution","value":"Y çözünürlüğü"}

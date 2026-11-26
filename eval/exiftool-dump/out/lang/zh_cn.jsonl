@@ -1,0 +1,329 @@
+{"kind":"translate","lang":"zh_cn","tag":"AEProgramMode","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFAreaIllumination","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointIllumination","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointMode","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointRegistration","value":{"PrintConv":{"Automatic":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointSelected","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointSelected2","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AFPointsUnknown2","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"APEVersion","value":"APE 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"AdultContentWarning","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Album","value":"相册"}
+{"kind":"translate","lang":"zh_cn","tag":"Anti-Blur","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Aperture","value":"光圈数"}
+{"kind":"translate","lang":"zh_cn","tag":"ApertureValue","value":"光圈"}
+{"kind":"translate","lang":"zh_cn","tag":"Artist","value":"图像作者"}
+{"kind":"translate","lang":"zh_cn","tag":"Author","value":"作者"}
+{"kind":"translate","lang":"zh_cn","tag":"AuthorsPosition","value":"职位"}
+{"kind":"translate","lang":"zh_cn","tag":"AutoLightingOptimizer","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"AutoRotate","value":{"PrintConv":{"Rotate 180":"180° (底/右)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)","n/a":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"BatteryLevel","value":"电池电量"}
+{"kind":"translate","lang":"zh_cn","tag":"BitsPerSample","value":"每个组件的比特数"}
+{"kind":"translate","lang":"zh_cn","tag":"BracketShotNumber","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Brightness","value":"亮度"}
+{"kind":"translate","lang":"zh_cn","tag":"BrightnessValue","value":"亮度"}
+{"kind":"translate","lang":"zh_cn","tag":"By-line","value":"作者"}
+{"kind":"translate","lang":"zh_cn","tag":"CFAPattern","value":"CFA 模式"}
+{"kind":"translate","lang":"zh_cn","tag":"CalibrationIlluminant1","value":{"PrintConv":{"Cloudy":"阴天","Cool White Fluorescent":"冷白色荧光灯（W3800-4500K）","Day White Fluorescent":"日光白色荧光灯（N4600-5500K）","Daylight":"太阳光","Daylight Fluorescent":"日光色荧光灯（D5700-7100K）","Fine Weather":"晴天","Flash":"闪光","Fluorescent":"荧光","ISO Studio Tungsten":"ISO相室白炽灯","Other":"其他光源","Shade":"阴影","Standard Light A":"标准光A","Standard Light B":"标准光B","Standard Light C":"标准光C","Tungsten (Incandescent)":"白炽灯","Unknown":"未知","Warm White Fluorescent":"暖白荧光灯（L2600-3250K）","White Fluorescent":"白色荧光灯（WW3250-3800K）"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CalibrationIlluminant2","value":{"PrintConv":{"Cloudy":"阴天","Cool White Fluorescent":"冷白色荧光灯（W3800-4500K）","Day White Fluorescent":"日光白色荧光灯（N4600-5500K）","Daylight":"太阳光","Daylight Fluorescent":"日光色荧光灯（D5700-7100K）","Fine Weather":"晴天","Flash":"闪光","Fluorescent":"荧光","ISO Studio Tungsten":"ISO相室白炽灯","Other":"其他光源","Shade":"阴影","Standard Light A":"标准光A","Standard Light B":"标准光B","Standard Light C":"标准光C","Tungsten (Incandescent)":"白炽灯","Unknown":"未知","Warm White Fluorescent":"暖白荧光灯（L2600-3250K）","White Fluorescent":"白色荧光灯（WW3250-3800K）"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CameraOrientation","value":{"Description":"图像取向","PrintConv":{"Horizontal (normal)":"0° (上/左)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CanonExposureMode","value":{"PrintConv":{"Aperture-priority AE":"光圈优先","Manual":"手动","Shutter speed priority AE":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CanonFlashMode","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Caption-Abstract","value":"说明"}
+{"kind":"translate","lang":"zh_cn","tag":"CaptionWriter","value":"说明作者"}
+{"kind":"translate","lang":"zh_cn","tag":"CaptureXResolutionUnit","value":{"PrintConv":{"um":"µm (微米)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CaptureYResolutionUnit","value":{"PrintConv":{"um":"µm (微米)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Categories","value":"类别"}
+{"kind":"translate","lang":"zh_cn","tag":"Category","value":"类别"}
+{"kind":"translate","lang":"zh_cn","tag":"City","value":"城市"}
+{"kind":"translate","lang":"zh_cn","tag":"ColorEffect","value":{"PrintConv":{"Sepia":"怀旧深咖啡色"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ColorFilter","value":"颜色滤镜"}
+{"kind":"translate","lang":"zh_cn","tag":"ColorMode","value":{"Description":"创意风格","PrintConv":{"Autumn Leaves":"红叶","B&W":"黑白","Clear":"清澈","Deep":"深色","Landscape":"风景","Light":"轻淡","Neutral":"中性","Night View":"夜景","Night View/Portrait":"夜晚肖像","Portrait":"人物","Standard":"标准","Sunset":"黄昏","Vivid":"生动色彩"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ColorSpace","value":{"Description":"色彩空间信息","PrintConv":{"ICC Profile":"色彩特性文件","Uncalibrated":"自发"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ColorTemperature","value":"色温"}
+{"kind":"translate","lang":"zh_cn","tag":"CommanderGroupAMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CommanderGroupBMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"CommanderInternalFlash","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Comment","value":"注释"}
+{"kind":"translate","lang":"zh_cn","tag":"ComponentsConfiguration","value":"各分组的含义"}
+{"kind":"translate","lang":"zh_cn","tag":"CompressedBitsPerPixel","value":"图像压缩模式"}
+{"kind":"translate","lang":"zh_cn","tag":"Compression","value":{"Description":"压缩方案","PrintConv":{"JPEG":"JEPG压缩率","JPEG (old-style)":"JPEG (旧样式)","Kodak DCR Compressed":"柯达 DCR 压缩","Kodak KDC Compressed":"柯达 KDC 压缩","Next":"NeXT 2比特编码","Nikon NEF Compressed":"尼康 NEF 压缩","Pentax PEF Compressed":"宾得 PEF 压缩","SGILog":"SGI 32比特对数亮度编码","SGILog24":"SGI 24比特对数亮度编码","Sony ARW Compressed":"索尼 ARW 压缩","Thunderscan":"ThunderScan 4比特编码","Uncompressed":"未压缩"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Contrast","value":{"Description":"对比度","PrintConv":{"High":"硬调","Low":"软调","Normal":"标准"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ControlMode","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Copyright","value":"专利拥有者"}
+{"kind":"translate","lang":"zh_cn","tag":"CopyrightNotice","value":"版权信息"}
+{"kind":"translate","lang":"zh_cn","tag":"CopyrightStatus","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Country","value":"国家"}
+{"kind":"translate","lang":"zh_cn","tag":"Country-PrimaryLocationName","value":"国家"}
+{"kind":"translate","lang":"zh_cn","tag":"CreateDate","value":"数字数据产生的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"Credit","value":"作者"}
+{"kind":"translate","lang":"zh_cn","tag":"CustomRendered","value":{"Description":"用户自定义图像处理","PrintConv":{"Custom":"自定义处理","Normal":"普通模式"}}}
+{"kind":"translate","lang":"zh_cn","tag":"DateCreated","value":"创建日期"}
+{"kind":"translate","lang":"zh_cn","tag":"DateTime","value":"文件改变的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"DateTimeOriginal","value":"原始数据产生的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"DeviceSettingDescription","value":"设备设定说明"}
+{"kind":"translate","lang":"zh_cn","tag":"DigitalZoom","value":"数码变焦"}
+{"kind":"translate","lang":"zh_cn","tag":"DigitalZoomRatio","value":"数码变焦比"}
+{"kind":"translate","lang":"zh_cn","tag":"Directory","value":"文件存储位置"}
+{"kind":"translate","lang":"zh_cn","tag":"DisplayXResolutionUnit","value":{"PrintConv":{"um":"µm (微米)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"DisplayYResolutionUnit","value":{"PrintConv":{"um":"µm (微米)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"DjVuVersion","value":"DjVu 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"DriveMode","value":"驱动模式"}
+{"kind":"translate","lang":"zh_cn","tag":"DynamicRangeOptimizer","value":{"Description":"动态范围优化","PrintConv":{"Advanced Auto":"高级自动","Advanced Lv1":"高级优化程度 1","Advanced Lv2":"高级优化程度 2","Advanced Lv3":"高级优化程度 3","Advanced Lv4":"高级优化程度 4","Advanced Lv5":"高级优化程度 5","Auto":"自动","Off":"关","Standard":"标准"}}}
+{"kind":"translate","lang":"zh_cn","tag":"EasyMode","value":{"PrintConv":{"Landscape":"风景","Manual":"手动","Night":"夜景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ExifImageHeight","value":"像高"}
+{"kind":"translate","lang":"zh_cn","tag":"ExifImageWidth","value":"像宽"}
+{"kind":"translate","lang":"zh_cn","tag":"ExifOffset","value":"Exif IFD 指针"}
+{"kind":"translate","lang":"zh_cn","tag":"ExifToolVersion","value":"ExifTool 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"ExifVersion","value":"Exif 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandFilm","value":"胶片扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandFilterLens","value":"滤镜扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandFlashLamp","value":"闪光灯扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandLens","value":"镜头扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandScanner","value":"扫描仪扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExpandSoftware","value":"软件扩展"}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureCompensation","value":"曝光偏差"}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureIndex","value":"曝光索引"}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureMode","value":{"Description":"曝光模式","PrintConv":{"Aperture Priority":"光圈优先","Aperture-priority AE":"光圈优先","Auto":"自动曝光","Auto bracket":"自动支架","Landscape":"风景","Manual":"手动曝光","Portrait":"人物","Shutter Priority":"快门优先","Shutter speed priority AE":"快门优先","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureProgram","value":{"Description":"曝光程序","PrintConv":{"Action (High speed)":"运动摄影","Aperture Priority":"光圈优先","Aperture-priority AE":"光圈优先","Creative (Slow speed)":"创意摄影","Landscape":"风景","Manual":"手动","Portrait":"人物","Program AE":"一般程序","Shutter Priority":"快门优先","Shutter speed priority AE":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureTime","value":"曝光时间"}
+{"kind":"translate","lang":"zh_cn","tag":"ExposureTime2","value":"曝光时间 2"}
+{"kind":"translate","lang":"zh_cn","tag":"ExternalFlashBounce","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ExternalFlashExposureComp","value":{"PrintConv":{"n/a":"未设置 (Off or Auto Modes)","n/a (Manual Mode)":"未设置 (Manual Mode)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FNumber","value":"光圈数"}
+{"kind":"translate","lang":"zh_cn","tag":"FaceOrientation","value":{"PrintConv":{"Horizontal (normal)":"0° (上/左)","Rotate 180":"180° (底/右)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FaxProfile","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FileFormat","value":"格式"}
+{"kind":"translate","lang":"zh_cn","tag":"FileModifyDate","value":"更新日期"}
+{"kind":"translate","lang":"zh_cn","tag":"FileName","value":"文件名"}
+{"kind":"translate","lang":"zh_cn","tag":"FileSize","value":"文件大小"}
+{"kind":"translate","lang":"zh_cn","tag":"FileSource","value":{"Description":"文件来源","PrintConv":{"Digital Camera":"数码相机","Film Scanner":"胶片扫描仪","Reflection Print Scanner":"反射型扫描仪"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FileType","value":"文件格式"}
+{"kind":"translate","lang":"zh_cn","tag":"FilterEffect","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Flash","value":{"Description":"闪光","PrintConv":{"Auto, Fired":"开 (自动闪光)","Auto, Fired, Red-eye reduction":"开 (自动闪光，减轻红眼)","Auto, Fired, Red-eye reduction, Return detected":"开 (强制闪光，减轻红眼，检测返回光)","Auto, Fired, Return detected":"开 (自动闪光，检测返回光)","Did not fire":"闪光灯未亮","Fired":"闪光灯亮","Fired, Red-eye reduction":"开 (减轻红眼)","Fired, Red-eye reduction, Return detected":"开 (减轻红眼，检测返回光)","Fired, Return detected":"开 (检测返回光)","No Flash":"无闪光功能","On, Fired":"开 (强制闪光)","On, Red-eye reduction":"开 (强制闪光(减轻红眼))","On, Red-eye reduction, Return detected":"开 (强制闪光，减轻红眼，检测返回光)","On, Return detected":"开 (强制闪光，检测返回光)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashControlMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashEnergy","value":"闪光强度"}
+{"kind":"translate","lang":"zh_cn","tag":"FlashExposureComp","value":"闪光补偿"}
+{"kind":"translate","lang":"zh_cn","tag":"FlashGroupAControlMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashGroupBControlMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashGroupCControlMode","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashMode","value":{"PrintConv":{"Auto":"自动","Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashOptions","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashOptions2","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashSyncSpeedAv","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FlashpixVersion","value":"支持的 Flashpix 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"FocalLength","value":"焦距"}
+{"kind":"translate","lang":"zh_cn","tag":"FocalLength35efl","value":"焦点距离(35 mm 换算)"}
+{"kind":"translate","lang":"zh_cn","tag":"FocalLengthIn35mmFormat","value":"35 mm 换算镜头焦点距离"}
+{"kind":"translate","lang":"zh_cn","tag":"FocalPlaneResolutionUnit","value":{"Description":"焦平面分辨率单位","PrintConv":{"inches":"英寸","um":"µm (微米)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocalPlaneXResolution","value":"焦平面 X 分辨率"}
+{"kind":"translate","lang":"zh_cn","tag":"FocalPlaneYResolution","value":"焦平面 Y 分辨率"}
+{"kind":"translate","lang":"zh_cn","tag":"Focus","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocusContinuous","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocusMode","value":{"Description":"对焦模式","PrintConv":{"Auto":"自动","Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocusMode2","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocusModeSetting","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FocusRange","value":{"PrintConv":{"Auto":"自动","Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"FrameRate","value":"更新速率"}
+{"kind":"translate","lang":"zh_cn","tag":"FrameSize","value":"画面尺寸"}
+{"kind":"translate","lang":"zh_cn","tag":"FreeByteCounts","value":"空白字节数"}
+{"kind":"translate","lang":"zh_cn","tag":"FujiFlashMode","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GIFVersion","value":"GIF 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSAltitude","value":"海拔高度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSAltitudeRef","value":{"Description":"高度基准","PrintConv":{"Above Sea Level":"海平面","Below Sea Level":"海拔(负值)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSAreaInformation","value":"GPS区域名"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDOP","value":"测量精度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDateStamp","value":"GPS日期"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestBearing","value":"目的地方位"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestBearingRef","value":"目的地方位参照"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestDistance","value":"离终点的距离"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestDistanceRef","value":{"Description":"距目的地距离参照","PrintConv":{"Kilometers":"公里数","Miles":"英里数","Nautical Miles":"节数"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestLatitude","value":"终点纬度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestLatitudeRef","value":{"Description":"目的地的北纬或南纬","PrintConv":{"North":"北纬","South":"南纬"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestLongitude","value":"终点经度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDestLongitudeRef","value":{"Description":"目的地的东经或西经","PrintConv":{"East":"东经","West":"西经"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSDifferential","value":{"Description":"GPS 差分校正","PrintConv":{"Differential Corrected":"差分校正定位","No Correction":"非差分校正测量"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSImgDirection","value":"图像方向"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSImgDirectionRef","value":"图像方向参照"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSInfo","value":"GPS Info IFD 指针"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSLatitude","value":"纬度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSLatitudeRef","value":{"Description":"北纬或者南纬","PrintConv":{"North":"北纬","South":"南纬"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSLongitude","value":"经度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSLongitudeRef","value":{"Description":"东经或者西经","PrintConv":{"East":"东经","West":"西经"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSMapDatum","value":"使用的大地测量数据"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSMeasureMode","value":{"Description":"GPS测量模式","PrintConv":{"2-D":"2维测量","2-Dimensional":"2维测量","2-Dimensional Measurement":"2维测量","3-D":"3维测量","3-Dimensional":"3维测量","3-Dimensional Measurement":"3维测量"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSProcessingMethod","value":"定位方式名称"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSSatellites","value":"用于定位的 GPS 卫星信号"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSSpeed","value":"GPS接收器的速度"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSSpeedRef","value":{"Description":"速度单位","PrintConv":{"km/h":"公里/小时","knots":"海里/小时","mph":"英里/小时"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSStatus","value":{"Description":"GPS 接收器状态","PrintConv":{"Measurement Active":"正在测量中","Measurement Void":"测量中断"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSTimeStamp","value":"GPS 时间(原子钟)"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSTrack","value":"运动方向"}
+{"kind":"translate","lang":"zh_cn","tag":"GPSTrackRef","value":{"Description":"运动方向参照","PrintConv":{"Magnetic North":"磁场方向","True North":"真方向"}}}
+{"kind":"translate","lang":"zh_cn","tag":"GPSVersionID","value":"GPS标签版本"}
+{"kind":"translate","lang":"zh_cn","tag":"GainControl","value":{"Description":"增益控制","PrintConv":{"High gain down":"强减少","High gain up":"强增益","Low gain down":"弱减少","Low gain up":"弱增益","None":"无"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Gamma","value":"对比系数"}
+{"kind":"translate","lang":"zh_cn","tag":"Gradation","value":"灰阶"}
+{"kind":"translate","lang":"zh_cn","tag":"HDR","value":{"Description":"自动HDR","PrintConv":{"Off":"关"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Headline","value":"标题"}
+{"kind":"translate","lang":"zh_cn","tag":"HighISONoiseReduction","value":{"Description":"高ISO降噪","PrintConv":{"Auto":"自动","High":"强","Low":"弱","Normal":"标准","Off":"关"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Hue","value":"色相"}
+{"kind":"translate","lang":"zh_cn","tag":"ICCProfile","value":"ICC 规范"}
+{"kind":"translate","lang":"zh_cn","tag":"IPTC-NAA","value":"IPTC-NAA 元数据"}
+{"kind":"translate","lang":"zh_cn","tag":"ISOSetting","value":{"PrintConv":{"Auto":"自动","Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ImageDescription","value":"图像标题"}
+{"kind":"translate","lang":"zh_cn","tag":"ImageHeight","value":"像高"}
+{"kind":"translate","lang":"zh_cn","tag":"ImageOrientation","value":{"PrintConv":{"Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ImageSize","value":"图像尺寸"}
+{"kind":"translate","lang":"zh_cn","tag":"ImageTone","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ImageUniqueID","value":"图像唯一标识"}
+{"kind":"translate","lang":"zh_cn","tag":"ImageWidth","value":"像宽"}
+{"kind":"translate","lang":"zh_cn","tag":"Index","value":"索引"}
+{"kind":"translate","lang":"zh_cn","tag":"Instructions","value":"指示"}
+{"kind":"translate","lang":"zh_cn","tag":"InternalFlash","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"InteropIndex","value":{"Description":"互用标识","PrintConv":{"THM - DCF thumbnail file":"THM: DCF 缩略图文件"}}}
+{"kind":"translate","lang":"zh_cn","tag":"InteropOffset","value":"互用指针"}
+{"kind":"translate","lang":"zh_cn","tag":"InteropVersion","value":"互用版本"}
+{"kind":"translate","lang":"zh_cn","tag":"JFIFVersion","value":"JFIF 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"JPEGQuality","value":{"Description":"图像质量","PrintConv":{"Extra Fine":"超精细","Fine":"精细","Standard":"标准画质","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Keyword","value":"关键词"}
+{"kind":"translate","lang":"zh_cn","tag":"Keywords","value":"关键字"}
+{"kind":"translate","lang":"zh_cn","tag":"Lens","value":"镜头"}
+{"kind":"translate","lang":"zh_cn","tag":"LensInfo","value":"镜头信息"}
+{"kind":"translate","lang":"zh_cn","tag":"LensType","value":"未设置"}
+{"kind":"translate","lang":"zh_cn","tag":"LicenseType","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"LightSource","value":{"Description":"光源","PrintConv":{"Cloudy":"阴天","Cool White Fluorescent":"冷白色荧光灯（W3800-4500K）","Day White Fluorescent":"日光白色荧光灯（N4600-5500K）","Daylight":"太阳光","Daylight Fluorescent":"日光色荧光灯（D5700-7100K）","Fine Weather":"晴天","Flash":"闪光","Fluorescent":"荧光","ISO Studio Tungsten":"ISO相室白炽灯","Other":"其他光源","Shade":"阴影","Standard Light A":"标准光A","Standard Light B":"标准光B","Standard Light C":"标准光C","Tungsten (Incandescent)":"白炽灯","Unknown":"未知","Warm White Fluorescent":"暖白荧光灯（L2600-3250K）","White Fluorescent":"白色荧光灯（WW3250-3800K）"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Lightness","value":"明暗度"}
+{"kind":"translate","lang":"zh_cn","tag":"LongExposureNoiseReduction","value":{"Description":"长时间曝光降噪","PrintConv":{"Auto":"自动","Off":"关","On":"开","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"MIEVersion","value":"MIE 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"Macro","value":{"PrintConv":{"Manual":"手动","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Make","value":"厂商"}
+{"kind":"translate","lang":"zh_cn","tag":"MakerNote","value":"厂商注释"}
+{"kind":"translate","lang":"zh_cn","tag":"MakerNotes","value":"制造商记录"}
+{"kind":"translate","lang":"zh_cn","tag":"ManualFlashOutput","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"MaxAperture","value":"镜头光圈最大值"}
+{"kind":"translate","lang":"zh_cn","tag":"MaxApertureValue","value":"最大镜头光圈"}
+{"kind":"translate","lang":"zh_cn","tag":"MeteringMode","value":{"Description":"测量方式","PrintConv":{"Average":"平均","Center-weighted average":"中央重点","Multi-segment":"分割测光","Multi-spot":"多点","Other":"其它","Partial":"部分测光","Spot":"点测光","Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Model","value":"型号"}
+{"kind":"translate","lang":"zh_cn","tag":"ModifiedPictureStyle","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ModifiedSharpnessFreq","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ModifiedToneCurve","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ModifiedWhiteBalance","value":{"PrintConv":{"Auto":"自动","Cloudy":"阴天","Daylight":"太阳光","Flash":"闪光","Fluorescent":"荧光","Shade":"阴影"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ModifyDate","value":"文件改变的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"MultiFrameNoiseReduction","value":{"Description":"多帧降噪","PrintConv":{"Off":"关","On":"开"}}}
+{"kind":"translate","lang":"zh_cn","tag":"NEFCompression","value":{"PrintConv":{"Uncompressed":"未压缩"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Noise","value":"噪声"}
+{"kind":"translate","lang":"zh_cn","tag":"NoiseReduction","value":{"Description":"减少噪声","PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ObjectFileType","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Opto-ElectricConvFactor","value":"光电转换因子"}
+{"kind":"translate","lang":"zh_cn","tag":"Orientation","value":{"Description":"图像取向","PrintConv":{"Horizontal (normal)":"0° (上/左)","Mirror horizontal":"0° (上/右)","Mirror horizontal and rotate 270 CW":"90° CW (左/上)","Mirror horizontal and rotate 90 CW":"90° CCW (右/底)","Mirror vertical":"180° (底/左)","Rotate 180":"180° (底/右)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PEFVersion","value":"PEF 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"PageNumber","value":"页数"}
+{"kind":"translate","lang":"zh_cn","tag":"PhotometricInterpretation","value":{"Description":"像素方案","PrintConv":{"BlackIsZero":"零黑色","Color Filter Array":"CFA (颜色滤镜矩阵)","Pixar LogL":"CIE Log2(L) (对数亮度)","Pixar LogLuv":"CIE Log2(L)(u',v') (对数亮度和色度)","RGB Palette":"调色板颜色","Transparency Mask":"透明蒙板","WhiteIsZero":"零白色"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureFinish","value":{"PrintConv":{"Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureMode","value":{"PrintConv":{"Aperture-priority AE":"光圈优先","Auto":"自动","Landscape":"风景","Manual":"手动","Portrait":"人物","Shutter speed priority AE":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureMode2","value":{"PrintConv":{"Aperture Priority":"光圈优先","Manual":"手动","Shutter Speed Priority":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureModeBWFilter","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureModeTone","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PictureStyle","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PixelUnits","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PlanarConfiguration","value":{"Description":"图像数据排列","PrintConv":{"Chunky":"点顺序格式","Planar":"平面格式"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PreviewColorSpace","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"PrimaryChromaticities","value":"原色色度坐标值"}
+{"kind":"translate","lang":"zh_cn","tag":"ProgramMode","value":{"PrintConv":{"Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Province-State","value":"州／省"}
+{"kind":"translate","lang":"zh_cn","tag":"Quality","value":{"Description":"图像质量","PrintConv":{"Compressed RAW":"cRAW","Compressed RAW + JPEG":"cRAW+JPEG","Extra Fine":"超精细","Fine":"精细","Low":"低画质","Normal":"标准画质","RAW + JPEG":"RAW+JPEG","Standard":"标准","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"RAFVersion","value":"RAF 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"Rating","value":"评分"}
+{"kind":"translate","lang":"zh_cn","tag":"RatingPercent","value":"百分比评级"}
+{"kind":"translate","lang":"zh_cn","tag":"RecordMode","value":{"Description":"记录模式","PrintConv":{"Aperture Priority":"光圈优先","Manual":"手动","Shutter Priority":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"RecordingMode","value":{"PrintConv":{"Auto":"自动","Landscape":"风景","Manual":"手动","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"RedEyeCorrection","value":{"PrintConv":{"Automatic":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ReferenceBlackWhite","value":"黑白参照值对"}
+{"kind":"translate","lang":"zh_cn","tag":"RelatedImageFileFormat","value":"相关图像文件格式"}
+{"kind":"translate","lang":"zh_cn","tag":"RelatedImageHeight","value":"相关图像高度"}
+{"kind":"translate","lang":"zh_cn","tag":"RelatedImageWidth","value":"相关图像宽度"}
+{"kind":"translate","lang":"zh_cn","tag":"RelatedSoundFile","value":"相关的音频文件"}
+{"kind":"translate","lang":"zh_cn","tag":"ResolutionUnit","value":{"Description":"图像高宽分辨率单位","PrintConv":{"cm":"像素/厘米","inches":"英寸"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Rotation","value":{"PrintConv":{"Horizontal":"0° (上/左)","Horizontal (normal)":"0° (上/左)","Rotate 180":"180° (底/右)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)","Rotated 180":"180° (底/右)","Rotated 270 CW":"90° CW (左/底)","Rotated 90 CW":"90° CCW (右/上)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"RowsPerStrip","value":"每条带的行数"}
+{"kind":"translate","lang":"zh_cn","tag":"SPIFFVersion","value":"SPIFF 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"SRAWQuality","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SVGVersion","value":"SVG 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"SamplesPerPixel","value":"组件数"}
+{"kind":"translate","lang":"zh_cn","tag":"Saturation","value":{"Description":"饱和度","PrintConv":{"High":"高饱和度","Low":"低饱和度","None":"未设置","Normal":"标准"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SceneCaptureType","value":{"Description":"取景类型","PrintConv":{"Landscape":"风景","Night":"夜景","Portrait":"人物","Standard":"标准"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SceneMode","value":{"Description":"场景选择","PrintConv":{"3D Sweep Panorama":"3D","Anti Motion Blur":"动作防抖","Aperture Priority":"光圈优先","Auto":"自动","Cont. Priority AE":"连续拍摄优先AE","Handheld Night Shot":"手持夜景拍摄","Landscape":"风景","Macro":"微距","Manual":"手动","Night Portrait":"夜晚肖像","Night Scene":"夜景","Night View/Portrait":"夜景/肖像","Portrait":"人物","Shutter Priority":"快门优先","Sports":"运动模式","Sunset":"夕阳","Sweep Panorama":"扫描全景"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SceneModeUsed","value":{"PrintConv":{"Aperture Priority":"光圈优先","Landscape":"风景","Manual":"手动","Portrait":"人物","Shutter Priority":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SceneSelect","value":{"PrintConv":{"Night":"夜景"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SceneType","value":{"Description":"场景类型","PrintConv":{"Directly photographed":"直接拍摄的图像"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SensingMethod","value":{"Description":"感应方法","PrintConv":{"Color sequential area":"色彩连续区感应器","Color sequential linear":"色彩连续线性感应器","One-chip color area":"单片色彩区感应器","Three-chip color area":"3 片色彩区传感器","Trilinear":"3 线传感器","Two-chip color area":"2 片色彩区传感器"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SerialNumber","value":"照相机标识"}
+{"kind":"translate","lang":"zh_cn","tag":"ShadingCompensation","value":"阴影补偿"}
+{"kind":"translate","lang":"zh_cn","tag":"Sharpness","value":{"Description":"锐度","PrintConv":{"Hard":"强","Normal":"标准","Soft":"弱","n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SharpnessFrequency","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ShootingInfoDisplay","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ShootingMode","value":{"Description":"拍摄模式","PrintConv":{"Aperture Priority":"光圈优先","Manual":"手动","Portrait":"人物","Shutter Priority":"快门优先"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ShutterMode","value":{"PrintConv":{"Aperture Priority":"光圈优先","Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ShutterSpeed","value":"曝光时间"}
+{"kind":"translate","lang":"zh_cn","tag":"ShutterSpeedValue","value":"快门速度"}
+{"kind":"translate","lang":"zh_cn","tag":"Software","value":"使用软件"}
+{"kind":"translate","lang":"zh_cn","tag":"Source","value":"来源"}
+{"kind":"translate","lang":"zh_cn","tag":"SpatialFrequencyResponse","value":"空间频率响应"}
+{"kind":"translate","lang":"zh_cn","tag":"SpectralSensitivity","value":"光谱灵敏度"}
+{"kind":"translate","lang":"zh_cn","tag":"State","value":"州"}
+{"kind":"translate","lang":"zh_cn","tag":"StripByteCounts","value":"每压缩条带的字节数"}
+{"kind":"translate","lang":"zh_cn","tag":"StripOffsets","value":"图像数据位置"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecCreateDate","value":"数字数据产生的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecDateTimeOriginal","value":"原始数据产生的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecModifyDate","value":"文件改变的日期和时间"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecTime","value":"时间的次秒"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecTimeDigitized","value":"数字化时间的次秒"}
+{"kind":"translate","lang":"zh_cn","tag":"SubSecTimeOriginal","value":"原始时间的次秒"}
+{"kind":"translate","lang":"zh_cn","tag":"Subject","value":"主题"}
+{"kind":"translate","lang":"zh_cn","tag":"SubjectArea","value":"被摄对象区域"}
+{"kind":"translate","lang":"zh_cn","tag":"SubjectDistance","value":"目标距离"}
+{"kind":"translate","lang":"zh_cn","tag":"SubjectDistanceRange","value":{"Description":"被摄对象距离范围","PrintConv":{"Close":"近景","Distant":"远景","Macro":"微距","Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SubjectLocation","value":"被摄对象位置"}
+{"kind":"translate","lang":"zh_cn","tag":"SubjectProgram","value":{"PrintConv":{"Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Subsystem","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"SupplementalCategories","value":"追加类别"}
+{"kind":"translate","lang":"zh_cn","tag":"SupplementalType","value":{"PrintConv":{"Main Image":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"T4Options","value":"未压缩"}
+{"kind":"translate","lang":"zh_cn","tag":"T6Options","value":"T6 选项"}
+{"kind":"translate","lang":"zh_cn","tag":"ThumbnailImage","value":"缩略图"}
+{"kind":"translate","lang":"zh_cn","tag":"ThumbnailImageSize","value":"缩图尺寸"}
+{"kind":"translate","lang":"zh_cn","tag":"Title","value":"标题"}
+{"kind":"translate","lang":"zh_cn","tag":"ToneCurve","value":{"PrintConv":{"Manual":"手动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"ToningEffect","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"TransferFunction","value":"传送功能"}
+{"kind":"translate","lang":"zh_cn","tag":"Transformation","value":{"PrintConv":{"Horizontal (normal)":"0° (上/左)","Mirror horizontal":"0° (上/右)","Mirror horizontal and rotate 270 CW":"90° CW (左/上)","Mirror horizontal and rotate 90 CW":"90° CCW (右/底)","Mirror vertical":"180° (底/左)","Rotate 180":"180° (底/右)","Rotate 270 CW":"90° CW (左/底)","Rotate 90 CW":"90° CCW (右/上)"}}}
+{"kind":"translate","lang":"zh_cn","tag":"TransmissionReference","value":"传输记录"}
+{"kind":"translate","lang":"zh_cn","tag":"Trapped","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"Urgency","value":"紧急度"}
+{"kind":"translate","lang":"zh_cn","tag":"UserComment","value":"用户注释"}
+{"kind":"translate","lang":"zh_cn","tag":"UserDef1PictureStyle","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"UserDef2PictureStyle","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"UserDef3PictureStyle","value":{"PrintConv":{"Landscape":"风景","Portrait":"人物"}}}
+{"kind":"translate","lang":"zh_cn","tag":"VRDVersion","value":"VRD 版本"}
+{"kind":"translate","lang":"zh_cn","tag":"Version","value":"版本"}
+{"kind":"translate","lang":"zh_cn","tag":"VibrationReduction","value":{"PrintConv":{"n/a":"未设置"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WBAdjLighting","value":{"PrintConv":{"Daylight (cloudy)":"太阳光 (2)","Daylight (direct sunlight)":"太阳光 (0)","Daylight (shade)":"太阳光 (1)","Flash":"闪光"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WBMode","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhiteBalance","value":{"Description":"白平衡","PrintConv":{"Auto":"自动","Black & White":"黑白","Cloudy":"阴天","Color Temperature/Color Filter":"色温 / 彩色滤光片","Cool White Fluorescent":"白色荧光灯","Custom":"自定义","Custom 1":"自定义1","Custom 2":"自定义2","Custom 3":"自定义3","Custom 4":"自定义4","Day White Fluorescent":"日光白色荧光灯","Daylight":"太阳光","Daylight Fluorescent":"日光色荧光灯","Flash":"闪光","Fluorescent":"荧光","Manual":"手动","Shade":"阴影","Tungsten":"白炽灯","Unknown":"未知","Warm White Fluorescent":"暖白荧光灯","White Fluorescent":"白色荧光灯"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhiteBalance2","value":{"PrintConv":{"Auto":"自动"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhiteBalanceAdj","value":{"PrintConv":{"Auto":"自动","Cloudy":"阴天","Daylight":"太阳光","Flash":"闪光","Fluorescent":"荧光","Shade":"阴影"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhiteBalanceMode","value":{"PrintConv":{"Unknown":"未知"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhiteBalanceSet","value":{"PrintConv":{"Auto":"自动","Cloudy":"阴天","Daylight":"太阳光","Flash":"闪光","Manual":"手动","Shade":"阴影"}}}
+{"kind":"translate","lang":"zh_cn","tag":"WhitePoint","value":"白点色度"}
+{"kind":"translate","lang":"zh_cn","tag":"Writer-Editor","value":"说明作者"}
+{"kind":"translate","lang":"zh_cn","tag":"XMP","value":"XMP 元数据"}
+{"kind":"translate","lang":"zh_cn","tag":"XPAuthor","value":"作者"}
+{"kind":"translate","lang":"zh_cn","tag":"XPComment","value":"注释"}
+{"kind":"translate","lang":"zh_cn","tag":"XPKeywords","value":"关键词"}
+{"kind":"translate","lang":"zh_cn","tag":"XPSubject","value":"主题"}
+{"kind":"translate","lang":"zh_cn","tag":"XPTitle","value":"标题"}
+{"kind":"translate","lang":"zh_cn","tag":"YCbCrCoefficients","value":"色彩空间变换矩阵系数"}
+{"kind":"translate","lang":"zh_cn","tag":"YCbCrPositioning","value":{"Description":"YCC 像素结构(Y 和 C 的位置)","PrintConv":{"Centered":"中心的","Co-sited":"一致"}}}
+{"kind":"translate","lang":"zh_cn","tag":"YCbCrSubSampling","value":"YCC 像素结构(Y 至 C 的子采样率)"}
+{"kind":"translate","lang":"zh_cn","tag":"ZoneMatching","value":{"Description":"区域匹配","PrintConv":{"High Key":"强","ISO Setting Used":"关","Low Key":"弱"}}}

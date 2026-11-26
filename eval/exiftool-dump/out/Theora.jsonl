@@ -1,0 +1,15 @@
+{"kind":"table","module":"Theora","name":"Image::ExifTool::Theora::Identification","special":{"GROUPS":{"0":"Theora","1":"Theora","2":"Video"},"NOTES":"Tags extracted from the Theora identification header.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"Theora::Identification","TABLE_NAME":"Image::ExifTool::Theora::Identification","TAG_PREFIX":"Theora_Identification"}}
+{"fields":{"Format":"int8u[3]","Name":"TheoraVersion","PrintConv":"$val =~ tr/ /./; $val"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Format":"int32u","Name":"ImageWidth","ValueConv":"$val >> 8"},"id":"7","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Format":"int32u","Name":"ImageHeight","ValueConv":"$val >> 8"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Name":"XOffset"},"id":"13","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Name":"YOffset"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Format":"rational64u","Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000"},"id":"15","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Format":"int16u[3]","Name":"PixelAspectRatio","PrintConv":"int($val * 1000 + 0.5) / 1000","ValueConv":"my @a=split(\" \",$val); (($a[0]<<8)+($a[1]>>8)) / ((($a[1]&0xff)<<8)+$a[2])"},"id":"23","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Name":"ColorSpace","PrintConv":{"0":"Undefined","1":"Rec. 470M","2":"Rec. 470BG"}},"id":"29","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Format":"int32u","Name":"NominalVideoBitrate","PrintConv":{"0":"Unspecified","OTHER":{"code":"&Image::ExifTool::ConvertBitrate"}},"ValueConv":"$val >> 8"},"id":"30","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Name":"Quality","ValueConv":"$val >> 2"},"id":"33","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"fields":{"Name":"PixelFormat","PrintConv":{"0":"4:2:0","2":"4:2:2","3":"4:4:4"},"ValueConv":"($val >> 3) & 0x3"},"id":"34","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Identification"}
+{"kind":"table","module":"Theora","name":"Image::ExifTool::Theora::Main","special":{"GROUPS":{"0":"Theora","1":"Theora","2":"Other"},"NOTES":"\n        Information extracted from Ogg Theora video files.  See\n        L<http://www.theora.org/doc/Theora.pdf> for the Theora specification.\n    ","SHORT_NAME":"Theora::Main","TABLE_NAME":"Image::ExifTool::Theora::Main","TAG_PREFIX":"Theora"}}
+{"fields":{"Name":"Identification","SubDirectory":{"ByteOrder":"BigEndian","TagTable":"Image::ExifTool::Theora::Identification"}},"id":"128","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Main"}
+{"fields":{"Name":"Comments","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Comments"}},"id":"129","index":null,"kind":"tag","table":"Image::ExifTool::Theora::Main"}

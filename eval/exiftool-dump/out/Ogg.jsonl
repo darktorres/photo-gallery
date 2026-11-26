@@ -1,0 +1,6 @@
+{"kind":"table","module":"Ogg","name":"Image::ExifTool::Ogg::Main","special":{"GROUPS":{"0":"Ogg","1":"Ogg","2":"Other"},"NOTES":"\n        ExifTool extracts the following types of information from Ogg files.  See\n        L<http://www.xiph.org/vorbis/doc/> for the Ogg specification.\n    ","SHORT_NAME":"Ogg::Main","TABLE_NAME":"Image::ExifTool::Ogg::Main","TAG_PREFIX":"Ogg"}}
+{"fields":{"Name":"FLAC","SubDirectory":{"TagTable":"Image::ExifTool::FLAC::Main"}},"id":"FLAC","index":null,"kind":"tag","table":"Image::ExifTool::Ogg::Main"}
+{"fields":{"Name":"ID3","SubDirectory":{"TagTable":"Image::ExifTool::ID3::Main"}},"id":"ID3","index":null,"kind":"tag","table":"Image::ExifTool::Ogg::Main"}
+{"fields":{"Name":"Opus","SubDirectory":{"TagTable":"Image::ExifTool::Opus::Main"}},"id":"Opus","index":null,"kind":"tag","table":"Image::ExifTool::Ogg::Main"}
+{"fields":{"Name":"Theora","SubDirectory":{"TagTable":"Image::ExifTool::Theora::Main"}},"id":"theora","index":null,"kind":"tag","table":"Image::ExifTool::Ogg::Main"}
+{"fields":{"Name":"Vorbis","SubDirectory":{"TagTable":"Image::ExifTool::Vorbis::Main"}},"id":"vorbis","index":null,"kind":"tag","table":"Image::ExifTool::Ogg::Main"}

@@ -1,0 +1,13 @@
+{"kind":"table","module":"ICO","name":"Image::ExifTool::ICO::IconDir","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICO::IconDir","TABLE_NAME":"Image::ExifTool::ICO::IconDir","TAG_PREFIX":"ICO_IconDir"}}
+{"fields":{"Name":"ImageWidth","ValueConv":"$val or $val + 256"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Name":"ImageHeight","ValueConv":"$val or $val + 256"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Name":"NumColors"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Condition":"$$self{FileType} eq \"ICO\"","Format":"int16u","Index":0,"Name":"ColorPlanes","Notes":"ICO files"},"id":"4","index":0,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Format":"int16u","Index":1,"Name":"HotspotX","Notes":"CUR files"},"id":"4","index":1,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Condition":"$$self{FileType} eq \"ICO\"","Format":"int16u","Index":0,"Name":"BitsPerPixel","Notes":"ICO files"},"id":"6","index":0,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Format":"int16u","Index":1,"Name":"HotspotY","Notes":"CUR files"},"id":"6","index":1,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"fields":{"Format":"int32u","Name":"ImageLength"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICO::IconDir"}
+{"kind":"table","module":"ICO","name":"Image::ExifTool::ICO::Main","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"Information extracted from Windows ICO (icon) and CUR (cursor) files.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICO::Main","TABLE_NAME":"Image::ExifTool::ICO::Main","TAG_PREFIX":"ICO"}}
+{"fields":{"Format":"int16u","Name":"ImageType","PrintConv":{"1":"Icon","2":"Cursor"}},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::ICO::Main"}
+{"fields":{"Format":"int16u","Name":"ImageCount","RawConv":"$$self{ImageCount} = $val"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::ICO::Main"}
+{"fields":{"Name":"IconDir","SubDirectory":{"TagTable":"Image::ExifTool::ICO::IconDir"}},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::ICO::Main"}

@@ -1,0 +1,5 @@
+{"kind":"table","module":"Other","name":"Image::ExifTool::Other::PFM","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"\n        Tags extracted from Portable FloatMap images. See\n        L<http://www.pauldebevec.com/Research/HDR/PFM/> for the specification.\n    ","SHORT_NAME":"Other::PFM","TABLE_NAME":"Image::ExifTool::Other::PFM","TAG_PREFIX":"Other_PFM","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"ByteOrder","PrintConv":"$val > 0 ? \"Big-endian\" : \"Little-endian\""},"id":"ByteOrder","index":null,"kind":"tag","table":"Image::ExifTool::Other::PFM"}
+{"fields":{"Name":"ColorSpace","PrintConv":{"PF":"RGB","Pf":"Monochrome"}},"id":"ColorSpace","index":null,"kind":"tag","table":"Image::ExifTool::Other::PFM"}
+{"fields":{"Name":"ImageHeight"},"id":"ImageHeight","index":null,"kind":"tag","table":"Image::ExifTool::Other::PFM"}
+{"fields":{"Name":"ImageWidth"},"id":"ImageWidth","index":null,"kind":"tag","table":"Image::ExifTool::Other::PFM"}

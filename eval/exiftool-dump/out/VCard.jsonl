@@ -1,0 +1,103 @@
+{"kind":"table","module":"VCard","name":"Image::ExifTool::VCard::Main","special":{"GROUPS":{"0":"VCard","1":"VCard","2":"Document"},"NOTES":"\n        This table lists common vCard tags, but ExifTool will also extract any other\n        vCard tags found.  Tag names may have \"Pref\" added to indicate the preferred\n        instance of a vCard property, and other \"TYPE\" parameters may also added to\n        the tag name.  VCF files may contain multiple vCard entries which are\n        distinguished by the ExifTool family 3 group name (document  number). See\n        L<http://tools.ietf.org/html/rfc6350> for the vCard 4.0 specification.\n    ","SHORT_NAME":"VCard::Main","TABLE_NAME":"Image::ExifTool::VCard::Main","TAG_PREFIX":"VCard","VARS":{"NO_LOOKUP":1}}}
+{"fields":{"Groups":{"2":"Location"},"Name":"Address"},"id":"Adr","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Anniversary"},"id":"Anniversary","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Birthday","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Bday","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Email"},"id":"Email","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"FormattedName"},"id":"Fn","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Gender"},"id":"Gender","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Location"},"Name":"Geolocation","ValueConv":"$val =~ s/^geo://; $val"},"id":"Geo","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"IMPP"},"id":"Impp","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Language"},"id":"Lang","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Logo"},"id":"Logo","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Name"},"id":"N","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Nickname"},"id":"Nickname","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Note"},"id":"Note","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Organization"},"id":"Org","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Preview"},"Name":"Photo"},"id":"Photo","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Software"},"id":"Prodid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Revision"},"id":"Rev","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Sound"},"id":"Sound","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"Telephone"},"id":"Tel","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"JobTitle"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeZone"},"id":"Tz","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"UID"},"id":"Uid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"URL"},"id":"Url","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Description":"VCard Version","Name":"VCardVersion"},"id":"Version","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ABDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"X-abdate","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"ABLabel","PrintConv":"$val =~ s/^_\\$!<(.*)>!\\$_$/$1/; $val"},"id":"X-ablabel","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"ABRelatedNames"},"id":"X-abrelatednames","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"AB_UID"},"id":"X-abuid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"AIM"},"id":"X-aim","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"ICQ"},"id":"X-icq","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"fields":{"Name":"SocialProfile"},"id":"X-socialprofile","index":null,"kind":"tag","table":"Image::ExifTool::VCard::Main"}
+{"kind":"table","module":"VCard","name":"Image::ExifTool::VCard::VCalendar","special":{"GROUPS":{"0":"VCard","1":"VCalendar","2":"Document"},"NOTES":"\n        The VCard module is also used to process iCalendar ICS files since they use\n        a format similar to vCard.  The following table lists standard iCalendar\n        tags, but any existing tags will be extracted.  Top-level iCalendar\n        components (eg. Event, Todo, Timezone, etc.) are used for the family 1 group\n        names, and embedded components (eg. Alarm) are added as a prefix to the tag\n        name.  See L<http://tools.ietf.org/html/rfc5545> for the official iCalendar\n        2.0 specification.\n    ","SHORT_NAME":"VCard::VCalendar","TABLE_NAME":"Image::ExifTool::VCard::VCalendar","TAG_PREFIX":"VCard_VCalendar","VARS":{"LONG_TAGS":6,"NO_LOOKUP":1}}}
+{"fields":{"Groups":{"2":"Time"},"Name":"Acknowledged","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Acknowledged","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Action"},"id":"Action","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Attachment"},"id":"Attach","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Attendee"},"id":"Attendee","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"CalendarScale"},"id":"Calscale","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Categories"},"id":"Categories","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Classification"},"id":"Class","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Comment"},"id":"Comment","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateTimeCompleted","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Completed","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Contact"},"id":"Contact","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateCreated","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Created","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Description"},"id":"Description","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateTimeEnd","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Dtend","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateTimeStamp","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Dtstamp","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateTimeStart","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Dtstart","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"DateTimeDue","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Due","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Duration"},"id":"Duration","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ExceptionDateTimes","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Exdate","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"FreeBusyTime"},"id":"Freebusy","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Location"},"Name":"Geolocation","ValueConv":"$val =~ s/^geo://; $val"},"id":"Geo","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Last-modified","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Location"},"Name":"Location"},"id":"Location","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Method"},"id":"Method","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Organizer"},"id":"Organizer","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"PercentComplete"},"id":"Percent-complete","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Priority"},"id":"Priority","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Software"},"id":"Prodid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"RecurrenceDateTimes","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Rdate","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"RecurrenceID"},"id":"Recurrence-id","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"RelatedTo"},"id":"Related-to","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Repeat"},"id":"Repeat","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"RequestStatus"},"id":"Request-status","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Resources"},"id":"Resources","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"RecurrenceRule"},"id":"Rrule","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"SequenceNumber"},"id":"Sequence","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Status"},"id":"Status","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Summary"},"id":"Summary","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"TimeTransparency"},"id":"Transp","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Trigger"},"id":"Trigger","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimezoneID"},"id":"Tzid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimezoneName"},"id":"Tzname","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimezoneOffsetFrom"},"id":"Tzoffsetfrom","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimezoneOffsetTo"},"id":"Tzoffsetto","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeZoneURL"},"id":"Tzurl","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"UID"},"id":"Uid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"URL"},"id":"Url","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Description":"VCalendar Version","Name":"VCalendarVersion"},"id":"Version","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"CalendarColor"},"id":"X-apple-calendar-color","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"DefaultAlarm"},"id":"X-apple-default-alarm","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"LocalDefaultAlarm"},"id":"X-apple-local-default-alarm","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"AllDayEvent"},"id":"X-microsoft-cdo-alldayevent","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"AppointmentSequence"},"id":"X-microsoft-cdo-appt-sequence","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"BusyStatus"},"id":"X-microsoft-cdo-busystatus","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"Importance","PrintConv":{"0":"Low","1":"Normal","2":"High"}},"id":"X-microsoft-cdo-importance","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"InstanceType","PrintConv":{"0":"Non-recurring Appointment","1":"Recurring Appointment","2":"Single Instance of Recurring Appointment","3":"Exception to Recurring Appointment"}},"id":"X-microsoft-cdo-insttype","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"IntendedBusyStatus"},"id":"X-microsoft-cdo-intendedstatus","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"OwnerAppointmentID"},"id":"X-microsoft-cdo-ownerapptid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"DisallowCounterProposal"},"id":"X-microsoft-disallow-counter","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"DoNotForwardMeeting"},"id":"X-microsoft-donotforwardmeeting","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Location"},"Name":"MeetingLocations"},"id":"X-microsoft-locations","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"AlarmUID"},"id":"X-wr-alarmuid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"CalendarDescription"},"id":"X-wr-caldesc","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"CalendarName"},"id":"X-wr-calname","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Name":"CalendarID"},"id":"X-wr-relcalid","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"fields":{"Groups":{"2":"Time"},"Name":"TimeZone2"},"id":"X-wr-timezone","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VCalendar"}
+{"kind":"table","module":"VCard","name":"Image::ExifTool::VCard::VNote","special":{"GROUPS":{"0":"VCard","1":"VNote","2":"Document"},"NOTES":"Tags extracted from V-Note VNT files.","SHORT_NAME":"VCard::VNote","TABLE_NAME":"Image::ExifTool::VCard::VNote","TAG_PREFIX":"VCard_VNote"}}
+{"fields":{"Name":"Body"},"id":"Body","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VNote"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Dcreated","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VNote"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})T(\\d{2})(\\d{2})(\\d{2})(Z?)/$1:$2:$3 $4:$5:$6$7/g;\n        $val =~ s/(\\d{4})(\\d{2})(\\d{2})/$1:$2:$3/g;\n        $val =~ s/(\\d{4})-(\\d{2})-(\\d{2})/$1:$2:$3/g;\n        return $val;\n    "},"id":"Last-modified","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VNote"}
+{"fields":{"Name":"Version"},"id":"Version","index":null,"kind":"tag","table":"Image::ExifTool::VCard::VNote"}

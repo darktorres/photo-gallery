@@ -1,0 +1,25 @@
+{"kind":"table","module":"Lytro","name":"Image::ExifTool::Lytro::Main","special":{"GROUPS":{"0":"Lytro","1":"Lytro","2":"Camera"},"NOTES":"\n        Tag definitions for Lytro Light Field Picture (LFP) files.  ExifTool\n        extracts the full JSON metadata blocks, as well as breaking them down into\n        individual tags.  All available tags are extracted from the JSON metadata,\n        even if they don't appear in the table below.\n    ","SHORT_NAME":"Lytro::Main","TABLE_NAME":"Image::ExifTool::Lytro::Main","TAG_PREFIX":"Lytro","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"FirmwareVersion"},"id":"CameraFirmware","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"Make"},"id":"CameraMake","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Description":"Camera Model Name","Name":"Model"},"id":"CameraModel","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"SerialNumber"},"id":"CameraSerialNumber","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"AccelerometerTime"},"id":"DevicesAccelerometerSampleArrayTime","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"AccelerometerX"},"id":"DevicesAccelerometerSampleArrayX","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"AccelerometerY"},"id":"DevicesAccelerometerSampleArrayY","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"AccelerometerZ"},"id":"DevicesAccelerometerSampleArrayZ","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"DevicesClockZuluTime","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"FNumber","PrintConv":"Image::ExifTool::Exif::PrintFNumber($val)"},"id":"DevicesLensFNumber","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"FocalLength","PrintConv":"sprintf(\"%.1f mm\",$val)","ValueConv":"$val * 1000"},"id":"DevicesLensFocalLength","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"LensTemperature","PrintConv":"sprintf(\"%.1f C\",$val)"},"id":"DevicesLensTemperature","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"ISO"},"id":"DevicesSensorIso","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"FocalPlaneXResolution","Notes":"Y resolution is the same as X resolution","ValueConv":"25.4 / $val / 1000"},"id":"DevicesSensorPixelPitch","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"SensorSerialNumber"},"id":"DevicesSensorSensorSerial","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"FrameExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)"},"id":"DevicesShutterFrameExposureDuration","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"ExposureTime","PrintConv":"Image::ExifTool::Exif::PrintExposureTime($val)"},"id":"DevicesShutterPixelExposureDuration","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"SocTemperature","PrintConv":"sprintf(\"%.1f C\",$val)"},"id":"DevicesSocTemperature","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"EmbeddedImage","Notes":"JPEG image embedded in LFP files written by Lytro Desktop"},"id":"EmbeddedImage","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Groups":{"2":"Image"},"Name":"ImageLimitExposureBias","PrintConv":"sprintf(\"%+.1f\", $val)"},"id":"ImageLimitExposureBias","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Groups":{"2":"Image"},"Name":"ImageModulationExposureBias","PrintConv":"sprintf(\"%+.1f\", $val)"},"id":"ImageModulationExposureBias","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Groups":{"2":"Image"},"Name":"Orientation","PrintConv":{"1":"Horizontal (normal)"}},"id":"ImageOrientation","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Binary":1,"List":1,"Name":"JSONMetadata","Notes":"the full JSON-format metadata blocks"},"id":"JSONMetadata","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}
+{"fields":{"Name":"CameraType"},"id":"Type","index":null,"kind":"tag","table":"Image::ExifTool::Lytro::Main"}

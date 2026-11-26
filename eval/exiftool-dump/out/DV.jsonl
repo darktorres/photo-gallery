@@ -1,0 +1,14 @@
+{"kind":"table","module":"DV","name":"Image::ExifTool::DV::Main","special":{"GROUPS":{"0":"DV","1":"DV","2":"Video"},"NOTES":"The following tags are extracted from DV videos.","SHORT_NAME":"DV::Main","TABLE_NAME":"Image::ExifTool::DV::Main","TAG_PREFIX":"DV","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"AspectRatio"},"id":"AspectRatio","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioBitsPerSample"},"id":"AudioBitsPerSample","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioChannels"},"id":"AudioChannels","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Groups":{"2":"Audio"},"Name":"AudioSampleRate"},"id":"AudioSampleRate","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"Colorimetry"},"id":"Colorimetry","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Description":"Date/Time Original","Groups":{"2":"Time"},"Name":"DateTimeOriginal","PrintConv":"$self->ConvertDateTime($val)"},"id":"DateTimeOriginal","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"Duration","PrintConv":"ConvertDuration($val)"},"id":"Duration","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"FrameRate","PrintConv":"int($val * 1000 + 0.5) / 1000"},"id":"FrameRate","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"ImageHeight"},"id":"ImageHeight","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"ImageWidth"},"id":"ImageWidth","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"TotalBitrate","PrintConv":"ConvertBitrate($val)"},"id":"TotalBitrate","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"VideoFormat"},"id":"VideoFormat","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}
+{"fields":{"Name":"VideoScanType"},"id":"VideoScanType","index":null,"kind":"tag","table":"Image::ExifTool::DV::Main"}

@@ -1,0 +1,10 @@
+{"kind":"table","module":"PGF","name":"Image::ExifTool::PGF::Main","special":{"GROUPS":{"0":"File","1":"File","2":"Image"},"NOTES":"\n        The following table lists information extracted from the header of\n        Progressive Graphics File (PGF) images.  As well, information is extracted\n        from the embedded PNG metadata image if it exists.  See\n        L<http://www.libpgf.org/> for the PGF specification.\n    ","PRIORITY":2,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"PGF::Main","TABLE_NAME":"Image::ExifTool::PGF::Main","TAG_PREFIX":"PGF"}}
+{"fields":{"Name":"PGFVersion","PrintConv":"sprintf(\"0x%.2x\", $val)"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Name":"PyramidLevels"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Name":"Quality"},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Name":"BitsPerPixel"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Name":"ColorComponents"},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Name":"ColorMode","PrintConv":{"0":"Bitmap","1":"Grayscale","2":"Indexed","3":"RGB","4":"CMYK","7":"Multichannel","8":"Duotone","9":"Lab"},"PrintConvColumns":2,"RawConv":"$$self{PGFColorMode} = $val"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}
+{"fields":{"Format":"int8u[3]","Name":"BackgroundColor"},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::PGF::Main"}

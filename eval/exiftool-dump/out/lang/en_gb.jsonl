@@ -1,0 +1,448 @@
+{"kind":"translate","lang":"en_gb","tag":"AboveColor","value":"Above Colour"}
+{"kind":"translate","lang":"en_gb","tag":"AdvancedFilter","value":{"PrintConv":{"Partial Color Blue":"Partial Colour Blue","Partial Color Green":"Partial Colour Green","Partial Color Orange":"Partial Colour Orange","Partial Color Purple":"Partial Colour Purple","Partial Color Red":"Partial Colour Red","Partial Color Yellow":"Partial Colour Yellow","Pop Color":"Pop Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"AdvancedSceneMode","value":{"PrintConv":{"Color Select":"Colour Select"}}}
+{"kind":"translate","lang":"en_gb","tag":"AllColorFlatField1","value":"All Colour Flat Field 1"}
+{"kind":"translate","lang":"en_gb","tag":"AllColorFlatField2","value":"All Colour Flat Field 2"}
+{"kind":"translate","lang":"en_gb","tag":"AllColorFlatField3","value":"All Colour Flat Field 3"}
+{"kind":"translate","lang":"en_gb","tag":"Alpha","value":{"PrintConv":{"Alpha Exists (W color component)":"Alpha Exists (W colour component)","Alpha Exists (color not premultiplied)":"Alpha Exists (colour not premultiplied)","Alpha Exists (color premultiplied)":"Alpha Exists (colour premultiplied)"}}}
+{"kind":"translate","lang":"en_gb","tag":"AlternateDuotoneColors","value":"Alternate Duotone Colours"}
+{"kind":"translate","lang":"en_gb","tag":"AlternateSpotColors","value":"Alternate Spot Colours"}
+{"kind":"translate","lang":"en_gb","tag":"ArtFilter","value":{"PrintConv":{"Pale & Light Color":"Pale & Light Colour","Pale & Light Color II":"Pale & Light Colour II","Partial Color":"Partial Colour","Partial Color II":"Partial Colour II","Partial Color III":"Partial Colour III","Watercolor":"Watercolour","Watercolor I":"Watercolour I","Watercolor II":"Watercolour II"}}}
+{"kind":"translate","lang":"en_gb","tag":"ArtFilterEffect","value":{"PrintConv":{"Green Color Filter":"Green Colour Filter","No Color Filter":"No Colour Filter","Orange Color Filter":"Orange Colour Filter","Pale & Light Color":"Pale & Light Colour","Pale & Light Color II":"Pale & Light Colour II","Partial Color":"Partial Colour","Partial Color II":"Partial Colour II","Partial Color III":"Partial Colour III","Red Color Filter":"Red Colour Filter","Watercolor":"Watercolour","Watercolor I":"Watercolour I","Watercolor II":"Watercolour II","Yellow Color Filter":"Yellow Colour Filter"}}}
+{"kind":"translate","lang":"en_gb","tag":"AudioIsInitialized","value":"Audio Is Initialised"}
+{"kind":"translate","lang":"en_gb","tag":"AutoAFPointColorTracking","value":"Auto AF Point Colour Tracking"}
+{"kind":"translate","lang":"en_gb","tag":"AutoLightingOptimizer","value":"Auto Lighting Optimiser"}
+{"kind":"translate","lang":"en_gb","tag":"AutoLightingOptimizerOn","value":"Auto Lighting Optimiser On"}
+{"kind":"translate","lang":"en_gb","tag":"BackgroundColor","value":"Background Colour"}
+{"kind":"translate","lang":"en_gb","tag":"BackgroundColorIndicator","value":{"Description":"Background Colour Indicator","PrintConv":{"Specified Background Color":"Specified Background Colour","Unspecified Background Color":"Unspecified Background Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"BackgroundColorValue","value":"Background Colour Value"}
+{"kind":"translate","lang":"en_gb","tag":"BasicColorImageSequence","value":"Basic Colour Image Sequence"}
+{"kind":"translate","lang":"en_gb","tag":"BelowColor","value":"Below Colour"}
+{"kind":"translate","lang":"en_gb","tag":"BestShotMode","value":{"PrintConv":{"Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"BkColor","value":"Background Colour"}
+{"kind":"translate","lang":"en_gb","tag":"BluePaletteColorTableData","value":"Blue Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"BluePaletteColorTableDescriptor","value":"Blue Palette Colour Table Descriptor"}
+{"kind":"translate","lang":"en_gb","tag":"BorderColor","value":"Border Colour"}
+{"kind":"translate","lang":"en_gb","tag":"CFAPlaneColor","value":"CFA Plane Colour"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration01","value":"Camera Colour Calibration 01"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration02","value":"Camera Colour Calibration 02"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration03","value":"Camera Colour Calibration 03"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration04","value":"Camera Colour Calibration 04"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration05","value":"Camera Colour Calibration 05"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration06","value":"Camera Colour Calibration 06"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration07","value":"Camera Colour Calibration 07"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration08","value":"Camera Colour Calibration 08"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration09","value":"Camera Colour Calibration 09"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration10","value":"Camera Colour Calibration 10"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration11","value":"Camera Colour Calibration 11"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration12","value":"Camera Colour Calibration 12"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration13","value":"Camera Colour Calibration 13"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration14","value":"Camera Colour Calibration 14"}
+{"kind":"translate","lang":"en_gb","tag":"CameraColorCalibration15","value":"Camera Colour Calibration 15"}
+{"kind":"translate","lang":"en_gb","tag":"CameraRawColorTone","value":"Camera Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"CanonColorInfo1","value":"Canon Colour Info 1"}
+{"kind":"translate","lang":"en_gb","tag":"CanonColorInfo2","value":"Canon Colour Info 2"}
+{"kind":"translate","lang":"en_gb","tag":"ChromaticityColorant","value":"Chromaticity Colourant"}
+{"kind":"translate","lang":"en_gb","tag":"CodingMethods","value":{"PrintConv":{"JBIG color":"JBIG colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"Color","value":{"Description":"Colour","PrintConv":{"Color":"Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ColorAberrationControl","value":"Colour Aberration Control"}
+{"kind":"translate","lang":"en_gb","tag":"ColorAdjustment","value":"Colour Adjustment"}
+{"kind":"translate","lang":"en_gb","tag":"ColorAdjustmentMode","value":"Colour Adjustment Mode"}
+{"kind":"translate","lang":"en_gb","tag":"ColorAverages","value":"Colour Averages"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBW","value":"Colour BW"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalance","value":"Colour Balance"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceAdj","value":"Colour Balance Adj"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceBlue","value":"Colour Balance Blue"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceGreen","value":"Colour Balance Green"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceRed","value":"Colour Balance Red"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceUnknown","value":"Colour Balance Unknown"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBalanceVersion","value":"Colour Balance Version"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBitDepth","value":"Colour Bit Depth"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBlur","value":"Colour Blur"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBlurOn","value":"Colour Blur On"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBoostLevel","value":"Colour Boost Level"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBoostType","value":"Colour Boost Type"}
+{"kind":"translate","lang":"en_gb","tag":"ColorBooster","value":"Colour Booster"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCalibrationMatrix","value":"Colour Calibration Matrix"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCasts","value":"Colour Casts"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCharacterization","value":"Colour Characterization"}
+{"kind":"translate","lang":"en_gb","tag":"ColorClass","value":"Colour Class"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCompensationFilter","value":"Colour Compensation Filter"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCompensationFilterCustom","value":"Colour Compensation Filter Custom"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCompensationFilterSet","value":"Colour Compensation Filter Set"}
+{"kind":"translate","lang":"en_gb","tag":"ColorComponents","value":"Colour Components"}
+{"kind":"translate","lang":"en_gb","tag":"ColorControl","value":"Colour Control"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCorrection","value":"Colour Correction"}
+{"kind":"translate","lang":"en_gb","tag":"ColorCreatorEffect","value":"Colour Creator Effect"}
+{"kind":"translate","lang":"en_gb","tag":"ColorDataVersion","value":"Colour Data Version"}
+{"kind":"translate","lang":"en_gb","tag":"ColorDescriptor","value":"Colour Descriptor"}
+{"kind":"translate","lang":"en_gb","tag":"ColorEffect","value":"Colour Effect"}
+{"kind":"translate","lang":"en_gb","tag":"ColorFieldCode","value":"Colour Field Code"}
+{"kind":"translate","lang":"en_gb","tag":"ColorFilter","value":"Colour Filter"}
+{"kind":"translate","lang":"en_gb","tag":"ColorGain","value":"Colour Gain"}
+{"kind":"translate","lang":"en_gb","tag":"ColorGroup","value":"Colour Group"}
+{"kind":"translate","lang":"en_gb","tag":"ColorHalftoningInfo","value":"Colour Halftoning Info"}
+{"kind":"translate","lang":"en_gb","tag":"ColorHue","value":"Colour Hue"}
+{"kind":"translate","lang":"en_gb","tag":"ColorImagePrintingFlag","value":"Colour Image Printing Flag"}
+{"kind":"translate","lang":"en_gb","tag":"ColorLabel","value":"Colour Label"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMap","value":"Colour Map"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrix","value":"Colour Matrix"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrix1","value":"Colour Matrix 1"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrix2","value":"Colour Matrix 2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrixA","value":"Colour Matrix A"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrixAdobeRGB","value":"Colour Matrix Adobe RGB"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrixB","value":"Colour Matrix B"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrixNumber","value":"Colour Matrix Number"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMatrixSRGB","value":"Colour Matrix sRGB"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMode","value":{"Description":"Colour Mode","PrintConv":{"Indexed Color":"Indexed Colour","Natural color":"Natural colour","Neutral Color":"Neutral Colour","RGB Color":"RGB Colour","Saturated Color":"Saturated Colour","Vivid color":"Vivid colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ColorMoireReduction","value":"Colour Moire Reduction"}
+{"kind":"translate","lang":"en_gb","tag":"ColorMoireReductionMode","value":"Colour Moire Reduction Mode"}
+{"kind":"translate","lang":"en_gb","tag":"ColorNoiseReduction","value":"Colour Noise Reduction"}
+{"kind":"translate","lang":"en_gb","tag":"ColorNoiseReductionDetail","value":"Colour Noise Reduction Detail"}
+{"kind":"translate","lang":"en_gb","tag":"ColorNoiseReductionIntensity","value":"Colour Noise Reduction Intensity"}
+{"kind":"translate","lang":"en_gb","tag":"ColorNoiseReductionSharpness","value":"Colour Noise Reduction Sharpness"}
+{"kind":"translate","lang":"en_gb","tag":"ColorNoiseReductionSmoothness","value":"Colour Noise Reduction Smoothness"}
+{"kind":"translate","lang":"en_gb","tag":"ColorObjBackType","value":"Colour Obj Back Type"}
+{"kind":"translate","lang":"en_gb","tag":"ColorObjName","value":"Colour Obj Name"}
+{"kind":"translate","lang":"en_gb","tag":"ColorObjType","value":"Colour Obj Type"}
+{"kind":"translate","lang":"en_gb","tag":"ColorObjVersion","value":"Colour Obj Version"}
+{"kind":"translate","lang":"en_gb","tag":"ColorPalette","value":"Colour Palette"}
+{"kind":"translate","lang":"en_gb","tag":"ColorPlanes","value":"Colour Planes"}
+{"kind":"translate","lang":"en_gb","tag":"ColorPrimaries","value":"Colour Primaries"}
+{"kind":"translate","lang":"en_gb","tag":"ColorProfile","value":"Colour Profile"}
+{"kind":"translate","lang":"en_gb","tag":"ColorProfileSettings","value":"Colour Profile Settings"}
+{"kind":"translate","lang":"en_gb","tag":"ColorRangeLevels","value":"Colour Range Levels"}
+{"kind":"translate","lang":"en_gb","tag":"ColorRepresentation","value":"Colour Representation"}
+{"kind":"translate","lang":"en_gb","tag":"ColorReproduction","value":"Colour Reproduction"}
+{"kind":"translate","lang":"en_gb","tag":"ColorResolutionDepth","value":"Colour Resolution Depth"}
+{"kind":"translate","lang":"en_gb","tag":"ColorResponseUnit","value":"Colour Response Unit"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSamplersResource","value":"Colour Samplers Resource"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSamplersResource2","value":"Colour Samplers Resource 2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSaturationAdj","value":"Colour Saturation Adj"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSequence","value":"Colour Sequence"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSiting","value":"Colour Siting"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpace","value":{"Description":"Colour Space","PrintConv":{"Embedded Color Profile":"Embedded Colour Profile","Linked Color Profile":"Linked Colour Profile","No color space specified":"No colour space specified","Windows Color Space":"Windows Colour Space"}}}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpaceData","value":"Colour Space Data"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpecApproximation","value":"Colour Spec Approximation"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpecData","value":"Colour Spec Data"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpecMethod","value":{"Description":"Colour Spec Method","PrintConv":{"Vendor Color":"Vendor Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpecPrecedence","value":"Colour Spec Precedence"}
+{"kind":"translate","lang":"en_gb","tag":"ColorSpecification","value":"Colour Specification"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTable","value":"Colour Table"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempAsShot","value":"Colour Temp As Shot"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempAuto","value":"Colour Temp Auto"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempCloudy","value":"Colour Temp Cloudy"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempCustom","value":"Colour Temp Custom"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempCustom1","value":"Colour Temp Custom 1"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempCustom2","value":"Colour Temp Custom 2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempDaylight","value":"Colour Temp Daylight"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFlash","value":"Colour Temp Flash"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFlashData","value":"Colour Temp Flash Data"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFluorescent","value":"Colour Temp Fluorescent"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFluorescentD","value":"Colour Temp Fluorescent D"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFluorescentN","value":"Colour Temp Fluorescent N"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempFluorescentW","value":"Colour Temp Fluorescent W"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempKelvin","value":"Colour Temp Kelvin"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempMeasured","value":"Colour Temp Measured"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempPC1","value":"Colour Temp PC1"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempPC2","value":"Colour Temp PC2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempPC3","value":"Colour Temp PC3"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempShade","value":"Colour Temp Shade"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempTungsten","value":"Colour Temp Tungsten"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown","value":"Colour Temp Unknown"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown10","value":"Colour Temp Unknown 10"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown11","value":"Colour Temp Unknown 11"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown12","value":"Colour Temp Unknown 12"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown13","value":"Colour Temp Unknown 13"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown14","value":"Colour Temp Unknown 14"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown15","value":"Colour Temp Unknown 15"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown16","value":"Colour Temp Unknown 16"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown17","value":"Colour Temp Unknown 17"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown18","value":"Colour Temp Unknown 18"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown19","value":"Colour Temp Unknown 19"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown2","value":"Colour Temp Unknown 2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown20","value":"Colour Temp Unknown 20"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown21","value":"Colour Temp Unknown 21"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown22","value":"Colour Temp Unknown 22"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown23","value":"Colour Temp Unknown 23"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown24","value":"Colour Temp Unknown 24"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown25","value":"Colour Temp Unknown 25"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown26","value":"Colour Temp Unknown 26"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown27","value":"Colour Temp Unknown 27"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown28","value":"Colour Temp Unknown 28"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown29","value":"Colour Temp Unknown 29"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown3","value":"Colour Temp Unknown 3"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown30","value":"Colour Temp Unknown 30"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown4","value":"Colour Temp Unknown 4"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown5","value":"Colour Temp Unknown 5"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown6","value":"Colour Temp Unknown 6"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown7","value":"Colour Temp Unknown 7"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown8","value":"Colour Temp Unknown 8"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTempUnknown9","value":"Colour Temp Unknown 9"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperature","value":"Colour Temperature"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureAdj","value":"Colour Temperature Adj"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureAuto","value":"Colour Temperature Auto"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureBG","value":"Colour Temperature BG"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureCustom","value":"Colour Temperature Custom"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureRG","value":"Colour Temperature RG"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureSet","value":"Colour Temperature Set"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTemperatureSetting","value":{"Description":"Colour Temperature Setting","PrintConv":{"Color Filter":"Colour Filter"}}}
+{"kind":"translate","lang":"en_gb","tag":"ColorTone","value":"Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneAdj","value":"Colour Tone Adj"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneAuto","value":"Colour Tone Auto"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneFaithful","value":"Colour Tone Faithful"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneLandscape","value":"Colour Tone Landscape"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneMonochrome","value":"Colour Tone Monochrome"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneNeutral","value":"Colour Tone Neutral"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTonePortrait","value":"Colour Tone Portrait"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneStandard","value":"Colour Tone Standard"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneUserDef1","value":"Colour Tone User Def 1"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneUserDef2","value":"Colour Tone User Def 2"}
+{"kind":"translate","lang":"en_gb","tag":"ColorToneUserDef3","value":"Colour Tone User Def 3"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTransferFuncs","value":"Colour Transfer Funcs"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTransform","value":"Colour Transform"}
+{"kind":"translate","lang":"en_gb","tag":"ColorTwistMatrix","value":"Colour Twist Matrix"}
+{"kind":"translate","lang":"en_gb","tag":"ColorType","value":{"Description":"Colour Type","PrintConv":{"Color":"Colour","Color Alpha":"Colour Alpha"}}}
+{"kind":"translate","lang":"en_gb","tag":"Colorant1Coordinates","value":"Colourant 1 Coordinates"}
+{"kind":"translate","lang":"en_gb","tag":"Colorant1Name","value":"Colourant 1 Name"}
+{"kind":"translate","lang":"en_gb","tag":"Colorant2Coordinates","value":"Colourant 2 Coordinates"}
+{"kind":"translate","lang":"en_gb","tag":"Colorant2Name","value":"Colourant 2 Name"}
+{"kind":"translate","lang":"en_gb","tag":"Colorant3Coordinates","value":"Colourant 3 Coordinates"}
+{"kind":"translate","lang":"en_gb","tag":"Colorant3Name","value":"Colourant 3 Name"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantA","value":"Colourant A"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantB","value":"Colourant B"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantBlack","value":"Colourant Black"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantBlue","value":"Colourant Blue"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantCount","value":"Colourant Count"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantCyan","value":"Colourant Cyan"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantGray","value":"Colourant Gray"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantGreen","value":"Colourant Green"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantL","value":"Colourant L"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantMagenta","value":"Colourant Magenta"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantMode","value":"Colourant Mode"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantOrder","value":"Colourant Order"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantRed","value":"Colourant Red"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantSwatchName","value":"Colourant Swatch Name"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantTableOut","value":"Colourant Table Out"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantTint","value":"Colourant Tint"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantType","value":"Colourant Type"}
+{"kind":"translate","lang":"en_gb","tag":"ColorantYellow","value":"Colourant Yellow"}
+{"kind":"translate","lang":"en_gb","tag":"Colorants","value":"Colourants"}
+{"kind":"translate","lang":"en_gb","tag":"ColorimetricIntentImageState","value":"Colourimetric Intent Image State"}
+{"kind":"translate","lang":"en_gb","tag":"ColorimetricReference","value":"Colourimetric Reference"}
+{"kind":"translate","lang":"en_gb","tag":"Colorimetry","value":"Colourimetry"}
+{"kind":"translate","lang":"en_gb","tag":"ColorimetryCode","value":"Colourimetry Code"}
+{"kind":"translate","lang":"en_gb","tag":"Colors","value":"Colours"}
+{"kind":"translate","lang":"en_gb","tag":"Compression","value":{"PrintConv":{"JBIG Color":"JBIG Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ContrastMode","value":{"PrintConv":{"Dynamic (Color Film)":"Dynamic (Colour Film)","Dynamic Art (My Color)":"Dynamic Art (My Colour)","Elegant (My Color)":"Elegant (My Colour)","Nature (Color Film)":"Nature (Colour Film)","Nostalgic (Color Film)":"Nostalgic (Colour Film)","Retro (My Color)":"Retro (My Colour)","Smooth (Color Film) or Pure (My Color)":"Smooth (Colour Film) or Pure (My Colour)","Vibrant (Color Film) or Expressive (My Color)":"Vibrant (Colour Film) or Expressive (My Colour)"}}}
+{"kind":"translate","lang":"en_gb","tag":"CustomColorTone","value":"Custom Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"D-LightingHQColorBoost","value":"D-Lighting HQ Colour Boost"}
+{"kind":"translate","lang":"en_gb","tag":"D-LightingHSColorBoost","value":"D-Lighting HS Colour Boost"}
+{"kind":"translate","lang":"en_gb","tag":"D-RangeOptimizerHighlight","value":"D-Range Optimiser Highlight"}
+{"kind":"translate","lang":"en_gb","tag":"D-RangeOptimizerMode","value":"D-Range Optimiser Mode"}
+{"kind":"translate","lang":"en_gb","tag":"D-RangeOptimizerShadow","value":"D-Range Optimiser Shadow"}
+{"kind":"translate","lang":"en_gb","tag":"D-RangeOptimizerValue","value":"D-Range Optimiser Value"}
+{"kind":"translate","lang":"en_gb","tag":"DateTimeDigitized","value":"Date/Time Digitised"}
+{"kind":"translate","lang":"en_gb","tag":"DefHilite","value":"Use Default Highlight Colour"}
+{"kind":"translate","lang":"en_gb","tag":"DefaultImageColor","value":"Default Image Colour"}
+{"kind":"translate","lang":"en_gb","tag":"DefineQuantizationTable","value":"Define Quantisation Table"}
+{"kind":"translate","lang":"en_gb","tag":"DeltaType","value":{"PrintConv":{"Color Addition":"Colour Addition","Color Replacement":"Colour Replacement"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter01","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Replace Color":"Replace Colour","Unicolor Bold":"Unicolour Bold","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter02","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter03","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter04","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter05","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter06","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter07","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter08","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter09","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter10","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter11","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter12","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter13","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter14","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter15","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter16","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter17","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter18","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter19","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DigitalFilter20","value":{"PrintConv":{"Color Filter":"Colour Filter","Extract Color":"Extract Colour","Invert Color":"Invert Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"DisplayUnits","value":{"PrintConv":{"meters":"Metres"}}}
+{"kind":"translate","lang":"en_gb","tag":"DriveMode","value":{"PrintConv":{"D-Range Optimizer Bracketing High":"D-Range Optimiser Bracketing High","D-Range Optimizer Bracketing Low":"D-Range Optimiser Bracketing Low"}}}
+{"kind":"translate","lang":"en_gb","tag":"DriveMode2","value":{"PrintConv":{"D-Range Optimizer Bracketing High":"D-Range Optimiser Bracketing High","D-Range Optimizer Bracketing Low":"D-Range Optimiser Bracketing Low"}}}
+{"kind":"translate","lang":"en_gb","tag":"DynamicRangeOptimizer","value":"Dynamic Range Optimiser"}
+{"kind":"translate","lang":"en_gb","tag":"DynamicRangeOptimizerBracket","value":"Dynamic Range Optimiser Bracket"}
+{"kind":"translate","lang":"en_gb","tag":"DynamicRangeOptimizerLevel","value":"Dynamic Range Optimiser Level"}
+{"kind":"translate","lang":"en_gb","tag":"DynamicRangeOptimizerMode","value":"Dynamic Range Optimiser Mode"}
+{"kind":"translate","lang":"en_gb","tag":"DynamicRangeOptimizerSetting","value":"Dynamic Range Optimiser Setting"}
+{"kind":"translate","lang":"en_gb","tag":"EasyMode","value":{"PrintConv":{"Color Accent":"Colour Accent","Color Swap":"Colour Swap","My Colors":"My Colours"}}}
+{"kind":"translate","lang":"en_gb","tag":"EmbeddedImageColorSpace","value":"Embedded Image Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"ExposureProgram","value":{"PrintConv":{"Partial Color Blue":"Partial Colour Blue","Partial Color Green":"Partial Colour Green","Partial Color Red":"Partial Colour Red","Partial Color Yellow":"Partial Colour Yellow","Pop Color":"Pop Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"FaithfulRawColorTone","value":"Faithful Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"FaxProfile","value":{"PrintConv":{"Lossless color and grayscale, L":"Lossless colour and grayscale, L","Lossy color and grayscale, C":"Lossy colour and grayscale, C"}}}
+{"kind":"translate","lang":"en_gb","tag":"FgColor","value":"Foreground Colour"}
+{"kind":"translate","lang":"en_gb","tag":"FileFormat","value":{"PrintConv":{"JPEG (lossy/non-quantization toggled)":"JPEG (lossy/non-quantisation toggled)","JPEG (non-quantization)":"JPEG (non-quantisation)"}}}
+{"kind":"translate","lang":"en_gb","tag":"FilmColorProcess","value":"Film Colour Process"}
+{"kind":"translate","lang":"en_gb","tag":"FilmMode","value":{"PrintConv":{"Dynamic (color)":"Dynamic (colour)","Nature (color)":"Nature (colour)","Smooth (color)":"Smooth (colour)","Standard (color)":"Standard (colour)"}}}
+{"kind":"translate","lang":"en_gb","tag":"FlagColor","value":"Flag Colour"}
+{"kind":"translate","lang":"en_gb","tag":"FlashColorFilter","value":"Flash Colour Filter"}
+{"kind":"translate","lang":"en_gb","tag":"FocalPlaneColorimetryEstimates","value":"Focal Plane Colourimetry Estimates"}
+{"kind":"translate","lang":"en_gb","tag":"GammaColorTone","value":"Gamma Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"GenOpColor","value":"Gen Op Colour"}
+{"kind":"translate","lang":"en_gb","tag":"GenreID","value":{"PrintConv":{"Books|Kids|Basic Concepts|Colors":"Books|Kids|Basic Concepts|Colours"}}}
+{"kind":"translate","lang":"en_gb","tag":"GreenPaletteColorTableData","value":"Green Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"GreenPaletteColorTableDescriptor","value":"Green Palette Colour Table Descriptor"}
+{"kind":"translate","lang":"en_gb","tag":"HasColorMap","value":"Has Colour Map"}
+{"kind":"translate","lang":"en_gb","tag":"HighlightColorDistortReduct","value":"Highlight Colour Distort Reduct"}
+{"kind":"translate","lang":"en_gb","tag":"HiliteColor","value":"Highlight Colour"}
+{"kind":"translate","lang":"en_gb","tag":"ImageAlterationConstraints","value":{"PrintConv":{"No Colorization":"No Colourization","No De-Colorization":"No De-Colourization"}}}
+{"kind":"translate","lang":"en_gb","tag":"ImageColor","value":"Image Colour"}
+{"kind":"translate","lang":"en_gb","tag":"ImageColorIndicator","value":{"Description":"Image Colour Indicator","PrintConv":{"Specified Image Color":"Specified Image Colour","Unspecified Image Color":"Unspecified Image Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ImageColorValue","value":"Image Colour Value"}
+{"kind":"translate","lang":"en_gb","tag":"ImageMedium","value":{"PrintConv":{"Color hard copy":"Colour hard copy","Color negative":"Colour negative","Color reversal":"Colour reversal"}}}
+{"kind":"translate","lang":"en_gb","tag":"ImageOptimization","value":"Image Optimisation"}
+{"kind":"translate","lang":"en_gb","tag":"IndexedColorTableCount","value":"Indexed Colour Table Count"}
+{"kind":"translate","lang":"en_gb","tag":"InitializedDataSize","value":"Initialised Data Size"}
+{"kind":"translate","lang":"en_gb","tag":"InterchangeColorSpace","value":"Interchange Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"Isotherm1Color","value":"Isotherm 1 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"Isotherm2Color","value":"Isotherm 2 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"LandscapeRawColorTone","value":"Landscape Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"LargeBluePaletteColorTableData","value":"Large Blue Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"LargeBluePaletteColorTableDescr","value":"Large Blue Palette Colour Table Descr"}
+{"kind":"translate","lang":"en_gb","tag":"LargeGreenPaletteColorTableData","value":"Large Green Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"LargeGreenPaletteColorTableDescr","value":"Large Green Palette Colour Table Descr"}
+{"kind":"translate","lang":"en_gb","tag":"LargePaletteColorLookupTableUID","value":"Large Palette Colour Lookup Table UID"}
+{"kind":"translate","lang":"en_gb","tag":"LargeRedPaletteColorTableData","value":"Large Red Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"LargeRedPaletteColorTableDescr","value":"Large Red Palette Colour Table Descr"}
+{"kind":"translate","lang":"en_gb","tag":"LayerBlendModes","value":{"PrintConv":{"Color":"Colour","Color Burn":"Colour Burn","Color Dodge":"Colour Dodge","Darker Color":"Darker Colour","Lighter Color":"Lighter Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"MDColorTable","value":"MD Colour Table"}
+{"kind":"translate","lang":"en_gb","tag":"MDItemColorSpace","value":"MD Item Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"MagicFilter","value":{"PrintConv":{"Pale & Light Color":"Pale & Light Colour","Pale & Light Color II":"Pale & Light Colour II","Partial Color":"Partial Colour","Partial Color II":"Partial Colour II","Partial Color III":"Partial Colour III","Watercolor":"Watercolour","Watercolor I":"Watercolour I","Watercolor II":"Watercolour II"}}}
+{"kind":"translate","lang":"en_gb","tag":"MandatoryBackground","value":{"PrintConv":{"Color Advisory, Image Mandatory":"Colour Advisory, Image Mandatory","Color Mandatory, Image Advisory":"Colour Mandatory, Image Advisory","Color and Image Advisory":"Colour and Image Advisory","Color and Image Mandatory":"Colour and Image Mandatory"}}}
+{"kind":"translate","lang":"en_gb","tag":"MattColor","value":"Matt Colour"}
+{"kind":"translate","lang":"en_gb","tag":"MediaColor","value":"Media Colour"}
+{"kind":"translate","lang":"en_gb","tag":"ModifiedColorTemp","value":"Modified Colour Temp"}
+{"kind":"translate","lang":"en_gb","tag":"MonochromeColor","value":"Monochrome Colour"}
+{"kind":"translate","lang":"en_gb","tag":"MyColorMode","value":{"Description":"My Colour Mode","PrintConv":{"Color Accent":"Colour Accent","Color Swap":"Colour Swap"}}}
+{"kind":"translate","lang":"en_gb","tag":"NamedColor","value":"Named Colour"}
+{"kind":"translate","lang":"en_gb","tag":"NamedColor2","value":"Named Colour 2"}
+{"kind":"translate","lang":"en_gb","tag":"NeutralRawColorTone","value":"Neutral Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"NewColorType","value":"New Colour Type"}
+{"kind":"translate","lang":"en_gb","tag":"NumColors","value":"Num Colours"}
+{"kind":"translate","lang":"en_gb","tag":"NumImportantColors","value":"Num Important Colours"}
+{"kind":"translate","lang":"en_gb","tag":"OpColor","value":"Op Colour"}
+{"kind":"translate","lang":"en_gb","tag":"OverflowColor","value":"Overflow Colour"}
+{"kind":"translate","lang":"en_gb","tag":"PF25ColorMatrix","value":"PF25 Colour Matrix"}
+{"kind":"translate","lang":"en_gb","tag":"PaletteColorTableUID","value":"Palette Colour Table UID"}
+{"kind":"translate","lang":"en_gb","tag":"PaletteColors","value":"Palette Colours"}
+{"kind":"translate","lang":"en_gb","tag":"PhotoEffect","value":{"PrintConv":{"My Color Data":"My Colour Data"}}}
+{"kind":"translate","lang":"en_gb","tag":"PhotometricInterpretation","value":{"PrintConv":{"Color Filter Array":"Colour Filter Array"}}}
+{"kind":"translate","lang":"en_gb","tag":"Photoshop2ColorTable","value":"Photoshop 2 Colour Table"}
+{"kind":"translate","lang":"en_gb","tag":"PhotoshopFormat","value":{"PrintConv":{"Optimized":"Optimised"}}}
+{"kind":"translate","lang":"en_gb","tag":"PictureEffect","value":{"PrintConv":{"Partial Color (blue)":"Partial Colour (blue)","Partial Color (green)":"Partial Colour (green)","Partial Color (red)":"Partial Colour (red)","Partial Color (yellow)":"Partial Colour (yellow)","Pop Color":"Pop Colour","Water Color":"Water Colour","Water Color 2":"Water Colour 2"}}}
+{"kind":"translate","lang":"en_gb","tag":"PictureEffect2","value":{"PrintConv":{"Partial Color":"Partial Colour","Pop Color":"Pop Colour","Water Color":"Water Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"PictureIndexedColors","value":"Picture Indexed Colours"}
+{"kind":"translate","lang":"en_gb","tag":"PictureMode","value":{"PrintConv":{"Color Creator":"Colour Creator","Color Profile 1":"Colour Profile 1","Color Profile 2":"Colour Profile 2","Color Profile 3":"Colour Profile 3"}}}
+{"kind":"translate","lang":"en_gb","tag":"PictureType","value":{"PrintConv":{"Bright(ly) Colored Fish":"Bright(ly) Coloured Fish"}}}
+{"kind":"translate","lang":"en_gb","tag":"PictureWizardColor","value":"Picture Wizard Colour"}
+{"kind":"translate","lang":"en_gb","tag":"PortraitRawColorTone","value":"Portrait Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"PresetWhiteBalance","value":{"PrintConv":{"Color Temperature":"Colour Temperature"}}}
+{"kind":"translate","lang":"en_gb","tag":"PreviewColorSpace","value":"Preview Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"ProfileClass","value":{"PrintConv":{"ColorSpace Conversion Profile":"ColourSpace Conversion Profile","NamedColor Profile":"Named Colour Profile"}}}
+{"kind":"translate","lang":"en_gb","tag":"PseudoColorType","value":"Pseudo Colour Type"}
+{"kind":"translate","lang":"en_gb","tag":"QuantizationDefault","value":"Quantisation Default"}
+{"kind":"translate","lang":"en_gb","tag":"QuantizationMethod","value":{"Description":"Quantisation Method","PrintConv":{"Color Space Specific":"Colour Space Specific"}}}
+{"kind":"translate","lang":"en_gb","tag":"RGBBkCol","value":"Background Colour"}
+{"kind":"translate","lang":"en_gb","tag":"RGBFgCol","value":"Foreground Colour"}
+{"kind":"translate","lang":"en_gb","tag":"ROIDisplayColor","value":"ROI Display Colour"}
+{"kind":"translate","lang":"en_gb","tag":"RawColorAdj","value":"Raw Colour Adj"}
+{"kind":"translate","lang":"en_gb","tag":"RawDevArtFilter","value":{"PrintConv":{"Pale & Light Color":"Pale & Light Colour","Pale & Light Color II":"Pale & Light Colour II","Partial Color":"Partial Colour","Partial Color II":"Partial Colour II","Partial Color III":"Partial Colour III","Watercolor":"Watercolour","Watercolor I":"Watercolour I","Watercolor II":"Watercolour II"}}}
+{"kind":"translate","lang":"en_gb","tag":"RawDevColorSpace","value":"Raw Dev Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"RawDevMemoryColorEmphasis","value":"Raw Dev Memory Colour Emphasis"}
+{"kind":"translate","lang":"en_gb","tag":"RawDevSettings","value":{"PrintConv":{"Color Space":"Colour Space","WB Color Temp":"WB Colour Temp"}}}
+{"kind":"translate","lang":"en_gb","tag":"RawDevWhiteBalance","value":{"PrintConv":{"Color Temperature":"Colour Temperature"}}}
+{"kind":"translate","lang":"en_gb","tag":"RedPaletteColorTableData","value":"Red Palette Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"RedPaletteColorTableDescriptor","value":"Red Palette Colour Table Descriptor"}
+{"kind":"translate","lang":"en_gb","tag":"ReflectionHardcopyOrigColorimetry","value":"Reflection Hardcopy Orig Colourimetry"}
+{"kind":"translate","lang":"en_gb","tag":"ReflectionPrintOutputColorimetry","value":"Reflection Print Output Colourimetry"}
+{"kind":"translate","lang":"en_gb","tag":"RenderingIntent","value":{"PrintConv":{"Absolute Colorimetric (LCS_GM_ABS_COLORIMETRIC)":"Absolute Colourimetric (LCS_GM_ABS_COLORIMETRIC)","ICC-Absolute Colorimetric":"ICC-Absolute Colourimetric","Media-Relative Colorimetric":"Media-Relative Colourimetric"}}}
+{"kind":"translate","lang":"en_gb","tag":"RetouchHistory","value":{"PrintConv":{"Color Custom":"Colour Custom","Color Outline":"Colour Outline","Color Sketch":"Colour Sketch","Selective Color":"Selective Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"SBAInputImageColorspace","value":"SBA Input Image Colourspace"}
+{"kind":"translate","lang":"en_gb","tag":"SRGBRendering","value":{"PrintConv":{"Absolute Colorimetric":"Absolute Colourimetric","Relative Colorimetric":"Relative Colourimetric"}}}
+{"kind":"translate","lang":"en_gb","tag":"SceneBalanceAlgorithmCommand","value":{"PrintConv":{"Neutral SBA Off, Color SBA Off":"Neutral SBA Off, Colour SBA Off","Neutral SBA Off, Color SBA On":"Neutral SBA Off, Colour SBA On","Neutral SBA On, Color SBA Off":"Neutral SBA On, Colour SBA Off","Neutral SBA On, Color SBA On":"Neutral SBA On, Colour SBA On"}}}
+{"kind":"translate","lang":"en_gb","tag":"SceneColorimetryEstimates","value":"Scene Colourimetry Estimates"}
+{"kind":"translate","lang":"en_gb","tag":"SceneMode","value":{"PrintConv":{"Color Effects":"Colour Effects","My Color":"My Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ScreenMinimumColorBitDepth","value":"Screen Minimum Colour Bit Depth"}
+{"kind":"translate","lang":"en_gb","tag":"SegmentedBlueColorTableData","value":"Segmented Blue Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"SegmentedGreenColorTableData","value":"Segmented Green Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"SegmentedRedColorTableData","value":"Segmented Red Colour Table Data"}
+{"kind":"translate","lang":"en_gb","tag":"SensingMethod","value":{"PrintConv":{"Color sequential area":"Colour sequential area","Color sequential linear":"Colour sequential linear","One-chip color area":"One-chip colour area","Three-chip color area":"Three-chip colour area","Two-chip color area":"Two-chip colour area"}}}
+{"kind":"translate","lang":"en_gb","tag":"ShootingMode","value":{"PrintConv":{"Color Effects":"Colour Effects","My Color":"My Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"ShutterPresentationColorCIELabVal","value":"Shutter Presentation Colour CIE Lab Val"}
+{"kind":"translate","lang":"en_gb","tag":"SmartAlbumColor","value":"Smart Album Colour"}
+{"kind":"translate","lang":"en_gb","tag":"SpecialEffectsOpticalFilter","value":{"PrintConv":{"Colored":"Coloured"}}}
+{"kind":"translate","lang":"en_gb","tag":"StandardRawColorTone","value":"Standard Raw Colour Tone"}
+{"kind":"translate","lang":"en_gb","tag":"StdOutputColorMode","value":"Std Output Colour Mode"}
+{"kind":"translate","lang":"en_gb","tag":"StreamColor","value":"Stream Colour"}
+{"kind":"translate","lang":"en_gb","tag":"SubSecTimeDigitized","value":"Sub Sec Time Digitised"}
+{"kind":"translate","lang":"en_gb","tag":"SubfileType","value":{"PrintConv":{"Color IW44":"Colour IW44"}}}
+{"kind":"translate","lang":"en_gb","tag":"SubimageColor","value":"Subimage Colour"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantA","value":"Swatch Colourant A"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantB","value":"Swatch Colourant B"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantBlack","value":"Swatch Colourant Black"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantBlue","value":"Swatch Colourant Blue"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantCyan","value":"Swatch Colourant Cyan"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantGray","value":"Swatch Colourant Gray"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantGreen","value":"Swatch Colourant Green"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantL","value":"Swatch Colourant L"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantMagenta","value":"Swatch Colourant Magenta"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantMode","value":"Swatch Colourant Mode"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantRed","value":"Swatch Colourant Red"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantSwatchName","value":"Swatch Colourant Swatch Name"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantTint","value":"Swatch Colourant Tint"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantType","value":"Swatch Colourant Type"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchColorantYellow","value":"Swatch Colourant Yellow"}
+{"kind":"translate","lang":"en_gb","tag":"SwatchGroupsColorants","value":"Swatch Groups Colourants"}
+{"kind":"translate","lang":"en_gb","tag":"TestTarget","value":{"PrintConv":{"Color Chart":"Colour Chart"}}}
+{"kind":"translate","lang":"en_gb","tag":"TextColor","value":"Text Colour"}
+{"kind":"translate","lang":"en_gb","tag":"ToneCurveColorSpace","value":"Tone Curve Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"ToningEffect","value":{"PrintConv":{"Color":"Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"TypeOfOriginal","value":{"PrintConv":{"Color Document":"Colour Document","Color Print":"Colour Print"}}}
+{"kind":"translate","lang":"en_gb","tag":"UCRBG","value":"Under Colour Removal & Black Gen."}
+{"kind":"translate","lang":"en_gb","tag":"USPTOOriginalContentType","value":{"PrintConv":{"Color":"Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"UltrasoundColorDataPresent","value":"Ultrasound Colour Data Present"}
+{"kind":"translate","lang":"en_gb","tag":"UnderflowColor","value":"Underflow Colour"}
+{"kind":"translate","lang":"en_gb","tag":"UninitializedDataSize","value":"Uninitialised Data Size"}
+{"kind":"translate","lang":"en_gb","tag":"Unsharp1Color","value":"Unsharp 1 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"Unsharp2Color","value":"Unsharp 2 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"Unsharp3Color","value":"Unsharp 3 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"Unsharp4Color","value":"Unsharp 4 Colour"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColor","value":"Video Alpha Premultiple Colour"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorA","value":"Video Alpha Premultiple Colour A"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorB","value":"Video Alpha Premultiple Colour B"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorBlack","value":"Video Alpha Premultiple Colour Black"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorBlue","value":"Video Alpha Premultiple Colour Blue"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorCyan","value":"Video Alpha Premultiple Colour Cyan"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorGray","value":"Video Alpha Premultiple Colour Gray"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorGreen","value":"Video Alpha Premultiple Colour Green"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorL","value":"Video Alpha Premultiple Colour L"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorMagenta","value":"Video Alpha Premultiple Colour Magenta"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorMode","value":"Video Alpha Premultiple Colour Mode"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorRed","value":"Video Alpha Premultiple Colour Red"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorSwatchName","value":"Video Alpha Premultiple Colour Swatch Name"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorTint","value":"Video Alpha Premultiple Colour Tint"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorType","value":"Video Alpha Premultiple Colour Type"}
+{"kind":"translate","lang":"en_gb","tag":"VideoAlphaPremultipleColorYellow","value":"Video Alpha Premultiple Colour Yellow"}
+{"kind":"translate","lang":"en_gb","tag":"VideoColorKind","value":"Video Colour Kind"}
+{"kind":"translate","lang":"en_gb","tag":"VideoColorSpace","value":"Video Colour Space"}
+{"kind":"translate","lang":"en_gb","tag":"VisualColor","value":{"Description":"Visual Colour","PrintConv":{"Color":"Colour"}}}
+{"kind":"translate","lang":"en_gb","tag":"WBAdjColorTemp","value":"WB Adj Colour Temp"}
+{"kind":"translate","lang":"en_gb","tag":"WBAdjLighting","value":{"PrintConv":{"High Color Rendering Fluorescent (3700K)":"High Colour Rendering Fluorescent (1)","High Color Rendering Fluorescent (5000K)":"High Colour Rendering Fluorescent (3)","High Color Rendering Fluorescent (cool white)":"High Colour Rendering Fluorescent (2)","High Color Rendering Fluorescent (daylight)":"High Colour Rendering Fluorescent (4)","High Color Rendering Fluorescent (warm white)":"High Colour Rendering Fluorescent (0)","Sodium Vapor Lamps":"Sodium Vapour Lamps","Standard Fluorescent (high temperature mercury vapor)":"Standard Fluorescent (high temperature mercury vapour)"}}}
+{"kind":"translate","lang":"en_gb","tag":"WatercolorFilter","value":"Watercolour Filter"}
+{"kind":"translate","lang":"en_gb","tag":"WhiteBalance","value":{"PrintConv":{"Color Filter":"Colour Filter","Color Temperature":"Colour Temperature","Color Temperature Enhancement":"Colour Temperature Enhancement","Color Temperature/Color Filter":"Colour Temperature/Colour Filter"}}}
+{"kind":"translate","lang":"en_gb","tag":"WhiteBalance2","value":{"PrintConv":{"Auto (Keep Warm Color Off)":"Auto (Keep Warm Colour Off)"}}}
+{"kind":"translate","lang":"en_gb","tag":"WhiteBalanceSet","value":{"PrintConv":{"Set Color Temperature 1":"Set Colour Temperature 1","Set Color Temperature 2":"Set Colour Temperature 2","Set Color Temperature 3":"Set Colour Temperature 3"}}}
+{"kind":"translate","lang":"en_gb","tag":"WhiteBalanceSetting","value":{"PrintConv":{"Color Temperature/Color Filter":"Colour Temperature/Colour Filter"}}}
+{"kind":"translate","lang":"en_gb","tag":"WorkColorSpace","value":{"Description":"Work Colour Space","PrintConv":{"ColorMatch RGB":"ColourMatch RGB"}}}
+{"kind":"translate","lang":"en_gb","tag":"XMethod","value":{"PrintConv":{"Color Closest Pixel and Alpha Linear Interpolation":"Colour Closest Pixel and Alpha Linear Interpolation","Color Linear Interpolation and Alpha Closest Pixel":"Colour Linear Interpolation and Alpha Closest Pixel"}}}
+{"kind":"translate","lang":"en_gb","tag":"YMethod","value":{"PrintConv":{"Color Closest Pixel and Alpha Linear Interpolation":"Colour Closest Pixel and Alpha Linear Interpolation","Color Linear Interpolation and Alpha Closest Pixel":"Colour Linear Interpolation and Alpha Closest Pixel"}}}

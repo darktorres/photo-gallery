@@ -1,0 +1,751 @@
+{"kind":"translate","lang":"sk","tag":"A100DataOffset","value":"Korekcia údajov A100"}
+{"kind":"translate","lang":"sk","tag":"ARMIdentifier","value":"Identifikátor ARM"}
+{"kind":"translate","lang":"sk","tag":"ARMVersion","value":"Verzia ARM"}
+{"kind":"translate","lang":"sk","tag":"Acceleration","value":"Zrýchlenie"}
+{"kind":"translate","lang":"sk","tag":"ActionAdvised","value":{"Description":"Odporúčané opatrenia","PrintConv":{"Object Append":"Pripojenie objektu","Object Kill":"Zničenie objektu","Object Reference":"Odkaz na objekt","Object Replace":"Nahradenie objektu"}}}
+{"kind":"translate","lang":"sk","tag":"ActiveArea","value":"Aktívna oblasť"}
+{"kind":"translate","lang":"sk","tag":"AdventRevision","value":"Kontrola výskytu"}
+{"kind":"translate","lang":"sk","tag":"AdventScale","value":"Rozsah výskytu"}
+{"kind":"translate","lang":"sk","tag":"AffineTransformMat","value":"Afinná transformačná matica"}
+{"kind":"translate","lang":"sk","tag":"AliasLayerMetadata","value":"Alias ​​vrstvy metadát"}
+{"kind":"translate","lang":"sk","tag":"AlphaByteCount","value":"Veľkosť kanála alfa (v bajtoch)"}
+{"kind":"translate","lang":"sk","tag":"AlphaDataDiscard","value":{"Description":"Vyradené údaje kanálu alfa","PrintConv":{"Flexbits Discarded":"Vyradené flexibilné bity","Full Resolution":"Úplné rozlíšenie","HighPass Frequency Data Discarded":"Vyradené údaje s vysokou frekvenciou","Highpass and LowPass Frequency Data Discarded":"Vyradené údaje o vysokej a nízkej frekvencii"}}}
+{"kind":"translate","lang":"sk","tag":"AlphaOffset","value":"Odsadenie alfa kanála"}
+{"kind":"translate","lang":"sk","tag":"AmbientTemperature","value":"Teplota okolia"}
+{"kind":"translate","lang":"sk","tag":"AnalogBalance","value":"Analógové vyváženie"}
+{"kind":"translate","lang":"sk","tag":"Annotations","value":"Anotácie"}
+{"kind":"translate","lang":"sk","tag":"AntiAliasStrength","value":"Relatívna sila antialiasingu"}
+{"kind":"translate","lang":"sk","tag":"ApertureValue","value":"Hodnota clony"}
+{"kind":"translate","lang":"sk","tag":"ApplicationNotes","value":"Poznámky aplikácie"}
+{"kind":"translate","lang":"sk","tag":"ApplicationRecordVersion","value":"Verzia záznamu aplikácie"}
+{"kind":"translate","lang":"sk","tag":"Artist","value":"Realizátor"}
+{"kind":"translate","lang":"sk","tag":"AsShotICCProfile","value":"Profil ICC v čase snímania"}
+{"kind":"translate","lang":"sk","tag":"AsShotNeutral","value":"Neutrálna farba v čase snímania"}
+{"kind":"translate","lang":"sk","tag":"AsShotPreProfileMatrix","value":"Profil matrice v čase snímania"}
+{"kind":"translate","lang":"sk","tag":"AsShotProfileName","value":"Názov profilu v čase snímania"}
+{"kind":"translate","lang":"sk","tag":"AsShotWhiteXY","value":"Biele XY v čase snímania"}
+{"kind":"translate","lang":"sk","tag":"AudioDuration","value":"Dĺžka trvania zvuku"}
+{"kind":"translate","lang":"sk","tag":"AudioOutcue","value":"Koncový zvukový signál"}
+{"kind":"translate","lang":"sk","tag":"AudioSamplingRate","value":"Vzorkovacia frekvencia zvuku"}
+{"kind":"translate","lang":"sk","tag":"AudioSamplingResolution","value":"Dátový tok zvuku"}
+{"kind":"translate","lang":"sk","tag":"AudioType","value":{"Description":"Typ zvuku","PrintConv":{"Mono Actuality":"Monofónna realita","Mono Music":"Monofónna hudba","Mono Question and Answer Session":"Monofónne zasadnutie otázok a odpovedí","Mono Raw Sound":"Monofonický surový zvuk","Mono Response to a Question":"Monofónna odpoveď na otázku","Mono Scener":"Monofónny snímač","Mono Voicer":"Monofónny hlasový záznamník","Mono Wrap":"Mono zábal","Stereo Actuality":"Stereofónna realita","Stereo Music":"Stereofónna hudba","Stereo Question and Answer Session":"Stereofónne zasadnutie otázok a odpovedí","Stereo Raw Sound":"Stereofonický surový zvuk","Stereo Response to a Question":"Stereofónna odpoveď na otázku","Stereo Scener":"Stereofónny snímač","Stereo Voicer":"Stereofónny hlasový záznamník","Stereo Wrap":"Stereofónny zábal","Text Only":"Len text"}}}
+{"kind":"translate","lang":"sk","tag":"BackgroundColorIndicator","value":{"Description":"Indikátor farby pozadia","PrintConv":{"Specified Background Color":"Špecifikovaná farba pozadia","Unspecified Background Color":"Nešpecifikovaná farba pozadia"}}}
+{"kind":"translate","lang":"sk","tag":"BackgroundColorValue","value":"Hodnota farby pozadia"}
+{"kind":"translate","lang":"sk","tag":"BadFaxLines","value":"Zlé faxové linky"}
+{"kind":"translate","lang":"sk","tag":"BaselineExposure","value":"Základná expozícia"}
+{"kind":"translate","lang":"sk","tag":"BaselineExposureOffset","value":"Korekcia základnej expozície"}
+{"kind":"translate","lang":"sk","tag":"BaselineNoise","value":"Základný šum"}
+{"kind":"translate","lang":"sk","tag":"BaselineSharpness","value":"Základná ostrosť"}
+{"kind":"translate","lang":"sk","tag":"BatteryLevel","value":"Úroveň nabitia batérie"}
+{"kind":"translate","lang":"sk","tag":"BayerGreenSplit","value":"Oddelenie zelených kanálov v Bayerovej matici"}
+{"kind":"translate","lang":"sk","tag":"BestQualityScale","value":"Optimálna stupnica"}
+{"kind":"translate","lang":"sk","tag":"BitsPerComponent","value":"Počet bitov na súčasť"}
+{"kind":"translate","lang":"sk","tag":"BitsPerExtendedRunLength","value":"Počet bitov na rozšírenú dĺžku radu"}
+{"kind":"translate","lang":"sk","tag":"BitsPerRunLength","value":"Počet bitov na dĺžku radu"}
+{"kind":"translate","lang":"sk","tag":"BitsPerSample","value":"Počet bitov na vzorku"}
+{"kind":"translate","lang":"sk","tag":"BlackLevel","value":"Úroveň čiernej"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelBlue","value":"Čierna úroveň modrej"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelDeltaH","value":"Delta úroveň čiernej H"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelDeltaV","value":"Delta úroveň čiernej V"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelGreen","value":"Čierna úroveň zelenej"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelRed","value":"Čierna úroveň červenej"}
+{"kind":"translate","lang":"sk","tag":"BlackLevelRepeatDim","value":"Úroveň stlmenia čiernej farby"}
+{"kind":"translate","lang":"sk","tag":"BlueBalance","value":"Rovnováha modrej farby"}
+{"kind":"translate","lang":"sk","tag":"Brightness","value":"Jas"}
+{"kind":"translate","lang":"sk","tag":"BrightnessValue","value":"Hodnota jasu"}
+{"kind":"translate","lang":"sk","tag":"By-line","value":"Meno autora"}
+{"kind":"translate","lang":"sk","tag":"By-lineTitle","value":"Autorský názov"}
+{"kind":"translate","lang":"sk","tag":"CFALayout","value":{"Description":"Rozloženie matice farebných filtrov","PrintConv":{"Even columns offset down 1/2 row":"Párne stĺpce posunuté o 1/2 riadku nadol","Even columns offset up 1/2 row":"Párne stĺpce posunuté o 1/2 riadku nahor","Even rows offset down by 1/2 row, even columns offset left by 1/2 column":"Párne riadky posunuté nadol o 1/2 riadka, párne stĺpce posunuté zľava o 1/2 stĺpca","Even rows offset down by 1/2 row, even columns offset right by 1/2 column":"Párne riadky posunuté nadol o 1/2 riadku, párne stĺpce posunuté vpravo o 1/2 stĺpca","Even rows offset left 1/2 column":"Párne riadky posunuté vľavo o 1/2 stĺpca","Even rows offset right 1/2 column":"Párne riadky posunuté vpravo o 1/2 stĺpca","Even rows offset up by 1/2 row, even columns offset left by 1/2 column":"Párne riadky posunuté nahor o 1/2 riadku, párne stĺpce posunuté doľava o 1/2 stĺpca","Even rows offset up by 1/2 row, even columns offset right by 1/2 column":"Párne riadky posunuté nahor o 1/2 riadku, párne stĺpce posunuté doprava o 1/2 stĺpca","Rectangular":"Obdĺžnikové"}}}
+{"kind":"translate","lang":"sk","tag":"CFAPattern","value":{"Description":"Matica farebných filtrov","PrintConv":{"[Blue,Green][Green,Red]":"[Modrá,Zelená][Zelená,Červená]","[Green,Blue][Red,Green]":"[Zelená,Modrá][Červená,Zelená]","[Green,Red][Blue,Green]":"[Zelená,Červená][Modrá,Zelená]","[Red,Green][Green,Blue]":"[Červená,Zelená][Zelená,Modrá]"}}}
+{"kind":"translate","lang":"sk","tag":"CFAPattern2","value":"Matica farebných filtrov 2"}
+{"kind":"translate","lang":"sk","tag":"CFAPlaneColor","value":"Farba roviny CFA"}
+{"kind":"translate","lang":"sk","tag":"CFARepeatPatternDim","value":"Vzor opakovania CFA Dim"}
+{"kind":"translate","lang":"sk","tag":"CIP3DataFile","value":"CIP3 - Dátový súbor"}
+{"kind":"translate","lang":"sk","tag":"CIP3Sheet","value":"CIP3 - List"}
+{"kind":"translate","lang":"sk","tag":"CIP3Side","value":"CIP3 - Strana"}
+{"kind":"translate","lang":"sk","tag":"CMYKEquivalent","value":"Ekvivalent CMYK"}
+{"kind":"translate","lang":"sk","tag":"CR2CFAPattern","value":{"Description":"Vzorka CR2 CFA","PrintConv":{"[Blue,Green][Green,Red]":"[Modrá,Zelená][Zelená,Červená]","[Green,Blue][Red,Green]":"[Zelená,Modrá][Červená,Zelená]","[Green,Red][Blue,Green]":"[Zelená,Červená][Modrá,Zelená]","[Red,Green][Green,Blue]":"[Červená,Zelená][Zelená,Modrá]"}}}
+{"kind":"translate","lang":"sk","tag":"CacheVersion","value":"Verzia vyrovnávacej pamäte"}
+{"kind":"translate","lang":"sk","tag":"CalibrationIlluminant1","value":{"Description":"Kalibračné osvetlenie 1","PrintConv":{"Cloudy":"Zamračené","Cool White Fluorescent":"Studená biela žiarivka","Day White Fluorescent":"Denná biela žiarivka","Daylight":"Denné svetlo","Daylight Fluorescent":"Denné svetlo žiarivky","Fine Weather":"Pekné počasie","Flash":"Blesk","Fluorescent":"Žiarivka","ISO Studio Tungsten":"Štúdio ISO Tungsten","Other":"Iné","Shade":"Tieň","Standard Light A":"Štandardné svetlo A","Standard Light B":"Štandardné svetlo B","Standard Light C":"Štandardné svetlo C","Tungsten (Incandescent)":"Volfrámová (žiarovka)","Unknown":"Neznáme","Warm White Fluorescent":"Teplá biela žiarivka","White Fluorescent":"Biela žiarivka"}}}
+{"kind":"translate","lang":"sk","tag":"CalibrationIlluminant2","value":{"Description":"Kalibračné osvetlenie 2","PrintConv":{"Cloudy":"Zamračené","Cool White Fluorescent":"Studená biela žiarivka","Day White Fluorescent":"Denná biela žiarivka","Daylight":"Denné svetlo","Daylight Fluorescent":"Denné svetlo žiarivky","Fine Weather":"Pekné počasie","Flash":"Blesk","Fluorescent":"Žiarivka","ISO Studio Tungsten":"Štúdio ISO Tungsten","Other":"Iné","Shade":"Tieň","Standard Light A":"Štandardné svetlo A","Standard Light B":"Štandardné svetlo B","Standard Light C":"Štandardné svetlo C","Tungsten (Incandescent)":"Volfrámová (žiarovka)","Unknown":"Neznáme","Warm White Fluorescent":"Teplá biela žiarivka","White Fluorescent":"Biela žiarivka"}}}
+{"kind":"translate","lang":"sk","tag":"CalibrationIlluminant3","value":{"Description":"Kalibračné osvetlenie 3","PrintConv":{"Cloudy":"Zamračené","Cool White Fluorescent":"Studená biela žiarivka","Day White Fluorescent":"Denná biela žiarivka","Daylight":"Denné svetlo","Daylight Fluorescent":"Denné svetlo žiarivky","Fine Weather":"Pekné počasie","Flash":"Blesk","Fluorescent":"Žiarivka","ISO Studio Tungsten":"Štúdio ISO Tungsten","Other":"Iné","Shade":"Tieň","Standard Light A":"Štandardné svetlo A","Standard Light B":"Štandardné svetlo B","Standard Light C":"Štandardné svetlo C","Tungsten (Incandescent)":"Volfrámová (žiarovka)","Warm White Fluorescent":"Teplá biela žiarivka","White Fluorescent":"Biela žiarivka"}}}
+{"kind":"translate","lang":"sk","tag":"CameraCalibration1","value":"Kalibračný snímač kamery 1"}
+{"kind":"translate","lang":"sk","tag":"CameraCalibration2","value":"Kalibračný snímač kamery 2"}
+{"kind":"translate","lang":"sk","tag":"CameraCalibration3","value":"Kalibračný snímač kamery 3"}
+{"kind":"translate","lang":"sk","tag":"CameraCalibrationSig","value":"Kalibračný signál fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"CameraElevationAngle","value":"Uhol pohľadu fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"CameraLabel","value":"Označenie fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"CameraSerialNumber","value":"Sériové číslo fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"Caption-Abstract","value":"Podrobný popis"}
+{"kind":"translate","lang":"sk","tag":"CatalogSets","value":"Katalógové sady"}
+{"kind":"translate","lang":"sk","tag":"Category","value":"Kategória"}
+{"kind":"translate","lang":"sk","tag":"CellLength","value":"Dĺžka bunky"}
+{"kind":"translate","lang":"sk","tag":"CellWidth","value":"Šírka bunky"}
+{"kind":"translate","lang":"sk","tag":"ChromaBlurRadius","value":"Polomer vyhladzovania farieb"}
+{"kind":"translate","lang":"sk","tag":"ChromaticAberrationCorrParams","value":"Parametre korekcie chromatickej aberácie"}
+{"kind":"translate","lang":"sk","tag":"ChromaticAberrationCorrection","value":{"Description":"Korekcia chromatickej aberácie","PrintConv":{"Auto":"Automatická","No correction params available":"Nie sú dostupné žiadne parametre korekcie","Off":"Vypnutá"}}}
+{"kind":"translate","lang":"sk","tag":"City","value":"Mesto"}
+{"kind":"translate","lang":"sk","tag":"ClassifyState","value":"Klasifikácia štruktúry"}
+{"kind":"translate","lang":"sk","tag":"CleanFaxData","value":{"Description":"Prítomnosť prerušovaných čiar","PrintConv":{"Clean":"Čisté","Regenerated":"Regenerované","Unclean":"Nečisté"}}}
+{"kind":"translate","lang":"sk","tag":"ClipPath","value":"Obrys farbenia"}
+{"kind":"translate","lang":"sk","tag":"CodedCharacterSet","value":"Sada kódovaných znakov"}
+{"kind":"translate","lang":"sk","tag":"CodingMethods","value":{"Description":"Metódy kódovania","PrintConv":{"Baseline JPEG":"Základný formát JPEG","JBIG color":"Farebnosť JBIG","Modified Huffman":"Upravený Huffman","Modified MR":"Upravená MR","Modified Read":"Upravené čítanie","Unspecified compression":"Nešpecifikovaná kompresia"}}}
+{"kind":"translate","lang":"sk","tag":"ColorCalibrationMatrix","value":"Farebná kalibračná matrica"}
+{"kind":"translate","lang":"sk","tag":"ColorCharacterization","value":"Farebná charakteristika"}
+{"kind":"translate","lang":"sk","tag":"ColorMap","value":"Farebná mapa"}
+{"kind":"translate","lang":"sk","tag":"ColorMatrix1","value":"Farebná matrica 1"}
+{"kind":"translate","lang":"sk","tag":"ColorMatrix2","value":"Farebná matrica 2"}
+{"kind":"translate","lang":"sk","tag":"ColorMatrix3","value":"Farebná matrica 3"}
+{"kind":"translate","lang":"sk","tag":"ColorPalette","value":"Paleta farieb"}
+{"kind":"translate","lang":"sk","tag":"ColorRepresentation","value":{"Description":"Zastúpenie farieb","PrintConv":{"3 Components, Frame Sequential in Multiple Objects":"3 komponenty, sekvenčné snímky vo viacerých objektoch","3 Components, Frame Sequential in One Object":"3 komponenty, sekvenčné snímky v jednom objekte","3 Components, Line Sequential":"3 komponenty, sekvenčná línia","3 Components, Pixel Sequential":"3 komponenty, sekvenčný pixel","3 Components, Single Frame":"3 komponenty, jeden snímok","3 Components, Special Interleaving":"3 komponenty, špeciálne prelínanie","4 Components, Frame Sequential in Multiple Objects":"4 komponenty, sekvenčné snímky vo viacerých objektoch","4 Components, Frame Sequential in One Object":"4 komponenty, sekvenčné snímky v jednom objekte","4 Components, Line Sequential":"4 komponenty, sekvenčná línia","4 Components, Pixel Sequential":"4 komponenty, sekvenčný pixel","4 Components, Single Frame":"4 komponenty, jeden snímok","4 Components, Special Interleaving":"4 komponenty, špeciálne prelínanie","Monochrome, Single Frame":"Monochromatický, jeden snímok","No Image, Single Frame":"Žiadny obrázok, jeden snímok"}}}
+{"kind":"translate","lang":"sk","tag":"ColorResponseUnit","value":"Jednotky farebnej citlivosti"}
+{"kind":"translate","lang":"sk","tag":"ColorSequence","value":"Farebná postupnosť"}
+{"kind":"translate","lang":"sk","tag":"ColorSpace","value":{"Description":"Farebný priestor","PrintConv":{"ICC Profile":"Profil ICC","Uncalibrated":"Nekalibrovaný","Wide Gamut RGB":"Široký rozsah RGB"}}}
+{"kind":"translate","lang":"sk","tag":"ColorTable","value":"Tabuľka farieb"}
+{"kind":"translate","lang":"sk","tag":"ColorimetricReference","value":"Kolorimetrická referencia"}
+{"kind":"translate","lang":"sk","tag":"ComponentsConfiguration","value":"Konfigurácia komponentov"}
+{"kind":"translate","lang":"sk","tag":"CompositeImage","value":{"Description":"Zložený obrázok","PrintConv":{"Composite Image Captured While Shooting":"Zložený obrázok zachytený počas snímania","General Composite Image":"Všeobecný zložený obrázok","Not a Composite Image":"Nie je to zložený obrázok","Unknown":"Neznáme"}}}
+{"kind":"translate","lang":"sk","tag":"CompositeImageCount","value":"Počet zložených obrázkov"}
+{"kind":"translate","lang":"sk","tag":"CompositeImageExposureTimes","value":"Celková expozícia všetkých zložených obrázkov"}
+{"kind":"translate","lang":"sk","tag":"CompressedBitsPerPixel","value":"Kompresia bitov na pixel"}
+{"kind":"translate","lang":"sk","tag":"Compression","value":{"Description":"Kompresia","PrintConv":{"JBIG B&W":"JBIG čiernobiely","JBIG Color":"JBIG Farebný","JPEG (old-style)":"JPEG (zastaralý)","Kodak DCR Compressed":"Komprimovaný Kodak DCR","Kodak KDC Compressed":"Komprimovaný Kodak KDC","Lossy JPEG":"Stratový JPEG","Microsoft Document Imaging (MDI) Binary Level Codec":"Binárny kodek Microsoft Document Imaging (MDI)","Microsoft Document Imaging (MDI) Progressive Transform Codec":"Kodek progresívnej transformácie Microsoft Document Imaging (MDI)","Microsoft Document Imaging (MDI) Vector":"Microsoft Document Imaging (MDI) Vektor","Next":"Kódovanie NeXT","Nikon NEF Compressed":"Komprimovaný Nikon NEF","Packed RAW":"Balený RAW","Pentax PEF Compressed":"Komprimovaný Pentax PEF","Samsung SRW Compressed":"Komprimovaný Samsung SRW","Samsung SRW Compressed 2":"Komprimovaný 2 Samsung SRW","Sony ARW Compressed":"Komprimovaný Sony ARW","Uncompressed":"Bez kompresie"}}}
+{"kind":"translate","lang":"sk","tag":"ConfirmedObjectSize","value":"Potvrdená veľkosť predmetu"}
+{"kind":"translate","lang":"sk","tag":"ConsecutiveBadFaxLines","value":"Počet po sebe idúcich zalomených riadkov"}
+{"kind":"translate","lang":"sk","tag":"Contact","value":"Kontakt"}
+{"kind":"translate","lang":"sk","tag":"ContentLocationCode","value":"Kód umiestnenia obsahu"}
+{"kind":"translate","lang":"sk","tag":"ContentLocationName","value":"Názov umiestnenia obsahu"}
+{"kind":"translate","lang":"sk","tag":"Contrast","value":{"Description":"Kontrast","PrintConv":{"High":"Vysoký","Low":"Nízky","Normal":"Normálny"}}}
+{"kind":"translate","lang":"sk","tag":"Converter","value":"Konvertor"}
+{"kind":"translate","lang":"sk","tag":"Copyright","value":"Autorské právo"}
+{"kind":"translate","lang":"sk","tag":"CopyrightNotice","value":"Oznámenie o autorských právach"}
+{"kind":"translate","lang":"sk","tag":"Country-PrimaryLocationCode","value":"Kód lokality krajiny"}
+{"kind":"translate","lang":"sk","tag":"Country-PrimaryLocationName","value":"Názov lokality krajiny"}
+{"kind":"translate","lang":"sk","tag":"CreateDate","value":"Dátum digitalizácie"}
+{"kind":"translate","lang":"sk","tag":"Credit","value":"Kredit"}
+{"kind":"translate","lang":"sk","tag":"CropBottom","value":"Orezávanie zospodu"}
+{"kind":"translate","lang":"sk","tag":"CropLeft","value":"Orezávanie vľavo"}
+{"kind":"translate","lang":"sk","tag":"CropRight","value":"Orezávanie vpravo"}
+{"kind":"translate","lang":"sk","tag":"CropTop","value":"Orezávanie zhora"}
+{"kind":"translate","lang":"sk","tag":"CurrentICCProfile","value":"Aktuálny profil ICC"}
+{"kind":"translate","lang":"sk","tag":"CurrentPreProfileMatrix","value":"Aktuálna predprofilová matrica"}
+{"kind":"translate","lang":"sk","tag":"CustomRendered","value":{"Description":"Vlastné vykresľovanie","PrintConv":{"Custom":"Vlastné","HDR (no original saved)":"HDR (nie je uložený žiadny originál)","HDR (original saved)":"HDR (originál uložený)","Normal":"Normálne","Original (for HDR)":"Originál (pre HDR)","Panorama":"Panoráma","Portrait":"Portrét","Portrait HDR":"Portrét HDR"}}}
+{"kind":"translate","lang":"sk","tag":"DNGAdobeData","value":"DNG - Údaje Adobe"}
+{"kind":"translate","lang":"sk","tag":"DNGBackwardVersion","value":"Spätná verzia DNG"}
+{"kind":"translate","lang":"sk","tag":"DNGLensInfo","value":"Informácie o objektíve DNG"}
+{"kind":"translate","lang":"sk","tag":"DNGPrivateData","value":"DNG - Súkromné ​​údaje"}
+{"kind":"translate","lang":"sk","tag":"DNGVersion","value":"Verzia DNG"}
+{"kind":"translate","lang":"sk","tag":"DataCompressionMethod","value":"Spôsob kompresie údajov"}
+{"kind":"translate","lang":"sk","tag":"DataType","value":"Typ údajov"}
+{"kind":"translate","lang":"sk","tag":"DateCreated","value":"Dátum vytvorenia"}
+{"kind":"translate","lang":"sk","tag":"DateSent","value":"Dátum odoslania"}
+{"kind":"translate","lang":"sk","tag":"DateTimeOriginal","value":"Dátum/Čas zhotovenia"}
+{"kind":"translate","lang":"sk","tag":"Decode","value":"Dekódovanie"}
+{"kind":"translate","lang":"sk","tag":"DefaultBlackRender","value":{"Description":"Predvolené vykresľovanie čiernej","PrintConv":{"Auto":"Automatické","None":"Žiadne"}}}
+{"kind":"translate","lang":"sk","tag":"DefaultCropOrigin","value":"Predvolená veľkosť orezaného originálu"}
+{"kind":"translate","lang":"sk","tag":"DefaultCropSize","value":"Predvolená veľkosť orezaného obrázku"}
+{"kind":"translate","lang":"sk","tag":"DefaultImageColor","value":"Predvolená farba obrázku"}
+{"kind":"translate","lang":"sk","tag":"DefaultScale","value":"Predvolená stupnica"}
+{"kind":"translate","lang":"sk","tag":"DefaultUserCrop","value":"Predvolená oblasť orezania"}
+{"kind":"translate","lang":"sk","tag":"DepthFar","value":"Maximálna hĺbka vody od fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"DepthFormat","value":{"Description":"Formát hĺbky","PrintConv":{"Inverse":"Inverzný","Linear":"Lineárny","Unknown":"Neznámy"}}}
+{"kind":"translate","lang":"sk","tag":"DepthMeasureType","value":{"Description":"Typ merania hĺbky","PrintConv":{"Optical Axis":"Optická os","Optical Ray":"Optický lúč","Unknown":"Neznáme"}}}
+{"kind":"translate","lang":"sk","tag":"DepthNear","value":"Hĺbka vody od fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"DepthUnits","value":{"Description":"Jednotky hĺbky","PrintConv":{"Meters":"Metre","Unknown":"Neznáme"}}}
+{"kind":"translate","lang":"sk","tag":"Destination","value":"Destinácia"}
+{"kind":"translate","lang":"sk","tag":"DeviceSettingDescription","value":"Popis predvolieb fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"DigitalCreationDate","value":"Dátum digitalizácie súboru"}
+{"kind":"translate","lang":"sk","tag":"DigitalCreationTime","value":"Čas digitalizácie súboru"}
+{"kind":"translate","lang":"sk","tag":"DigitalZoomRatio","value":"Pomer digitálneho zoomu"}
+{"kind":"translate","lang":"sk","tag":"DistortionCorrParams","value":"Parametre korekcie skreslenia"}
+{"kind":"translate","lang":"sk","tag":"DistortionCorrection","value":{"Description":"Korekcia skreslenia","PrintConv":{"Auto":"Automatická","Auto fixed by lens":"Automaticky fixovaná objektívom","No correction params available":"Nie sú dostupné žiadne parametre korekcie","Off":"Vypnutá"}}}
+{"kind":"translate","lang":"sk","tag":"DocumentHistory","value":"História dokumentu"}
+{"kind":"translate","lang":"sk","tag":"DocumentName","value":"Názov dokumentu"}
+{"kind":"translate","lang":"sk","tag":"DocumentNotes","value":"Pripomienky k dokumentu"}
+{"kind":"translate","lang":"sk","tag":"DotRange","value":"Rozsah bodov"}
+{"kind":"translate","lang":"sk","tag":"EditStatus","value":"Stav úprav"}
+{"kind":"translate","lang":"sk","tag":"EditorialUpdate","value":{"Description":"Druh aktualizácie","PrintConv":{"Additional language":"Doplnkový jazyk"}}}
+{"kind":"translate","lang":"sk","tag":"EndPoints","value":"Koncové body"}
+{"kind":"translate","lang":"sk","tag":"EnhanceParams","value":"Vylepšené paramentre"}
+{"kind":"translate","lang":"sk","tag":"EnvelopeNumber","value":"Číslo obálky"}
+{"kind":"translate","lang":"sk","tag":"EnvelopePriority","value":{"Description":"Priorita obálky","PrintConv":{"0 (reserved)":"0 (rezervované)","1 (most urgent)":"1 (najnaliehavejšie)","5 (normal urgency)":"5 (bežná naliehavosť)","8 (least urgent)":"8 (najmenej naliehavé)","9 (user-defined priority)":"9 (priorita definovaná užívateľom)"}}}
+{"kind":"translate","lang":"sk","tag":"EnvelopeRecordVersion","value":"Verzia záznamu obálky"}
+{"kind":"translate","lang":"sk","tag":"ExcursionTolerance","value":{"Description":"Tolerancia exkurzie","PrintConv":{"Allowed":"Povolené","Not Allowed":"Nie je povolené"}}}
+{"kind":"translate","lang":"sk","tag":"ExifCameraInfo","value":"Informácie Exif o fotoaparáte"}
+{"kind":"translate","lang":"sk","tag":"ExifImageHeight","value":"Exif - Výška obrázku"}
+{"kind":"translate","lang":"sk","tag":"ExifImageWidth","value":"Exif - Šírka obrázku"}
+{"kind":"translate","lang":"sk","tag":"ExifVersion","value":"Verzia Exif"}
+{"kind":"translate","lang":"sk","tag":"ExpandFilm","value":"Rozšírenie filmu"}
+{"kind":"translate","lang":"sk","tag":"ExpandFilterLens","value":"Rozšírenie filtra objektívu"}
+{"kind":"translate","lang":"sk","tag":"ExpandFlashLamp","value":"Rozšírenie bleskovej lampy"}
+{"kind":"translate","lang":"sk","tag":"ExpandLens","value":"Rozšírenie objektívu"}
+{"kind":"translate","lang":"sk","tag":"ExpandScanner","value":"Rozšírenie skenera"}
+{"kind":"translate","lang":"sk","tag":"ExpandSoftware","value":"Softvérové rozšírenie"}
+{"kind":"translate","lang":"sk","tag":"ExpirationDate","value":"Dátum ukončenia platnosti"}
+{"kind":"translate","lang":"sk","tag":"ExpirationTime","value":"Čas skončenia platnosti"}
+{"kind":"translate","lang":"sk","tag":"Exposure","value":"Expozícia"}
+{"kind":"translate","lang":"sk","tag":"ExposureCompensation","value":"Kompenzácia expozície"}
+{"kind":"translate","lang":"sk","tag":"ExposureIndex","value":"Index expozície"}
+{"kind":"translate","lang":"sk","tag":"ExposureMode","value":{"Description":"Expozičný režim","PrintConv":{"Auto":"Automatický","Auto bracket":"Automatické stupňovanie","Manual":"Manuálny"}}}
+{"kind":"translate","lang":"sk","tag":"ExposureProgram","value":{"Description":"Expozičný program","PrintConv":{"Action (High speed)":"Akčný (vysoká rýchlosť) ","Aperture-priority AE":"AE s prioritou clony","Bulb":"Žiarovka","Creative (Slow speed)":"Kreatívny (pomalá rýchlosť)","Landscape":"Krajina ","Manual":"Manuálny","Not Defined":"Nedefinovaný","Portrait":"Portrét ","Shutter speed priority AE":"Priorita rýchlosti uzávierky AE"}}}
+{"kind":"translate","lang":"sk","tag":"ExposureTime","value":"Čas expozície"}
+{"kind":"translate","lang":"sk","tag":"ExtraSamples","value":{"Description":"Popis voliteľných súčastí","PrintConv":{"Associated Alpha":"Pridružené alfa","Unassociated Alpha":"Nepripojený alfa","Unspecified":"Nešpecifikované"}}}
+{"kind":"translate","lang":"sk","tag":"FNumber","value":"Clonové číslo"}
+{"kind":"translate","lang":"sk","tag":"FaxProfile","value":{"Description":"Faxový profil","PrintConv":{"Extended B&W lossless, F":"Rozšírené čiernobiele bezstratové, F","Lossless JBIG B&W, J":"Bezstratový JBIG čiernobiely, J","Lossless color and grayscale, L":"Bezstratové farby a odtiene sivej, L","Lossy color and grayscale, C":"Stratové farby a odtiene šedej, C","Minimal B&W lossless, S":"Minimálne čiernobiele bezstratové, S","Mixed raster content, M":"Zmiešaný obsah rastra, M","Multi Profiles":"Viacnásobné profily","Profile T":"Profil T","Unknown":"Neznámy"}}}
+{"kind":"translate","lang":"sk","tag":"FaxRecvParams","value":"Parametre prijímania faxov"}
+{"kind":"translate","lang":"sk","tag":"FaxRecvTime","value":"Čas potrebný na prijatie faxu"}
+{"kind":"translate","lang":"sk","tag":"FaxSubAddress","value":"Podadresa faxu"}
+{"kind":"translate","lang":"sk","tag":"FileFormat","value":{"Description":"Formát súboru","PrintConv":{"Compressed Binary File [.ZIP] (PKWare Inc)":"Komprimovaný binárny súbor [.ZIP] (PKWare Inc)","IPTC Unstructured Character Oriented File Format (UCOFF)":"Formát neštruktúrovaných znakovo orientovaných súborov IPTC (UCOFF)","IPTC-NAA Digital Newsphoto Parameter Record":"Záznam parametrov digitálnych novín IPTC-NAA","IPTC7901 Recommended Message Format":"Odporúčaný formát správy IPTC7901","News Industry Text Format (NITF)":"Textový formát pre spravodajstvo (NITF)","No ObjectData":"Žiadne údaje o objekte","Ritzaus Bureau NITF version (RBNITF DTD)":"Verzia Ritzaus Bureau NITF (RBNITF DTD)","Tagged Image File Format (Adobe/Aldus Image data)":"Označený formát obrazového súboru (obrazové údaje Adobe/Aldus)"}}}
+{"kind":"translate","lang":"sk","tag":"FileSource","value":{"Description":"Zdroj súboru","PrintConv":{"Digital Camera":"Digitálny fotoaparát","Film Scanner":"Filmový skener","Reflection Print Scanner":"Odrazový skener","Sigma Digital Camera":"Digitálny fotoaparát Sigma"}}}
+{"kind":"translate","lang":"sk","tag":"FileVersion","value":"Verzia súboru"}
+{"kind":"translate","lang":"sk","tag":"FillOrder","value":{"Description":"Poradie výplne","PrintConv":{"Normal":"Normálne","Reversed":"Obrátené"}}}
+{"kind":"translate","lang":"sk","tag":"FixtureIdentifier","value":"Identifikátor príslušenstva"}
+{"kind":"translate","lang":"sk","tag":"Flash","value":{"Description":"Stav blesku pri snímaní","PrintConv":{"Auto, Did not fire":"Automaticky, nebol odpálený","Auto, Did not fire, Red-eye reduction":"Automaticky, nebol odpálený, redukcia červených očí","Auto, Fired":"Automaticky, odpálený","Auto, Fired, Red-eye reduction":"Zapnutý, odpálený, redukcia červených očí","Auto, Fired, Red-eye reduction, Return detected":"Zapnutý, odpálený, redukcia červených očí, návrat bol zistený","Auto, Fired, Red-eye reduction, Return not detected":"Zapnutý, odpálený, redukcia červených očí, návrat nebol zistený","Auto, Fired, Return detected":"Automaticky, odpálený, návrat bol zistený","Auto, Fired, Return not detected":"Automaticky, odpálený, návrat nebol zistený","Fired":"Odpálený","Fired, Red-eye reduction":"Odpálený, redukcia červených očí","Fired, Red-eye reduction, Return detected":"Odpálený, redukcia červených očí, návrat bol zistený","Fired, Red-eye reduction, Return not detected":"Odpálený, redukcia červených očí, návrat nebol zistený","Fired, Return detected":"Odpálený, návrat bol zistený","Fired, Return not detected":"Odpálený, návrat nebol zistený","No Flash":"Bez blesku","No flash function":"Žiadna funkcia blesku","Off, Did not fire":"Vypnutý, nebol odpálený","Off, Did not fire, Return not detected":"Vypnutý, nebol odpálený, návrat nebol zistený","Off, No flash function":"Výpnutý, žiadna funkcia blesku","Off, Red-eye reduction":"Vypnutý, redukcia červených očí","On, Did not fire":"Zapnutý, nebol odpálený","On, Fired":"Zapnutý, odpálený","On, Red-eye reduction":"Zapnutý, redukcia červených očí","On, Red-eye reduction, Return detected":"Zapnutý, redukcia červených očí, návrat bol zistený","On, Red-eye reduction, Return not detected":"Zapnutý, redukcia červených očí, návrat nebol zistený","On, Return detected":"Zapnutý, návrat bol zistený ","On, Return not detected":"Zapnutý, návrat nebol zistený "}}}
+{"kind":"translate","lang":"sk","tag":"FlashEnergy","value":"Energia blesku"}
+{"kind":"translate","lang":"sk","tag":"FlashpixVersion","value":"Verzia Flashpix"}
+{"kind":"translate","lang":"sk","tag":"FocalLength","value":"Ohnisková vzdialenosť"}
+{"kind":"translate","lang":"sk","tag":"FocalLengthIn35mmFormat","value":"Ohnisková vzdialenosť vo formáte 35 mm"}
+{"kind":"translate","lang":"sk","tag":"FocalPlaneResolutionUnit","value":{"Description":"Jednotka rozlíšenia ohniskovej roviny","PrintConv":{"None":"žiadne","inches":"palce"}}}
+{"kind":"translate","lang":"sk","tag":"FocalPlaneXResolution","value":"Horizontálne rozlíšenie ohniskovej roviny"}
+{"kind":"translate","lang":"sk","tag":"FocalPlaneYResolution","value":"Vertikálne rozlíšenie ohniskovej roviny"}
+{"kind":"translate","lang":"sk","tag":"ForwardMatrix1","value":"Priama matrica 1"}
+{"kind":"translate","lang":"sk","tag":"ForwardMatrix2","value":"Priama matrica 2"}
+{"kind":"translate","lang":"sk","tag":"ForwardMatrix3","value":"Priama matrica 3"}
+{"kind":"translate","lang":"sk","tag":"FovCot","value":"Zobrazovací uhol"}
+{"kind":"translate","lang":"sk","tag":"FrameRate","value":"Počet snímok za sekundu"}
+{"kind":"translate","lang":"sk","tag":"FreeByteCounts","value":"Počet voľných bajtov"}
+{"kind":"translate","lang":"sk","tag":"FreeOffsets","value":"Voľné korekcie"}
+{"kind":"translate","lang":"sk","tag":"GDALMetadata","value":"GDAL - Metadáta"}
+{"kind":"translate","lang":"sk","tag":"GDALNoData","value":"GDAL - Priehľadnosť"}
+{"kind":"translate","lang":"sk","tag":"GPSAltitude","value":"Nadmorská výška"}
+{"kind":"translate","lang":"sk","tag":"GPSAltitudeRef","value":{"Description":"Ref. nadmorskej výšky","PrintConv":{"Above Sea Level":"Nad hladinou mora","Below Sea Level":"Pod hladinou mora"}}}
+{"kind":"translate","lang":"sk","tag":"GPSAreaInformation","value":"Informácie o oblasti"}
+{"kind":"translate","lang":"sk","tag":"GPSDOP","value":"Stupeň presnosti merania GPS"}
+{"kind":"translate","lang":"sk","tag":"GPSDateStamp","value":"Dátum a čas GPS"}
+{"kind":"translate","lang":"sk","tag":"GPSDestBearing","value":"Azimut k cieľovému bodu"}
+{"kind":"translate","lang":"sk","tag":"GPSDestBearingRef","value":{"Description":"Ref. azimut k cieľovému bodu","PrintConv":{"Magnetic North":"Magnetický sever","True North":"Skutočný sever"}}}
+{"kind":"translate","lang":"sk","tag":"GPSDestDistance","value":"Vzdialenosť k cieľu"}
+{"kind":"translate","lang":"sk","tag":"GPSDestDistanceRef","value":{"Description":"Ref. vzdialenosť k cieľu","PrintConv":{"Kilometers":"Kilometre","Miles":"Míle","Nautical Miles":"Námorné míle"}}}
+{"kind":"translate","lang":"sk","tag":"GPSDestLatitude","value":"Zemepisná šírka cieľa"}
+{"kind":"translate","lang":"sk","tag":"GPSDestLatitudeRef","value":{"Description":"Ref. pre zemepisnú šírku cieľa","PrintConv":{"North":"Severná šírka","South":"Južná šírka"}}}
+{"kind":"translate","lang":"sk","tag":"GPSDestLongitude","value":"Zemepisná dĺžka cieľa"}
+{"kind":"translate","lang":"sk","tag":"GPSDestLongitudeRef","value":{"Description":"Ref. pre zemepisnú dĺžku cieľa","PrintConv":{"East":"Východná dĺžka","West":"Západná dĺžka"}}}
+{"kind":"translate","lang":"sk","tag":"GPSDifferential","value":{"Description":"Diferenciálna korekcia","PrintConv":{"Differential Corrected":"Diferenciálna korekcia","No Correction":"Žiadna korekcia"}}}
+{"kind":"translate","lang":"sk","tag":"GPSHPositioningError","value":"Chyba horizontálneho polohovania"}
+{"kind":"translate","lang":"sk","tag":"GPSImgDirection","value":"Smer GPS obrázku"}
+{"kind":"translate","lang":"sk","tag":"GPSImgDirectionRef","value":{"Description":"Ref. smer obrázku","PrintConv":{"Magnetic North":"Magnetický sever","True North":"Skutočný sever"}}}
+{"kind":"translate","lang":"sk","tag":"GPSLatitude","value":"Zemepisná šírka"}
+{"kind":"translate","lang":"sk","tag":"GPSLatitudeRef","value":{"Description":"Ref. zemepisnej šírky","PrintConv":{"North":"Severná šírka","South":"Južná šírka"}}}
+{"kind":"translate","lang":"sk","tag":"GPSLongitude","value":"Zemepisná dĺžka"}
+{"kind":"translate","lang":"sk","tag":"GPSLongitudeRef","value":{"Description":"Ref. zemepisnej dĺžky","PrintConv":{"East":"Východná dĺžka","West":"Západná dĺžka"}}}
+{"kind":"translate","lang":"sk","tag":"GPSMapDatum","value":"Údaje geodetického zamerania"}
+{"kind":"translate","lang":"sk","tag":"GPSMeasureMode","value":{"Description":"Režim merania GPS","PrintConv":{"2-Dimensional Measurement":"2-rozmerné meranie","3-Dimensional Measurement":"3-rozmerné meranie"}}}
+{"kind":"translate","lang":"sk","tag":"GPSProcessingMethod","value":"Metóda spracovania GPS"}
+{"kind":"translate","lang":"sk","tag":"GPSSatellites","value":"Satelity použité na meranie"}
+{"kind":"translate","lang":"sk","tag":"GPSSpeed","value":"Rýchlosť pohybu prijímača GPS"}
+{"kind":"translate","lang":"sk","tag":"GPSSpeedRef","value":{"Description":"Jednotky na meranie rýchlosti","PrintConv":{"knots":"uzly"}}}
+{"kind":"translate","lang":"sk","tag":"GPSStatus","value":{"Description":"Stav prijímača GPS","PrintConv":{"Measurement Active":"Meranie je aktívne","Measurement Void":"Meranie je nesprávne"}}}
+{"kind":"translate","lang":"sk","tag":"GPSTimeStamp","value":"Čas GPS (atómové hodiny)"}
+{"kind":"translate","lang":"sk","tag":"GPSTrack","value":"Smer pohybu prijímača GPS"}
+{"kind":"translate","lang":"sk","tag":"GPSTrackRef","value":{"Description":"Ref. na určenie smeru pohybu prijímača","PrintConv":{"Magnetic North":"Magnetický sever","True North":"Skutočný sever"}}}
+{"kind":"translate","lang":"sk","tag":"GPSVersionID","value":"Identifikátor verzie GPS"}
+{"kind":"translate","lang":"sk","tag":"GainControl","value":{"Description":"Ovládanie zosilnenia","PrintConv":{"High gain down":"Vysoké zosilnenie nižšie","High gain up":"Vysoké zosilnenie","Low gain down":"Nízke zosilnenie nižšie","Low gain up":"Nízke zosilnenie","None":"Žiadna"}}}
+{"kind":"translate","lang":"sk","tag":"Gamma","value":"Gama"}
+{"kind":"translate","lang":"sk","tag":"GammaCompensatedValue","value":"Hodnota kompenzácie gama"}
+{"kind":"translate","lang":"sk","tag":"GeoTiffAsciiParams","value":"Geo Tiff - Parametre Ascii"}
+{"kind":"translate","lang":"sk","tag":"GeoTiffDirectory","value":"Adresár Geo Tiff"}
+{"kind":"translate","lang":"sk","tag":"GeoTiffDoubleParams","value":"Geo Tiff - Parametre duplikovania"}
+{"kind":"translate","lang":"sk","tag":"GooglePlusUploadCode","value":"Kód na odosielanie služby Google Plus"}
+{"kind":"translate","lang":"sk","tag":"GrayResponseCurve","value":"Optická hustota v stupňoch šedej"}
+{"kind":"translate","lang":"sk","tag":"GrayResponseUnit","value":"Jednotky hustoty v stupňoch šedej"}
+{"kind":"translate","lang":"sk","tag":"HCUsage","value":{"Description":"Využitie HCU","PrintConv":{"Line Art":"Umenie línie","Trap":"Zachytenie"}}}
+{"kind":"translate","lang":"sk","tag":"HalftoneHints","value":"Poltónové rady"}
+{"kind":"translate","lang":"sk","tag":"HasselbladExif","value":"Exif Hasselblad"}
+{"kind":"translate","lang":"sk","tag":"HasselbladRawImage","value":"Obrázok Hasselblad Raw"}
+{"kind":"translate","lang":"sk","tag":"Headline","value":"Titulok"}
+{"kind":"translate","lang":"sk","tag":"HeightResolution","value":"Rozlíšenie na výšku (PPI)"}
+{"kind":"translate","lang":"sk","tag":"HighISOMultiplierBlue","value":"Vysoký multiplikátor ISO modrej farby"}
+{"kind":"translate","lang":"sk","tag":"HighISOMultiplierGreen","value":"Vysoký multiplikátor ISO zelenej farby"}
+{"kind":"translate","lang":"sk","tag":"HighISOMultiplierRed","value":"Vysoký multiplikátor ISO červenej farby"}
+{"kind":"translate","lang":"sk","tag":"HostComputer","value":"Hostiteľský počítač"}
+{"kind":"translate","lang":"sk","tag":"Humidity","value":"Vlhkosť"}
+{"kind":"translate","lang":"sk","tag":"ICC_Profile","value":"Profil ICC"}
+{"kind":"translate","lang":"sk","tag":"INGRReserved","value":"INGR Rezervované"}
+{"kind":"translate","lang":"sk","tag":"IPTCBitsPerSample","value":"IPTC - Bitov na vzorku"}
+{"kind":"translate","lang":"sk","tag":"IPTCImageHeight","value":"IPTC - Výška obrázku"}
+{"kind":"translate","lang":"sk","tag":"IPTCImageRotation","value":{"Description":"IPTC Otočenie obrázku","PrintConv":{"0":"0°","180":"180°","270":"270°","90":"90°"}}}
+{"kind":"translate","lang":"sk","tag":"IPTCImageWidth","value":"IPTC - Šírka obrázku"}
+{"kind":"translate","lang":"sk","tag":"IPTCPictureNumber","value":"IPTC - Číslo obrázku"}
+{"kind":"translate","lang":"sk","tag":"IPTCPixelHeight","value":"IPTC - Výška pixelov"}
+{"kind":"translate","lang":"sk","tag":"IPTCPixelWidth","value":"IPTC - Šírka pixelov"}
+{"kind":"translate","lang":"sk","tag":"ISO","value":"Citlivosť ISO"}
+{"kind":"translate","lang":"sk","tag":"ISOSpeed","value":"Rýchlosť citlivosti ISO"}
+{"kind":"translate","lang":"sk","tag":"ISOSpeedLatitudeyyy","value":"Hodnota zemepisnej šírky citlivosti ISO YYY"}
+{"kind":"translate","lang":"sk","tag":"ISOSpeedLatitudezzz","value":"Hodnota zemepisnej šírky citlivosti ISO ZZZ"}
+{"kind":"translate","lang":"sk","tag":"IT8Header","value":"Hlavička IT8"}
+{"kind":"translate","lang":"sk","tag":"IlluminantData1","value":"Údaje o osvetlení 1"}
+{"kind":"translate","lang":"sk","tag":"IlluminantData2","value":"Údaje o osvetlení 2"}
+{"kind":"translate","lang":"sk","tag":"IlluminantData3","value":"Údaje o osvetlení 3"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::Composite","value":"Zloženie"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::DNG::OriginalRaw","value":"Originálny Raw DNG"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::Exif::Main","value":"Exif"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::GPS::Main","value":"GPS"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::ApplicationRecord","value":"Záznam aplikácie IPTC"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::EnvelopeRecord","value":"IPTC Záznam obálky"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::NewsPhoto","value":"Novinky IPTC Foto"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::ObjectData","value":"IPTC - Údaje o objekte"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::PostObjectData","value":"IPTC - Predbežné údaje o objekte"}
+{"kind":"translate","lang":"sk","tag":"Image::ExifTool::IPTC::PreObjectData","value":"IPTC - Údaje pred objektom"}
+{"kind":"translate","lang":"sk","tag":"ImageByteCount","value":"Veľkosť obrázku (v bajtoch)"}
+{"kind":"translate","lang":"sk","tag":"ImageColorIndicator","value":{"Description":"Indikátor farby obrázku","PrintConv":{"Specified Image Color":"Špecifikovaná farba obrázku","Unspecified Image Color":"Nešpecifikovaná farba obrázku"}}}
+{"kind":"translate","lang":"sk","tag":"ImageColorValue","value":"Hodnota farby obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageDataDiscard","value":{"Description":"Zahodený obrazový údaj","PrintConv":{"Flexbits Discarded":"Vyradené flexibilné bity","Full Resolution":"Úplné rozlíšenie","HighPass Frequency Data Discarded":"Vyradené údaje s vysokou frekvenciou","Highpass and LowPass Frequency Data Discarded":"Vyradené údaje o vysokej a nízkej frekvencii"}}}
+{"kind":"translate","lang":"sk","tag":"ImageDepth","value":"Hĺbka obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageDescription","value":"Popis obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageFullHeight","value":"Celá výška obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageFullWidth","value":"Celá šírka obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageHeight","value":"Výška obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageHistory","value":"História obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageID","value":"ID obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageLayer","value":"Obrazová vrstva"}
+{"kind":"translate","lang":"sk","tag":"ImageNumber","value":"Číslo obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageOffset","value":"Korekcia obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageOrientation","value":{"Description":"Orientácia obrázku","PrintConv":{"Landscape":"Krajina","Portrait":"Portrét","Square":"Štvorec"}}}
+{"kind":"translate","lang":"sk","tag":"ImageReferencePoints","value":"Referenčné body obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageSourceData","value":"Surové obrazové údaje"}
+{"kind":"translate","lang":"sk","tag":"ImageType","value":{"Description":"Typ obrázku","PrintConv":{"Page":"Stránka","Preview":"Náhľad"}}}
+{"kind":"translate","lang":"sk","tag":"ImageUniqueID","value":"Jedinečný identifikátor obrázku"}
+{"kind":"translate","lang":"sk","tag":"ImageWidth","value":"Šírka obrázku"}
+{"kind":"translate","lang":"sk","tag":"Indexed","value":{"Description":"Indexovanie","PrintConv":{"Indexed":"Indexované","Not indexed":"Neindexované"}}}
+{"kind":"translate","lang":"sk","tag":"InkNames","value":"Názvy atramentov"}
+{"kind":"translate","lang":"sk","tag":"InkSet","value":{"Description":"Sada atramentov","PrintConv":{"Not CMYK":"Nie CMYK"}}}
+{"kind":"translate","lang":"sk","tag":"InterchangeColorSpace","value":"Zmena farebného priestoru"}
+{"kind":"translate","lang":"sk","tag":"IntergraphFlagRegisters","value":"Intergraph - Registračná značka"}
+{"kind":"translate","lang":"sk","tag":"IntergraphMatrix","value":"Intergraph - Matrica"}
+{"kind":"translate","lang":"sk","tag":"IntergraphPacketData","value":"Intergraph - Údaje o balíku"}
+{"kind":"translate","lang":"sk","tag":"Interlace","value":"Prelínanie"}
+{"kind":"translate","lang":"sk","tag":"InteropIndex","value":{"Description":"Index kompatibility súborov","PrintConv":{"R03 - DCF option file (Adobe RGB)":"R03 - súbor možností DCF (Adobe RGB)","R98 - DCF basic file (sRGB)":"R98 - základný súbor DCF (sRGB)","THM - DCF thumbnail file":"THM - súbor miniatúry DCF"}}}
+{"kind":"translate","lang":"sk","tag":"InteropVersion","value":"Verzia kompatibility súborov"}
+{"kind":"translate","lang":"sk","tag":"JBIGOptions","value":"Voľby JBIG"}
+{"kind":"translate","lang":"sk","tag":"JPEGACTables","value":"Tabuľky JPEGAC"}
+{"kind":"translate","lang":"sk","tag":"JPEGDCTables","value":"Tabuľky JPEGDC"}
+{"kind":"translate","lang":"sk","tag":"JPEGLosslessPredictors","value":"Bezstratové prediktory JPEG"}
+{"kind":"translate","lang":"sk","tag":"JPEGPointTransforms","value":"Bodové transformácie JPEG"}
+{"kind":"translate","lang":"sk","tag":"JPEGProc","value":{"Description":"Kompresia JPEG v starom štýle","PrintConv":{"Baseline":"Základná línia","Lossless":"Bezstratové"}}}
+{"kind":"translate","lang":"sk","tag":"JPEGQTables","value":"Tabuľky JPEGQ"}
+{"kind":"translate","lang":"sk","tag":"JPEGRestartInterval","value":"Interval opätovného spustenia JPEG"}
+{"kind":"translate","lang":"sk","tag":"JPEGTables","value":"Tabuľky JPEG"}
+{"kind":"translate","lang":"sk","tag":"JobID","value":"ID úlohy"}
+{"kind":"translate","lang":"sk","tag":"JpgFromRaw","value":"Súbor Jpg vložený do súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"JpgFromRawLength","value":"Ťahy v súbore JPG vloženom do súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"JpgFromRawStart","value":"Posun súboru JPG vloženého do súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"Keywords","value":"Kľúčové slová"}
+{"kind":"translate","lang":"sk","tag":"LanguageIdentifier","value":"Identifikátor jazyka"}
+{"kind":"translate","lang":"sk","tag":"Lens","value":"Objektív"}
+{"kind":"translate","lang":"sk","tag":"LensInfo","value":"Informácie o objektíve"}
+{"kind":"translate","lang":"sk","tag":"LensMake","value":"Výrobca objektívu"}
+{"kind":"translate","lang":"sk","tag":"LensModel","value":"Model objektívu"}
+{"kind":"translate","lang":"sk","tag":"LensSerialNumber","value":"Sériové číslo objektívu"}
+{"kind":"translate","lang":"sk","tag":"LightSource","value":{"Description":"Zdroj svetla","PrintConv":{"Cloudy":"Zamračené","Cool White Fluorescent":"Studená biela žiarivka","Day White Fluorescent":"Denná biela žiarivka","Daylight":"Denné svetlo","Daylight Fluorescent":"Denné svetlo žiarivky","Fine Weather":"Slnečno","Flash":"Blesk","Fluorescent":"Žiarivka","ISO Studio Tungsten":"Štúdio ISO Tungsten","Other":"Iné osvetlenie","Shade":"Tieň","Standard Light A":"Štandardné svetlo A","Standard Light B":"Štandardné svetlo B","Standard Light C":"Štandardné svetlo C","Tungsten (Incandescent)":"Volfrámové (žiarovky)","Unknown":"Neznáme","Warm White Fluorescent":"Teplá biela žiarivka","White Fluorescent":"Biela žiarivka"}}}
+{"kind":"translate","lang":"sk","tag":"LinearResponseLimit","value":"Limit lineárnej odozvy"}
+{"kind":"translate","lang":"sk","tag":"LinearityLimitBlue","value":"Limit linearity modrej farby"}
+{"kind":"translate","lang":"sk","tag":"LinearityLimitGreen","value":"Limit linearity zelenej farby"}
+{"kind":"translate","lang":"sk","tag":"LinearityLimitRed","value":"Limit linearity červenej farby"}
+{"kind":"translate","lang":"sk","tag":"LinearizationTable","value":"Tabuľka linearizácie"}
+{"kind":"translate","lang":"sk","tag":"LocalCaption","value":"Miestny titulok"}
+{"kind":"translate","lang":"sk","tag":"LocalizedCameraModel","value":"Lokalizovaný model fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"LookupTable","value":"Tabuľka náhrad"}
+{"kind":"translate","lang":"sk","tag":"MDColorTable","value":"MD - Tabuľka farieb"}
+{"kind":"translate","lang":"sk","tag":"MDFileTag","value":"MD - Označenie súboru"}
+{"kind":"translate","lang":"sk","tag":"MDFileUnits","value":"MD - Dátové jednotky súboru"}
+{"kind":"translate","lang":"sk","tag":"MDLabName","value":"MD - Tvorca súborov"}
+{"kind":"translate","lang":"sk","tag":"MDPrepDate","value":"MD - Dátum prípravy"}
+{"kind":"translate","lang":"sk","tag":"MDPrepTime","value":"MD - Čas prípravy"}
+{"kind":"translate","lang":"sk","tag":"MDSampleInfo","value":"MD - Informácie o vzorke"}
+{"kind":"translate","lang":"sk","tag":"MDScalePixel","value":"MD - Mierka pixelov"}
+{"kind":"translate","lang":"sk","tag":"MSDocumentText","value":"MS - Textový dokument"}
+{"kind":"translate","lang":"sk","tag":"MSDocumentTextPosition","value":"MS - Pozícia textu v dokumente"}
+{"kind":"translate","lang":"sk","tag":"MSPropertySetStorage","value":"MS - Vlastnosti pamäťovej skupiny"}
+{"kind":"translate","lang":"sk","tag":"Make","value":"Výrobca"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteApple","value":"Poznámka výrobcu Apple"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteCanon","value":"Poznámka výrobcu Canon"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteCasio","value":"Poznámka výrobcu Casio"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteCasio2","value":"Poznámka výrobcu Casio 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteDJI","value":"Poznámka výrobcu DJI"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteDJIInfo","value":"Poznámka výrobcu DJI Info"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteFLIR","value":"Poznámka výrobcu FLIR"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteFujiFilm","value":"Poznámka výrobcu Fuji Film"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteGE","value":"Poznámka výrobcu GE"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteGE2","value":"Poznámka výrobcu GE2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteHP","value":"Poznámka výrobcu HP"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteHP2","value":"Poznámka výrobcu HP2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteHP4","value":"Poznámka výrobcu HP4"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteHP6","value":"Poznámka výrobcu HP6"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteHasselblad","value":"Poznámka výrobcu Hasselblad"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteISL","value":"Poznámka výrobcu ISL"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteJVC","value":"Poznámka výrobcu JVC"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteJVCText","value":"Poznámka výrobcu JVC - Textovo"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak10","value":"Poznámka výrobcu Kodak 10"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak11","value":"Poznámka výrobcu Kodak 11"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak12","value":"Poznámka výrobcu Kodak 12"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak1a","value":"Poznámka výrobcu Kodak 1a"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak1b","value":"Poznámka výrobcu Kodak 1b"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak2","value":"Poznámka výrobcu Kodak 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak3","value":"Poznámka výrobcu Kodak 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak4","value":"Poznámka výrobcu Kodak 4"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak5","value":"Poznámka výrobcu Kodak 5"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak6a","value":"Poznámka výrobcu Kodak 6a"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak6b","value":"Poznámka výrobcu Kodak 6b"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak7","value":"Poznámka výrobcu Kodak 7"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak8a","value":"Poznámka výrobcu Kodak 8a"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak8b","value":"Poznámka výrobcu Kodak 8b"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak8c","value":"Poznámka výrobcu Kodak 8c"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodak9","value":"Poznámka výrobcu Kodak 9"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKodakUnknown","value":"Poznámka výrobcu Kodak - Neznáme"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteKyocera","value":"Poznámka výrobcu Kyocera"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica","value":"Poznámka výrobcu Leica"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica10","value":"Poznámka výrobcu Leica 10"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica2","value":"Poznámka výrobcu Leica 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica3","value":"Poznámka výrobcu Leica 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica4","value":"Poznámka výrobcu Leica 4"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica5","value":"Poznámka výrobcu Leica 5"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica6","value":"Poznámka výrobcu Leica 6"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica7","value":"Poznámka výrobcu Leica 7"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica8","value":"Poznámka výrobcu Leica 8"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteLeica9","value":"Poznámka výrobcu Leica 9"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteMinolta","value":"Poznámka výrobcu Minolta"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteMinolta2","value":"Poznámka výrobcu Minolta 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteMinolta3","value":"Poznámka výrobcu Minolta 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteMotorola","value":"Poznámka výrobcu Motorola"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteNikon","value":"Poznámka výrobcu Nikon"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteNikon2","value":"Poznámka výrobcu Nikon 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteNikon3","value":"Poznámka výrobcu Nikon 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteNintendo","value":"Poznámka výrobcu Nintendo"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteOlympus","value":"Poznámka výrobcu Olympus"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteOlympus2","value":"Poznámka výrobcu Olympus 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteOlympus3","value":"Poznámka výrobcu Olympus 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePanasonic","value":"Poznámka výrobcu Panasonic"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePanasonic2","value":"Poznámka výrobcu Panasonic 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePanasonic3","value":"Poznámka výrobcu Panasonic 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax","value":"Poznámka výrobcu Pentax"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax2","value":"Poznámka výrobcu Pentax 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax3","value":"Poznámka výrobcu Pentax 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax4","value":"Poznámka výrobcu Pentax 4"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax5","value":"Poznámka výrobcu Pentax 5"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePentax6","value":"Poznámka výrobcu Pentax 6"}
+{"kind":"translate","lang":"sk","tag":"MakerNotePhaseOne","value":"Poznámka výrobcu Phase One"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteReconyx","value":"Poznámka výrobcu Reconyx"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteReconyx2","value":"Poznámka výrobcu Reconyx 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteReconyx3","value":"Poznámka výrobcu Reconyx 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteRicoh","value":"Poznámka výrobcu Ricoh"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteRicoh2","value":"Poznámka výrobcu Ricoh 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteRicohPentax","value":"Poznámka výrobcu Ricoh Pentax"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteRicohText","value":"Poznámka výrobcu Ricoh - Textovo"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSafety","value":{"Description":"Bezpečnostná poznámka výrobcu","PrintConv":{"Safe":"Bezpečný","Unsafe":"Nebezpečný"}}}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSamsung1a","value":"Poznámka výrobcu Samsung 1a"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSamsung1b","value":"Poznámka výrobcu Samsung 1b"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSamsung2","value":"Poznámka výrobcu Samsung 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSanyo","value":"Poznámka výrobcu Sanyo"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSanyoC4","value":"Poznámka výrobcu Sanyo C4"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSanyoPatch","value":"Poznámka výrobcu Sanyo Sanyo Patch"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSigma","value":"Poznámka výrobcu Sigma"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSony","value":"Poznámka výrobcu Sony"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSony2","value":"Poznámka výrobcu Sony 2"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSony3","value":"Poznámka výrobcu Sony 3"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSony4","value":"Poznámka výrobcu Sony 4"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSony5","value":"Poznámka výrobcu Sony 5"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSonyEricsson","value":"Poznámka výrobcu Sony Ericsson"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteSonySRF","value":"Poznámka výrobcu Sony SRF"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteUnknown","value":"Poznámky neznámeho výrobcu"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteUnknownBinary","value":"Poznámky neznámeho výrobcu - Binárne"}
+{"kind":"translate","lang":"sk","tag":"MakerNoteUnknownText","value":"Poznámky neznámeho výrobcu - Textovo"}
+{"kind":"translate","lang":"sk","tag":"MaskSubArea","value":"Podoblasť masky"}
+{"kind":"translate","lang":"sk","tag":"MaskedAreas","value":"Maskované oblasti"}
+{"kind":"translate","lang":"sk","tag":"MasterDocumentID","value":"Základný identifikátor dokumentu"}
+{"kind":"translate","lang":"sk","tag":"MatrixWorldToCamera","value":"Matrica zobrazenia medzi svetom a fotoaparátom"}
+{"kind":"translate","lang":"sk","tag":"MatrixWorldToScreen","value":"Matrica zobrazenia medzi svetom a obrazovkou"}
+{"kind":"translate","lang":"sk","tag":"Matteing","value":"Zrnitosť"}
+{"kind":"translate","lang":"sk","tag":"MaxApertureValue","value":"Maximálna hodnota clony"}
+{"kind":"translate","lang":"sk","tag":"MaxSampleValue","value":"Maximálna hodnota súčasti"}
+{"kind":"translate","lang":"sk","tag":"MaxSubfileSize","value":"Maximálna veľkosť podsúboru"}
+{"kind":"translate","lang":"sk","tag":"MaximumDensityRange","value":"Maximálny rozsah hustoty"}
+{"kind":"translate","lang":"sk","tag":"MaximumObjectSize","value":"Maximálna veľkosť objektu"}
+{"kind":"translate","lang":"sk","tag":"MeteringMode","value":{"Description":"Režim merania","PrintConv":{"Average":"Priemerné","Center-weighted average":"Stredovo vyvážený priemer","Multi-segment":"Viacsegmentovo","Multi-spot":"Viacbodovo","Other":"Iné","Partial":"Čiastočne","Spot":"Bodovo","Unknown":"Neznáme"}}}
+{"kind":"translate","lang":"sk","tag":"MinSampleValue","value":"Minimálna hodnota súčasti"}
+{"kind":"translate","lang":"sk","tag":"ModeNumber","value":"Číslo režimu"}
+{"kind":"translate","lang":"sk","tag":"Model","value":"Názov modelu fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"ModelTiePoint","value":"Modelový bod väzby"}
+{"kind":"translate","lang":"sk","tag":"ModelTransform","value":"Model transformácie"}
+{"kind":"translate","lang":"sk","tag":"ModifyDate","value":"Dátum úpravy"}
+{"kind":"translate","lang":"sk","tag":"MoireFilter","value":"Moiré filter"}
+{"kind":"translate","lang":"sk","tag":"MultiProfiles","value":{"Description":"Viacnásobné profily","PrintConv":{"JBIG2 Profile M":"Profil JBIG2 M","N Layer Profile M":"N Profil vrstvy M","Profile C":"Profil C","Profile F":"Profil F","Profile J":"Profil J","Profile L":"Profil L","Profile M":"Profil M","Profile S":"Profil S","Profile T":"Profil T","Resolution/Image Width":"Rozlíšenie/Šírka obrázku","Shared Data":"Zdieľaný dátový"}}}
+{"kind":"translate","lang":"sk","tag":"Multishot","value":{"Description":"Viacnásobné snímanie","PrintConv":{"Off":"Vypnuté","Pixel Shift":"Posun pixelov"}}}
+{"kind":"translate","lang":"sk","tag":"NewRawImageDigest","value":"Hash obrázku RAW v novom formáte"}
+{"kind":"translate","lang":"sk","tag":"NewsPhotoVersion","value":"Verzia News Photo"}
+{"kind":"translate","lang":"sk","tag":"Noise","value":"Šum"}
+{"kind":"translate","lang":"sk","tag":"NoiseProfile","value":"Profil šumu"}
+{"kind":"translate","lang":"sk","tag":"NoiseReductionApplied","value":"Použitá redukcia šumu"}
+{"kind":"translate","lang":"sk","tag":"NoiseReductionParams","value":"Parametre redukciu šumu"}
+{"kind":"translate","lang":"sk","tag":"NumIndexEntries","value":"Počet záznamov v indexe"}
+{"kind":"translate","lang":"sk","tag":"NumberofInks","value":"Počet atramentov"}
+{"kind":"translate","lang":"sk","tag":"OPIProxy","value":{"PrintConv":{"Higher resolution image does not exist":"Obrázok s vyšším rozlíšením neexistuje","Higher resolution image exists":"Obrázok s vyšším rozlíšením existuje"}}}
+{"kind":"translate","lang":"sk","tag":"ObjectAttributeReference","value":"Odkaz na atribút objektu"}
+{"kind":"translate","lang":"sk","tag":"ObjectCycle","value":{"Description":"Denný cyklus","PrintConv":{"Both Morning and Evening":"Ráno aj večer","Evening":"Večer","Morning":"Ráno"}}}
+{"kind":"translate","lang":"sk","tag":"ObjectName","value":"Názov objektu"}
+{"kind":"translate","lang":"sk","tag":"ObjectPreviewData","value":"Objekt náhľadu - Údaje"}
+{"kind":"translate","lang":"sk","tag":"ObjectPreviewFileFormat","value":{"Description":"Objekt náhľadu - Formát súboru","PrintConv":{"Compressed Binary File [.ZIP] (PKWare Inc)":"Komprimovaný binárny súbor [.ZIP] (PKWare Inc)","IPTC Unstructured Character Oriented File Format (UCOFF)":"Formát neštruktúrovaných znakovo orientovaných súborov IPTC (UCOFF)","IPTC-NAA Digital Newsphoto Parameter Record":"Záznam parametrov digitálnych novín IPTC-NAA","IPTC7901 Recommended Message Format":"Odporúčaný formát správy IPTC7901","News Industry Text Format (NITF)":"Textový formát pre spravodajstvo (NITF)","No ObjectData":"Žiadne údaje o objekte","Ritzaus Bureau NITF version (RBNITF DTD)":"Verzia Ritzaus Bureau NITF (RBNITF DTD)","Tagged Image File Format (Adobe/Aldus Image data)":"Označený formát obrazového súboru (obrazové údaje Adobe/Aldus)"}}}
+{"kind":"translate","lang":"sk","tag":"ObjectPreviewFileVersion","value":"Objekt náhľadu - Verzia súboru"}
+{"kind":"translate","lang":"sk","tag":"ObjectSizeAnnounced","value":"Deklarovaná veľkosť objektu"}
+{"kind":"translate","lang":"sk","tag":"ObjectTypeReference","value":"Odkaz na typ objektu"}
+{"kind":"translate","lang":"sk","tag":"OceApplicationSelector","value":"Výber aplikácie Oce"}
+{"kind":"translate","lang":"sk","tag":"OceIDNumber","value":"Identifikačné číslo Oce"}
+{"kind":"translate","lang":"sk","tag":"OceImageLogic","value":"Logika obrazu Oce"}
+{"kind":"translate","lang":"sk","tag":"OceScanjobDesc","value":"Popis úlohy skenovania Oce"}
+{"kind":"translate","lang":"sk","tag":"OffsetSchema","value":"Schéma korekcie"}
+{"kind":"translate","lang":"sk","tag":"OffsetTime","value":"Korekcia času"}
+{"kind":"translate","lang":"sk","tag":"OffsetTimeDigitized","value":"Korekcia digitalizovaného času"}
+{"kind":"translate","lang":"sk","tag":"OffsetTimeOriginal","value":"Korekcia pôvodného času"}
+{"kind":"translate","lang":"sk","tag":"OldSubfileType","value":{"Description":"Starý typ podsúboru","PrintConv":{"Full-resolution image":"Obrázok v plnom rozlíšení","Reduced-resolution image":"Obrázok so zníženým rozlíšením","Single page of multi-page image":"Jedna strana viacstranového obrázku"}}}
+{"kind":"translate","lang":"sk","tag":"OpcodeList1","value":"Zoznam kódov operácií 1"}
+{"kind":"translate","lang":"sk","tag":"OpcodeList2","value":"Zoznam kódov operácií 2"}
+{"kind":"translate","lang":"sk","tag":"OpcodeList3","value":"Zoznam kódov operácií 3"}
+{"kind":"translate","lang":"sk","tag":"Opto-ElectricConvFactor","value":"Optoelektrický konverzný faktor"}
+{"kind":"translate","lang":"sk","tag":"Orientation","value":{"Description":"Orientácia","PrintConv":{"Horizontal (normal)":"Horizontálna (normálne)","Mirror horizontal":"Zrkadlená horizontálne","Mirror horizontal and rotate 270 CW":"Zrkadlená horizontálne a otočená o 270° v smere hodinových ručičiek","Mirror horizontal and rotate 90 CW":"Zrkadlená horizontálne a otočená o 90° v smere hodinových ručičiek","Mirror vertical":"Zrkadlená vertikálne","Rotate 180":"Otočená o 180°","Rotate 270 CW":"Otočená o 270° v smere hodinových ručičiek","Rotate 90 CW":"Otočená o 90° v smere hodinových ručičiek"}}}
+{"kind":"translate","lang":"sk","tag":"OriginalBestQualitySize","value":"Pôvodná veľkosť najlepšej kvality"}
+{"kind":"translate","lang":"sk","tag":"OriginalDefaultCropSize","value":"Pôvodná predvolená veľkosť orezania"}
+{"kind":"translate","lang":"sk","tag":"OriginalDefaultFinalSize","value":"Plná veľkosť pôvodného obrázku"}
+{"kind":"translate","lang":"sk","tag":"OriginalFileName","value":"Názov pôvodného súboru"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawCreator","value":"Autor pôvodného Raw"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawFileData","value":"Pôvodné údaje súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawFileDigest","value":"Originálny súbor Raw Digest"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawFileName","value":"Pôvodný názov súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawFileType","value":"Pôvodný typ súboru Raw"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawImage","value":"Pôvodný Raw obrázok"}
+{"kind":"translate","lang":"sk","tag":"OriginalRawResource","value":"Pôvodný zdroj Raw"}
+{"kind":"translate","lang":"sk","tag":"OriginalTHMCreator","value":"Pôvodný autor THM"}
+{"kind":"translate","lang":"sk","tag":"OriginalTHMFileType","value":"Pôvodný typ súboru THM"}
+{"kind":"translate","lang":"sk","tag":"OriginalTHMImage","value":"Pôvodný obrázok THM"}
+{"kind":"translate","lang":"sk","tag":"OriginalTHMResource","value":"Pôvodný zdroj THM"}
+{"kind":"translate","lang":"sk","tag":"OriginalTransmissionReference","value":"Pôvodné prepojenie na odovzdanie"}
+{"kind":"translate","lang":"sk","tag":"OriginatingProgram","value":"Pôvodný program"}
+{"kind":"translate","lang":"sk","tag":"OtherImage","value":"Iný obrázok"}
+{"kind":"translate","lang":"sk","tag":"OtherImageLength","value":"Dĺžka iného obrázku"}
+{"kind":"translate","lang":"sk","tag":"OtherImageStart","value":"Odsadenie iného obrázku"}
+{"kind":"translate","lang":"sk","tag":"OwnerID","value":"Identifikátor vlastníka"}
+{"kind":"translate","lang":"sk","tag":"OwnerName","value":"Meno vlastníka"}
+{"kind":"translate","lang":"sk","tag":"Padding","value":"Odsadenie"}
+{"kind":"translate","lang":"sk","tag":"PageName","value":"Názov strany"}
+{"kind":"translate","lang":"sk","tag":"PageNumber","value":"Číslo strany"}
+{"kind":"translate","lang":"sk","tag":"PanasonicRawVersion","value":"Verzia Panasonic Raw"}
+{"kind":"translate","lang":"sk","tag":"PanasonicTitle","value":"Panasonic - Názov"}
+{"kind":"translate","lang":"sk","tag":"PanasonicTitle2","value":"Panasonic - Názov 2"}
+{"kind":"translate","lang":"sk","tag":"PhotometricInterpretation","value":{"Description":"Farebný model","PrintConv":{"BlackIsZero":"Čierna je nula","Color Filter Array":"Pole farebných filtrov","Depth Map":"Hĺbková mapa","Linear Raw":"Surový lineárny","RGB Palette":"Paleta RGB","Semantic Mask":"Sémantická maska","Sequential Color Filter":"Sekvenčný farebný filter","Transparency Mask":"Priehľadná maska","WhiteIsZero":"Biela je nula"}}}
+{"kind":"translate","lang":"sk","tag":"PixelFormat","value":{"Description":"Formát pixelu","PrintConv":{"112-bit 6 Channels Alpha":"112-bitový so 6 alfa kanálmi","112-bit 7 Channels":"112-bitový so 7 kanálmi","128-bit 7 Channels Alpha":"128-bitový so 7 alfa kanálmi","128-bit 8 Channels":"128-bitový s 8 kanálmi","128-bit PRGBA Float":"128-bitové PRGBA plávajúce","128-bit RGB Float":"128-bitové RGB plávajúce","128-bit RGBA Fixed Point":"128-bitové RGBA s pevným bodom","128-bit RGBA Float":"128-bitové RGBA plávajúce","144-bit 8 Channels Alpha":"144-bitový s 8 alfa kanálmi","16-bit BGR555":"16-bitový BGR555","16-bit BGR565":"16-bitový BGR565","16-bit Gray":"16-bitový šedý","16-bit Gray Half":"16-bitový šedý polovičný","24-bit 3 Channels":"24-bitový s 3 kanálmi","24-bit BGR":"24-bitový BGR","24-bit RGB":"24-bitové RGB","32-bit 3 Channels Alpha":"32-bitový s 3 alfa kanálmi","32-bit 4 Channels":"32-bitový so 4 kanálmi","32-bit BGR":"32-bitový BGR","32-bit BGR101010":"32-bitové BGR101010","32-bit BGRA":"32-bitové BGRA","32-bit CMYK":"32-bitový CMYK","32-bit Gray Fixed Point":"32-bitový šedý s pevným bodom","32-bit Gray Float":"32-bitový šedý plávajúci","32-bit PBGRA":"32-bitové PBGRA","32-bit RGBE":"32-bitový RGBE ","40-bit 4 Channels Alpha":"40-bitový so 4 alfa kanálmi","40-bit 5 Channels":"40-bitový s 5 kanálmi","40-bit CMYK Alpha":"40-bitový alfa CMYK","48-bit 3 Channels":"48-bitový s 3 kanálmi","48-bit 5 Channels Alpha":"48-bitový s 5 alfa kanálmi","48-bit 6 Channels":"48-bitový so 6 kanálmi","48-bit RGB":"48--bitové RGB","48-bit RGB Fixed Point":"48-bitové RGB s pevným bodom","48-bit RGB Half":"48-bitové RGB polovičné","56-bit 6 Channels Alpha":"56-bitový s 6 alfa kanálmi","56-bit 7 Channels":"56-bitový so 7 kanálmi","64-bit 3 Channels Alpha":"64-bitový s 3 alfa kanálmi","64-bit 4 Channels":"64-bitový so 4 kanálmi","64-bit 7 Channels Alpha":"64-bitový so 7 alfa kanálmi","64-bit 8 Channels":"64-bitový s 8 kanálmi","64-bit CMYK":"64-bitový CMYK","64-bit PRGBA":"64--bitové PRGBA","64-bit RGBA":"64--bitové RGBA","64-bit RGBA Fixed Point":"64-bitové RGBA s pevným bodom","64-bit RGBA Half":"64-bitové RGBA polovičné","72-bit 8 Channels Alpha":"72-bitový s 8 alfa kanálmi","8-bit Gray":"8-bitový sivý","80-bit 4 Channels Alpha":"80-bitový s 4 alfa kanálmi","80-bit 5 Channels":"80-bitový s 5 kanálmi","80-bit CMYK Alpha":"80-bitový alfa CMYK","96-bit 5 Channels Alpha":"96-bitový s 5 alfa kanálmi","96-bit 6 Channels":"96-bitový so 6 kanálmi","96-bit RGB Fixed Point":"96-bitové RGB s pevným bodom","Black & White":"Čiernobiely"}}}
+{"kind":"translate","lang":"sk","tag":"PixelIntensityRange","value":"Rozsah intenzity pixelov"}
+{"kind":"translate","lang":"sk","tag":"PixelMagicJBIGOptions","value":"Voľby PixelMagicJBIGO"}
+{"kind":"translate","lang":"sk","tag":"PixelScale","value":"Pixelová mierka"}
+{"kind":"translate","lang":"sk","tag":"PlanarConfiguration","value":{"Description":"Princíp organizácie údajov","PrintConv":{"Chunky":"Hrubá","Planar":"Plošná"}}}
+{"kind":"translate","lang":"sk","tag":"Predictor","value":{"Description":"Predikcia","PrintConv":{"Floating point":"Plávajúci bod","Floating point X2":"Plávajúci bod X2","Floating point X4":"Plávajúci bod X4","Horizontal difference X2":"Horizontálne rozlišovanie X2","Horizontal difference X4":"Horizontálne rozlišovanie X4","Horizontal differencing":"Horizontálne rozlišovanie","None":"Žiadna"}}}
+{"kind":"translate","lang":"sk","tag":"Prefs","value":"Predvoľby"}
+{"kind":"translate","lang":"sk","tag":"Pressure","value":"Tlak"}
+{"kind":"translate","lang":"sk","tag":"PreviewApplicationName","value":"Názov náhľadu aplikácie"}
+{"kind":"translate","lang":"sk","tag":"PreviewApplicationVersion","value":"Verzia náhľadu aplikácie"}
+{"kind":"translate","lang":"sk","tag":"PreviewColorSpace","value":{"Description":"Náhľad farebného priestoru","PrintConv":{"Gray Gamma 2.2":"Sivá gama 2,2","Unknown":"Neznámy"}}}
+{"kind":"translate","lang":"sk","tag":"PreviewDateTime","value":"Dátum a čas náhľadu"}
+{"kind":"translate","lang":"sk","tag":"PreviewImage","value":"Náhľad obrázku"}
+{"kind":"translate","lang":"sk","tag":"PreviewImageLength","value":"Náhľad dĺžky obrázku"}
+{"kind":"translate","lang":"sk","tag":"PreviewImageStart","value":"Posun náhľadu obrázku"}
+{"kind":"translate","lang":"sk","tag":"PreviewSettingsDigest","value":"Prehľad nastavení Digest"}
+{"kind":"translate","lang":"sk","tag":"PreviewSettingsName","value":"Názov nastavenia náhľadu"}
+{"kind":"translate","lang":"sk","tag":"PrimaryChromaticities","value":"Farebnosť základných farieb"}
+{"kind":"translate","lang":"sk","tag":"PrintIM","value":"Zhodnosť tlačových obrázkov"}
+{"kind":"translate","lang":"sk","tag":"ProcessingSoftware","value":"Spracovateľský softvér"}
+{"kind":"translate","lang":"sk","tag":"ProductID","value":"Identifikátor produktu"}
+{"kind":"translate","lang":"sk","tag":"ProfileCalibrationSig","value":"Profil kalibračného signálu"}
+{"kind":"translate","lang":"sk","tag":"ProfileCopyright","value":"Autorské práva k profilu"}
+{"kind":"translate","lang":"sk","tag":"ProfileEmbedPolicy","value":{"Description":"Zásady vkladania profilov","PrintConv":{"Allow Copying":"Povoliť kopírovanie","Embed if Used":"Vložiť, ak sa používa","Never Embed":"Nikdy nevkladať","No Restrictions":"Bez obmedzení"}}}
+{"kind":"translate","lang":"sk","tag":"ProfileGainTableMap","value":"Profil mapy tabuľky zosilnenia"}
+{"kind":"translate","lang":"sk","tag":"ProfileHueSatMapData1","value":"Profil - Mapa údajov a odtieňoch a sýtosti 1"}
+{"kind":"translate","lang":"sk","tag":"ProfileHueSatMapData2","value":"Profil - Mapa údajov a odtieňoch a sýtosti 2"}
+{"kind":"translate","lang":"sk","tag":"ProfileHueSatMapData3","value":"Údaje o profile odtieňa 3"}
+{"kind":"translate","lang":"sk","tag":"ProfileHueSatMapDims","value":"Profil - Mapa odtieňov"}
+{"kind":"translate","lang":"sk","tag":"ProfileHueSatMapEncoding","value":{"Description":"Kódovanie mapy profilov Hue Sat","PrintConv":{"Linear":"Lineárne"}}}
+{"kind":"translate","lang":"sk","tag":"ProfileLookTableData","value":"Profil - Údaje v tabuľke vzhľadu"}
+{"kind":"translate","lang":"sk","tag":"ProfileLookTableDims","value":"Profil - Rozdelenie odtieňov"}
+{"kind":"translate","lang":"sk","tag":"ProfileLookTableEncoding","value":{"Description":"Kódovanie vzhľadovej tabuľky profilu","PrintConv":{"Linear":"Lineárne"}}}
+{"kind":"translate","lang":"sk","tag":"ProfileName","value":"Názov profilu"}
+{"kind":"translate","lang":"sk","tag":"ProfileToneCurve","value":"Profil - Tónová krivka"}
+{"kind":"translate","lang":"sk","tag":"ProfileType","value":{"Description":"Typ profilu","PrintConv":{"Group 3 FAX":"Skupina 3 FAX","Unspecified":"Nešpecifikovaný"}}}
+{"kind":"translate","lang":"sk","tag":"ProgramVersion","value":"Verzia programu"}
+{"kind":"translate","lang":"sk","tag":"Province-State","value":"Krajina - Štát"}
+{"kind":"translate","lang":"sk","tag":"QuantizationMethod","value":{"Description":"Kvantizačná metóda","PrintConv":{"AP Domestic Analogue":"Domáce analógové AP","Color Space Specific":"Špecifický farebný priestor","Compression Method Specific":"Špecifická metóda kompresie","Gamma Compensated":"Kompenzácia gama","Linear Density":"Lineárna hustota","Linear Dot Percent":"Lineárne bodové percento","Linear Reflectance/Transmittance":"Lineárna odrazivosť/priepustnosť"}}}
+{"kind":"translate","lang":"sk","tag":"RGBTables","value":"Tabuľky RGB"}
+{"kind":"translate","lang":"sk","tag":"RasterPadding","value":{"Description":"Výplň rastra","PrintConv":{"Byte":"Bajt","Long Sector":"Dlhý sektor","Long Word":"Dlhé slovo","Sector":"Sektor","Word":"Slovo"}}}
+{"kind":"translate","lang":"sk","tag":"RasterizedCaption","value":"Rastrovaný titulok"}
+{"kind":"translate","lang":"sk","tag":"Rating","value":"Hodnotenie"}
+{"kind":"translate","lang":"sk","tag":"RatingPercent","value":"Hodnotenie v percentách"}
+{"kind":"translate","lang":"sk","tag":"RawDataOffset","value":"Korekcia údajov Raw"}
+{"kind":"translate","lang":"sk","tag":"RawDataUniqueID","value":"Jedinečný identifikátor údajov Raw"}
+{"kind":"translate","lang":"sk","tag":"RawFile","value":"Súbor Raw"}
+{"kind":"translate","lang":"sk","tag":"RawFormat","value":"Formát Raw"}
+{"kind":"translate","lang":"sk","tag":"RawImageDigest","value":"Súbor Raw Digest"}
+{"kind":"translate","lang":"sk","tag":"RawImageSegmentation","value":"Segmentácia obrázku Raw"}
+{"kind":"translate","lang":"sk","tag":"RawToPreviewGain","value":"Faktor zväčšenia medzi súborom Raw a náhľadom"}
+{"kind":"translate","lang":"sk","tag":"RecommendedExposureIndex","value":"Odporúčaný index expozície"}
+{"kind":"translate","lang":"sk","tag":"RedBalance","value":"Rovnováha červenej farby"}
+{"kind":"translate","lang":"sk","tag":"ReductionMatrix1","value":"Redukčná matrica 1"}
+{"kind":"translate","lang":"sk","tag":"ReductionMatrix2","value":"Redukčná matrica 2"}
+{"kind":"translate","lang":"sk","tag":"ReductionMatrix3","value":"Redukčná matrica 3"}
+{"kind":"translate","lang":"sk","tag":"ReelName","value":"Názov nosiča"}
+{"kind":"translate","lang":"sk","tag":"ReferenceBlackWhite","value":"Počiatočné hodnoty čiernej a bielej"}
+{"kind":"translate","lang":"sk","tag":"ReferenceDate","value":"Referenčný dátum"}
+{"kind":"translate","lang":"sk","tag":"ReferenceNumber","value":"Referenčné číslo"}
+{"kind":"translate","lang":"sk","tag":"ReferenceService","value":"Referenčná služba"}
+{"kind":"translate","lang":"sk","tag":"RegionXformTackPoint","value":"Bod návratu regiónu Xform"}
+{"kind":"translate","lang":"sk","tag":"RelatedImageFileFormat","value":"Formát prepojeného obrazového súboru"}
+{"kind":"translate","lang":"sk","tag":"RelatedImageHeight","value":"Výška súvisiaceho obrázku"}
+{"kind":"translate","lang":"sk","tag":"RelatedImageWidth","value":"Šírka súvisiaceho obrázku"}
+{"kind":"translate","lang":"sk","tag":"RelatedSoundFile","value":"Súvisiaci zvukový súbor"}
+{"kind":"translate","lang":"sk","tag":"ReleaseDate","value":"Dátum vydania"}
+{"kind":"translate","lang":"sk","tag":"ReleaseTime","value":"Čas vydania"}
+{"kind":"translate","lang":"sk","tag":"ResolutionUnit","value":{"Description":"Jednotka rozlíšenia","PrintConv":{"None":"žiadne","cm":"centimetre","inches":"palce"}}}
+{"kind":"translate","lang":"sk","tag":"RowInterleaveFactor","value":"Faktor prekladania riadkov"}
+{"kind":"translate","lang":"sk","tag":"RowsPerStrip","value":"Riadkov na pruh"}
+{"kind":"translate","lang":"sk","tag":"SEMInfo","value":"Informácie o SEM"}
+{"kind":"translate","lang":"sk","tag":"SMaxSampleValue","value":"S max. hodnota vzorky"}
+{"kind":"translate","lang":"sk","tag":"SMinSampleValue","value":"S min. hodnota vzorky"}
+{"kind":"translate","lang":"sk","tag":"SRawType","value":"Typ SRaw"}
+{"kind":"translate","lang":"sk","tag":"SampleFormat","value":{"Description":"Formát súčasti","PrintConv":{"Complex float":"Komplexné číslo s pohyblivou čiarkou","Complex int":"Komplexné celé číslo","Float":"Pohyblivá desatinná čiarka","Signed":"Celé číslo so znamienkom dvojkovej sústavy","Undefined":"Nedefinovaný","Unsigned":"Celé číslo bez znamienka"}}}
+{"kind":"translate","lang":"sk","tag":"SampleStructure","value":"Štruktúra súčastí"}
+{"kind":"translate","lang":"sk","tag":"SamplesPerPixel","value":"Počet vzoriek na pixel"}
+{"kind":"translate","lang":"sk","tag":"SamsungRawByteOrder","value":"Samsung RAW - Poradie bajtov"}
+{"kind":"translate","lang":"sk","tag":"SamsungRawPointersLength","value":"Samsung RAW - Ukazovateľ dĺžky"}
+{"kind":"translate","lang":"sk","tag":"SamsungRawPointersOffset","value":"Samsung RAW - Posun ukazovateľa"}
+{"kind":"translate","lang":"sk","tag":"SamsungRawUnknown","value":"Samsung RAW - Neznámy"}
+{"kind":"translate","lang":"sk","tag":"Saturation","value":{"Description":"Sýtosť","PrintConv":{"High":"Vysoká","Low":"Nízka","Normal":"Normálna"}}}
+{"kind":"translate","lang":"sk","tag":"ScanningDirection","value":{"Description":"Smer snímania","PrintConv":{"Bottom-Top, L-R":"Dole-hore, L-R","Bottom-Top, R-L":"Dole-hore, R-L","L-R, Bottom-Top":"L-R, odspodu nahor","L-R, Top-Bottom":"L-R, zhora nadol","R-L, Bottom-Top":"R-L, odspodu nahor","R-L, Top-Bottom":"R-L, zhora nadol","Top-Bottom, L-R":"Hore-dole, L-R","Top-Bottom, R-L":"Hore-dole, R-L"}}}
+{"kind":"translate","lang":"sk","tag":"SceneCaptureType","value":{"Description":"Typ zachytenia scény","PrintConv":{"Landscape":"Na šírku","Night":"Noc","Other":"Iný","Portrait":"Na výšku","Standard":"Štandardný"}}}
+{"kind":"translate","lang":"sk","tag":"SceneType","value":{"Description":"Typ scény","PrintConv":{"Directly photographed":"Priamo odfotografované"}}}
+{"kind":"translate","lang":"sk","tag":"SecurityClassification","value":{"Description":"Bezpečnostná klasifikácia","PrintConv":{"Confidential":"Dôverné","Restricted":"Vyhradené","Secret":"Tajné","Top Secret":"Prísne tajné","Unclassified":"Neklasifikované"}}}
+{"kind":"translate","lang":"sk","tag":"SelfTimerMode","value":"Režim samospúšte"}
+{"kind":"translate","lang":"sk","tag":"SemanticInstanceID","value":"Identifikátor sémantickej inštancie"}
+{"kind":"translate","lang":"sk","tag":"SemanticName","value":"Sémantický názov"}
+{"kind":"translate","lang":"sk","tag":"SensingMethod","value":{"Description":"Spôsob snímania","PrintConv":{"Color sequential area":"Farebná sekvenčná oblasť","Color sequential linear":"Farebný sekvenčný lineárny","Monochrome area":"Jednofarebná oblasť","Monochrome linear":"Monochromatické lineárne","Not defined":"Nie je definované","One-chip color area":"Jednočipová farebná oblasť","Three-chip color area":"Trojčipová farebná oblasť","Trilinear":"Trilineárna","Two-chip color area":"Dvojčipová farebná oblasť"}}}
+{"kind":"translate","lang":"sk","tag":"SensitivityType","value":{"Description":"Typ citlivosti","PrintConv":{"ISO Speed":"Rýchlosť ISO","Recommended Exposure Index":"Odporúčaný index expozície","Recommended Exposure Index and ISO Speed":"Odporúčaný index expozície a rýchlosť ISO","Standard Output Sensitivity":"Štandardná výstupná citlivosť","Standard Output Sensitivity and ISO Speed":"Štandardná výstupná citlivosť a citlivosť ISO ","Standard Output Sensitivity and Recommended Exposure Index":"Štandardná výstupná citlivosť a odporúčaný index expozície","Standard Output Sensitivity, Recommended Exposure Index and ISO Speed":"Štandardná výstupná citlivosť, odporúčaný expozičný index a citlivosť ISO","Unknown":"Neznámy"}}}
+{"kind":"translate","lang":"sk","tag":"SensorBottomBorder","value":"Spodný okraj snímača"}
+{"kind":"translate","lang":"sk","tag":"SensorHeight","value":"Výška snímača"}
+{"kind":"translate","lang":"sk","tag":"SensorLeftBorder","value":"Ľavý okraj snímača"}
+{"kind":"translate","lang":"sk","tag":"SensorRightBorder","value":"Pravý okraj snímača"}
+{"kind":"translate","lang":"sk","tag":"SensorTopBorder","value":"Horný okraj snímača"}
+{"kind":"translate","lang":"sk","tag":"SensorWidth","value":"Šírka snímača"}
+{"kind":"translate","lang":"sk","tag":"SerialNumber","value":"Sériové číslo"}
+{"kind":"translate","lang":"sk","tag":"ServiceIdentifier","value":"Identifikátor služby"}
+{"kind":"translate","lang":"sk","tag":"ShadowScale","value":"Tieňová stupnica"}
+{"kind":"translate","lang":"sk","tag":"Shadows","value":"Tiene"}
+{"kind":"translate","lang":"sk","tag":"SharedData","value":"Zdieľané údaje"}
+{"kind":"translate","lang":"sk","tag":"Sharpness","value":{"Description":"Ostrosť","PrintConv":{"Hard":"Tvrdá","Normal":"Normálna","Soft":"Mäkká"}}}
+{"kind":"translate","lang":"sk","tag":"ShortDocumentID","value":"Stručný identifikátor dokumentu"}
+{"kind":"translate","lang":"sk","tag":"ShutterSpeedValue","value":"Hodnota rýchlosti uzávierky"}
+{"kind":"translate","lang":"sk","tag":"SimilarityIndex","value":"Index podobnosti"}
+{"kind":"translate","lang":"sk","tag":"Site","value":"Miesto"}
+{"kind":"translate","lang":"sk","tag":"SizeMode","value":{"Description":"Režim veľkosti","PrintConv":{"Size Known":"Známa veľkosť","Size Not Known":"Veľkosť neznáma"}}}
+{"kind":"translate","lang":"sk","tag":"Smoothness","value":"Hladkosť"}
+{"kind":"translate","lang":"sk","tag":"Software","value":"Softvér"}
+{"kind":"translate","lang":"sk","tag":"SonyCropSize","value":"Veľkosť orezu Sony"}
+{"kind":"translate","lang":"sk","tag":"SonyCropTopLeft","value":"Orez Sony vľavo hore"}
+{"kind":"translate","lang":"sk","tag":"SonyRawFileType","value":{"Description":"Typ súboru Sony Raw","PrintConv":{"Sony Compressed RAW":"Sony komprimovaný RAW","Sony Lossless Compressed RAW":"Sony bezstratový komprimovaný RAW","Sony Lossless Compressed RAW 2":"Sony bezstratový komprimovaný RAW 2","Sony Uncompressed 12-bit RAW":"Sony nekomprimovaný 12-bitový RAW","Sony Uncompressed 14-bit RAW":"Sony nekomprimovaný 14-bitový RAW"}}}
+{"kind":"translate","lang":"sk","tag":"SonyToneCurve","value":"Tónová krivka Sony"}
+{"kind":"translate","lang":"sk","tag":"Source","value":"Zdroj"}
+{"kind":"translate","lang":"sk","tag":"SpatialFrequencyResponse","value":"Priestorový frekvenčný rozsah"}
+{"kind":"translate","lang":"sk","tag":"SpecialInstructions","value":"Špeciálne pokyny"}
+{"kind":"translate","lang":"sk","tag":"SpectralSensitivity","value":"Spektrálna citlivosť"}
+{"kind":"translate","lang":"sk","tag":"StandardOutputSensitivity","value":"Štandardná výstupná citlivosť"}
+{"kind":"translate","lang":"sk","tag":"StoNits","value":"Intenzita osvetlenia (konverzný faktor cd/m2)"}
+{"kind":"translate","lang":"sk","tag":"StripByteCounts","value":"Počet bajtov na pruh"}
+{"kind":"translate","lang":"sk","tag":"StripOffsets","value":"Korekcia pásov"}
+{"kind":"translate","lang":"sk","tag":"StripRowCounts","value":"Počet riadkov v páse"}
+{"kind":"translate","lang":"sk","tag":"Sub-location","value":"Poloha v meste"}
+{"kind":"translate","lang":"sk","tag":"SubFile","value":"Podsúbor"}
+{"kind":"translate","lang":"sk","tag":"SubSecTime","value":"Čas úprav v milisekundách"}
+{"kind":"translate","lang":"sk","tag":"SubSecTimeDigitized","value":"Čas vytvorenia v milisekundách"}
+{"kind":"translate","lang":"sk","tag":"SubSecTimeOriginal","value":"Čas snímania v milisekundách"}
+{"kind":"translate","lang":"sk","tag":"SubTileBlockSize","value":"Veľkosť bloku pod dlaždicou"}
+{"kind":"translate","lang":"sk","tag":"SubfileType","value":{"Description":"Typ podsúboru","PrintConv":{"Alternate reduced-resolution image":"Alternatívny obrázok so zníženým rozlíšením","Depth map":"Hĺbková mapa","Depth map of reduced-resolution image":"Hĺbková mapa obrázku so zníženým rozlíšením","Enhanced image data":"Vylepšené údaje obrázku","Full-resolution image":"Obrázok v plnom rozlíšení","Reduced-resolution image":"Obrázok so zníženým rozlíšením","Semantic Mask":"Sémantická maska","Single page of multi-page image":"Jedna strana viacstranového obrázku","Single page of multi-page reduced-resolution image":"Jedna strana viacstranového obrázku so zníženým rozlíšením","Transparency mask":"Maska priehľadnosti","Transparency mask of multi-page image":"Maska priehľadnosti viacstránkového obrázku","Transparency mask of reduced-resolution image":"Maska priehľadnosti obrázok so zníženým rozlíšením","Transparency mask of reduced-resolution multi-page image":"Maska priehľadnosti viacstránkového obrázku so zníženým rozlíšením","invalid":"neplatný"}}}
+{"kind":"translate","lang":"sk","tag":"SubjectArea","value":"Oblasť objektu"}
+{"kind":"translate","lang":"sk","tag":"SubjectDistance","value":"Vzdialenosť k zaostrenému objektu"}
+{"kind":"translate","lang":"sk","tag":"SubjectDistanceRange","value":{"Description":"Vzdialenosť od snímaného objektu","PrintConv":{"Close":"Blízky","Distant":"Vzdialený","Macro":"Makro","Unknown":"Neznámy"}}}
+{"kind":"translate","lang":"sk","tag":"SubjectLocation","value":"Umiestnenie predmetu"}
+{"kind":"translate","lang":"sk","tag":"SubjectReference","value":"Odkaz na tému"}
+{"kind":"translate","lang":"sk","tag":"SupplementalCategories","value":"Doplnkové kategórie"}
+{"kind":"translate","lang":"sk","tag":"SupplementalType","value":{"Description":"Typ prídavku","PrintConv":{"Main Image":"Hlavný obrázok","Rasterized Caption":"Rastrovaný titulok","Reduced Resolution Image":"Obrázok so zníženým rozlíšením"}}}
+{"kind":"translate","lang":"sk","tag":"T4Options","value":{"Description":"Voľby T4","PrintConv":{"2-Dimensional encoding":"Dvojrozmerné kódovanie","Fill bits added":"Pridanie bitov výplne","Uncompressed":"Nekomprimované"}}}
+{"kind":"translate","lang":"sk","tag":"T6Options","value":{"Description":"Voľby T6","PrintConv":{"Uncompressed":"Nekomprimované"}}}
+{"kind":"translate","lang":"sk","tag":"T82Options","value":"Voľby T82"}
+{"kind":"translate","lang":"sk","tag":"T88Options","value":"Voľby T88"}
+{"kind":"translate","lang":"sk","tag":"TIFF-EPStandardID","value":"Štandardné ID TIFF-EP"}
+{"kind":"translate","lang":"sk","tag":"TIFF_FXExtensions","value":{"Description":"Rozšírenia TIFF FX","PrintConv":{"B&W JBIG2":"ČB JBIG2","JBIG2 Profile M":"Profil JBIG2 M","N Layer Profile M":"N profil vrstvy M","Resolution/Image Width":"Rozlíšenie/šírka obrazu","Shared Data":"Zdieľaný dátový"}}}
+{"kind":"translate","lang":"sk","tag":"TStop","value":"Prenosový index objektívu (T-stop)"}
+{"kind":"translate","lang":"sk","tag":"TargetPrinter","value":"Cieľová tlačiareň"}
+{"kind":"translate","lang":"sk","tag":"TextureFormat","value":"Formát textúry"}
+{"kind":"translate","lang":"sk","tag":"Thresholding","value":{"Description":"Prahová úprava","PrintConv":{"No dithering or halftoning":"Žiadne rozostrenie alebo polotónovanie","Ordered dither or halftone":"Usporiadaný rozklad alebo poltón","Randomized dither":"Náhodný rozklad"}}}
+{"kind":"translate","lang":"sk","tag":"ThumbnailImage","value":"Miniatúra obrázku"}
+{"kind":"translate","lang":"sk","tag":"ThumbnailLength","value":"Dĺžka miniatúry"}
+{"kind":"translate","lang":"sk","tag":"ThumbnailOffset","value":"Posun miniatúry"}
+{"kind":"translate","lang":"sk","tag":"TileByteCounts","value":"Počet bajtov v dlaždici"}
+{"kind":"translate","lang":"sk","tag":"TileDepth","value":"Hĺbka dlaždice"}
+{"kind":"translate","lang":"sk","tag":"TileLength","value":"Dĺžka dlaždice"}
+{"kind":"translate","lang":"sk","tag":"TileOffsets","value":"Posunutie dlaždíc"}
+{"kind":"translate","lang":"sk","tag":"TileWidth","value":"Šírka dlaždice"}
+{"kind":"translate","lang":"sk","tag":"TimeCodes","value":"Časové kódy"}
+{"kind":"translate","lang":"sk","tag":"TimeCreated","value":"Čas vytvorenia"}
+{"kind":"translate","lang":"sk","tag":"TimeSent","value":"Čas odoslania"}
+{"kind":"translate","lang":"sk","tag":"TimeZoneOffset","value":"Posun časového pásma"}
+{"kind":"translate","lang":"sk","tag":"TransferFunction","value":"Prenosová funkcia"}
+{"kind":"translate","lang":"sk","tag":"TransferRange","value":"Rozsah prenosovej funkcie"}
+{"kind":"translate","lang":"sk","tag":"Transformation","value":{"Description":"Transformácia","PrintConv":{"Horizontal (normal)":"Horizontálne (normálne)","Mirror horizontal":"Zrkadlené horizontálne ","Mirror horizontal and rotate 270 CW":"Zrkadlené horizontálne a otočené 270° doprava","Mirror horizontal and rotate 90 CW":"Zrkadlené horizontálne a otočené 90° doprava","Mirror vertical":"Zrkadlené vertikálne","Rotate 180":"Otočené o 180°","Rotate 270 CW":"Otočené o 270° doprava","Rotate 90 CW":"Otočené o 90° doprava"}}}
+{"kind":"translate","lang":"sk","tag":"TransparencyIndicator","value":"Ukazovateľ priehľadnosti"}
+{"kind":"translate","lang":"sk","tag":"TrapIndicator","value":"Indikátor zachytenia"}
+{"kind":"translate","lang":"sk","tag":"UIC1Tag","value":"Tag UIC1"}
+{"kind":"translate","lang":"sk","tag":"UIC2Tag","value":"Tag UIC2"}
+{"kind":"translate","lang":"sk","tag":"UIC3Tag","value":"Tag UIC3"}
+{"kind":"translate","lang":"sk","tag":"UIC4Tag","value":"Tag UIC4"}
+{"kind":"translate","lang":"sk","tag":"USPTOMiscellaneous","value":"Rôzne USPTO"}
+{"kind":"translate","lang":"sk","tag":"USPTOOriginalContentType","value":{"Description":"USPTO - Typ pôvodného obsahu","PrintConv":{"Color":"Farba","Grayscale":"Odtiene šedej","Text or Drawing":"Text alebo kresba"}}}
+{"kind":"translate","lang":"sk","tag":"Uncompressed","value":{"Description":"Nekomprimovaný","PrintConv":{"No":"Nie","Yes":"Áno"}}}
+{"kind":"translate","lang":"sk","tag":"UniqueCameraModel","value":"Jedinečný model fotoaparátu"}
+{"kind":"translate","lang":"sk","tag":"UniqueDocumentID","value":"Jedinečný identifikátor dokumentu"}
+{"kind":"translate","lang":"sk","tag":"UniqueObjectName","value":"Jedinečný názov objektu"}
+{"kind":"translate","lang":"sk","tag":"Urgency","value":{"Description":"Priorita spracovania","PrintConv":{"0 (reserved)":"0 (rezervované)","1 (most urgent)":"1 (najnaliehavejšie)","5 (normal urgency)":"5 (bežná naliehavosť)","8 (least urgent)":"8 (najmenej naliehavé)","9 (user-defined priority)":"9 (priorita definovaná užívateľom)"}}}
+{"kind":"translate","lang":"sk","tag":"UserComment","value":"Komentár užívateľa"}
+{"kind":"translate","lang":"sk","tag":"VersionYear","value":"Rok verzie"}
+{"kind":"translate","lang":"sk","tag":"VignettingCorrParams","value":"Parametre korekcie vinetácie"}
+{"kind":"translate","lang":"sk","tag":"VignettingCorrection","value":{"Description":"Korekcia vinetácie","PrintConv":{"Auto":"Automatická","Auto (ILCE-1)":"Automatická (ILCE-1)","No correction params available":"Nie sú dostupné žiadne parametre korekcie","Off":"Vypnutá"}}}
+{"kind":"translate","lang":"sk","tag":"WBBlueLevel","value":"Vyváženie bielej farby - Úroveň modrej"}
+{"kind":"translate","lang":"sk","tag":"WBGreenLevel","value":"Vyváženie bielej farby - Úroveň zelenej"}
+{"kind":"translate","lang":"sk","tag":"WBRedLevel","value":"Vyváženie bielej farby - Úroveň červenej"}
+{"kind":"translate","lang":"sk","tag":"WB_GRGBLevels","value":"Úrovne vyváženia bielej GRGB"}
+{"kind":"translate","lang":"sk","tag":"WangAnnotation","value":"Wangová anotácia"}
+{"kind":"translate","lang":"sk","tag":"WangTag1","value":"Wangová značka 1"}
+{"kind":"translate","lang":"sk","tag":"WangTag3","value":"Wangová značka 3"}
+{"kind":"translate","lang":"sk","tag":"WangTag4","value":"Wangová značka 4"}
+{"kind":"translate","lang":"sk","tag":"WarpQuadrilateral","value":"Deformácia štvoruholníka"}
+{"kind":"translate","lang":"sk","tag":"WaterDepth","value":"Hĺbka vody"}
+{"kind":"translate","lang":"sk","tag":"WhiteBalance","value":{"Description":"Vyváženie bielej","PrintConv":{"Auto":"Automatické","Manual":"Manuálne"}}}
+{"kind":"translate","lang":"sk","tag":"WhiteLevel","value":"Úroveň bielej"}
+{"kind":"translate","lang":"sk","tag":"WhitePoint","value":"Farba bieleho bodu"}
+{"kind":"translate","lang":"sk","tag":"WidthResolution","value":"Rozlíšenie na šírku (PPI)"}
+{"kind":"translate","lang":"sk","tag":"WrapModes","value":"Režimy balenia"}
+{"kind":"translate","lang":"sk","tag":"Writer-Editor","value":"Spisovateľ-Redaktor"}
+{"kind":"translate","lang":"sk","tag":"XClipPathUnits","value":"Orezanie obrysových jednotiek X"}
+{"kind":"translate","lang":"sk","tag":"XPAuthor","value":"XP - Autor"}
+{"kind":"translate","lang":"sk","tag":"XPComment","value":"XP - Komentár"}
+{"kind":"translate","lang":"sk","tag":"XPKeywords","value":"XP - Kľúčová slová"}
+{"kind":"translate","lang":"sk","tag":"XPSubject","value":"XP - Téma"}
+{"kind":"translate","lang":"sk","tag":"XPTitle","value":"XP - Názov"}
+{"kind":"translate","lang":"sk","tag":"XPosition","value":"Pozícia obrázku X"}
+{"kind":"translate","lang":"sk","tag":"XResolution","value":"Horizontálne rozlíšenie"}
+{"kind":"translate","lang":"sk","tag":"YCbCrCoefficients","value":"Konverzné faktory Y Cb Cr"}
+{"kind":"translate","lang":"sk","tag":"YCbCrPositioning","value":{"Description":"Umiestnenie Y Cb Cr","PrintConv":{"Centered":"Vycentrované","Co-sited":"Spoločné umiestnenie"}}}
+{"kind":"translate","lang":"sk","tag":"YCbCrSubSampling","value":"Faktor čiastkového vzorkovania Y Cb Cr"}
+{"kind":"translate","lang":"sk","tag":"YClipPathUnits","value":"Orezanie obrysových jednotiek Y"}
+{"kind":"translate","lang":"sk","tag":"YPosition","value":"Pozícia obrázku Y"}
+{"kind":"translate","lang":"sk","tag":"YResolution","value":"Vertikálne rozlíšenie"}

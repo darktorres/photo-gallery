@@ -1,0 +1,4 @@
+{"kind":"table","module":"GE","name":"Image::ExifTool::GE::Main","special":{"CHECK_PROC":{"code":"&Image::ExifTool::Exif::CheckExif"},"GROUPS":{"0":"MakerNotes","1":"GE","2":"Camera"},"NOTES":"\n        This table lists tags found in the maker notes of some General Imaging\n        camera models.\n    ","SHORT_NAME":"GE::Main","TABLE_NAME":"Image::ExifTool::GE::Main","TAG_PREFIX":"GE","WRITABLE":1,"WRITE_PROC":{"code":"&Image::ExifTool::Exif::WriteExif"}}}
+{"fields":{"Name":"Macro","PrintConv":{"0":"Off","1":"On"},"Writable":"int16u"},"id":"514","index":null,"kind":"tag","table":"Image::ExifTool::GE::Main"}
+{"fields":{"Format":"string","Name":"GEModel"},"id":"519","index":null,"kind":"tag","table":"Image::ExifTool::GE::Main"}
+{"fields":{"Format":"string","Name":"GEMake"},"id":"768","index":null,"kind":"tag","table":"Image::ExifTool::GE::Main"}

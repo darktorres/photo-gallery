@@ -1,0 +1,25 @@
+{"kind":"table","module":"APE","name":"Image::ExifTool::APE::Main","special":{"GROUPS":{"0":"APE","1":"APE","2":"Audio"},"NOTES":"\n        Tags found in Monkey's Audio (APE) information.  Only a few common tags are\n        listed below, but ExifTool will extract any tag found.  ExifTool supports\n        APEv1 and APEv2 tags, as well as ID3 information in APE files, and will also\n        read APE metadata from MP3 and MPC files.\n    ","SHORT_NAME":"APE::Main","TABLE_NAME":"Image::ExifTool::APE::Main","TAG_PREFIX":"APE"}}
+{"fields":{"Name":"Album"},"id":"Album","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Artist"},"id":"Artist","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Duration","PrintConv":"ConvertDuration($val)","ValueConv":"$val += 4294967296 if $val < 0 and $val >= -2147483648; $val * 1e-7"},"id":"DURATION","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Genre"},"id":"Genre","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Title"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"ToolName"},"id":"Tool Name","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"ToolVersion"},"id":"Tool Version","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Track"},"id":"Track","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"fields":{"Name":"Year"},"id":"Year","index":null,"kind":"tag","table":"Image::ExifTool::APE::Main"}
+{"kind":"table","module":"APE","name":"Image::ExifTool::APE::NewHeader","special":{"FORMAT":"int16u","GROUPS":{"0":"APE","1":"MAC","2":"Audio"},"NOTES":"APE MAC audio header for version 3.98 or later.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"APE::NewHeader","TABLE_NAME":"Image::ExifTool::APE::NewHeader","TAG_PREFIX":"APE_NewHeader"}}
+{"fields":{"Name":"CompressionLevel"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Format":"int32u","Name":"BlocksPerFrame"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Format":"int32u","Name":"FinalFrameBlocks"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Format":"int32u","Name":"TotalFrames"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Name":"BitsPerSample"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Name":"Channels"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"fields":{"Format":"int32u","Name":"SampleRate"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::APE::NewHeader"}
+{"kind":"table","module":"APE","name":"Image::ExifTool::APE::OldHeader","special":{"FORMAT":"int16u","GROUPS":{"0":"APE","1":"MAC","2":"Audio"},"NOTES":"APE MAC audio header for version 3.97 or earlier.","PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"APE::OldHeader","TABLE_NAME":"Image::ExifTool::APE::OldHeader","TAG_PREFIX":"APE_OldHeader"}}
+{"fields":{"Name":"APEVersion","ValueConv":"$val / 1000"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}
+{"fields":{"Name":"CompressionLevel"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}
+{"fields":{"Name":"Channels"},"id":"3","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}
+{"fields":{"Format":"int32u","Name":"SampleRate"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}
+{"fields":{"Format":"int32u","Name":"TotalFrames"},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}
+{"fields":{"Format":"int32u","Name":"FinalFrameBlocks"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::APE::OldHeader"}

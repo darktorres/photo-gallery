@@ -1,0 +1,24 @@
+{"kind":"table","module":"GIMP","name":"Image::ExifTool::GIMP::Header","special":{"GROUPS":{"0":"GIMP","1":"GIMP","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GIMP::Header","TABLE_NAME":"Image::ExifTool::GIMP::Header","TAG_PREFIX":"GIMP_Header"}}
+{"fields":{"DataMember":"XCFVersion","Format":"string[5]","Name":"XCFVersion","PrintConv":{"OTHER":{"code":"anon:Image/ExifTool/GIMP.pm:86#1"},"file":"0","v001":"1","v002":"2"},"RawConv":"$$self{XCFVersion} = $val"},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Header"}
+{"fields":{"Format":"int32u","Name":"ImageWidth"},"id":"14","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Header"}
+{"fields":{"Format":"int32u","Name":"ImageHeight"},"id":"18","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Header"}
+{"fields":{"Format":"int32u","Name":"ColorMode","PrintConv":{"0":"RGB Color","1":"Grayscale","2":"Indexed Color"}},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Header"}
+{"kind":"table","module":"GIMP","name":"Image::ExifTool::GIMP::Main","special":{"GROUPS":{"0":"GIMP","1":"GIMP","2":"Image"},"NOTES":"\n        The GNU Image Manipulation Program (GIMP) writes these tags in its native\n        XCF (eXperimental Computing Facilty) images.\n    ","SHORT_NAME":"GIMP::Main","TABLE_NAME":"Image::ExifTool::GIMP::Main","TAG_PREFIX":"GIMP","VARS":{"ALPHA_FIRST":1}}}
+{"fields":{"Format":"int8u","Name":"Compression","PrintConv":{"0":"None","1":"RLE Encoding","2":"Zlib","3":"Fractal"}},"id":"17","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"fields":{"Name":"Resolution","SubDirectory":{"TagTable":"Image::ExifTool::GIMP::Resolution"}},"id":"19","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"fields":{"Format":"int32u","Name":"Tattoo"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"fields":{"Name":"Parasites","SubDirectory":{"TagTable":"Image::ExifTool::GIMP::Parasite"}},"id":"21","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"fields":{"Format":"int32u","Name":"Units","PrintConv":{"1":"Inches","2":"mm","3":"Points","4":"Picas"}},"id":"22","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"fields":{"Name":"Header","SubDirectory":{"TagTable":"Image::ExifTool::GIMP::Header"}},"id":"header","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Main"}
+{"kind":"table","module":"GIMP","name":"Image::ExifTool::GIMP::Parasite","special":{"GROUPS":{"0":"GIMP","1":"GIMP","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::GIMP::ProcessParasites"},"SHORT_NAME":"GIMP::Parasite","TABLE_NAME":"Image::ExifTool::GIMP::Parasite","TAG_PREFIX":"GIMP_Parasite"}}
+{"fields":{"Name":"ExifData","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"Start":6,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"exif-data","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Format":"string","Name":"Comment"},"id":"gimp-comment","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Name":"XML","SubDirectory":{"TagTable":"Image::ExifTool::XMP::XML"}},"id":"gimp-image-metadata","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Name":"XMP","SubDirectory":{"Start":10,"TagTable":"Image::ExifTool::XMP::Main"}},"id":"gimp-metadata","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Name":"ICC_Profile","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Main"}},"id":"icc-profile","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Format":"string","Name":"ICCProfileName"},"id":"icc-profile-name","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Name":"IPTCData","SubDirectory":{"TagTable":"Image::ExifTool::IPTC::Main"}},"id":"iptc-data","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"fields":{"Name":"JPEGExifData","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::ProcessTIFF"},"Start":6,"TagTable":"Image::ExifTool::Exif::Main"}},"id":"jpeg-exif-data","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Parasite"}
+{"kind":"table","module":"GIMP","name":"Image::ExifTool::GIMP::Resolution","special":{"FORMAT":"float","GROUPS":{"0":"GIMP","1":"GIMP","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"GIMP::Resolution","TABLE_NAME":"Image::ExifTool::GIMP::Resolution","TAG_PREFIX":"GIMP_Resolution"}}
+{"fields":{"Name":"XResolution"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Resolution"}
+{"fields":{"Name":"YResolution"},"id":"1","index":null,"kind":"tag","table":"Image::ExifTool::GIMP::Resolution"}

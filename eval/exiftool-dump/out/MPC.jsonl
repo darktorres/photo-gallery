@@ -1,0 +1,12 @@
+{"kind":"table","module":"MPC","name":"Image::ExifTool::MPC::Main","special":{"GROUPS":{"0":"MPC","1":"MPC","2":"Audio"},"NOTES":"\n        Tags used in Musepack (MPC) audio files.  ExifTool also extracts ID3 and APE\n        information from these files.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::FLAC::ProcessBitStream"},"SHORT_NAME":"MPC::Main","TABLE_NAME":"Image::ExifTool::MPC::Main","TAG_PREFIX":"MPC"}}
+{"fields":{"Name":"TotalFrames"},"id":"Bit032-063","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"SampleRate","PrintConv":{"0":44100,"1":48000,"2":37800,"3":32000}},"id":"Bit080-081","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"Quality","PrintConv":{"1":"Unstable/Experimental","10":"5 (Standard)","11":"6 (Xtreme)","12":"7 (Insane)","13":"8 (BrainDead)","14":"9","15":"10","5":"0","6":"1","7":"2 (Telephone)","8":"3 (Thumb)","9":"4 (Radio)"}},"id":"Bit084-087","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"MaxBand"},"id":"Bit088-093","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"ReplayGainTrackPeak"},"id":"Bit096-111","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"ReplayGainTrackGain"},"id":"Bit112-127","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"ReplayGainAlbumPeak"},"id":"Bit128-143","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"ReplayGainAlbumGain"},"id":"Bit144-159","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"FastSeek","PrintConv":{"0":"No","1":"Yes"}},"id":"Bit179","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"Gapless","PrintConv":{"0":"No","1":"Yes"}},"id":"Bit191","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}
+{"fields":{"Name":"EncoderVersion","PrintConv":"$val =~ s/(\\d)(\\d)(\\d)$/$1.$2.$3/; $val"},"id":"Bit216-223","index":null,"kind":"tag","table":"Image::ExifTool::MPC::Main"}

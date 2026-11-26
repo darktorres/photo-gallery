@@ -1,0 +1,53 @@
+{"kind":"table","module":"DjVu","name":"Image::ExifTool::DjVu::Ant","special":{"GROUPS":{"0":"DjVu","1":"DjVu","2":"Image"},"NOTES":"Information extracted from annotation chunks.","PROCESS_PROC":{"code":"&Image::ExifTool::DjVu::ProcessAnt"},"SHORT_NAME":"DjVu::Ant","TABLE_NAME":"Image::ExifTool::DjVu::Ant","TAG_PREFIX":"DjVu_Ant"}}
+{"fields":{"Name":"Metadata","SubDirectory":{"TagTable":"Image::ExifTool::DjVu::Meta"}},"id":"metadata","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Ant"}
+{"fields":{"Name":"XMP","SubDirectory":{"TagTable":"Image::ExifTool::XMP::Main"}},"id":"xmp","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Ant"}
+{"kind":"table","module":"DjVu","name":"Image::ExifTool::DjVu::Form","special":{"GROUPS":{"0":"DjVu","1":"DjVu","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"DjVu::Form","TABLE_NAME":"Image::ExifTool::DjVu::Form","TAG_PREFIX":"DjVu_Form"}}
+{"fields":{"Format":"undef[4]","Name":"SubfileType","PrintConv":{"BM44":"Grayscale IW44","DJVI":"Shared component","DJVM":"Multi-page document","DJVU":"Single-page image","PM44":"Color IW44","THUM":"Thumbnail image"},"Priority":0},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Form"}
+{"kind":"table","module":"DjVu","name":"Image::ExifTool::DjVu::Info","special":{"FORMAT":"int8u","GROUPS":{"0":"DjVu","1":"DjVu","2":"Image"},"PRIORITY":0,"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"DjVu::Info","TABLE_NAME":"Image::ExifTool::DjVu::Info","TAG_PREFIX":"DjVu_Info"}}
+{"fields":{"Format":"int16u","Name":"ImageWidth"},"id":"0","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"fields":{"Format":"int16u","Name":"ImageHeight"},"id":"2","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"fields":{"Description":"DjVu Version","Format":"int8u[2]","Name":"DjVuVersion","ValueConv":"$val=~/(\\d+) (\\d+)/ ? \"$2.$1\" : \"0.$val\""},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"fields":{"Format":"int16u","Name":"SpatialResolution","ValueConv":"(($val & 0xff)<<8) + ($val>>8)"},"id":"6","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"fields":{"Name":"Gamma","ValueConv":"$val / 10"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"fields":{"BitShift":0,"Mask":7,"Name":"Orientation","PrintConv":{"1":"Horizontal (normal)","2":"Rotate 180","5":"Rotate 90 CW","6":"Rotate 270 CW"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Info"}
+{"kind":"table","module":"DjVu","name":"Image::ExifTool::DjVu::Main","special":{"GROUPS":{"0":"DjVu","1":"DjVu","2":"Image"},"NOTES":"\n        Information is extracted from the following chunks in DjVu images. See\n        L<http://www.djvu.org/> for the DjVu specification.\n    ","SHORT_NAME":"DjVu::Main","TABLE_NAME":"Image::ExifTool::DjVu::Main","TAG_PREFIX":"DjVu"}}
+{"fields":{"Name":"ANTa","SubDirectory":{"TagTable":"Image::ExifTool::DjVu::Ant"}},"id":"ANTa","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Main"}
+{"fields":{"Name":"CompressedAnnotation","SubDirectory":{"ProcessProc":{"code":"&Image::ExifTool::DjVu::ProcessBZZ"},"TagTable":"Image::ExifTool::DjVu::Ant"}},"id":"ANTz","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Main"}
+{"fields":{"Name":"FORM","SubDirectory":{"TagTable":"Image::ExifTool::DjVu::Form"},"TypeOnly":1},"id":"FORM","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Main"}
+{"fields":{"Name":"IncludedFileID"},"id":"INCL","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Main"}
+{"fields":{"Name":"INFO","SubDirectory":{"TagTable":"Image::ExifTool::DjVu::Info"}},"id":"INFO","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Main"}
+{"kind":"table","module":"DjVu","name":"Image::ExifTool::DjVu::Meta","special":{"GROUPS":{"0":"DjVu","1":"DjVu-Meta","2":"Image"},"NOTES":"\n        This table lists the standard DjVu metadata tags, but ExifTool will extract\n        any tags that exist even if they don't appear here.  The DjVu v3\n        documentation endorses tags borrowed from two standards: 1) BibTeX\n        bibliography system tags (all lowercase Tag ID's in the table below), and 2)\n        PDF DocInfo tags (capitalized Tag ID's).\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::DjVu::ProcessMeta"},"SHORT_NAME":"DjVu::Meta","TABLE_NAME":"Image::ExifTool::DjVu::Meta","TAG_PREFIX":"DjVu_Meta"}}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"Author","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CreateDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"CreationDate","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Creator"},"id":"Creator","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Keywords"},"id":"Keywords","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"ModifyDate","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"require Image::ExifTool::XMP; Image::ExifTool::XMP::ConvertXMPDate($val)"},"id":"ModDate","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Producer"},"id":"Producer","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Subject"},"id":"Subject","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Title"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Trapped","ValueConv":"$val=~s{^/}{}; $val"},"id":"Trapped","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Location"},"Name":"Address"},"id":"address","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Annotation"},"id":"annote","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"author","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"BookTitle"},"id":"booktitle","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Chapter"},"id":"chapter","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"CrossRef"},"id":"crossref","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Edition"},"id":"edition","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"EPrint"},"id":"eprint","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"HowPublished"},"id":"howpublished","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Institution"},"id":"institution","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Journal"},"id":"journal","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Key"},"id":"key","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Month"},"id":"month","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Note"},"id":"note","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Number"},"id":"number","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Organization"},"id":"organization","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Pages"},"id":"pages","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Publisher"},"id":"publisher","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"School"},"id":"school","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Series"},"id":"series","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Title"},"id":"title","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Type"},"id":"type","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"URL"},"id":"url","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Name":"Volume"},"id":"volume","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Year"},"id":"year","index":null,"kind":"tag","table":"Image::ExifTool::DjVu::Meta"}

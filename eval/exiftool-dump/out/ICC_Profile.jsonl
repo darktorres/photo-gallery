@@ -1,0 +1,213 @@
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::Chromaticity","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-chrm","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::Chromaticity","TABLE_NAME":"Image::ExifTool::ICC_Profile::Chromaticity","TAG_PREFIX":"ICC_Profile_Chromaticity"}}
+{"fields":{"Format":"int16u","Name":"ChromaticityChannels"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"fields":{"Format":"int16u","Name":"ChromaticityColorant","PrintConv":{"0":"Unknown","1":"ITU-R BT.709","2":"SMPTE RP145-1994","3":"EBU Tech.3213-E","4":"P22"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"fields":{"Format":"fixed32u[2]","Name":"ChromaticityChannel1"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"fields":{"Format":"fixed32u[2]","Name":"ChromaticityChannel2"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"fields":{"Format":"fixed32u[2]","Name":"ChromaticityChannel3"},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"fields":{"Format":"fixed32u[2]","Name":"ChromaticityChannel4"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Chromaticity"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::ColorRep","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-cicp","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::ColorRep","TABLE_NAME":"Image::ExifTool::ICC_Profile::ColorRep","TAG_PREFIX":"ICC_Profile_ColorRep"}}
+{"fields":{"Name":"ColorPrimaries","PrintConv":{"1":"BT.709","10":"SMPTE 428 (CIE 1931 XYZ)","11":"SMPTE RP 431-2","12":"SMPTE EG 432-1","2":"Unspecified","22":"EBU Tech. 3213-E","4":"BT.470 System M (historical)","5":"BT.470 System B, G (historical)","6":"BT.601","7":"SMPTE 240","8":"Generic film (color filters using illuminant C)","9":"BT.2020, BT.2100"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorRep"}
+{"fields":{"Name":"TransferCharacteristics","PrintConv":{"0":"For future use (0)","1":"BT.709","10":"Logarithmic (100 * Sqrt(10) : 1 range)","11":"IEC 61966-2-4","12":"BT.1361","13":"sRGB or sYCC","14":"BT.2020 10-bit systems","15":"BT.2020 12-bit systems","16":"SMPTE ST 2084, ITU BT.2100 PQ","17":"SMPTE ST 428","18":"BT.2100 HLG, ARIB STD-B67","2":"Unspecified","3":"For future use (3)","4":"BT.470 System M (historical)","5":"BT.470 System B, G (historical)","6":"BT.601","7":"SMPTE 240 M","8":"Linear","9":"Logarithmic (100 : 1 range)"}},"id":"9","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorRep"}
+{"fields":{"Name":"MatrixCoefficients","PrintConv":{"0":"Identity matrix","1":"BT.709","10":"BT.2020 constant luminance","11":"SMPTE ST 2085 YDzDx","12":"Chromaticity-derived non-constant luminance","13":"Chromaticity-derived constant luminance","14":"BT.2100 ICtCp","2":"Unspecified","3":"For future use (3)","4":"US FCC 73.628","5":"BT.470 System B, G (historical)","6":"BT.601","7":"SMPTE 240 M","8":"YCgCo","9":"BT.2020 non-constant luminance, BT.2100 YCbCr"}},"id":"10","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorRep"}
+{"fields":{"Name":"VideoFullRangeFlag","PrintConv":{"0":"Limited","1":"Full"}},"id":"11","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorRep"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::ColorantTable","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-clrt","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::ColorantTable","TABLE_NAME":"Image::ExifTool::ICC_Profile::ColorantTable","TAG_PREFIX":"ICC_Profile_ColorantTable"}}
+{"fields":{"Format":"int32u","Name":"ColorantCount"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"string[32]","Name":"Colorant1Name"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"int16u[3]","Name":"Colorant1Coordinates"},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"string[32]","Name":"Colorant2Name"},"id":"50","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"int16u[3]","Name":"Colorant2Coordinates"},"id":"82","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"string[32]","Name":"Colorant3Name"},"id":"88","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"fields":{"Format":"int16u[3]","Name":"Colorant3Coordinates"},"id":"120","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ColorantTable"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::Header","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-header","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::Header","TABLE_NAME":"Image::ExifTool::ICC_Profile::Header","TAG_PREFIX":"ICC_Profile_Header"}}
+{"id":"shared00206","kind":"shared","value":{"":"","4d2p":"Erdt Systems GmbH & Co KG","AAMA":"Aamazing Technologies, Inc.","ACER":"Acer Peripherals","ACLT":"Acolyte Color Research","ACTI":"Actix Systems, Inc.","ADAR":"Adara Technology, Inc.","ADBE":"Adobe Systems Inc.","ADI ":"ADI Systems, Inc.","AGFA":"Agfa Graphics N.V.","ALMD":"Alps Electric USA, Inc.","ALPS":"Alps Electric USA, Inc.","ALWN":"Alwan Color Expertise","AMTI":"Amiable Technologies, Inc.","AOC ":"AOC International (U.S.A), Ltd.","APAG":"Apago","APPL":"Apple Computer Inc.","AST ":"AST","AT&T":"AT&T Computer Systems","BAEL":"BARBIERI electronic","BRCO":"Barco NV","BRKP":"Breakpoint Pty Limited","BROT":"Brother Industries, LTD","BULL":"Bull","BUS ":"Bus Computer Systems","C-IT":"C-Itoh","CAMR":"Intel Corporation","CANO":"Canon, Inc. (Canon Development Americas, Inc.)","CARR":"Carroll Touch","CASI":"Casio Computer Co., Ltd.","CBUS":"Colorbus PL","CEL ":"Crossfield","CELx":"Crossfield","CGS ":"CGS Publishing Technologies International GmbH","CHM ":"Rochester Robotics","CIGL":"Colour Imaging Group, London","CITI":"Citizen","CL00":"Candela, Ltd.","CLIQ":"Color IQ","CMCO":"Chromaco, Inc.","CMiX":"CHROMiX","COLO":"Colorgraphic Communications Corporation","COMP":"COMPAQ Computer Corporation","COMp":"Compeq USA/Focus Technology","CONR":"Conrac Display Products","CORD":"Cordata Technologies, Inc.","CPQ ":"Compaq Computer Corporation","CPRO":"ColorPro","CRN ":"Cornerstone","CTX ":"CTX International, Inc.","CVIS":"ColorVision","CWC ":"Fujitsu Laboratories, Ltd.","DARI":"Darius Technology, Ltd.","DATA":"Dataproducts","DCP ":"Dry Creek Photo","DCRC":"Digital Contents Resource Center, Chung-Ang University","DELL":"Dell Computer Corporation","DIC ":"Dainippon Ink and Chemicals","DICO":"Diconix","DIGI":"Digital","DL&C":"Digital Light & Color","DPLG":"Doppelganger, LLC","DS  ":"Dainippon Screen","DSOL":"DOOSOL","DUPN":"DuPont","EPSO":"Epson","ESKO":"Esko-Graphics","ETRI":"Electronics and Telecommunications Research Institute","EVER":"Everex Systems, Inc.","EXAC":"ExactCODE GmbH","Eizo":"EIZO NANAO CORPORATION","FALC":"Falco Data Products, Inc.","FF  ":"Fuji Photo Film Co.,LTD","FFEI":"FujiFilm Electronic Imaging, Ltd.","FNRD":"fnord software","FORA":"Fora, Inc.","FORE":"Forefront Technology Corporation","FP  ":"Fujitsu","FPA ":"WayTech Development, Inc.","FUJI":"Fujitsu","FX  ":"Fuji Xerox Co., Ltd.","GCC ":"GCC Technologies, Inc.","GGSL":"Global Graphics Software Limited","GMB ":"Gretagmacbeth","GMG ":"GMG GmbH & Co. KG","GOLD":"GoldStar Technology, Inc.","GOOG":"Google","GPRT":"Giantprint Pty Ltd","GTMB":"Gretagmacbeth","GVC ":"WayTech Development, Inc.","GW2K":"Sony Corporation","HCI ":"HCI","HDM ":"Heidelberger Druckmaschinen AG","HERM":"Hermes","HITA":"Hitachi America, Ltd.","HP  ":"Hewlett-Packard","HTC ":"Hitachi, Ltd.","HiTi":"HiTi Digital, Inc.","IBM ":"IBM Corporation","IDNT":"Scitex Corporation, Ltd.","IEC ":"Hewlett-Packard","IIYA":"Iiyama North America, Inc.","IKEG":"Ikegami Electronics, Inc.","IMAG":"Image Systems Corporation","IMI ":"Ingram Micro, Inc.","INTC":"Intel Corporation","INTL":"N/A (INTL)","INTR":"Intra Electronics USA, Inc.","IOCO":"Iocomm International Technology Corporation","IPS ":"InfoPrint Solutions Company","IRIS":"Scitex Corporation, Ltd.","ISL ":"Ichikawa Soft Laboratory","ITNL":"N/A (ITNL)","IVM ":"IVM","IWAT":"Iwatsu Electric Co., Ltd.","Idnt":"Scitex Corporation, Ltd.","Inca":"Inca Digital Printers Ltd.","Iris":"Scitex Corporation, Ltd.","JPEG":"Joint Photographic Experts Group","JSFT":"Jetsoft Development","JVC ":"JVC Information Products Co.","KART":"Scitex Corporation, Ltd.","KFC ":"KFC Computek Components Corporation","KLH ":"KLH Computers","KMHD":"Konica Minolta Holdings, Inc.","KNCA":"Konica Corporation","KODA":"Kodak","KYOC":"Kyocera","Kart":"Scitex Corporation, Ltd.","LCAG":"Leica Camera AG","LCCD":"Leeds Colour","LDAK":"Left Dakota","LEAD":"Leading Technology, Inc.","LEXM":"Lexmark International, Inc.","LINK":"Link Computer, Inc.","LINO":"Linotronic","LITE":"Lite-On, Inc.","Leaf":"Leaf","Lino":"Linotronic","MAGC":"Mag Computronic (USA) Inc.","MAGI":"MAG Innovision, Inc.","MANN":"Mannesmann","MICN":"Micron Technology, Inc.","MICR":"Microtek","MICV":"Microvitec, Inc.","MINO":"Minolta","MITS":"Mitsubishi Electronics America, Inc.","MITs":"Mitsuba Corporation","MNLT":"Minolta","MODG":"Modgraph, Inc.","MONI":"Monitronix, Inc.","MONS":"Monaco Systems Inc.","MORS":"Morse Technology, Inc.","MOTI":"Motive Systems","MSFT":"Microsoft Corporation","MUTO":"MUTOH INDUSTRIES LTD.","Mits":"Mitsubishi Electric Corporation Kyoto Works","NANA":"NANAO USA Corporation","NEC ":"NEC Corporation","NEXP":"NexPress Solutions LLC","NISS":"Nissei Sangyo America, Ltd.","NKON":"Nikon Corporation","NONE":"none","OCE ":"Oce Technologies B.V.","OCEC":"OceColor","OKI ":"Oki","OKID":"Okidata","OKIP":"Okidata","OLIV":"Olivetti","OLYM":"OLYMPUS OPTICAL CO., LTD","ONYX":"Onyx Graphics","OPTI":"Optiquest","PACK":"Packard Bell","PANA":"Matsushita Electric Industrial Co., Ltd.","PANT":"Pantone, Inc.","PBN ":"Packard Bell","PFU ":"PFU Limited","PHIL":"Philips Consumer Electronics Co.","PNTX":"HOYA Corporation PENTAX Imaging Systems Division","POne":"Phase One A/S","PREM":"Premier Computer Innovations","PRIN":"Princeton Graphic Systems","PRIP":"Princeton Publishing Labs","QLUX":"Hong Kong","QMS ":"QMS, Inc.","QPCD":"QPcard AB","QUAD":"QuadLaser","QUME":"Qume Corporation","RADI":"Radius, Inc.","RDDx":"Integrated Color Solutions, Inc.","RDG ":"Roland DG Corporation","REDM":"REDMS Group, Inc.","RELI":"Relisys","RGMS":"Rolf Gierling Multitools","RICO":"Ricoh Corporation","RNLD":"Edmund Ronald","ROYA":"Royal","RPC ":"Ricoh Printing Systems,Ltd.","RTL ":"Royal Information Electronics Co., Ltd.","SAMP":"Sampo Corporation of America","SAMS":"Samsung, Inc.","SANT":"Jaime Santana Pomares","SCIT":"Scitex Corporation, Ltd.","SCRN":"Dainippon Screen","SDP ":"Scitex Corporation, Ltd.","SEC ":"SAMSUNG ELECTRONICS CO.,LTD","SEIK":"Seiko Instruments U.S.A., Inc.","SEIk":"Seikosha","SGUY":"ScanGuy.com","SHAR":"Sharp Laboratories","SICC":"International Color Consortium","SONY":"SONY Corporation","SPCL":"SpectraCal","STAR":"Star","STC ":"Sampo Technology Corporation","Scit":"Scitex Corporation, Ltd.","Sdp ":"Scitex Corporation, Ltd.","Sony":"Sony Corporation","TALO":"Talon Technology Corporation","TAND":"Tandy","TATU":"Tatung Co. of America, Inc.","TAXA":"TAXAN America, Inc.","TDS ":"Tokyo Denshi Sekei K.K.","TECO":"TECO Information Systems, Inc.","TEGR":"Tegra","TEKT":"Tektronix, Inc.","TI  ":"Texas Instruments","TMKR":"TypeMaker Ltd.","TOSB":"TOSHIBA corp.","TOSH":"Toshiba, Inc.","TOTK":"TOTOKU ELECTRIC Co., LTD","TRIU":"Triumph","TSBT":"TOSHIBA TEC CORPORATION","TTX ":"TTX Computer Products, Inc.","TVM ":"TVM Professional Monitor Corporation","TW  ":"TW Casper Corporation","ULSX":"Ulead Systems","UNIS":"Unisys","UTZF":"Utz Fehlau & Sohn","VARI":"Varityper","VIEW":"Viewsonic","VISL":"Visual communication","VIVO":"Vivo Mobile Communication Co., Ltd","WANG":"Wang","WLBR":"Wilbur Imaging","WTG2":"Ware To Go","WYSE":"WYSE Technology","XERX":"Xerox Corporation","XM  ":"Xiaomi","XRIT":"X-Rite","Z123":"Lavanya's test Company","ZRAN":"Zoran Corporation","Zebr":"Zebra Technologies Inc","appl":"Apple Computer Inc.","bICC":"basICColor GmbH","berg":"bergdesign incorporated","ceyd":"Integrated Color Solutions, Inc.","clsp":"MacDermid ColorSpan, Inc.","ds  ":"Dainippon Screen","dupn":"DuPont","ffei":"FujiFilm Electronic Imaging, Ltd.","flux":"FluxData Corporation","iris":"Scitex Corporation, Ltd.","kart":"Scitex Corporation, Ltd.","lcms":"Little CMS","lino":"Linotronic","none":"none","ob4d":"Erdt Systems GmbH & Co KG","obic":"Medigraph GmbH","quby":"Qubyx Sarl","scit":"Scitex Corporation, Ltd.","scrn":"Dainippon Screen","sdp ":"Scitex Corporation, Ltd.","siwi":"SIWI GRAFIKA CORPORATION","yxym":"YxyMaster GmbH"}}
+{"fields":{"Format":"string[4]","Name":"ProfileCMMType","PrintConv":{"ref":"shared00206"},"SeparateTable":"ManuSig"},"id":"4","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int16s","Name":"ProfileVersion","PrintConv":"($val >> 8).\".\".(($val & 0xf0)>>4).\".\".($val & 0x0f)"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"ProfileClass","PrintConv":{"abst":"Abstract Profile","cenc":"ColorEncodingSpace Profile","link":"DeviceLink Profile","mid ":"MultiplexIdentification Profile","mlnk":"MultiplexLink Profile","mntr":"Display Device Profile","mvis":"MultiplexVisualization Profile","nkpf":"Nikon Input Device Profile (NON-STANDARD!)","nmcl":"NamedColor Profile","prtr":"Output Device Profile","scnr":"Input Device Profile","spac":"ColorSpace Conversion Profile"}},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"ColorSpaceData"},"id":"16","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"ProfileConnectionSpace"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int16u[6]","Groups":{"2":"Time"},"Name":"ProfileDateTime","PrintConv":"$self->ConvertDateTime($val)","ValueConv":"sprintf(\"%.4d:%.2d:%.2d %.2d:%.2d:%.2d\",split(\" \",$val));"},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"ProfileFileSignature"},"id":"36","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"PrimaryPlatform","PrintConv":{"APPL":"Apple Computer Inc.","MSFT":"Microsoft Corporation","SGI ":"Silicon Graphics Inc.","SUNW":"Sun Microsystems Inc.","TGNT":"Taligent Inc."}},"id":"40","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int32u","Name":"CMMFlags","PrintConv":"\n            ($val & 0x01 ? \"Embedded, \" : \"Not Embedded, \") .\n            ($val & 0x02 ? \"Not Independent\" : \"Independent\")\n        "},"id":"44","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"DeviceManufacturer","PrintConv":{"ref":"shared00206"},"SeparateTable":"ManuSig"},"id":"48","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"DeviceModel"},"id":"52","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int32u[2]","Name":"DeviceAttributes","PrintConv":"\n            my @v = split ' ', $val;\n            ($v[1] & 0x01 ? \"Transparency, \" : \"Reflective, \") .\n            ($v[1] & 0x02 ? \"Matte, \" : \"Glossy, \") .\n            ($v[1] & 0x04 ? \"Negative, \" : \"Positive, \") .\n            ($v[1] & 0x08 ? \"B&W\" : \"Color\");\n        "},"id":"56","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int32u","Name":"RenderingIntent","PrintConv":{"0":"Perceptual","1":"Media-Relative Colorimetric","2":"Saturation","3":"ICC-Absolute Colorimetric"}},"id":"64","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"fixed32s[3]","Name":"ConnectionSpaceIlluminant"},"id":"68","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"string[4]","Name":"ProfileCreator","PrintConv":{"ref":"shared00206"},"SeparateTable":"ManuSig"},"id":"80","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"fields":{"Format":"int8u[16]","Name":"ProfileID","PrintConv":"Image::ExifTool::ICC_Profile::HexID($val)"},"id":"84","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Header"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::Main","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC_Profile","2":"Image"},"NOTES":"\n        ICC profile information is used in many different file types including JPEG,\n        TIFF, PDF, PostScript, Photoshop, PNG, MIFF, PICT, QuickTime, XCF and some\n        RAW formats.  While the tags listed below are not individually writable, the\n        entire profile itself can be accessed via the extra 'ICC_Profile' tag, but\n        this tag is neither extracted nor written unless specified explicitly.  See\n        L<http://www.color.org/icc_specs2.xalter> for the official ICC\n        specification.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ICC_Profile::ProcessICC_Profile"},"SHORT_NAME":"ICC_Profile::Main","TABLE_NAME":"Image::ExifTool::ICC_Profile::Main","TAG_PREFIX":"ICC_Profile","WRITE_PROC":{"code":"&Image::ExifTool::ICC_Profile::WriteICC_Profile"}}}
+{"fields":{"Name":"AToB0"},"id":"A2B0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"AToB1"},"id":"A2B1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"AToB2"},"id":"A2B2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"AToB3"},"id":"A2B3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"AToM0"},"id":"A2M0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BToA0"},"id":"B2A0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BToA1"},"id":"B2A1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BToA2"},"id":"B2A2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BToA3"},"id":"B2A3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"BToD0"},"id":"B2D0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"BToD1"},"id":"B2D1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"BToD2"},"id":"B2D2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"BToD3"},"id":"B2D3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"CXF"},"id":"CxF ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"DToB0"},"id":"D2B0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"DToB1"},"id":"D2B1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"DToB2"},"id":"D2B2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"DToB3"},"id":"D2B3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileHeader","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Header"}},"id":"Header","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToA0"},"id":"M2A0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToB0"},"id":"M2B0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToB1"},"id":"M2B1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToB2"},"id":"M2B2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToB3"},"id":"M2B3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToS0"},"id":"M2S0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToS1"},"id":"M2S1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToS2"},"id":"M2S2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MToS3"},"id":"M2S3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"WCSProfiles"},"id":"MS00","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFAToB0"},"id":"bAB0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFAToB1"},"id":"bAB1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFAToB2"},"id":"bAB2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFAToB3"},"id":"bAB3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToA0"},"id":"bBA0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToA1"},"id":"bBA1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToA2"},"id":"bBA2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToA3"},"id":"bBA3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToD0"},"id":"bBD0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToD1"},"id":"bBD1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToD2"},"id":"bBD2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFBToD3"},"id":"bBD3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFDToB0"},"id":"bDB0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFDToB1"},"id":"bDB1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFDToB2"},"id":"bDB2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFDToB3"},"id":"bDB3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToB0"},"id":"bMB0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToB1"},"id":"bMB1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToB2"},"id":"bMB2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToB3"},"id":"bMB3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToS0"},"id":"bMS0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToS1"},"id":"bMS1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToS2"},"id":"bMS2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFMToS3"},"id":"bMS3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Description":"Blue Tone Reproduction Curve","Name":"BlueTRC"},"id":"bTRC","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BlueMatrixColumn"},"id":"bXYZ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFColorimetricParam0"},"id":"bcp0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFColorimetricParam1"},"id":"bcp1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFColorimetricParam2"},"id":"bcp2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFColorimetricParam3"},"id":"bcp3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Description":"Under Color Removal and Black Gen.","Name":"UCRBG"},"id":"bfd ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MediaBlackPoint"},"id":"bkpt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFSpectralParam0"},"id":"bsp0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFSpectralParam1"},"id":"bsp1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFSpectralParam2"},"id":"bsp2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"BRDFSpectralParam3"},"id":"bsp3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"CustomToStandardPcc"},"id":"c2sp","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"CalibrationDateTime","PrintConv":"$self->ConvertDateTime($val)"},"id":"calt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorEncodingParams"},"id":"cept","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ChromaticAdaptation"},"id":"chad","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Groups":{"1":"ICC_Profile#"},"Name":"Chromaticity","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Chromaticity","Validate":"$type eq \"chrm\""}},"id":"chrm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorRepresentation","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::ColorRep"}},"id":"cicp","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorimetricIntentImageState"},"id":"ciis","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorantInfoOut"},"id":"clio","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorantOrderOut"},"id":"cloo","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"ColorantTableOut"},"id":"clot","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorantOrder"},"id":"clro","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorantTable","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::ColorantTable","Validate":"$type eq \"clrt\""}},"id":"clrt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileCopyright","ValueConv":"$val=~s/\\0.*//; $val"},"id":"cprt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"CRDInfo"},"id":"crdi","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ColorSpaceName"},"id":"csnm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalAToB0"},"id":"dAB0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalAToB1"},"id":"dAB1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalAToB2"},"id":"dAB2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalAToB3"},"id":"dAB3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToA0"},"id":"dBA0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToA1"},"id":"dBA1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToA2"},"id":"dBA2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToA3"},"id":"dBA3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToD0"},"id":"dBD0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToD1"},"id":"dBD1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToD2"},"id":"dBD2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalBToD3"},"id":"dBD3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalDToB0"},"id":"dDB0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalDToB1"},"id":"dDB1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalDToB2"},"id":"dDB2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"DirectionalDToB3"},"id":"dDB3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileDescription"},"id":"desc","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"DeviceSettings"},"id":"devs","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"DeviceModelDesc"},"id":"dmdd","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Groups":{"2":"Camera"},"Name":"DeviceMfgDesc"},"id":"dmnd","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileDescriptionML"},"id":"dscm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"FocalPlaneColorimetryEstimates"},"id":"fpce","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Description":"Green Tone Reproduction Curve","Name":"GreenTRC"},"id":"gTRC","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"GreenMatrixColumn"},"id":"gXYZ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Gamut"},"id":"gamt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"GamutBoundaryDescription0"},"id":"gdb0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"GamutBoundaryDescription1"},"id":"gdb1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"GamutBoundaryDescription2"},"id":"gdb2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"GamutBoundaryDescription3"},"id":"gdb3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"HDGainMapInfo"},"id":"hdgm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Description":"Gray Tone Reproduction Curve","Name":"GrayTRC"},"id":"kTRC","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Luminance"},"id":"lumi","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MultiplexTypeArray"},"id":"mcta","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MultiplexDefaultValues"},"id":"mdv ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Measurement","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Measurement","Validate":"$type eq \"meas\""}},"id":"meas","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Metadata","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::Metadata","Validate":"$type eq \"dict\""}},"id":"meta","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MeasurementInputInfo"},"id":"miin","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MeasurementInfo"},"id":"minf","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MakeAndModel"},"id":"mmod","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"NamedColor2"},"id":"ncl2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"NamedColor"},"id":"ncol","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"NativeDisplayInfo"},"id":"ndin","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"NamedColor"},"id":"nmcl","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Preview0"},"id":"pre0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Preview1"},"id":"pre1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Preview2"},"id":"pre2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PS2RenderingIntent"},"id":"ps2i","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PostScript2CSA"},"id":"ps2s","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PostScript2CRD0"},"id":"psd0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PostScript2CRD1"},"id":"psd1","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PostScript2CRD2"},"id":"psd2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"PostScript2CRD3"},"id":"psd3","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileSequenceDesc"},"id":"pseq","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Binary":1,"Name":"ProfileSequenceIdentifier"},"id":"psid","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ProfileSequenceInfo"},"id":"psin","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PS2CRDVMSize"},"id":"psvm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Description":"Red Tone Reproduction Curve","Name":"RedTRC"},"id":"rTRC","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"RedMatrixColumn"},"id":"rXYZ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"OutputResponse"},"id":"resp","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ReferenceName"},"id":"rfnm","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ReflectionHardcopyOrigColorimetry"},"id":"rhoc","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"PerceptualRenderingIntentGamut","PrintConv":{"prmg":"Perceptual Reference Medium Gamut"}},"id":"rig0","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SaturationRenderingIntentGamut","PrintConv":{"prmg":"Perceptual Reference Medium Gamut"}},"id":"rig2","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ReflectionPrintOutputColorimetry"},"id":"rpoc","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"StandardToCustomPcc"},"id":"s2cp","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SceneAppearanceEstimates"},"id":"sape","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SceneColorimetryEstimates"},"id":"scoe","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ScreeningDesc"},"id":"scrd","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Screening"},"id":"scrn","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SurfaceMap"},"id":"smap","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SpectralViewingConditions"},"id":"svcn","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"SpectralWhitePoint"},"id":"swpt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"CharTarget","ValueConv":"$val=~s/\\0.*//; length $val > 128 ? \\$val : $val"},"id":"targ","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"Technology","PrintConv":{"AMD ":"Active Matrix Display","CRT ":"Cathode Ray Tube Display","KPCD":"Photo CD","PMD ":"Passive Matrix Display","dcam":"Digital Camera","dcpj":"Digital Cinema Projector","dmpc":"Digital Motion Picture Camera","dsub":"Dye Sublimation Printer","epho":"Electrophotographic Printer","esta":"Electrostatic Printer","flex":"Flexography","fprn":"Film Writer","fscn":"Film Scanner","grav":"Gravure","ijet":"Ink Jet Printer","imgs":"Photo Image Setter","mpfr":"Motion Picture Film Recorder","mpfs":"Motion Picture Film Scanner","offs":"Offset Lithography","pjtv":"Projection Television","rpho":"Photographic Paper Printer","rscn":"Reflective Scanner","silk":"Silkscreen","twax":"Thermal Wax Printer","vidc":"Video Camera","vidm":"Video Monitor"}},"id":"tech","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"VideoCardGamma"},"id":"vcgt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ViewingConditions","SubDirectory":{"TagTable":"Image::ExifTool::ICC_Profile::ViewingConditions","Validate":"$type eq \"view\""}},"id":"view","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"ViewingCondDesc"},"id":"vued","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"fields":{"Name":"MediaWhitePoint"},"id":"wtpt","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Main"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::Measurement","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-meas","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::Measurement","TABLE_NAME":"Image::ExifTool::ICC_Profile::Measurement","TAG_PREFIX":"ICC_Profile_Measurement"}}
+{"fields":{"Format":"int32u","Name":"MeasurementObserver","PrintConv":{"1":"CIE 1931","2":"CIE 1964"}},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Measurement"}
+{"fields":{"Format":"fixed32s[3]","Name":"MeasurementBacking"},"id":"12","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Measurement"}
+{"fields":{"Format":"int32u","Name":"MeasurementGeometry","PrintConv":{"0":"Unknown","1":"0/45 or 45/0","2":"0/d or d/0"}},"id":"24","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Measurement"}
+{"fields":{"Format":"fixed32u","Name":"MeasurementFlare","PrintConv":"$val*100 . \"%\""},"id":"28","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Measurement"}
+{"id":"shared00207","kind":"shared","value":{"1":"D50","2":"D65","3":"D93","4":"F2","5":"D55","6":"A","7":"Equi-Power (E)","8":"F8"}}
+{"fields":{"Format":"int32u","Name":"MeasurementIlluminant","PrintConv":{"ref":"shared00207"}},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Measurement"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::Metadata","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-meta","2":"Image"},"NOTES":"\n        Only these few tags have been pre-defined, but ExifTool will extract any\n        Metadata tags that exist.\n    ","PROCESS_PROC":{"code":"&Image::ExifTool::ICC_Profile::ProcessMetadata"},"SHORT_NAME":"ICC_Profile::Metadata","TABLE_NAME":"Image::ExifTool::ICC_Profile::Metadata","TAG_PREFIX":"ICC_Profile_Metadata","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Name":"CreatorApp"},"id":"CreatorApp","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Metadata"}
+{"fields":{"Name":"ManufacturerName"},"id":"ManufacturerName","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Metadata"}
+{"fields":{"Name":"MediaColor"},"id":"MediaColor","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Metadata"}
+{"fields":{"Name":"MediaWeight"},"id":"MediaWeight","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::Metadata"}
+{"kind":"table","module":"ICC_Profile","name":"Image::ExifTool::ICC_Profile::ViewingConditions","special":{"GROUPS":{"0":"ICC_Profile","1":"ICC-view","2":"Image"},"PROCESS_PROC":{"code":"&Image::ExifTool::ProcessBinaryData"},"SHORT_NAME":"ICC_Profile::ViewingConditions","TABLE_NAME":"Image::ExifTool::ICC_Profile::ViewingConditions","TAG_PREFIX":"ICC_Profile_ViewingConditions"}}
+{"fields":{"Format":"fixed32s[3]","Name":"ViewingCondIlluminant"},"id":"8","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ViewingConditions"}
+{"fields":{"Format":"fixed32s[3]","Name":"ViewingCondSurround"},"id":"20","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ViewingConditions"}
+{"fields":{"Format":"int32u","Name":"ViewingCondIlluminantType","PrintConv":{"ref":"shared00207"}},"id":"32","index":null,"kind":"tag","table":"Image::ExifTool::ICC_Profile::ViewingConditions"}

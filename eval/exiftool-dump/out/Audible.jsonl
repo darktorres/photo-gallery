@@ -1,0 +1,29 @@
+{"kind":"table","module":"Audible","name":"Image::ExifTool::Audible::Main","special":{"GROUPS":{"0":"Audible","1":"Audible","2":"Audio"},"NOTES":"\n        ExifTool will extract any information found in the metadata dictionary of\n        Audible .AA files, even if not listed in the table below.\n    ","SHORT_NAME":"Audible::Main","TABLE_NAME":"Image::ExifTool::Audible::Main","TAG_PREFIX":"Audible"}}
+{"fields":{"Name":"ChapterCount"},"id":"_chapter_count","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"CoverArt"},"id":"_cover_art","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Author"},"id":"author","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Copyright"},"id":"copyright","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"PublishDateStart"},"id":"pub_date_start","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"fields":{"Groups":{"2":"Time"},"Name":"PublishDate"},"id":"pubdate","index":null,"kind":"tag","table":"Image::ExifTool::Audible::Main"}
+{"kind":"table","module":"Audible","name":"Image::ExifTool::Audible::cvrx","special":{"GROUPS":{"0":"QuickTime","1":"Audible","2":"Audio"},"NOTES":"Audible cover art information in M4B audio books.","PROCESS_PROC":{"code":"&Image::ExifTool::Audible::ProcessAudible_cvrx"},"SHORT_NAME":"Audible::cvrx","TABLE_NAME":"Image::ExifTool::Audible::cvrx","TAG_PREFIX":"Audible_cvrx","VARS":{"ID_FMT":"none"}}}
+{"fields":{"Binary":1,"Groups":{"2":"Preview"},"Name":"CoverArt"},"id":"CoverArt","index":null,"kind":"tag","table":"Image::ExifTool::Audible::cvrx"}
+{"fields":{"Name":"CoverArtType"},"id":"CoverArtType","index":null,"kind":"tag","table":"Image::ExifTool::Audible::cvrx"}
+{"kind":"table","module":"Audible","name":"Image::ExifTool::Audible::meta","special":{"GROUPS":{"0":"QuickTime","1":"Audible","2":"Audio"},"NOTES":"Information found in Audible M4B \"meta\" atom.","PROCESS_PROC":{"code":"&Image::ExifTool::Audible::ProcessAudible_meta"},"SHORT_NAME":"Audible::meta","TABLE_NAME":"Image::ExifTool::Audible::meta","TAG_PREFIX":"Audible_meta"}}
+{"fields":{"Groups":{"2":"Author"},"Name":"AlbumArtist"},"id":"ALBUMARTIST","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"Album"},"id":"Album","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Groups":{"2":"Author"},"Name":"Artist"},"id":"Artist","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"Comment"},"id":"Comment","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"Genre"},"id":"Genre","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"Subtitle"},"id":"SUBTITLE","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"CreatorTool"},"id":"TOOL","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"Title"},"id":"Title","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Groups":{"2":"Time"},"Name":"Year"},"id":"Year","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Description":"iTunes Media Type","Name":"iTunesMediaType"},"id":"itunesmediatype","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"fields":{"Name":"ChapterName"},"id":"track","index":null,"kind":"tag","table":"Image::ExifTool::Audible::meta"}
+{"kind":"table","module":"Audible","name":"Image::ExifTool::Audible::tags","special":{"GROUPS":{"0":"QuickTime","1":"Audible","2":"Audio"},"NOTES":"Information found in \"tags\" atom of Audible M4B audio books.","SHORT_NAME":"Audible::tags","TABLE_NAME":"Image::ExifTool::Audible::tags","TAG_PREFIX":"Audible_tags"}}
+{"fields":{"Name":"Audible_cvrx","SubDirectory":{"TagTable":"Image::ExifTool::Audible::cvrx"}},"id":"cvrx","index":null,"kind":"tag","table":"Image::ExifTool::Audible::tags"}
+{"fields":{"Name":"Audible_meta","SubDirectory":{"TagTable":"Image::ExifTool::Audible::meta"}},"id":"meta","index":null,"kind":"tag","table":"Image::ExifTool::Audible::tags"}
+{"fields":{"Name":"Audible_tseg","SubDirectory":{"TagTable":"Image::ExifTool::Audible::tseg"}},"id":"tseg","index":null,"kind":"tag","table":"Image::ExifTool::Audible::tags"}
+{"kind":"table","module":"Audible","name":"Image::ExifTool::Audible::tseg","special":{"GROUPS":{"0":"QuickTime","1":"Audible","2":"Audio"},"SHORT_NAME":"Audible::tseg","TABLE_NAME":"Image::ExifTool::Audible::tseg","TAG_PREFIX":"Audible_tseg"}}
+{"fields":{"Name":"Audible_meta2","SubDirectory":{"TagTable":"Image::ExifTool::Audible::meta"}},"id":"meta","index":null,"kind":"tag","table":"Image::ExifTool::Audible::tseg"}
+{"fields":{"Format":"int32u","Name":"ChapterNumber","ValueConv":"$val + 1"},"id":"tshd","index":null,"kind":"tag","table":"Image::ExifTool::Audible::tseg"}

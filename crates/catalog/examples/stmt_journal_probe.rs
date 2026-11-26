@@ -8,8 +8,9 @@
 //! with the catalog's connection settings, adds the rows the writes need (two scans rows, 80 folders), changes the
 //! schema or the settings as the variant says, then writes 4,000 files in one `BEGIN IMMEDIATE` transaction as
 //! `pg_scan::write_batch` does: with `ScanWriter`'s statements prepared and held, and its `known` lookup before each
-//! write. The rows are those of the scan probe's library (`folder-NN/IMG_NN_MMMM.jpg` under `/bench-lib`), with order
-//! keys made as the scanner makes them, and made-up identities, sizes and times.
+//! write. The rows are those of the scan probe's library (`folder-NN/IMG_NN_MMMM.jpg` under `/bench-lib`), in their
+//! folders' merged folders as the writer makes them, with made-up identities (one interned volume), sizes and times. A
+//! row seen by a walk is marked in the walk's set (`temp.scan_seen`), as the writer marks it.
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -17,7 +18,6 @@ use std::time::Instant;
 
 use pg_catalog::{Catalog, Versions};
 use pg_model::media::Ext;
-use pg_model::name::Name;
 use pg_platform::native::PATH_RULES;
 use rusqlite::types::ToSql;
 use rusqlite::{Connection, Statement, ffi, params};
@@ -59,58 +59,58 @@ macro_rules! ensure {
 const FOLDERS: usize = 80;
 const PER_FOLDER: usize = 50;
 const ROOT: &str = "/bench-lib";
-const VOLUME: i64 = 2049;
+/// The files' volume serial; the rows hold its interned id (`Ctx::volume`).
+const SERIAL: i64 = 2049;
 
 const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
      PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY; PRAGMA busy_timeout = 5000;";
 
 const GUARD: &str = "NOT EXISTS(SELECT 1 FROM file_writes WHERE file_id = files.id AND temp IS NOT NULL)";
-const COLUMNS: &str = "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime, last_scan,
-    order_key, unpaired";
+/// The insert's columns: ten values (`?1`–`?10`), then `unpaired` and whatever a variant adds.
+const COLUMNS: &str =
+    "INSERT INTO files(volume, file_ref, created, folder_id, mid, name, ext, kind, size, mtime, unpaired";
 const DO_UPDATE: &str = "ON CONFLICT(volume, file_ref) DO UPDATE SET
-    folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
-    size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
-    order_key = excluded.order_key, created = coalesce(files.created, excluded.created)";
-const KNOWN: &str = "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key, created FROM files
-     WHERE volume = ?1 AND file_ref = ?2";
+    folder_id = excluded.folder_id, mid = excluded.mid, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
+    size = excluded.size, mtime = excluded.mtime, missing = 0, created = coalesce(files.created, excluded.created)";
+/// The writer's `known` lookup, with the root's range bound as no bound (`?3`, `?4`).
+const KNOWN: &str = "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.mid, f.created,
+        f.unpaired, (d.path_key >= ?3 AND (?4 IS NULL OR d.path_key < ?4))
+     FROM files f JOIN folders d ON d.id = f.folder_id
+     WHERE f.volume = (SELECT id FROM volumes WHERE serial = ?1) AND f.file_ref = ?2";
+/// The walk's seen set, as the scan makes it (`roots.rs`).
+const SEEN_SET: &str = "CREATE TEMP TABLE IF NOT EXISTS scan_seen(id INTEGER PRIMARY KEY, unpaired INTEGER NOT NULL);
+     CREATE INDEX IF NOT EXISTS temp.scan_seen_unpaired ON scan_seen(id) WHERE unpaired = 1;";
 /// The rest of `ScanWriter`'s statements, prepared and held through the batch as the writer holds them.
-const HELD: [&str; 7] = [
-    "SELECT id FROM folders WHERE path_key = ?1",
-    "INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id",
-    "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?4 AND path_key >= ?1 AND (?2 IS NULL OR path_key < ?2))",
-    "UPDATE files SET last_scan = ?3 WHERE volume = ?1 AND file_ref = ?2",
+const HELD: [&str; 8] = [
+    "SELECT id, path, mid FROM folders WHERE path_key = ?1",
+    "INSERT INTO folders(path, path_key, mid) VALUES (?1, ?2, ?3) RETURNING id",
+    "UPDATE folders SET path = ?2 WHERE id = ?1",
+    "SELECT id, unpaired FROM files WHERE volume = (SELECT id FROM volumes WHERE serial = ?1) AND file_ref = ?2",
+    "INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)",
     "UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL",
     "UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1",
-    "UPDATE files SET last_scan = ?2 WHERE id = ?1",
+    "SELECT id FROM volumes WHERE serial = ?1",
 ];
-const INDEXES: [&str; 8] = [
-    "files_folder",
-    "files_ref",
-    "files_order",
-    "files_present",
-    "files_to_import",
-    "files_fresh",
-    "files_seq",
-    "files_changed",
-];
+/// The indexes on `files` a variant can drop (the identity's unique index can't be).
+const INDEXES: [&str; 4] = ["files_mn", "files_fm", "files_to_import", "files_seq"];
 
 #[derive(Clone)]
 struct File {
     folder: usize,
     file_ref: i64,
     name: Vec<u8>,
-    ext: &'static str,
-    kind: &'static str,
+    ext: i64,
+    kind: i64,
     size: i64,
     mtime: i64,
-    order_key: Vec<u8>,
 }
 
 struct Ctx {
     files: Vec<File>,
-    folder_ids: Vec<i64>,
-    scan: i64,
-    rescan: i64,
+    /// Each folder's id and merged folder.
+    folders: Vec<(i64, i64)>,
+    /// The files' interned volume.
+    volume: i64,
 }
 
 /// What a variant takes out of the schema before its timed part.
@@ -196,9 +196,9 @@ fn variants() -> Vec<Variant> {
         v("k2", "one folded insert for the batch, trigger dropped", true, Removed::Added, false, Action::SetFolded),
         v("i", "changed files, upsert", true, Removed::Nothing, true, Action::ChangedUpsert),
         v("j", "changed files, plain update of the known row", true, Removed::Nothing, true, Action::ChangedUpdate),
-        v("e", "seen update (rescan)", true, Removed::Nothing, true, Action::Seen),
-        v("e2", "seen update, foreign keys off", false, Removed::Nothing, true, Action::Seen),
-        v("e3", "one seen update for the batch", true, Removed::Nothing, true, Action::SeenSet),
+        v("e", "seen mark (rescan)", true, Removed::Nothing, true, Action::Seen),
+        v("e2", "seen mark, foreign keys off", false, Removed::Nothing, true, Action::Seen),
+        v("e3", "one seen mark for the batch", true, Removed::Nothing, true, Action::SeenSet),
     ];
     for index in INDEXES {
         all.push(v(
@@ -256,6 +256,8 @@ fn main() -> Result<()> {
 fn run(path: &std::path::Path, variant: &Variant, files: &[File]) -> Result<()> {
     std::mem::drop(Catalog::prepare(path, Versions::current(), PATH_RULES)?);
     let conn = Connection::open(path)?;
+    // The name index is on the catalog's function: every write of a file row calls it.
+    pg_query::register_functions(&conn, PATH_RULES)?;
     if let Some((size, count)) = variant.lookaside {
         // SAFETY: the handle is this open connection's, used on this thread and not closed here; nothing has been
         // allocated from its lookaside yet; the buffer argument is null, so SQLite allocates the slots itself.
@@ -333,46 +335,44 @@ fn remove(conn: &Connection, removed: Removed) -> Result<()> {
 fn library() -> Result<Vec<File>> {
     let mut files = Vec::with_capacity(FOLDERS * PER_FOLDER);
     for f in 1..=FOLDERS {
-        let folder = PATH_RULES.parse(&format!("{ROOT}/folder-{f:02}")).context("the folder path")?;
-        let folder_key = PATH_RULES.folder_key(&folder.parts);
         for n in 1..=PER_FOLDER {
             let text = format!("IMG_{f:02}_{n:04}.jpg");
-            let name = Name::from(text.as_str());
             let ext = Ext::of_name_bytes(text.as_bytes()).context("the extension")?;
-            let mut order_key = folder_key.clone();
-            name.push_name_key(&mut order_key);
             let index = i64::try_from(files.len())?;
             files.push(File {
                 folder: f - 1,
                 file_ref: 100_000 + index,
                 name: text.into_bytes(),
-                ext: ext.key(),
-                kind: ext.kind().key(),
+                ext: ext.code(),
+                kind: ext.kind().code(),
                 size: 1_000 + index,
                 mtime: 133_000_000_000_000_000 + index,
-                order_key,
             });
         }
     }
     Ok(files)
 }
 
-/// Two scans rows (the walk, and a rescan's for the seen updates) and the folders' rows, untimed.
+/// The files' volume, the folders' rows (each in its own merged folder) and the walk's seen set, untimed.
 fn setup(conn: &Connection, files: &[File]) -> Result<Ctx> {
-    conn.execute("INSERT INTO scans(root, started) VALUES (?1, 0)", [ROOT.as_bytes()])?;
-    let scan = conn.last_insert_rowid();
-    conn.execute("INSERT INTO scans(root, started) VALUES (?1, 1)", [ROOT.as_bytes()])?;
-    let rescan = conn.last_insert_rowid();
-    let mut folder_ids = Vec::with_capacity(FOLDERS);
+    conn.execute_batch(SEEN_SET)?;
+    let volume = conn.query_row("INSERT INTO volumes(serial) VALUES (?1) RETURNING id", [SERIAL], |r| r.get(0))?;
+    let mut folders = Vec::with_capacity(FOLDERS);
     for f in 1..=FOLDERS {
         let folder = PATH_RULES.parse(&format!("{ROOT}/folder-{f:02}")).context("the folder path")?;
-        folder_ids.push(conn.query_row(
-            "INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id",
-            params![PATH_RULES.join(&folder), PATH_RULES.path_key(&folder), PATH_RULES.folder_key(&folder.parts)],
+        let mid: i64 = conn.query_row(
+            "INSERT INTO mfolders(key) VALUES (?1) RETURNING id",
+            [PATH_RULES.folder_key(&folder.parts)],
             |r| r.get(0),
-        )?);
+        )?;
+        let id: i64 = conn.query_row(
+            "INSERT INTO folders(path, path_key, mid) VALUES (?1, ?2, ?3) RETURNING id",
+            params![PATH_RULES.join(&folder), PATH_RULES.path_key(&folder), mid],
+            |r| r.get(0),
+        )?;
+        folders.push((id, mid));
     }
-    Ok(Ctx { files: files.to_vec(), folder_ids, scan, rescan })
+    Ok(Ctx { files: files.to_vec(), folders, volume })
 }
 
 #[inline(never)]
@@ -386,10 +386,12 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
     let held: Vec<Statement<'_>> = HELD.iter().map(|s| conn.prepare(s)).collect::<rusqlite::Result<_>>()?;
     match action {
         Action::Upsert => each_file(conn, ctx, &upsert_sql(), None, false)?,
-        Action::Plain { folded: false } => each_file(conn, ctx, &format!("{COLUMNS}) VALUES ({}, 1)", marks(11)), None, false)?,
+        Action::Plain { folded: false } => {
+            each_file(conn, ctx, &format!("{COLUMNS}) VALUES ({}, 1)", marks(10)), None, false)?
+        }
         Action::Plain { folded: true } => {
             let seq = bump(conn)?;
-            let sql = format!("{COLUMNS}, pending, seq, changed) VALUES ({}, 1, 1, ?12, ?12)", marks(11));
+            let sql = format!("{COLUMNS}, pending, seq, changed) VALUES ({}, 1, 1, ?11, ?11)", marks(10));
             each_file(conn, ctx, &sql, Some(seq), false)?;
         }
         Action::ChangedUpsert => each_file(conn, ctx, &upsert_sql(), None, true)?,
@@ -397,9 +399,9 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
             conn,
             ctx,
             &format!(
-                "UPDATE files SET folder_id = ?4, name = ?5, ext = ?6, kind = ?7, size = ?8, mtime = ?9, last_scan = ?10,
-                    missing = 0, order_key = ?11, created = coalesce(created, ?3)
-                 WHERE id = ?14 AND size IS ?12 AND mtime IS ?13 AND {GUARD}"
+                "UPDATE files SET folder_id = ?4, mid = ?5, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10,
+                    missing = 0, created = coalesce(created, ?3)
+                 WHERE id = ?13 AND size IS ?11 AND mtime IS ?12 AND {GUARD}"
             ),
             None,
             true,
@@ -408,13 +410,13 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
             let folded = matches!(action, Action::SetFolded);
             known_each(conn, ctx, false)?;
             let json = batch_json(ctx)?;
-            let select = "SELECT j.value->>0, j.value->>1, NULL, j.value->>2, unhex(j.value->>3), j.value->>4,
-                j.value->>5, j.value->>6, j.value->>7, ?2, unhex(j.value->>8), 1";
+            let select = "SELECT j.value->>0, j.value->>1, NULL, j.value->>2, j.value->>3, unhex(j.value->>4),
+                j.value->>5, j.value->>6, j.value->>7, j.value->>8, 1";
             let n = if folded {
                 let seq = bump(conn)?;
                 conn.execute(
-                    &format!("{COLUMNS}, pending, seq, changed) {select}, 1, ?3, ?3 FROM json_each(?1) AS j"),
-                    params![json, ctx.scan, seq],
+                    &format!("{COLUMNS}, pending, seq, changed) {select}, 1, ?2, ?2 FROM json_each(?1) AS j"),
+                    params![json, seq],
                 )?
             } else {
                 conn.execute(
@@ -422,22 +424,22 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
                         "{COLUMNS}) {select} FROM json_each(?1) AS j WHERE true {DO_UPDATE}
                          WHERE files.size IS excluded.size AND {GUARD}"
                     ),
-                    params![json, ctx.scan],
+                    [json],
                 )?
             };
             ensure!(n == ctx.files.len(), "{n} rows written");
         }
         Action::Seen => {
-            let mut seen = conn.prepare("UPDATE files SET last_scan = ?2 WHERE id = ?1")?;
+            let mut seen = conn.prepare("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, 0)")?;
             for id in ids(conn)? {
-                ensure!(seen.execute(params![id, ctx.rescan])? == 1, "one row seen");
+                ensure!(seen.execute([id])? == 1, "one row seen");
             }
         }
         Action::SeenSet => {
             let json = serde_json::to_string(&ids(conn)?)?;
             let n = conn.execute(
-                "UPDATE files SET last_scan = ?1 WHERE id IN (SELECT value FROM json_each(?2))",
-                params![ctx.rescan, json],
+                "INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) SELECT value, 0 FROM json_each(?1)",
+                [json],
             )?;
             ensure!(n == ctx.files.len(), "{n} rows seen");
         }
@@ -449,8 +451,8 @@ fn timed_rows(conn: &Connection, ctx: &Ctx, action: Action) -> Result<()> {
 
 fn upsert_sql() -> String {
     format!(
-        "{COLUMNS}) VALUES ({}, 1) {DO_UPDATE} WHERE files.size IS ?12 AND files.mtime IS ?13 AND {GUARD}",
-        marks(11)
+        "{COLUMNS}) VALUES ({}, 1) {DO_UPDATE} WHERE files.size IS ?11 AND files.mtime IS ?12 AND {GUARD}",
+        marks(10)
     )
 }
 
@@ -474,8 +476,10 @@ fn ids(conn: &Connection) -> Result<Vec<i64>> {
 fn known_each(conn: &Connection, ctx: &Ctx, exists: bool) -> Result<Vec<i64>> {
     let mut known = conn.prepare(KNOWN)?;
     let mut found = Vec::with_capacity(ctx.files.len());
+    let none: Option<Vec<u8>> = None;
     for f in &ctx.files {
-        let id: Option<i64> = known.query(params![VOLUME, f.file_ref])?.next()?.map(|r| r.get(0)).transpose()?;
+        let id: Option<i64> =
+            known.query(params![SERIAL, f.file_ref, b"".to_vec(), none])?.next()?.map(|r| r.get(0)).transpose()?;
         match (id, exists) {
             (Some(id), true) => found.push(id),
             (None, false) => {}
@@ -485,31 +489,33 @@ fn known_each(conn: &Connection, ctx: &Ctx, exists: bool) -> Result<Vec<i64>> {
     Ok(found)
 }
 
-/// Every file written by `sql`, one statement each, after its `known` lookup. `seq` is bound as `?12` (the folded
-/// insert); `changed` writes each file one byte larger, guarded by its old size and mtime, with its row's id as `?14`.
+/// Every file written by `sql`, one statement each, after its `known` lookup. `seq` is bound as `?11` (the folded
+/// insert); `changed` writes each file one byte larger, guarded by its old size and mtime (`?11`, `?12`), with its row's
+/// id as `?13`.
 fn each_file(conn: &Connection, ctx: &Ctx, sql: &str, seq: Option<i64>, changed: bool) -> Result<()> {
     let mut known = conn.prepare(KNOWN)?;
     let mut write = conn.prepare(sql)?;
     let none: Option<i64> = None;
+    let no_bound: Option<Vec<u8>> = None;
     for f in &ctx.files {
-        let id: Option<i64> = known.query(params![VOLUME, f.file_ref])?.next()?.map(|r| r.get(0)).transpose()?;
+        let id: Option<i64> =
+            known.query(params![SERIAL, f.file_ref, b"".to_vec(), no_bound])?.next()?.map(|r| r.get(0)).transpose()?;
         ensure!(id.is_some() == changed, "the known lookup of {} found {id:?}", f.file_ref);
-        let folder_id = *ctx.folder_ids.get(f.folder).context("the file's folder")?;
+        let (folder_id, mid) = *ctx.folders.get(f.folder).context("the file's folder")?;
         let size = if changed { f.size + 1 } else { f.size };
         let (old_size, old_mtime) = (changed.then_some(f.size), changed.then_some(f.mtime));
         let seq_or_old_size: &dyn ToSql = if let Some(seq) = &seq { seq } else { &old_size };
-        let values: [&dyn ToSql; 14] = [
-            &VOLUME,
+        let values: [&dyn ToSql; 13] = [
+            &ctx.volume,
             &f.file_ref,
             &none,
             &folder_id,
+            &mid,
             &f.name,
             &f.ext,
             &f.kind,
             &size,
             &f.mtime,
-            &ctx.scan,
-            &f.order_key,
             seq_or_old_size,
             &old_mtime,
             &id,
@@ -520,24 +526,24 @@ fn each_file(conn: &Connection, ctx: &Ctx, sql: &str, seq: Option<i64>, changed:
     Ok(())
 }
 
-/// The batch as `json_each` reads it: `[volume, file_ref, folder_id, name (hex), ext, kind, size, mtime, order key (hex)]`.
+/// The batch as `json_each` reads it: `[volume, file_ref, folder_id, mid, name (hex), ext, kind, size, mtime]`.
 fn batch_json(ctx: &Ctx) -> Result<String> {
     let mut json = String::from("[");
     for (i, f) in ctx.files.iter().enumerate() {
-        let folder_id = *ctx.folder_ids.get(f.folder).context("the file's folder")?;
+        let (folder_id, mid) = *ctx.folders.get(f.folder).context("the file's folder")?;
         if i > 0 {
             json.push(',');
         }
         write!(
             json,
-            "[{VOLUME},{},{folder_id},\"{}\",\"{}\",\"{}\",{},{},\"{}\"]",
+            "[{},{},{folder_id},{mid},\"{}\",{},{},{},{}]",
+            ctx.volume,
             f.file_ref,
             hex(&f.name),
             f.ext,
             f.kind,
             f.size,
             f.mtime,
-            hex(&f.order_key)
         )?;
     }
     json.push(']');

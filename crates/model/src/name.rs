@@ -126,44 +126,26 @@ impl Name {
         String::from_utf8_lossy(&self.0)
     }
 
-    /// The name's order key part, appended to `key`: 0x00, the name in lower case (each scalar value by Unicode's
-    /// lower case, an unpaired surrogate or a stray byte as its own bytes), 0x00, then the exact bytes. The
-    /// case-insensitive part sorts the names; the exact part makes the order total. No name holds a NUL, so the
-    /// second 0x00 is unambiguous and the key is injective.
-    pub fn push_name_key(&self, key: &mut Vec<u8>) {
-        key.push(0x00);
-        self.push_lower(key);
-        key.push(0x00);
-        key.extend_from_slice(&self.0);
-    }
-
-    /// The name in lower case, appended: each scalar value by Unicode's lower case, an unpaired surrogate or a stray
-    /// byte as its own bytes. Case-insensitive comparison and the case-insensitive part of the name key use this.
-    pub fn push_lower(&self, out: &mut Vec<u8>) {
-        // ASCII is its own units, and its lower case is the ASCII one: the common name needs no decoding.
+    /// The name with each UTF-16 unit upcased through the embedded table (`crate::upcase`), as WTF-8, appended: the
+    /// Windows name key (`PathRules::push_name_key`), which is how NTFS compares names, unit by unit. A supplementary
+    /// character is two units the table leaves alone, so it stays as it is; an unpaired surrogate is its own unit; a
+    /// stray byte (a Unix name's, not a Windows one's) is kept. One unit maps to one unit, so the key has the name's
+    /// length, and the common ASCII name needs no decoding.
+    pub fn push_upcase(&self, out: &mut Vec<u8>) {
         if self.0.is_ascii() {
-            out.extend(self.0.iter().map(u8::to_ascii_lowercase));
+            out.extend(self.0.iter().map(u8::to_ascii_uppercase));
             return;
         }
-        let mut buf = [0u8; 4];
         for unit in self.units() {
             match unit {
-                Unit::Char(c) => {
-                    for lower in c.to_lowercase() {
-                        out.extend_from_slice(lower.encode_utf8(&mut buf).as_bytes());
-                    }
-                }
+                Unit::Char(c) => match u16::try_from(u32::from(c)) {
+                    Ok(bmp) => push_code_point(out, crate::upcase::upcase(bmp)),
+                    Err(_) => push_scalar(out, c),
+                },
                 Unit::Surrogate(s) => push_code_point(out, s),
                 Unit::Byte(b) => out.push(b),
             }
         }
-    }
-
-    /// [`Name::push_name_key`] as a new vector.
-    pub fn name_key(&self) -> Vec<u8> {
-        let mut key = Vec::with_capacity(self.0.len() * 2 + 2);
-        self.push_name_key(&mut key);
-        key
     }
 
     /// Whether the name is `.` or `..` (never listed as a file or folder).
@@ -297,27 +279,22 @@ mod tests {
 
     use super::*;
 
+    /// The name's upcase key, as a new vector.
+    fn upcased(name: &Name) -> Vec<u8> {
+        let mut out = Vec::new();
+        name.push_upcase(&mut out);
+        out
+    }
+
     #[test]
-    fn the_ascii_lower_case_is_the_units_one() {
-        // Every ASCII byte but NUL, as one name: the fast path must give what the unit walk gives.
+    fn the_ascii_upcase_is_the_tables() {
+        // Every ASCII byte but NUL, as one name: the fast path must give what the table gives unit by unit.
         let every: Vec<u8> = (1..=0x7F).collect();
         let name = Name::from_wtf8(&every).expect("ASCII is canonical WTF-8");
-        let mut walked = Vec::new();
-        for unit in name.units() {
-            match unit {
-                Unit::Char(c) => {
-                    let mut buf = [0u8; 4];
-                    for lower in c.to_lowercase() {
-                        walked.extend_from_slice(lower.encode_utf8(&mut buf).as_bytes());
-                    }
-                }
-                Unit::Surrogate(_) | Unit::Byte(_) => unreachable!("ASCII has no surrogates or stray bytes"),
-            }
-        }
-        let mut fast = Vec::new();
-        name.push_lower(&mut fast);
-        assert_eq!(fast, walked);
-        assert_eq!(fast, every.to_ascii_lowercase());
+        let walked: Vec<u8> =
+            every.iter().map(|&b| u8::try_from(crate::upcase::upcase(u16::from(b))).unwrap_or(0)).collect();
+        assert_eq!(upcased(&name), walked);
+        assert_eq!(upcased(&name), every.to_ascii_uppercase());
     }
 
     #[test]
@@ -356,18 +333,28 @@ mod tests {
         assert_eq!(Name::from_wtf8(b"a\xFF"), None);
     }
 
-    /// The name key of text is pinned: 0x00, the name with each character lowered alone, 0x00, the exact bytes. So a Σ
-    /// is σ wherever it stands (never the final ς of `str::to_lowercase`); İ lowers to two characters, ẞ to ß.
+    /// The upcase key of text is pinned: each UTF-16 unit by the table, one to one, as NTFS compares names. σ is Σ, and
+    /// the final ς stays ς (Σ lowercases to σ: NTFS keeps only mappings that round-trip), as do ı, ſ and µ; İ stays İ
+    /// and ß stays ß (no single-unit uppercase); a supplementary letter stays itself (NTFS upcases only the BMP); a
+    /// letter given its case pair after Unicode 5.1 stays itself (Georgian Mtavruli); control bytes, a lone surrogate
+    /// and a stray byte are kept.
     #[test]
-    fn the_name_key_of_text_is_pinned() {
-        let key = |s: &str| Name::from(s).name_key();
-        let pinned = |lower: &str, exact: &str| [&[0x00][..], lower.as_bytes(), &[0x00], exact.as_bytes()].concat();
-        assert_eq!(key("Plain.JPG"), pinned("plain.jpg", "Plain.JPG"));
-        assert_eq!(key("Σίσυφος"), pinned("σίσυφος", "Σίσυφος"));
-        assert_eq!(key("İstanbul"), pinned("i\u{307}stanbul", "İstanbul"));
-        assert_eq!(key("ẞ"), pinned("ß", "ẞ"));
-        assert_eq!(key("a\u{1}b\u{2}c"), pinned("a\u{1}b\u{2}c", "a\u{1}b\u{2}c"));
-        assert_eq!(key("😀 x"), pinned("😀 x", "😀 x"));
+    fn the_upcase_key_of_text_is_pinned() {
+        let key = |s: &str| upcased(&Name::from(s));
+        assert_eq!(key("Plain.jpg"), "PLAIN.JPG".as_bytes());
+        assert_eq!(key("Σίσυφος"), "ΣΊΣΥΦΟς".as_bytes());
+        assert_eq!(key("ασ"), key("ΑΣ"));
+        assert_ne!(key("ας"), key("ΑΣ"), "the final sigma is its own letter on NTFS");
+        assert_eq!(key("İstanbul"), "İSTANBUL".as_bytes());
+        assert_eq!(key("ıi"), "ıI".as_bytes());
+        assert_eq!(key("ſµ"), "ſµ".as_bytes());
+        assert_eq!(key("\u{10D0}"), "\u{10D0}".as_bytes(), "Georgian an: its Mtavruli capital is Unicode 11's");
+        assert_eq!(key("straße"), "STRAßE".as_bytes());
+        assert_eq!(key("\u{10428}"), "\u{10428}".as_bytes(), "Deseret's small letter stays: supplementary");
+        assert_eq!(key("a\u{1}b\u{2}c"), "A\u{1}B\u{2}C".as_bytes());
+        assert_eq!(key("😀 x"), "😀 X".as_bytes());
+        assert_eq!(upcased(&Name::from_wide(&[0x61, 0xD800])), [b'A', 0xED, 0xA0, 0x80]);
+        assert_eq!(upcased(&Name::from_raw(b"a\xFF")), b"A\xFF");
     }
 
     #[test]
@@ -422,25 +409,27 @@ mod laws {
         }
 
         #[test]
-        fn name_keys_are_injective(a in wide(), b in wide()) {
-            let (na, nb) = (Name::from_wide(&a), Name::from_wide(&b));
-            prop_assert_eq!(na.name_key() == nb.name_key(), na == nb);
+        fn the_upcase_key_maps_each_unit_alone(a in wide()) {
+            // One unit to one unit: the key's units are the name's, each upcased by the table, in order.
+            let key = Name::from_raw(&{
+                let mut out = Vec::new();
+                Name::from_wide(&a).push_upcase(&mut out);
+                out
+            });
+            let expected: Vec<u16> = Name::from_wide(&a).to_wide().into_iter().map(crate::upcase::upcase).collect();
+            prop_assert_eq!(key.to_wide(), expected);
         }
 
         #[test]
-        fn name_keys_order_case_insensitively_then_exactly(a in "[a-zA-Z0-9Σσς .]{0,12}", b in "[a-zA-Z0-9Σσς .]{0,12}") {
+        fn the_upcase_key_is_equal_exactly_for_case_variants(a in "[a-zA-Z0-9Σσς .]{0,12}", b in "[a-zA-Z0-9Σσς .]{0,12}") {
             let (na, nb) = (Name::from(a.as_str()), Name::from(b.as_str()));
-            let folded = |s: &str| s.chars().flat_map(char::to_lowercase).collect::<String>();
-            let expected = (folded(&a), a.as_bytes()).cmp(&(folded(&b), b.as_bytes()));
-            // The key's order is the spec's order: lower case first, then the exact bytes. (A string's key is the same
-            // with the leading 0x00, so the comparison is on the body.)
-            let body = |n: &Name| {
-                let key = n.name_key();
-                let end = key[1..].iter().position(|&x| x == 0).unwrap() + 1;
-                (key[1..end].to_vec(), key[end + 1..].to_vec())
-            };
-            let (ka, kb) = (body(&na), body(&nb));
-            prop_assert_eq!(ka.cmp(&kb), expected);
+            // σ is Σ; the final ς keeps its own name (NTFS's table keeps only mappings that round-trip).
+            let folded = |s: &str| s.chars().map(|c| match c { 'σ' => 'Σ', c => c.to_ascii_uppercase() }).collect::<String>();
+            let (mut ka, mut kb) = (Vec::new(), Vec::new());
+            na.push_upcase(&mut ka);
+            nb.push_upcase(&mut kb);
+            prop_assert_eq!(ka == kb, folded(&a) == folded(&b));
+            prop_assert_eq!(ka.cmp(&kb), folded(&a).as_bytes().cmp(folded(&b).as_bytes()));
         }
 
         #[test]
@@ -449,7 +438,8 @@ mod laws {
             prop_assert_eq!(name.as_bytes(), bytes.as_slice());
             // Every byte is in exactly one unit, and the units do not panic on any input.
             let _ = name.display();
-            let _ = name.name_key();
+            let mut key = Vec::new();
+            name.push_upcase(&mut key);
             let _ = name.units().count();
         }
 

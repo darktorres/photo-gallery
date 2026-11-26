@@ -6,17 +6,43 @@ use alloc::string::String;
 
 use serde::{Deserialize, Serialize};
 
-/// Extensions recorded as images (decoded by `decode`).
-const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp", "bmp", "tif", "tiff"];
-/// Extensions recorded as videos (FFmpeg: `video`).
-const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "mpg", "mpeg", "3gp"];
+/// Every extension the library holds, with its kind, in code order: an extension's position is its stored code
+/// (`files.ext`, [`Ext::code`]), so the list is append-only. A new extension goes at the end, and none is ever moved
+/// or removed (its code would then name another extension in every catalog). Images are decoded by `decode`, videos by
+/// FFmpeg (`video`).
+const EXTENSIONS: &[(&str, Kind)] = &[
+    ("jpg", Kind::Image),
+    ("jpeg", Kind::Image),
+    ("jfif", Kind::Image),
+    ("png", Kind::Image),
+    ("gif", Kind::Image),
+    ("webp", Kind::Image),
+    ("bmp", Kind::Image),
+    ("tif", Kind::Image),
+    ("tiff", Kind::Image),
+    ("mp4", Kind::Video),
+    ("m4v", Kind::Video),
+    ("mov", Kind::Video),
+    ("webm", Kind::Video),
+    ("mkv", Kind::Video),
+    ("avi", Kind::Video),
+    ("wmv", Kind::Video),
+    ("mpg", Kind::Video),
+    ("mpeg", Kind::Video),
+    ("3gp", Kind::Video),
+];
 
-/// The catalog's `files.kind` of an image: the one spelling of the stored key, for Rust ([`Kind::key`]) and the SQL
-/// that tests it (`concat!`).
+/// The extensions' names, in code order.
+fn names() -> impl Iterator<Item = &'static str> + Clone {
+    EXTENSIONS.iter().map(|&(name, _)| name)
+}
+
+/// The catalog's `files.kind` (and `analysis.kind`) of an image, as the SQL literal of its code: the one spelling of the
+/// stored code, for Rust ([`Kind::code`]) and the SQL that tests it (`concat!`).
 #[macro_export]
 macro_rules! kind_image {
     () => {
-        "image"
+        "0"
     };
 }
 
@@ -24,7 +50,7 @@ macro_rules! kind_image {
 #[macro_export]
 macro_rules! kind_video {
     () => {
-        "video"
+        "1"
     };
 }
 
@@ -38,19 +64,19 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// The catalog's `files.kind`.
-    pub fn key(self) -> &'static str {
+    /// The catalog's `files.kind` (and `analysis.kind`): 0 an image, 1 a video ([`kind_image!`], [`kind_video!`]).
+    pub const fn code(self) -> i64 {
         match self {
-            Kind::Image => kind_image!(),
-            Kind::Video => kind_video!(),
+            Kind::Image => 0,
+            Kind::Video => 1,
         }
     }
 
-    /// The kind the catalog's name stands for, if it is one.
-    pub fn from_key(key: &str) -> Option<Kind> {
-        match key {
-            kind_image!() => Some(Kind::Image),
-            kind_video!() => Some(Kind::Video),
+    /// The kind the catalog's code stands for, if it is one.
+    pub const fn from_code(code: i64) -> Option<Kind> {
+        match code {
+            0 => Some(Kind::Image),
+            1 => Some(Kind::Video),
             _ => None,
         }
     }
@@ -86,33 +112,48 @@ impl MediaType {
 /// The extensions this build holds, images then videos (`jpg,jpeg,…;mp4,…`): the fingerprint of the set, which the
 /// catalog keeps (`meta.held_exts`) so it can tell when a build with another set opened or scanned it.
 pub fn held_exts() -> String {
-    format!("{};{}", IMAGE_EXTENSIONS.join(","), VIDEO_EXTENSIONS.join(","))
+    let of =
+        |kind: Kind| EXTENSIONS.iter().filter(|e| e.1 == kind).map(|e| e.0).collect::<alloc::vec::Vec<_>>().join(",");
+    format!("{};{}", of(Kind::Image), of(Kind::Video))
 }
 
-/// One of the extensions the library holds, as a byte: images first, then videos, in the lists' order.
+/// One of the extensions the library holds, as its code: its position in the extension table.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Ext(u8);
 
 impl Ext {
-    /// A lower-case extension (`files.ext`); `None` if the library doesn't hold it.
+    /// A lower-case extension (its name); `None` if the library doesn't hold it.
     pub fn of(ext: &str) -> Option<Ext> {
-        IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).position(|e| *e == ext).and_then(Ext::at)
+        names().position(|e| e == ext).and_then(Ext::at)
     }
 
-    /// The extension at a position in the two lists, as its byte; `None` past what a byte holds.
+    /// The extension at a position in the table, as its code; `None` past the table or what a byte holds.
     fn at(position: usize) -> Option<Ext> {
+        if position >= EXTENSIONS.len() {
+            return None;
+        }
         u8::try_from(position).ok().map(Ext)
+    }
+
+    /// The extension's code, as the catalog stores it (`files.ext`): its position in the append-only table.
+    pub fn code(self) -> i64 {
+        i64::from(self.0)
+    }
+
+    /// The extension a stored code stands for, if it is one this build holds.
+    pub fn from_code(code: i64) -> Option<Ext> {
+        usize::try_from(code).ok().and_then(Ext::at)
     }
 
     /// The extension's name, without the dot.
     pub fn key(self) -> &'static str {
-        // Every `Ext` is a position in the two lists, so the name is always found.
-        IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).nth(usize::from(self.0)).copied().unwrap_or_default()
+        // Every `Ext` is a position in the table, so the name is always found.
+        EXTENSIONS.get(usize::from(self.0)).map_or("", |e| e.0)
     }
 
     /// The kind of file the extension is for.
     pub fn kind(self) -> Kind {
-        if usize::from(self.0) < IMAGE_EXTENSIONS.len() { Kind::Image } else { Kind::Video }
+        EXTENSIONS.get(usize::from(self.0)).map_or(Kind::Image, |e| e.1)
     }
 
     /// A file name's last extension, in any case (`a.mozjpeg.JPG` → `jpg`); `None` for a name without one, or one
@@ -130,11 +171,7 @@ impl Ext {
         // An ASCII extension (nearly all) is compared as bytes, without decoding: the lists are lower-case ASCII, which is
         // what `char::to_lowercase` gives an ASCII character, so the two comparisons agree.
         if ext.is_ascii() {
-            return IMAGE_EXTENSIONS
-                .iter()
-                .chain(VIDEO_EXTENSIONS)
-                .position(|e| e.as_bytes().eq_ignore_ascii_case(ext))
-                .and_then(Ext::at);
+            return names().position(|e| e.as_bytes().eq_ignore_ascii_case(ext)).and_then(Ext::at);
         }
         Ext::matching(core::str::from_utf8(ext).ok()?.chars())
     }
@@ -144,7 +181,7 @@ impl Ext {
     /// is `mkv`, as it was when the scanner compared `to_lowercase()`.
     fn matching(ext: impl Iterator<Item = char> + Clone) -> Option<Ext> {
         let lower = ext.flat_map(char::to_lowercase);
-        IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).position(|e| lower.clone().eq(e.chars())).and_then(Ext::at)
+        names().position(|e| lower.clone().eq(e.chars())).and_then(Ext::at)
     }
 }
 
@@ -176,11 +213,31 @@ mod tests {
         let lone = [&[0xED, 0xA0, 0x80][..], b".Png"].concat();
         assert_eq!(Ext::of_name_bytes(&lone).map(Ext::key), Some("png"));
         assert_eq!(Ext::of_name_bytes(b"a.p\xED\xA0\x80"), None);
-        for ext in IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS) {
+        for ext in super::names() {
             let e = Ext::of(ext).unwrap();
-            assert_eq!((e.key(), Ext::of_name(&format!("a.{}", ext.to_uppercase()))), (*ext, Some(e)));
+            assert_eq!((e.key(), Ext::of_name(&format!("a.{}", ext.to_uppercase()))), (ext, Some(e)));
         }
         assert_eq!(Ext::of("txt"), None);
-        assert_eq!(Kind::from_key(Kind::Video.key()), Some(Kind::Video));
+        assert_eq!(Kind::from_code(Kind::Video.code()), Some(Kind::Video));
+    }
+
+    /// The stored codes are pinned: an extension's code is in every catalog, so the table only grows at its end. A
+    /// change here that is not an appended row breaks every catalog's `files.ext`.
+    #[test]
+    fn the_stored_codes_are_pinned() {
+        let pinned = [
+            "jpg", "jpeg", "jfif", "png", "gif", "webp", "bmp", "tif", "tiff", "mp4", "m4v", "mov", "webm", "mkv",
+            "avi", "wmv", "mpg", "mpeg", "3gp",
+        ];
+        for (code, name) in pinned.iter().enumerate() {
+            let code = i64::try_from(code).unwrap();
+            assert_eq!(Ext::from_code(code).map(Ext::key), Some(*name), "code {code}");
+            assert_eq!(Ext::of(name).map(Ext::code), Some(code), "{name}");
+        }
+        assert_eq!(Ext::from_code(-1), None);
+        assert_eq!(Ext::from_code(i64::try_from(EXTENSIONS.len()).unwrap()), None);
+        assert_eq!((Kind::Image.code(), Kind::Video.code()), (0, 1));
+        assert_eq!((kind_image!(), kind_video!()), ("0", "1"));
+        assert_eq!(held_exts(), "jpg,jpeg,jfif,png,gif,webp,bmp,tif,tiff;mp4,m4v,mov,webm,mkv,avi,wmv,mpg,mpeg,3gp");
     }
 }

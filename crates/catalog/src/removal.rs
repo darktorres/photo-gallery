@@ -431,11 +431,20 @@ fn finish_folders(tx: &Transaction<'_>, rules: PathRules, path: &RulePath, folde
     Ok(())
 }
 
-/// The folders in `folders` that no file is in, deleted.
+/// The folders in `folders` that no file is in, deleted, with the merged folders that no folder is in any more (those
+/// the deleted folders were in, each found by `folders_mid`).
 fn delete_empty_folders(tx: &Transaction<'_>, folders: &[i64]) -> Result<()> {
+    let mids: Vec<i64> = tx
+        .prepare("SELECT DISTINCT mid FROM folders WHERE id IN rarray(?1)")?
+        .query_map([Rc::new(values(folders))], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     tx.execute(
         "DELETE FROM folders WHERE id IN rarray(?1) AND NOT EXISTS (SELECT 1 FROM files WHERE folder_id = folders.id)",
         [Rc::new(values(folders))],
+    )?;
+    tx.execute(
+        "DELETE FROM mfolders WHERE id IN rarray(?1) AND NOT EXISTS (SELECT 1 FROM folders WHERE mid = mfolders.id)",
+        [Rc::new(values(&mids))],
     )?;
     Ok(())
 }
@@ -449,7 +458,11 @@ fn values(ids: &[i64]) -> Vec<Value> {
 /// and when no file is present to tell the volumes by (the lanes that read the folder can't be told apart then).
 fn volumes_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Volumes> {
     let folders = folder_ids_under(conn, rules, path)?;
-    let mut stmt = conn.prepare("SELECT volume FROM files WHERE missing = 0 AND folder_id IN rarray(?1)")?;
+    // The serial of each file's volume (none for a file with no identity).
+    let mut stmt = conn.prepare(
+        "SELECT v.serial FROM files f LEFT JOIN volumes v ON v.id = f.volume
+         WHERE f.missing = 0 AND f.folder_id IN rarray(?1)",
+    )?;
     let rows: Vec<Option<i64>> =
         stmt.query_map([Rc::new(values(&folders))], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
     let mut out = Volumes { volumes: Default::default(), all: rows.is_empty() };
@@ -723,10 +736,11 @@ mod tests {
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 100 UNION ALL SELECT i + 1 FROM n WHERE i < ?1) \
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key, pending) \
-                 SELECT i, 1, i, 1, CAST('bulk' || i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, CAST(i AS BLOB), 1 \
+                 INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime, pending) \
+                 SELECT i, (SELECT id FROM volumes WHERE serial = 1), i, 1, (SELECT mid FROM folders WHERE id = 1), \
+                     CAST('bulk' || i || '.jpg' AS BLOB), ?2, 0, 10, 100, 1 \
                  FROM n",
-                [100 + bulk],
+                rusqlite::params![100 + bulk, pg_model::media::Ext::of("jpg").unwrap().code()],
             )
             .unwrap();
         let total = rows(&c, "files");

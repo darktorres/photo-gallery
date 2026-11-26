@@ -169,6 +169,9 @@ impl<'a> Prepare<'a> {
         let current = version_in(set)?;
         let mut conn = Connection::open(db_file(path)?)
             .map_err(|e| Error::step(format!("catalog {}: opening it", path.display()), e))?;
+        // The functions before anything reads or writes the files: the name index (`files_mn`) is on one, so the schema's
+        // creation, a migration, a key recompute and every write of a file row call it.
+        register(&conn, rules)?;
         let version = version_of(&conn)?;
         // The build's current schema is built once per process; a custom one, and an earlier version, are built here.
         let custom;
@@ -236,6 +239,7 @@ impl<'a> Prepare<'a> {
             rebuilt = Some(rebuild(conn, path, set, rules, why, version.is_some())?);
             conn = Connection::open(db_file(path)?)
                 .map_err(|e| Error::step(format!("catalog {}: reopening it after its rebuild", path.display()), e))?;
+            register(&conn, rules)?;
         }
         // An empty file takes incremental auto-vacuum before its first table (where it is a page-1 change, at once).
         if version == Some(0) && rebuilt.is_none() {
@@ -300,7 +304,6 @@ impl<'a> Prepare<'a> {
         }
         conn.execute_batch(SETTINGS)?;
         conn.release_memory()?;
-        register(&conn)?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
         // come in meanwhile, since the preparer's lock is still held).
         drop(exclusive);
@@ -351,7 +354,7 @@ impl Catalog {
             return Err(refused(path, &conn, Refusal::Drift { found: version, why: why.to_string() }));
         }
         check_rules(&conn, path, rules)?;
-        register(&conn)?;
+        register(&conn, rules)?;
         Ok(Catalog { conn, rules, rebuilt: None, _live: live, passive: AtomicU64::new(0) })
     }
 
@@ -407,7 +410,7 @@ impl Catalog {
         let Some(file) = self.file() else {
             return Ok(Reader { catalog: self, own: None, cache_kib });
         };
-        Ok(Reader { catalog: self, own: Some(read_only(file, cache_kib)?), cache_kib })
+        Ok(Reader { catalog: self, own: Some(read_only(file, self.rules, cache_kib)?), cache_kib })
     }
 
     /// The catalog's file, `None` in memory: what a [`crate::FolderRowReader`] opens.
@@ -431,10 +434,11 @@ pub(crate) fn upgrade_notice(from: i64, to: i64, copy: &Path) -> String {
     format!("Updating the catalog from version {from} to {to}, one time. The old file is kept at {}.", copy.display())
 }
 
-/// What every connection of a catalog has besides its settings: the SQL functions the queries call, and `rarray`, which
-/// binds a list of ids as one parameter (the pairing pass's writes, `PairsWriter`).
-fn register(conn: &Connection) -> Result<()> {
-    pg_query::register_functions(conn)?;
+/// What every connection of a catalog has besides its settings: the SQL functions the queries call (the name key is the
+/// catalog's `rules`'), and `rarray`, which binds a list of ids as one parameter (the pairing pass's writes,
+/// `PairsWriter`).
+pub(crate) fn register(conn: &Connection, rules: PathRules) -> Result<()> {
+    pg_query::register_functions(conn, rules)?;
     rusqlite::vtab::array::load_module(conn)?;
     // The scan's writer and the import's statements are prepared once and reused across batches (`prepare_cached`), so
     // the cache holds all of them with room to spare (rusqlite's default is 16).
@@ -445,13 +449,15 @@ fn register(conn: &Connection) -> Result<()> {
 /// The prepared statements a connection keeps for reuse (`prepare_cached`).
 const STATEMENT_CACHE: usize = 64;
 
-/// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s.
-pub(crate) fn read_only(file: &str, cache_kib: u32) -> Result<Connection> {
+/// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s. It has the catalog's
+/// functions (its reads seek and order by the name key), under the catalog's `rules`.
+pub(crate) fn read_only(file: &str, rules: PathRules, cache_kib: u32) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn =
         Connection::open_with_flags(file, flags).map_err(|e| Error::step(format!("catalog {file}: opening it"), e))?;
     conn.busy_timeout(Duration::from_millis(crate::schema::BUSY_TIMEOUT_MS))?;
     conn.pragma_update(None, "cache_size", -i64::from(cache_kib))?;
+    register(&conn, rules)?;
     Ok(conn)
 }
 
@@ -475,19 +481,20 @@ impl Reader<'_> {
     pub(crate) fn opener(&self, n: usize) -> Option<ReadOnly> {
         let file = self.own.as_ref().and(self.catalog.file())?;
         let share = self.cache_kib / u32::try_from(n.max(1)).unwrap_or(u32::MAX);
-        Some(ReadOnly { file: file.to_owned(), cache_kib: share.max(1) })
+        Some(ReadOnly { file: file.to_owned(), rules: self.catalog.rules, cache_kib: share.max(1) })
     }
 }
 
 /// Opens read-only connections to a catalog's file ([`Reader::opener`]), on any thread.
 pub(crate) struct ReadOnly {
     file: String,
+    rules: PathRules,
     cache_kib: u32,
 }
 
 impl ReadOnly {
     pub(crate) fn open(&self) -> Result<Connection> {
-        read_only(&self.file, self.cache_kib)
+        read_only(&self.file, self.rules, self.cache_kib)
     }
 }
 

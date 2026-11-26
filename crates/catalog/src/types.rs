@@ -20,7 +20,8 @@ use pg_model::turns::Turns;
 use crate::convert::identity_to_sql;
 use crate::error::{Error, Result};
 
-/// The volumes a work list covers: every one, or some of them, as the catalog stores them (`files.volume`).
+/// The volumes a work list covers: every one, or some of them, by their serials (`volumes.serial`; a file row holds the
+/// volume's interned id, `files.volume`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VolumeSet {
     /// Every volume: the whole catalog.
@@ -43,14 +44,15 @@ impl VolumeSet {
         }
     }
 
-    /// ` AND <column> IN (…)` for the set, or nothing for every volume. The ids are integers written as literals (as the
+    /// ` AND <column> IN (…)` for the set, or nothing for every volume: `column` is a `files.volume` (an interned id), and
+    /// the set's serials are mapped to the ids in the statement. The serials are integers written as literals (as the
     /// catalog stores them), so a set gives the same statement text each time.
     pub(crate) fn and_in(&self, column: &str) -> String {
         match self {
             VolumeSet::All => String::new(),
             VolumeSet::Only(volumes) => {
                 let list: Vec<String> = volumes.iter().map(|&v| identity_to_sql(v).to_string()).collect();
-                format!(" AND {column} IN ({})", list.join(","))
+                format!(" AND {column} IN (SELECT id FROM volumes WHERE serial IN ({}))", list.join(","))
             }
         }
     }
@@ -219,25 +221,25 @@ pub(crate) fn bad_value(index: usize, ty: Type, column: &'static str, value: &st
     rusqlite::Error::FromSqlConversionFailure(index, ty, Box::new(BadValue { column, value: value.to_string() }))
 }
 
-/// The kind in column `i` (`files.kind`): an error for one that doesn't read, as an unknown extension is.
+/// The kind in column `i` (`files.kind`, a `Kind::code`): an error for one that doesn't read, as an unknown extension is.
 pub(crate) fn kind_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Kind> {
-    let key = r.get_ref(i)?.as_str()?;
-    Kind::from_key(key).ok_or_else(|| bad_value(i, Type::Text, "files.kind", key))
+    let code = r.get_ref(i)?.as_i64()?;
+    Kind::from_code(code).ok_or_else(|| bad_value(i, Type::Integer, "files.kind", &code.to_string()))
 }
 
-/// The extension in column `i` (`files.ext`): an error for one the library doesn't hold.
+/// The extension in column `i` (`files.ext`, an `Ext::code`): an error for one the library doesn't hold.
 pub(crate) fn ext_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Ext> {
-    let ext = r.get_ref(i)?.as_str()?;
-    Ext::of(ext).ok_or_else(|| bad_value(i, Type::Text, "files.ext", ext))
+    let code = r.get_ref(i)?.as_i64()?;
+    Ext::from_code(code).ok_or_else(|| bad_value(i, Type::Integer, "files.ext", &code.to_string()))
 }
 
-/// The analyzed format in column `i` (`analysis.format`): `None` when there is none (no analysis, or a failed one), and
-/// an error for a name that doesn't read.
+/// The analyzed format in column `i` (`analysis.format`, a `Format::code`): `None` when there is none (no analysis, or a
+/// failed one), and an error for a code that doesn't read.
 pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format>> {
-    let Some(name) = r.get_ref(i)?.as_str_or_null()? else {
+    let Some(code) = r.get_ref(i)?.as_i64_or_null()? else {
         return Ok(None);
     };
-    Format::from_key(name).map(Some).ok_or_else(|| bad_value(i, Type::Text, "analysis.format", name))
+    Format::from_code(code).map(Some).ok_or_else(|| bad_value(i, Type::Integer, "analysis.format", &code.to_string()))
 }
 
 /// What a queued write needs of its file ([`crate::core::Catalog::write_target`]): its path, its analyzed format (`None`
@@ -260,12 +262,16 @@ pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     }
 }
 
-/// The `key_version` mark's value: the key algorithm's version and the toolchain's Unicode version, whose case folding the
-/// keys use (`char::to_lowercase`). Another value means the stored keys were made by another algorithm or another
-/// toolchain, and they are recomputed (`lifecycle::set_key_version`).
+/// The `key_version` mark's value: the key algorithm's version and the hash of the upcase table the Windows keys fold
+/// through (`pg_model::upcase`, made from the Unicode release it names). Another value means the stored keys and the
+/// name index were made by another algorithm or another table, and they are recomputed (`lifecycle::set_key_version`).
 pub(crate) fn key_version_text() -> String {
-    let (major, minor, patch) = char::UNICODE_VERSION;
-    format!("{}:unicode {major}.{minor}.{patch}", pg_model::versions::KEY_ALGO_VERSION)
+    format!(
+        "{}:upcase {:016x} (ucd {})",
+        pg_model::versions::KEY_ALGO_VERSION,
+        pg_model::upcase::TABLE_HASH,
+        pg_model::upcase::UCD_RELEASE
+    )
 }
 
 /// The versions of what the build makes, which `files.pending`, `analysis.borders_due` and the failure ledger are kept
@@ -350,8 +356,9 @@ pub struct Prior {
 #[derive(Debug, Default)]
 pub struct FolderRows {
     pub(crate) mark: i64,
-    /// The folder's part of a file's order key (`PathRules::folder_key`).
-    pub(crate) key: Vec<u8>,
+    /// The folder's merged folder (`folders.mid`): a row in it is in the folder's place in the order.
+    pub(crate) mid: i64,
+    /// The rows by identity: the volume's serial (`volumes.serial`) and the file reference, both as stored.
     pub(crate) rows: BTreeMap<(i64, i64), FolderRow>,
 }
 
@@ -366,15 +373,15 @@ pub(crate) struct FolderRow {
     pub(crate) kind: Kind,
     pub(crate) size: u64,
     pub(crate) mtime: i64,
-    pub(crate) order_key: Vec<u8>,
+    pub(crate) mid: i64,
     pub(crate) created: Option<i64>,
 }
 
 impl FolderRows {
     /// The row of a file the walk listed in this folder, when the batch would only mark it seen: a present row with the
-    /// listing's name, extension, kind, size, mtime and order key, and a creation time that needs neither a displacement
-    /// nor a backfill (`ScanWriter::record_file`). Its id, and whether it is unpaired. `key` is a buffer for the order key.
-    pub fn unchanged(&self, f: &ScannedFile, key: &mut Vec<u8>) -> Option<(i64, bool)> {
+    /// listing's name, extension, kind, size, mtime and merged folder, and a creation time that needs neither a
+    /// displacement nor a backfill (`ScanWriter::record_file`). Its id, and whether it is unpaired.
+    pub fn unchanged(&self, f: &ScannedFile) -> Option<(i64, bool)> {
         let row = self.rows.get(&(identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index)))?;
         let created = match (row.created, f.created) {
             (Some(a), Some(b)) => a == b,
@@ -384,25 +391,22 @@ impl FolderRows {
         if row.missing || !created {
             return None;
         }
-        key.clear();
-        key.extend_from_slice(&self.key);
-        f.name.push_name_key(key);
         let same = row.name == f.name.as_bytes()
             && row.ext == f.ext
             && row.kind == f.ext.kind()
             && row.size == f.size
             && row.mtime == f.mtime
-            && row.order_key == *key;
+            && row.mid == self.mid;
         same.then_some((row.id, row.unpaired))
     }
 }
 
-/// A folder's row, with its part of its files' order key (`PathRules::folder_key`).
+/// A folder's row, with its merged folder (`folders.mid`), which its files carry.
 pub struct Folder {
     /// The folder's id in the catalog.
     pub id: FolderId,
-    /// The folder's key, which orders its files.
-    pub key: Vec<u8>,
+    /// The folder's merged folder (`mfolders.id`): its files' place in the order.
+    pub mid: i64,
 }
 
 /// A file the import (or the borders pass) still has to analyze.
@@ -505,7 +509,7 @@ pub enum Recorded {
 /// The row a file's identity has, as the scan needs it.
 pub(crate) struct Hit {
     pub(crate) id: i64,
-    /// The same folder, name, kind, size, mtime, order key, and not missing: nothing to write but the scan's mark.
+    /// The same folder, name, kind, size, mtime, merged folder, and not missing: nothing to write but the scan's mark.
     pub(crate) same: bool,
     pub(crate) created: Option<i64>,
     /// The row is missing: its file was not found where it was.

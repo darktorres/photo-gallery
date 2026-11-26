@@ -136,11 +136,14 @@ pub(crate) fn mixed_library(rules: PathRules) -> crate::core::Catalog {
 /// The order SQLite gave when it sorted (before the sort moved here): the key, files without it last, then
 /// name order ascending.
 pub(crate) fn sorted_by_sqlite(c: &crate::core::Catalog, sort: Sort) -> Vec<i64> {
+    let name = "mf.key, path_name_key(f.name), f.id";
     let order = match key_sql(sort) {
-        None if sort.descending => "f.order_key DESC, f.id DESC".to_string(),
-        None => "f.order_key, f.id".to_string(),
-        Some(k) => format!("{k} IS NULL, {k} {}, f.order_key, f.id", if sort.descending { "DESC" } else { "ASC" }),
+        None if sort.descending => "mf.key DESC, path_name_key(f.name) DESC, f.id DESC".to_string(),
+        None => name.to_string(),
+        Some(k) => format!("{k} IS NULL, {k} {}, {name}", if sort.descending { "DESC" } else { "ASC" }),
     };
-    let sql = format!("SELECT f.id FROM files f {FILE_JOINS} WHERE f.missing = 0 ORDER BY {order}");
+    let sql = format!(
+        "SELECT f.id FROM files f JOIN mfolders mf ON mf.id = f.mid {FILE_JOINS} WHERE f.missing = 0 ORDER BY {order}"
+    );
     raw::rows_of(c, &sql, [], |r| r.get(0))
 }

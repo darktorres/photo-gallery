@@ -79,7 +79,8 @@ const ANALYSIS: &str =
     "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis WHERE pdq_quality >= ?1 ORDER BY file_id";
 const DISPLACED: &str = "SELECT id FROM files WHERE volume IS NULL";
 const IDENTITY: &str = "SELECT id FROM files WHERE volume IS NOT NULL";
-const PRESENT: &str = "SELECT id FROM files INDEXED BY files_present WHERE missing = 0";
+/// The folders' index holds `missing` for every row: the present ids are a scan of it alone.
+const PRESENT: &str = "SELECT id FROM files INDEXED BY files_fm WHERE missing = 0";
 const PENDING: &str = "SELECT id FROM files INDEXED BY files_to_import WHERE missing = 0 AND pending = 1";
 const OWED: &str = "SELECT file_id FROM pairs_owed ORDER BY file_id";
 

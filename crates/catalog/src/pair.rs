@@ -96,7 +96,8 @@ struct Fresh {
     kind: Kind,
     size: i64,
     mtime: i64,
-    order_key: Vec<u8>,
+    /// Its merged folder (`files.mid`), which the name lookups seek by (`files_mn`).
+    mid: i64,
 }
 
 impl ScanLease<'_> {
@@ -144,19 +145,13 @@ impl ScanLease<'_> {
         let (rebound1, tx1) = (out.rebound, crate::transaction::tx_mark());
         let tier1 = pg_perf::span("pair.tier1");
         in_batches(conn, held, &under, &skipped, &steps1, out, |tx, fresh, staged| {
-            let mut same_name = tx.prepare_cached(concat!(
-                "SELECT id FROM files WHERE volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
-                 AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
-                 AND ",
-                not_seen!(),
-                " AND id <> ?8 ORDER BY id"
-            ))?;
+            let mut same_name = tx.prepare_cached(SAME_NAME)?;
             for f in fresh {
                 let ids: Vec<i64> = {
                     let _query = steps1.query.timer();
                     same_name
                         .query_map(
-                            params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, f.id],
+                            params![f.volume, f.file_ref, f.folder_id, f.name, f.size, f.mtime, f.created, f.id, f.mid],
                             |r| r.get(0),
                         )?
                         .collect::<rusqlite::Result<_>>()?
@@ -181,8 +176,12 @@ impl ScanLease<'_> {
         if coverage.complete {
             // Tier 2: the same file ID, size, mtime and extension, on a volume none of whose files this scan saw, in a
             // folder it did not skip. The volumes are read once, at the tier's first batch, not per candidate (a
-            // volume's rows, per candidate, was a quadratic scan).
+            // volume's rows, per candidate, was a quadratic scan). The query binds the volumes this scan did not see,
+            // so it seeks the identity index (volume, file_ref) once per such volume: there is no index on `file_ref`
+            // alone. `seen` only grows in the tier (a rebind adds its volume), so the list read at the start is a
+            // superset of the volumes still unseen, and the filter below drops the rest.
             let mut seen: Option<BTreeSet<i64>> = None;
+            let mut unseen: Option<std::rc::Rc<Vec<rusqlite::types::Value>>> = None;
             let steps2 = Steps::new();
             let volumes = pg_perf::Tally::new("volumes");
             let mut found2 = 0u64;
@@ -191,18 +190,21 @@ impl ScanLease<'_> {
             in_batches(conn, held, &under, &skipped, &steps2, out, |tx, fresh, staged| {
                 if seen.is_none() {
                     let _volumes = volumes.timer();
-                    seen = Some(seen_volumes(tx)?);
+                    let found = seen_volumes(tx)?;
+                    let others: Vec<rusqlite::types::Value> = all_volumes(tx)?
+                        .into_iter()
+                        .filter(|volume| !found.contains(volume))
+                        .map(rusqlite::types::Value::Integer)
+                        .collect();
+                    unseen = Some(std::rc::Rc::new(others));
+                    seen = Some(found);
                 }
-                let Some(seen) = seen.as_mut() else { return Ok(()) };
-                let mut moved = tx.prepare_cached(concat!(
-                    "SELECT id, volume, folder_id FROM files WHERE volume IS NOT NULL AND volume <> ?3 AND file_ref = ?4
-                     AND size = ?5 AND mtime = ?6 AND ext = ?7 AND (created IS NULL OR ?8 IS NULL OR created = ?8)
-                     AND ",
-                    not_seen!(),
-                    " AND id <> ?9 AND folder_id IN (",
-                    under_root!(),
-                    ") ORDER BY id"
-                ))?;
+                let (Some(seen), Some(unseen)) = (seen.as_mut(), unseen.as_ref()) else { return Ok(()) };
+                if unseen.is_empty() {
+                    // Every volume with files was seen by this scan: no file moved here from an unseen one.
+                    return Ok(());
+                }
+                let mut moved = tx.prepare_cached(MOVED)?;
                 for f in fresh {
                     // Each fresh row is unpaired when it is read (`fresh_rows`), and no rebind in the batch takes a
                     // fresh row: a candidate is an old row (the walk did not see it), and a rebind deletes only
@@ -213,11 +215,11 @@ impl ScanLease<'_> {
                             params![
                                 under.key,
                                 under.upper,
-                                f.volume,
+                                std::rc::Rc::clone(unseen),
                                 f.file_ref,
                                 f.size,
                                 f.mtime,
-                                f.ext.key(),
+                                f.ext.code(),
                                 f.created,
                                 f.id
                             ],
@@ -267,16 +269,7 @@ impl ScanLease<'_> {
             let (replaced0, txr) = (out.replaced, crate::transaction::tx_mark());
             let replace_clear = pg_perf::span("pair.replace_clear");
             in_batches(conn, held, &under, &skipped, &steps_r, out, |tx, fresh, staged| {
-                let mut replaced_by = tx.prepare_cached(concat!(
-                    "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
-                     AND ((unpaired = 1 AND (volume IS NULL OR ",
-                    not_seen!(),
-                    ")) OR (missing = 0 AND volume IS NOT NULL AND ",
-                    not_seen!(),
-                    "))
-                     AND (created IS NULL OR ?4 IS NULL OR created <> ?4)
-                     ORDER BY id"
-                ))?;
+                let mut replaced_by = tx.prepare_cached(REPLACED_BY)?;
                 // The fresh rows this batch leaves unpaired. A replaced row is gone (its row took the file), so it is
                 // not among them. The clearing is one statement for the batch, after the matches.
                 let mut to_clear: Vec<i64> = Vec::new();
@@ -284,7 +277,7 @@ impl ScanLease<'_> {
                     let ids: Vec<i64> = {
                         let _query = steps_r.query.timer();
                         replaced_by
-                            .query_map(params![f.folder_id, f.name, f.id, f.created], |r| r.get(0))?
+                            .query_map(params![f.folder_id, f.name, f.id, f.created, f.mid], |r| r.get(0))?
                             .collect::<rusqlite::Result<_>>()?
                     };
                     match ids.as_slice() {
@@ -501,6 +494,62 @@ fn seen_volumes(tx: &Transaction) -> Result<std::collections::BTreeSet<i64>> {
     Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
+/// Tier 1's candidates: the rows with the fresh row's folder (`?3`) and name (`?4`, exact bytes), file ID, size and mtime
+/// on another volume, that the walk did not see. The name is sought in the merged folder's name index (`files_mn`:
+/// `?9` the merged folder, both `missing` states, the name's key), then compared exactly; unpinned, the planner took the
+/// folder index and read the whole folder for each probe.
+const SAME_NAME: &str = concat!(
+    "SELECT id FROM files INDEXED BY files_mn
+     WHERE mid = ?9 AND missing IN (0, 1) AND path_name_key(name) = path_name_key(?4)
+       AND volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
+       AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
+       AND ",
+    not_seen!(),
+    " AND id <> ?8 ORDER BY id"
+);
+
+/// The replacement's candidates: the rows of the fresh row's folder (`?1`) under its exact name (`?2`) that are displaced
+/// or unpaired and unseen, or live and unseen, with a changed or unknown creation time. Sought as [`SAME_NAME`] is, in
+/// `files_mn` (`?5` the merged folder).
+const REPLACED_BY: &str = concat!(
+    "SELECT id FROM files INDEXED BY files_mn
+     WHERE mid = ?5 AND missing IN (0, 1) AND path_name_key(name) = path_name_key(?2)
+       AND folder_id = ?1 AND name = ?2 AND id <> ?3
+       AND ((unpaired = 1 AND (volume IS NULL OR ",
+    not_seen!(),
+    ")) OR (missing = 0 AND volume IS NOT NULL AND ",
+    not_seen!(),
+    "))
+       AND (created IS NULL OR ?4 IS NULL OR created <> ?4)
+     ORDER BY id"
+);
+
+/// Tier 2's candidates: the rows with the fresh row's file ID, size, mtime and extension on the volumes this scan did not
+/// see (`?3`, a `rarray`), that the walk did not see either, under the root. A seek of the identity index per volume.
+const MOVED: &str = concat!(
+    "SELECT id, volume, folder_id FROM files WHERE volume IN rarray(?3) AND file_ref = ?4
+     AND size = ?5 AND mtime = ?6 AND ext = ?7 AND (created IS NULL OR ?8 IS NULL OR created = ?8)
+     AND ",
+    not_seen!(),
+    " AND id <> ?9 AND folder_id IN (",
+    under_root!(),
+    ") ORDER BY id"
+);
+
+/// Every volume with a file row, by an index seek per volume on the identity index (volume, file_ref): the cost is
+/// O(volumes × log n), not a pass over the rows.
+fn all_volumes(tx: &Transaction) -> Result<Vec<i64>> {
+    let first: Option<i64> = tx.query_row("SELECT min(volume) FROM files", [], |r| r.get(0))?;
+    let mut next = tx.prepare_cached("SELECT min(volume) FROM files WHERE volume > ?1")?;
+    let mut volumes = Vec::new();
+    let mut at = first;
+    while let Some(volume) = at {
+        volumes.push(volume);
+        at = next.query_row([volume], |r| r.get(0))?;
+    }
+    Ok(volumes)
+}
+
 /// The fresh rows of the root that this scan saw (the walk's set, unpaired), with an identity and no children: the rows to
 /// pair, the next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted
 /// by [`ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list,
@@ -516,7 +565,7 @@ fn seen_volumes(tx: &Transaction) -> Result<std::collections::BTreeSet<i64>> {
 fn fresh_rows(conn: &Connection, under: &Subtree, after: i64, limit: usize) -> Result<Vec<Fresh>> {
     let mut stmt = conn.prepare_cached(concat!(
         "SELECT files.id, files.volume, files.file_ref, files.created, files.folder_id, files.name, files.ext,
-                files.kind, files.size, files.mtime, files.order_key
+                files.kind, files.size, files.mtime, files.mid
          FROM temp.scan_seen s CROSS JOIN files ON files.id = s.id
          WHERE s.unpaired = 1 AND files.unpaired = 1 AND files.volume IS NOT NULL AND s.id > ?3
            AND files.folder_id IN (",
@@ -539,7 +588,7 @@ fn fresh_rows(conn: &Connection, under: &Subtree, after: i64, limit: usize) -> R
                 kind: crate::types::kind_at(r, 7)?,
                 size: r.get(8)?,
                 mtime: r.get(9)?,
-                order_key: r.get(10)?,
+                mid: r.get(10)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -563,10 +612,10 @@ macro_rules! take_identity {
         concat!(
             "UPDATE files SET volume = ?2, file_ref = ?3, created = ",
             $created,
-            ", folder_id = ?5, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10, missing = 0,
+            ", folder_id = ?5, mid = ?11, name = ?6, ext = ?7, kind = ?8, size = ?9, mtime = ?10, missing = 0,
             unpaired = 0",
             $reset,
-            ", order_key = ?11 WHERE id = ?1"
+            " WHERE id = ?1"
         )
     };
 }
@@ -588,11 +637,11 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<(
             from.created,
             from.folder_id,
             from.name,
-            from.ext.key(),
-            from.kind.key(),
+            from.ext.code(),
+            from.kind.code(),
             from.size,
             from.mtime,
-            from.order_key
+            from.mid
         ],
     )?;
     tx.execute("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, 0)", [id])?;
@@ -729,7 +778,11 @@ mod tests {
     /// The id of the row with this identity.
     fn id_of(c: &Catalog, volume: i64, file_ref: i64) -> i64 {
         c.conn
-            .query_row("SELECT id FROM files WHERE volume = ?1 AND file_ref = ?2", [volume, file_ref], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM files WHERE volume = (SELECT id FROM volumes WHERE serial = ?1) AND file_ref = ?2",
+                [volume, file_ref],
+                |r| r.get(0),
+            )
             .unwrap()
     }
 
@@ -792,15 +845,16 @@ mod tests {
         let mut c = catalog(rules);
         let scan = begin(&mut c);
         crate::fixture::state::add_folder(&c, 1, &spelled(rules, r"D:\x")).unwrap();
+        c.conn.execute("INSERT INTO volumes(id, serial) VALUES (1, 1)", []).unwrap();
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   turns, order_key, unpaired)
-                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
-                        CAST(printf('%08d', i) AS BLOB), 1
+                 INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime, missing,
+                                   turns, unpaired)
+                 SELECT i, 1, i, 1, (SELECT mid FROM folders WHERE id = 1), CAST(i || '.jpg' AS BLOB), ?2, ?3, 10, 100,
+                        0, 0, 1
                  FROM n",
-                params![FILES],
+                params![FILES, Ext::of("jpg").unwrap().code(), Kind::Image.code()],
             )
             .unwrap();
         // The walk saw every row (its set), as a walk that listed the folder would have.
@@ -817,9 +871,11 @@ mod tests {
     /// The row of the file called `name`: its id, its volume, and whether it is unpaired.
     fn row(c: &Catalog, name: &str) -> (i64, Option<i64>, bool) {
         c.conn
-            .query_row("SELECT id, volume, unpaired FROM files WHERE name = ?1", [name.as_bytes()], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1))
-            })
+            .query_row(
+                "SELECT f.id, v.serial, f.unpaired FROM files f LEFT JOIN volumes v ON v.id = f.volume WHERE f.name = ?1",
+                [name.as_bytes()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1)),
+            )
             .unwrap()
     }
 
@@ -1205,6 +1261,70 @@ mod tests {
         tier_two_does_not_pair_a_file_of_another_extension_posix
     );
 
+    /// Tier 2 among three volumes: the file moved while closed from volume 1 to volume 2. Volume 3 has a file with the
+    /// same file ID and facts, but this scan saw volume 3, so its row is no candidate; only the unseen volume's row is,
+    /// and it takes the moved file.
+    fn tier_two_looks_only_on_the_volumes_the_scan_did_not_see(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, first, 3, 7, "c.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (old, _, _) = row(&c, "a.jpg");
+        let (other, _, _) = row(&c, "c.jpg");
+
+        let second = begin(&mut c);
+        found(&mut c, second, 3, 7, "c.jpg", 10, Some(5));
+        found(&mut c, second, 2, 7, "moved.jpg", 10, Some(5));
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.rebound, paired.replaced, paired.ambiguous), (1, 0, 0), "{paired:?}");
+        assert_eq!(count(&c), 2);
+        assert_eq!(identity_of(&c, old), (Some(7), "moved.jpg".to_string()), "the unseen volume's row took the file");
+        assert_eq!(row(&c, "c.jpg"), (other, Some(3), false), "the seen volume's row is untouched");
+    }
+
+    under_both_rules!(
+        tier_two_looks_only_on_the_volumes_the_scan_did_not_see,
+        tier_two_looks_only_on_the_volumes_the_scan_did_not_see_windows,
+        tier_two_looks_only_on_the_volumes_the_scan_did_not_see_posix
+    );
+
+    /// Tier 2's query seeks the identity index per unseen volume (there is no index on `file_ref` alone, so without the
+    /// volume list it would scan every row), and every volume is found by seeks on the same index.
+    #[test]
+    fn tier_two_seeks_the_identity_index() {
+        use crate::fixture::raw;
+        use rusqlite::types::Value;
+        use std::rc::Rc;
+        let mut c = catalog(PathRules::Windows);
+        let scan = begin(&mut c);
+        found(&mut c, scan, 1, 7, "a.jpg", 10, Some(5));
+        let unseen = Rc::new(vec![Value::Integer(1), Value::Integer(2)]);
+        let jpg = Ext::of("jpg").unwrap().code();
+        let plan = raw::query_plan(&c, MOVED, params![b"".to_vec(), None::<Vec<u8>>, unseen, 7, 10, 100, jpg, 5, 0]);
+        assert!(plan.contains("(volume=? AND file_ref=?)") && !plan.contains("SCAN files"), "{plan}");
+        let tx = c.conn.unchecked_transaction().unwrap();
+        assert_eq!(all_volumes(&tx).unwrap(), vec![1]);
+        drop(tx);
+        let plan = raw::query_plan(&c, "SELECT min(volume) FROM files WHERE volume > ?1", [1]);
+        assert!(plan.contains("SEARCH files USING COVERING INDEX"), "{plan}");
+    }
+
+    /// Tier 1's and the replacement's name lookups seek the merged folder's name index (`files_mn`), by its key, for
+    /// both `missing` states, and not the folder's rows: a probe costs the names that share the key, not the folder.
+    #[test]
+    fn the_name_lookups_seek_the_name_index() {
+        use crate::fixture::raw;
+        let mut c = catalog(PathRules::Windows);
+        let scan = begin(&mut c);
+        found(&mut c, scan, 1, 7, "a.jpg", 10, Some(5));
+        let name = b"a.jpg".to_vec();
+        let plan = raw::query_plan(&c, SAME_NAME, params![2, 7, 1, name, 10, 100, 5, 0, 1]);
+        assert!(plan.contains("files_mn (mid=? AND missing=? AND <expr>=?)"), "{plan}");
+        let plan = raw::query_plan(&c, REPLACED_BY, params![1, name, 0, 5, 1]);
+        assert!(plan.contains("files_mn (mid=? AND missing=? AND <expr>=?)"), "{plan}");
+    }
+
     /// Two files that swapped names while their volume was renumbered: each row follows its file (its file ID), not
     /// its old name, so neither row is bound to the other's file.
     fn swapped_names_across_a_volume_change_are_not_cross_bound(rules: PathRules) {
@@ -1321,9 +1441,12 @@ mod tests {
     /// The row of the file with this file ID: its id, its volume, and whether it is unpaired.
     fn row_of(c: &Catalog, file_ref: i64) -> (i64, Option<i64>, bool) {
         c.conn
-            .query_row("SELECT id, volume, unpaired FROM files WHERE file_ref = ?1", [file_ref], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1))
-            })
+            .query_row(
+                "SELECT f.id, v.serial, f.unpaired FROM files f LEFT JOIN volumes v ON v.id = f.volume
+                 WHERE f.file_ref = ?1",
+                [file_ref],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? == 1)),
+            )
             .unwrap()
     }
 

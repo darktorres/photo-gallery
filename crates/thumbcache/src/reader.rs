@@ -92,8 +92,8 @@ pub(crate) fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) ->
     Ok(least)
 }
 
-/// The catalog's volumes, by a loose index scan over `files`'s `(volume, file_ref)` index: a step per volume, not per
-/// file. A displaced row (no volume) is none.
+/// The catalog's volumes (their serials), from its `thumb_volumes` view: a step per volume, not per file. A displaced row
+/// (no volume) is none.
 fn catalog_volumes(tx: &Connection) -> Result<Vec<i64>> {
     let mut stmt = tx.prepare(pg_query::volumes_sql!("cat.thumb_volumes"))?;
     Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
@@ -102,8 +102,9 @@ fn catalog_volumes(tx: &Connection) -> Result<Vec<i64>> {
 /// `pending_in`'s query over `volumes`, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2
 /// the change number checked up to. Which files can have a thumbnail is the catalog's view's to say (`thumb_sources`):
 /// this only compares its rows with the cache's entries. A pass since a change number reads the few changed files by
-/// `files_seq`, and the volumes are filtered as `+f.volume IN (…)` so the planner keeps that index: a plain
-/// `f.volume IN` makes it prefer the `(volume, file_ref)` index and scan every file of the volumes.
+/// `files_seq`, and the volumes (the view's serials) are filtered as `+f.volume IN (…)` so the planner keeps that index:
+/// a plain `f.volume IN` makes it seek the volumes and scan every file of them by the `(volume, file_ref)` index, which
+/// is what the whole pass does.
 pub(crate) fn pending_sql(since_checked: bool, volumes: &[i64]) -> String {
     let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
     let (changed, volume) = if since_checked { ("f.seq > ?2 AND ", "+f.volume") } else { ("", "f.volume") };
@@ -241,12 +242,17 @@ mod checkpoint_tests {
     fn with_files() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
+            // The catalog's shape: the files hold interned volume ids, and the view gives the serials of the volumes
+            // that have files (serial 9 has none now).
             "CREATE TABLE checkpoints(height INTEGER, volume INTEGER, seq INTEGER, PRIMARY KEY (height, volume));
              ATTACH DATABASE ':memory:' AS cat;
+             CREATE TABLE cat.volumes(id INTEGER PRIMARY KEY, serial INTEGER NOT NULL UNIQUE);
              CREATE TABLE cat.files(volume INTEGER, file_ref INTEGER);
              CREATE INDEX cat.files_volume ON files(volume, file_ref);
-             CREATE VIEW cat.thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
-             INSERT INTO cat.files VALUES (1, 1), (1, 2), (3, 1), (3, 2), (7, 9), (NULL, 4);",
+             CREATE VIEW cat.thumb_volumes AS
+                 SELECT v.serial AS volume FROM volumes v WHERE EXISTS (SELECT 1 FROM files f WHERE f.volume = v.id);
+             INSERT INTO cat.volumes VALUES (1, 1), (2, 3), (3, 7), (4, 9);
+             INSERT INTO cat.files VALUES (1, 1), (1, 2), (2, 1), (2, 2), (3, 9), (NULL, 4);",
         )
         .unwrap();
         conn

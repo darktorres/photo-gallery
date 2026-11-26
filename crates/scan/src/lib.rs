@@ -1241,7 +1241,6 @@ fn walk_leased<L: Listing>(
             drop(consume);
             // A file whose row the folder's read already has as it is listed needs nothing written: it is only marked seen,
             // here, in the walk's set. The others go to the batch.
-            let mut key = Vec::new();
             let mut unchanged = Vec::new();
             let mut changed: Vec<ListedFile> = Vec::with_capacity(files.len());
             let mut compare = UNCHANGED.timer();
@@ -1257,7 +1256,7 @@ fn walk_leased<L: Listing>(
                         created: f.created,
                         prior: None,
                     };
-                    rows.unchanged(&listed, &mut key)
+                    rows.unchanged(&listed)
                 };
                 match row {
                     Some(row) => unchanged.push(row),

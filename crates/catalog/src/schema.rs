@@ -157,6 +157,9 @@ pub(crate) fn bring_to(
     target: i64,
     hooks: &Hooks<'_>,
 ) -> Result<()> {
+    // The schema's name index is on a registered function (`files_mn`, the rules' name key): the baseline's creation and a
+    // migration's writes of the files need it on the connection, whoever opened it.
+    crate::core::register(conn, rules)?;
     loop {
         // The version is read outside the transaction first, so a migration that needs foreign keys off has them off
         // before its transaction begins: the pragma does nothing inside one. It is read again inside it, and when it has
@@ -526,9 +529,11 @@ mod tests {
         bring_to(&conn, &SCHEMA, pg_platform::native::PATH_RULES, current_version().unwrap(), &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO folders(id, path, path_key, match_key) VALUES (1, x'01', x'01', x'01');
-             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
-                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61'), (2, 1, 2, 1, x'62', 'jpg', 'image', 1, 1, x'62');",
+             INSERT INTO volumes(id, serial) VALUES (1, 1);
+             INSERT INTO mfolders(id, key) VALUES (1, x'01');
+             INSERT INTO folders(id, path, path_key, mid) VALUES (1, x'01', x'01', 1);
+             INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
+                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1), (2, 1, 2, 1, 1, x'62', 0, 0, 1, 1);",
         )
         .unwrap();
         conn
@@ -541,8 +546,8 @@ mod tests {
         let conn = fresh_with_two_files();
         conn.execute("DELETE FROM files WHERE id = 2", []).unwrap();
         conn.execute(
-            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
-             VALUES (1, 3, 1, x'63', 'jpg', 'image', 1, 1, x'63')",
+            "INSERT INTO files(volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
+             VALUES (1, 3, 1, 1, x'63', 0, 0, 1, 1)",
             [],
         )
         .unwrap();
@@ -555,9 +560,9 @@ mod tests {
         let root: i64 = conn.query_row("SELECT max(id) FROM roots", [], |r| r.get(0)).unwrap();
         assert_eq!(root, 3, "root 2 is not reissued");
 
-        conn.execute("INSERT INTO folders(path, path_key, match_key) VALUES (x'02', x'02', x'02')", []).unwrap();
+        conn.execute("INSERT INTO folders(path, path_key, mid) VALUES (x'02', x'02', 1)", []).unwrap();
         conn.execute("DELETE FROM folders WHERE id = 2", []).unwrap();
-        conn.execute("INSERT INTO folders(path, path_key, match_key) VALUES (x'03', x'03', x'03')", []).unwrap();
+        conn.execute("INSERT INTO folders(path, path_key, mid) VALUES (x'03', x'03', 1)", []).unwrap();
         let folder: i64 = conn.query_row("SELECT max(id) FROM folders", [], |r| r.get(0)).unwrap();
         assert_eq!(folder, 3, "folder 2 is not reissued");
     }
@@ -568,7 +573,7 @@ mod tests {
         let conn = fresh_with_two_files();
         for file in [1, 2] {
             conn.execute(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (?1, 1, 1, 1, 0, 'image', 0)",
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (?1, 1, 1, 1, 0, 0, 0)",
                 [file],
             )
             .unwrap();
@@ -757,9 +762,11 @@ mod tests {
         bring_to(&conn, &SCHEMA, rules, current_version().unwrap(), &Hooks::none()).unwrap();
         conn.execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
-             INSERT INTO folders(id, path, path_key, match_key) VALUES (1, x'01', x'01', x'01');
-             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
-                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, x'61');",
+             INSERT INTO volumes(id, serial) VALUES (1, 1);
+             INSERT INTO mfolders(id, key) VALUES (1, x'01');
+             INSERT INTO folders(id, path, path_key, mid) VALUES (1, x'01', x'01', 1);
+             INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
+                 VALUES (1, 1, 1, 1, 1, x'61', 0, 0, 1, 1);",
         )
         .unwrap();
         let state = || -> (i64, i64) {
@@ -817,7 +824,8 @@ mod tests {
             ("next_seq!", next_seq!()),
             ("seq!", seq!()),
             ("live_failures!", live_failures!()),
-            ("kind_video!", pg_model::kind_video!()),
+            // A bare code is in any text: asserted where the view compares it.
+            ("kind_video!", concat!("f.kind = ", pg_model::kind_video!(), " THEN")),
             ("write_rating!", pg_model::write_rating!()),
             ("write_rotation!", pg_model::write_rotation!()),
         ];

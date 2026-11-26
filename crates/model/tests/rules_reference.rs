@@ -1,17 +1,32 @@
-//! The new keys against the reference corpus recorded from the string keys before the change
-//! (`reference_keys.tsv`). Every difference must be intended, so the test states them: names must match
-//! exactly; a folder key may differ only where the old key lower-cased a word-final Σ to ς (the old keys used
-//! `str::to_lowercase` on a whole component, the new ones lower-case per character, as names always did), and the
-//! difference is exactly that ς → σ.
+//! The keys against the reference corpus (`reference_keys.tsv`). The corpus was recorded from the keys of
+//! `KEY_ALGO_VERSION` 1 and 2: its folder and name keys are the per-character lower case of the time. The keys of
+//! version 3 are the per-unit upcase through the embedded table (`docs/plans/CATALOG_SIZE_PLAN.md`, D1), so the
+//! corpus's keys are now the old fold, kept as the record, and the tests state how the new fold may differ from it.
 //!
-//! The last 26 rows (the Phase 3 widening) were recorded from the new keys, not the string keys, after each was checked
-//! by hand: the final and initial sigmas, dotted and dotless i, ẞ and ǅ, a ligature, combining marks against
-//! precomposed letters (the names are not normalized, so those keys differ), and the folder keys of each.
+//! - **Equivalence:** two characters are one name under the new fold exactly when they were under the old one, except
+//!   the characters listed in `INTENDED`: those where NTFS's single-unit upcase (round-trip mappings only, Unicode 5.1)
+//!   and Rust's per-character lower case disagree (the dotted capital I, the Kelvin and Ångström signs, the sharp s and
+//!   its capital, the Ohm sign), and any supplementary character (NTFS does not fold outside the BMP). The final sigma,
+//!   the long s and the dotless i are their own names under both.
+//! - **Structure:** a folder key is each part's name key, escaped, then 0x01, on both rule sets; on Posix the name key is
+//!   the exact bytes.
+//! - **Order:** the old and the new order of the corpus's names are compared, and the pairs that changed are counted for
+//!   the ledger (gate G4 lists them on the real names).
+//!
+//! The last 26 rows (the Phase 3 widening of the scan plan) are the hand-checked edge cases: the final and initial
+//! sigmas, dotted and dotless i, ẞ and ǅ, a ligature, combining marks against precomposed letters (names are not
+//! normalized, so those keys differ), and the folder keys of each.
+
+use std::collections::BTreeSet;
 
 use pg_model::name::Name;
 use pg_model::rules::PathRules;
+use pg_model::upcase::upcase;
 
 const CORPUS: &str = include_str!("reference_keys.tsv");
+
+/// The characters whose fold the new key changed on purpose (see the module doc).
+const INTENDED: &[char] = &['İ', '\u{212A}', 'k', 'K', '\u{212B}', 'å', 'Å', 'ß', 'ẞ', '\u{2126}', 'ω', 'Ω'];
 
 /// A corpus the test cannot read: the test fails with the error.
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -40,23 +55,10 @@ fn unescape(field: &str) -> Fallible<String> {
     Ok(out)
 }
 
-/// The corpus's hex, two ASCII digits a byte; any other byte fails the test.
-fn unhex(text: &str) -> Fallible<Vec<u8>> {
-    text.as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| -> Fallible<u8> { Ok(u8::from_str_radix(std::str::from_utf8(pair)?, 16)?) })
-        .collect()
-}
-
 struct Row {
     kind: String,
     input: String,
     merged: String,
-    folder_key: Vec<u8>,
-    name_key: Vec<u8>,
-    order_key: Vec<u8>,
 }
 
 fn rows() -> Fallible<Vec<Row>> {
@@ -65,17 +67,10 @@ fn rows() -> Fallible<Vec<Row>> {
         .skip(1)
         .map(|line| -> Fallible<Row> {
             let f: Vec<&str> = line.split('\t').collect();
-            let [kind, input, merged, folder_key, name_key, order_key, ..] = f.as_slice() else {
-                return Err(format!("a row with fewer than six fields: {line:?}").into());
+            let [kind, input, merged, ..] = f.as_slice() else {
+                return Err(format!("a row with fewer than three fields: {line:?}").into());
             };
-            Ok(Row {
-                kind: (*kind).to_owned(),
-                input: unescape(input)?,
-                merged: unescape(merged)?,
-                folder_key: unhex(folder_key)?,
-                name_key: unhex(name_key)?,
-                order_key: unhex(order_key)?,
-            })
+            Ok(Row { kind: (*kind).to_owned(), input: unescape(input)?, merged: unescape(merged)? })
         })
         .collect()
 }
@@ -83,6 +78,17 @@ fn rows() -> Fallible<Vec<Row>> {
 /// A merged folder's components, as the old code split them.
 fn components(merged: &str) -> Vec<Name> {
     merged.split('\\').filter(|p| !p.is_empty()).map(Name::from).collect()
+}
+
+/// The old fold of a character: its per-character lower case.
+fn old_fold(c: char) -> String {
+    c.to_lowercase().collect()
+}
+
+/// The new fold of a character: each UTF-16 unit through the table.
+fn new_fold(c: char) -> Vec<u16> {
+    let mut buf = [0u16; 2];
+    c.encode_utf16(&mut buf).iter().map(|&u| upcase(u)).collect()
 }
 
 #[test]
@@ -98,55 +104,63 @@ fn the_corpus_has_its_rows() -> Fallible<()> {
 }
 
 #[test]
-fn every_name_key_is_the_recorded_one() -> Fallible<()> {
-    for row in rows()?.iter().filter(|r| r.kind == "name") {
-        let name = Name::from(row.input.as_str());
-        assert_eq!(name.name_key(), row.name_key, "name {:?}", row.input);
-        // A file's order key is its folder's key then its name's: the corpus used the folder "photos".
-        let folder = PathRules::Windows.folder_key(&[Name::from("photos")]);
-        assert_eq!(PathRules::Windows.order_key(&folder, &name), row.order_key, "order {:?}", row.input);
+fn the_fold_changed_only_for_the_intended_characters() -> Fallible<()> {
+    let chars: BTreeSet<char> =
+        rows()?.iter().flat_map(|r| r.input.chars().chain(r.merged.chars()).collect::<Vec<_>>()).collect();
+    let mut unexpected = BTreeSet::new();
+    for &a in &chars {
+        for &b in &chars {
+            let old = old_fold(a) == old_fold(b);
+            let new = new_fold(a) == new_fold(b);
+            let intended = |c: char| INTENDED.contains(&c) || u32::from(c) > 0xFFFF;
+            if old != new && !(intended(a) && intended(b)) {
+                unexpected.insert((a, b));
+            }
+        }
+    }
+    assert!(unexpected.is_empty(), "characters whose fold changed without being listed: {unexpected:?}");
+    Ok(())
+}
+
+#[test]
+fn a_folder_key_is_each_parts_name_key_escaped_then_its_terminator() -> Fallible<()> {
+    let escaped = |key: &[u8]| -> Vec<u8> {
+        key.iter()
+            .flat_map(|&b| match b {
+                0x01 => vec![0x02, 0x02],
+                0x02 => vec![0x02, 0x03],
+                b => vec![b],
+            })
+            .collect()
+    };
+    for row in rows()?.iter().filter(|r| r.kind == "folder") {
+        let parts = components(&row.merged);
+        for rules in [PathRules::Windows, PathRules::Posix] {
+            let expected: Vec<u8> =
+                parts.iter().flat_map(|p| [escaped(&rules.name_key(p)), vec![0x01]].concat()).collect();
+            assert_eq!(rules.folder_key(&parts), expected, "{rules:?} {:?}", row.merged);
+        }
+        let posix: Vec<u8> = parts.iter().flat_map(|p| [escaped(p.as_bytes()), vec![0x01]].concat()).collect();
+        assert_eq!(PathRules::Posix.folder_key(&parts), posix, "Posix keys are the exact bytes: {:?}", row.merged);
     }
     Ok(())
 }
 
 #[test]
-fn a_folder_key_differs_only_by_a_final_sigma() -> Fallible<()> {
-    // Both keys with ς written as σ: the only difference the change may make.
-    let sigma_only = |key: &[u8]| replace_all(key, &[0xCF, 0x82], &[0xCF, 0x83]);
-    let mut changed = Vec::new();
-    for row in rows()?.iter().filter(|r| r.kind == "folder") {
-        let new = PathRules::Windows.folder_key(&components(&row.merged));
-        if !row.merged.contains('Σ') {
-            assert_eq!(new, row.folder_key, "a folder key with no Σ changed: {:?}", row.merged);
-            continue;
-        }
-        if new != row.folder_key {
-            assert_eq!(
-                sigma_only(&new),
-                sigma_only(&row.folder_key),
-                "a folder key that differs in more than a final sigma: {:?}",
-                row.merged
-            );
-            changed.push(row.merged.clone());
+fn the_orders_of_the_corpus_names_are_counted() -> Fallible<()> {
+    let names: Vec<Name> = rows()?.iter().filter(|r| r.kind == "name").map(|r| Name::from(r.input.as_str())).collect();
+    let old = |n: &Name| (n.display().chars().flat_map(char::to_lowercase).collect::<String>(), n.as_bytes().to_vec());
+    let new = |n: &Name| (PathRules::Windows.name_key(n), n.as_bytes().to_vec());
+    let mut changed = 0usize;
+    for (i, a) in names.iter().enumerate() {
+        for b in names.iter().skip(i + 1) {
+            if old(a).cmp(&old(b)) != new(a).cmp(&new(b)) {
+                changed += 1;
+            }
         }
     }
-    // The count is for the ledger: each changed key is a folder whose old lower-casing made a Σ final (ς).
-    eprintln!("folder keys changed by the per-character lower case: {}", changed.len());
+    // The count is for the ledger: the upcase order puts `[ \ ] ^ _` and a backtick after the letters, and orders
+    // non-ASCII letters by their capitals.
+    eprintln!("name pairs whose order changed with the upcase key: {changed} of {}", names.len() * names.len() / 2);
     Ok(())
-}
-
-/// `bytes` with each `from` replaced by `to`, left to right, as the corpus's sigmas need.
-fn replace_all(bytes: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut rest = bytes;
-    while let Some((&first, tail)) = rest.split_first() {
-        if let Some(after) = rest.strip_prefix(from) {
-            out.extend_from_slice(to);
-            rest = after;
-        } else {
-            out.push(first);
-            rest = tail;
-        }
-    }
-    out
 }

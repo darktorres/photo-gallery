@@ -5,14 +5,12 @@ use std::cmp::Ordering;
 
 use crate::core::Catalog;
 use crate::error::{Error, Result};
-use rusqlite::types::{Type, Value};
+use rusqlite::types::Value;
 use rusqlite::{OptionalExtension, params_from_iter};
 
-use super::scope::scope;
-use crate::types::bad_value;
+use super::scope::{SCOPE_FROM, scope};
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::media::Ext;
 use pg_model::orientation::Orientation;
 use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
@@ -52,7 +50,6 @@ macro_rules! file_joins {
 pub(crate) const FILE_JOINS: &str = file_joins!();
 
 fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
-    let ext = r.get_ref(5)?.as_str()?;
     let sides: [Option<u32>; 4] = [r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?];
     let cut = sides.map(Option::unwrap_or_default);
     let cut_found = sides[0].map(|_| cut.iter().any(|&c| c > 0));
@@ -68,7 +65,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
                 .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(4, ms))?,
         },
         // The scan records only files with these extensions.
-        ext: Ext::of(ext).ok_or_else(|| bad_value(5, Type::Text, "files.ext", ext))?,
+        ext: crate::types::ext_at(r, 5)?,
         turns: Turns::new(r.get(6)?),
         pending_turns: Turns::new(r.get(7)?),
         rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),
@@ -127,17 +124,18 @@ impl Catalog {
 
     /// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
     ///
-    /// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable
-    /// sort here on that key alone, files without it last: files with the same key stay in name order.
+    /// They are read in name order (the merged folder's key, then the name's, then the id) from the merged folders' key
+    /// index and the `files_mn` index, so SQLite never sorts. Another order is a stable sort here on that key alone,
+    /// files without it last: files with the same key stay in name order.
     ///
-    /// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
-    /// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
+    /// The list is sized by a count of the scope's files, read from the same indexes alone in the same read transaction
+    /// (the background job writes meanwhile): exact without filters, an upper bound with them.
     pub fn list_grid(&self, folder: &Merged, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
         let conn = &self.conn;
         let (scope, mut values) = scope(self.rules(), folder, recursive);
         let tx = conn.unchecked_transaction()?;
         let bound: usize = tx.query_row(
-            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+            &format!("SELECT count(*) FROM {SCOPE_FROM} WHERE f.missing = 0 AND {scope}"),
             params_from_iter(&values),
             |r| r.get(0),
         )?;
@@ -178,11 +176,11 @@ pub(crate) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
     let key = key_sql(sort);
     // Name order backwards for "by name, descending"; the other keys take their ties in name order.
     let dir = if key.is_none() && sort.descending { "DESC" } else { "ASC" };
-    // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
+    // `missing = 0` is written out, not bound: it's the second column of `files_mn`, which the order follows.
     let (comma, key) = key.map_or(("", ""), |k| (", ", k));
     format!(
-        "SELECT {ENTRY_COLUMNS}{comma}{key} FROM files f {FILE_JOINS}
+        "SELECT {ENTRY_COLUMNS}{comma}{key} FROM {SCOPE_FROM} {FILE_JOINS}
          WHERE f.missing = 0 AND {scope} AND {cond}
-         ORDER BY f.order_key {dir}, f.id {dir}"
+         ORDER BY mf.key {dir}, path_name_key(f.name) {dir}, f.id {dir}"
     )
 }

@@ -12,13 +12,14 @@ use crate::error::Result;
 use crate::listing::{listing_at, listing_values, put_session};
 
 impl Catalog {
-    /// The saved views, by name as the grid orders file names (the name's key).
+    /// The saved views, by name as the grid orders file names (the name's key under the catalog's rules, then the exact
+    /// name for two that share a key).
     pub fn views(&self) -> Result<Vec<SavedView>> {
         let rules = self.rules();
         let mut stmt = self.conn.prepare("SELECT name, folder, recursive, query, sort FROM views")?;
         let rows = stmt.query_map([], |r| Ok(SavedView { name: r.get(0)?, listing: listing_at(r, 1, rules)? }))?;
         let mut views: Vec<SavedView> = rows.collect::<rusqlite::Result<_>>()?;
-        views.sort_by_cached_key(|v| Name::from(v.name.as_str()).name_key());
+        views.sort_by_cached_key(|v| (rules.name_key(&Name::from(v.name.as_str())), v.name.clone()));
         Ok(views)
     }
 

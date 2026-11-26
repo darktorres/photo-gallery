@@ -24,7 +24,18 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Params, Row, params};
 
 /// A connection of the test's own to the catalog file at `path`.
 pub(crate) fn on_disk(path: &Path) -> Connection {
-    Connection::open(path).unwrap()
+    let conn = Connection::open(path).unwrap();
+    // The catalog's functions, under the rules the file records (when it records them): a write of a file row, and a
+    // `VACUUM`, evaluate the name index's.
+    let rules: Option<String> =
+        conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).ok();
+    if let Some(rules) = [PathRules::Windows, PathRules::Posix]
+        .into_iter()
+        .find(|&r| rules.as_deref() == Some(crate::types::rules_name(r)))
+    {
+        crate::core::register(&conn, rules).unwrap();
+    }
+    conn
 }
 
 /// The path rules a catalog file was made under, as its `meta.path_rules` row says, read through a read-only
@@ -65,14 +76,29 @@ pub(crate) fn set_missing(c: &Catalog, id: FileId) {
     c.conn.execute("UPDATE files SET missing = 1 WHERE id = ?1", [id.get()]).unwrap();
 }
 
-/// A file's volume as the catalog stores it (`None` for a displaced row): the fixture inserts every file on volume 1, so
-/// a test that spreads files over volumes moves them here.
+/// A file's volume by its serial as the catalog stores it (`None` for a displaced row), interned as a writer interns it:
+/// the fixture inserts every file on volume 1, so a test that spreads files over volumes moves them here.
 pub(crate) fn set_volume(c: &Catalog, id: FileId, volume: Option<i64>) {
-    c.conn.execute("UPDATE files SET volume = ?2 WHERE id = ?1", params![id.get(), volume]).unwrap();
+    if let Some(serial) = volume {
+        c.conn.execute("INSERT OR IGNORE INTO volumes(serial) VALUES (?1)", [serial]).unwrap();
+    }
+    c.conn
+        .execute(
+            "UPDATE files SET volume = (SELECT id FROM volumes WHERE serial = ?2) WHERE id = ?1",
+            params![id.get(), volume],
+        )
+        .unwrap();
 }
 
-pub(crate) fn set_order_key(c: &Catalog, id: FileId, key: &[u8]) {
-    c.conn.execute("UPDATE files SET order_key = ?2 WHERE id = ?1", params![id.get(), key]).unwrap();
+/// The serial of a file's volume, as the catalog stores it (`None` for a displaced row).
+pub(crate) fn volume_of(c: &Catalog, id: FileId) -> Option<i64> {
+    c.conn
+        .query_row(
+            "SELECT v.serial FROM files f LEFT JOIN volumes v ON v.id = f.volume WHERE f.id = ?1",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
 }
 
 /// A file's size changed in the catalog alone (the triggers move it in the thumbnail source).
@@ -100,12 +126,14 @@ pub(crate) fn rotation_and_width(c: &Catalog, id: FileId) -> (i64, i64) {
         .unwrap()
 }
 
-/// The only file's row as the scan leaves it: name, size, mtime, missing and order key.
+/// The only file's row as the scan leaves it: name, size, mtime, missing, and its merged folder's key.
 pub(crate) fn file_row(c: &Catalog) -> (String, i64, i64, i64, Vec<u8>) {
     c.conn
-        .query_row("SELECT CAST(name AS TEXT), size, mtime, missing, order_key FROM files", [], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-        })
+        .query_row(
+            "SELECT CAST(f.name AS TEXT), f.size, f.mtime, f.missing, m.key FROM files f JOIN mfolders m ON m.id = f.mid",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
         .unwrap()
 }
 
@@ -181,7 +209,9 @@ pub(crate) fn add_pdq_pair(c: &Catalog, a: i64, b: i64, distance: i64) {
     c.conn.execute("INSERT INTO pdq_pairs(a, b, distance) VALUES (?1, ?2, ?3)", params![a, b, distance]).unwrap();
 }
 
-/// An analysis row as a test sets it up: the columns the browse tests read, at the import version (`pg_model::versions::IMPORT_VERSION`).
+/// An analysis row as a test sets it up: the columns the browse tests read, at the import version
+/// (`pg_model::versions::IMPORT_VERSION`). The kind and the format are their names (`"video"`, `"jpeg"`), stored as their
+/// codes.
 pub(crate) struct AnalysisRow {
     pub file: i64,
     pub size: i64,
@@ -213,7 +243,19 @@ impl AnalysisRow {
     }
 }
 
+/// The stored code of a kind's name (`"image"`, `"video"`), as a test names it.
+pub(crate) fn kind_code(name: &str) -> i64 {
+    match name {
+        "image" => pg_model::media::Kind::Image.code(),
+        "video" => pg_model::media::Kind::Video.code(),
+        other => panic!("no kind is named {other:?}"),
+    }
+}
+
 pub(crate) fn insert_analysis(c: &Catalog, row: &AnalysisRow) {
+    let format = row
+        .format
+        .map(|f| pg_model::format::Format::from_key(f).unwrap_or_else(|| panic!("no format is named {f:?}")).code());
     c.conn
         .execute(
             "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height, frames,
@@ -223,8 +265,8 @@ pub(crate) fn insert_analysis(c: &Catalog, row: &AnalysisRow) {
                 row.file,
                 row.size,
                 row.mtime,
-                row.kind,
-                row.format,
+                kind_code(row.kind),
+                format,
                 row.width,
                 row.height,
                 row.frames,

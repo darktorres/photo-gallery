@@ -50,12 +50,14 @@ pub const CATALOG_SCHEMA_VERSION: i64 = 1;
 /// alone. Bump it when a thumbnail's bytes change for the same source.
 pub const THUMB_OUTPUT_VERSION: i64 = 1;
 
-/// The version of the key algorithm (`pg_model::rules`'s folder keys: `folders.path_key`, the spelling a folder is found
-/// by, and `folders.match_key`, the drive-free key its files' order keys follow, and `files.order_key`). Bump it when a
-/// key changes for the same name, or when a key's meaning does: version 2 made `path_key` the folder's identity (one
-/// row per spelling in any case under the Windows rules). The catalog's `key_version` mark is this with the toolchain's
-/// Unicode version, which the keys' case folding depends on: either changing recomputes the stored keys.
-pub const KEY_ALGO_VERSION: i64 = 2;
+/// The version of the key algorithm (`pg_model::rules`'s keys: `folders.path_key`, the spelling a folder is found by;
+/// `mfolders.key`, the drive-free folder key the grid orders by; and the name key of the `path_name_key` SQL function,
+/// which the `files_mn` index holds). Bump it when a key changes for the same name, or when a key's meaning does:
+/// version 2 made `path_key` the folder's identity (one row per spelling in any case under the Windows rules); version 3
+/// made the Windows fold NTFS's per-unit upcase through an embedded table (`pg_model::upcase`), the Posix keys the exact
+/// bytes, and dropped `files.order_key`. The catalog's `key_version` mark is this with the table's hash
+/// (`upcase::TABLE_HASH`): either changing recomputes the stored keys and rebuilds the name index.
+pub const KEY_ALGO_VERSION: i64 = 3;
 
 /// The version of the preferences file's layout (`gallery.json`, `pg_app::prefs`). Each save stamps it; a file without the
 /// key reads as 0, the layout whose row height was a float. Version 1 stores the row height as a whole number of pixels.

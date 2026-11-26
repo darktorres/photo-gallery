@@ -34,48 +34,92 @@ use pg_model::ledger::FolderFailure;
 // than preparing them again. A writer borrows its transaction, so it is dropped before the transaction commits.
 
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
-/// change number ([`change_number`]): the columns the insert sets itself, no trigger does.
-fn write_new(new_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, key: &[u8], change: i64) -> Result<usize> {
-    let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
-    let (ext, kind) = (f.ext.key(), f.ext.kind().key());
+/// change number ([`change_number`]): the columns the insert sets itself, no trigger does. `volume` is the volume's
+/// interned id ([`Volumes::id`]).
+fn write_new(
+    new_file: &mut Statement<'_>,
+    f: &ScannedFile,
+    folder: &Folder,
+    volume: i64,
+    change: i64,
+) -> Result<usize> {
+    let file_ref = identity_to_sql(f.identity.file_index);
     Ok(new_file.execute(params![
         volume,
         file_ref,
         f.created,
         folder.id.get(),
+        folder.mid,
         f.name.as_bytes(),
-        ext,
-        kind,
+        f.ext.code(),
+        f.ext.kind().code(),
         f.size,
         f.mtime,
-        key,
         change
     ])?)
 }
 
 /// Write the changed fields of the known row `id`, while it is as the walk read it when it listed the folder (`f.prior`;
 /// see `changed_file`'s guard). The rows written: 0 when the row changed since the listing.
-fn write_changed(
-    changed_file: &mut Statement<'_>,
-    f: &ScannedFile,
-    folder: &Folder,
-    key: &[u8],
-    id: i64,
-) -> Result<usize> {
-    let (ext, kind) = (f.ext.key(), f.ext.kind().key());
+fn write_changed(changed_file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, id: i64) -> Result<usize> {
     Ok(changed_file.execute(params![
         id,
         folder.id.get(),
+        folder.mid,
         f.name.as_bytes(),
-        ext,
-        kind,
+        f.ext.code(),
+        f.ext.kind().code(),
         f.size,
         f.mtime,
-        key,
         f.created,
         f.prior.map(|p| p.size),
         f.prior.map(|p| p.mtime)
     ])?)
+}
+
+/// The interned volumes a writer has resolved: a volume's serial (as stored, `identity_to_sql`) to its `volumes.id`,
+/// made the first time a file of the volume is written. A row is never deleted, so a resolved id stays valid.
+pub(crate) struct Volumes<'tx> {
+    find: CachedStatement<'tx>,
+    make: CachedStatement<'tx>,
+    ids: BTreeMap<i64, i64>,
+}
+
+impl<'tx> Volumes<'tx> {
+    /// The resolver of `tx`.
+    pub(crate) fn new(tx: &'tx Connection) -> Result<Volumes<'tx>> {
+        Ok(Volumes {
+            find: tx.prepare_cached("SELECT id FROM volumes WHERE serial = ?1")?,
+            make: tx.prepare_cached("INSERT INTO volumes(serial) VALUES (?1) RETURNING id")?,
+            ids: BTreeMap::new(),
+        })
+    }
+
+    /// The id of the volume whose stored serial is `serial`, made if the catalog has none.
+    pub(crate) fn id(&mut self, serial: i64) -> Result<i64> {
+        if let Some(&id) = self.ids.get(&serial) {
+            return Ok(id);
+        }
+        let id = match self.find.query_row([serial], |r| r.get(0)).optional()? {
+            Some(id) => id,
+            None => self.make.query_row([serial], |r| r.get(0))?,
+        };
+        self.ids.insert(serial, id);
+        Ok(id)
+    }
+}
+
+/// The id of the merged folder whose key is `key` (`mfolders`), made if there is none: a folder's row takes it, and so do
+/// its files (`files.mid`).
+pub(crate) fn merged_folder(tx: &Connection, key: &[u8]) -> Result<i64> {
+    let found: Option<i64> =
+        tx.prepare_cached("SELECT id FROM mfolders WHERE key = ?1")?.query_row([key], |r| r.get(0)).optional()?;
+    match found {
+        Some(id) => Ok(id),
+        None => Ok(tx
+            .prepare_cached("INSERT INTO mfolders(key) VALUES (?1) RETURNING id")?
+            .query_row([key], |r| r.get(0))?),
+    }
 }
 
 /// The batch's change number: the next `meta.seq`, taken by the batch's first new row and kept for the rest of the
@@ -118,11 +162,13 @@ pub struct ScanWriter<'tx> {
     bump: CachedStatement<'tx>,
     change: Option<i64>,
     folder_failed: CachedStatement<'tx>,
-    /// The id of each folder this writer has resolved, by its `path_key`: a folder's files are written after its
-    /// lookup once, not once per file (`folder`).
-    folder_ids: BTreeMap<Vec<u8>, i64>,
-    /// The order key of the file being recorded.
-    key: Vec<u8>,
+    /// The id and merged folder of each folder this writer has resolved, by its `path_key`: a folder's files are written
+    /// after its lookup once, not once per file (`folder`).
+    folder_ids: BTreeMap<Vec<u8>, (i64, i64)>,
+    /// The volumes this writer has written files of.
+    volumes: Volumes<'tx>,
+    /// The transaction's connection, for the merged folders a new folder takes (`merged_folder`).
+    conn: &'tx Connection,
 }
 
 impl<'tx> ScanWriter<'tx> {
@@ -145,18 +191,20 @@ impl<'tx> ScanWriter<'tx> {
             rules,
             under: under_params(rules, root),
             covering,
-            folder_id: tx.prepare_cached("SELECT id, path FROM folders WHERE path_key = ?1")?,
-            new_folder: tx
-                .prepare_cached("INSERT INTO folders(path, path_key, match_key) VALUES (?1, ?2, ?3) RETURNING id")?,
+            folder_id: tx.prepare_cached("SELECT id, path, mid FROM folders WHERE path_key = ?1")?,
+            new_folder: tx.prepare_cached("INSERT INTO folders(path, path_key, mid) VALUES (?1, ?2, ?3) RETURNING id")?,
             respell: tx.prepare_cached("UPDATE folders SET path = ?2 WHERE id = ?1")?,
-            // The row of the identity, and whether its folder is under the root (`?3`, `?4`: `under_params`).
+            // The row of the identity (`?1` the volume's serial, `?2` the reference), and whether its folder is under the
+            // root (`?3`, `?4`: `under_params`).
             known: tx.prepare_cached(
-                "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.order_key, f.created,
+                "SELECT f.id, f.folder_id, f.name, f.ext, f.kind, f.size, f.mtime, f.missing, f.mid, f.created,
                     f.unpaired, (d.path_key >= ?3 AND (?4 IS NULL OR d.path_key < ?4))
                  FROM files f JOIN folders d ON d.id = f.folder_id
-                 WHERE f.volume = ?1 AND f.file_ref = ?2",
+                 WHERE f.volume = (SELECT id FROM volumes WHERE serial = ?1) AND f.file_ref = ?2",
             )?,
-            identity_row: tx.prepare_cached("SELECT id, unpaired FROM files WHERE volume = ?1 AND file_ref = ?2")?,
+            identity_row: tx.prepare_cached(
+                "SELECT id, unpaired FROM files WHERE volume = (SELECT id FROM volumes WHERE serial = ?1) AND file_ref = ?2",
+            )?,
             insert_seen: tx.prepare_cached("INSERT OR IGNORE INTO temp.scan_seen(id, unpaired) VALUES (?1, ?2)")?,
             last_id: tx.prepare_cached("SELECT last_insert_rowid()")?,
             backfill: tx.prepare_cached("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
@@ -167,8 +215,8 @@ impl<'tx> ScanWriter<'tx> {
             // the batch's number, which the insert sets itself (no trigger does). The row is not
             // known to the writer, so the insert cannot conflict: the identity was looked up in this transaction.
             new_file: tx.prepare_cached(
-                "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime,
-                    order_key, unpaired, pending, seq, changed)
+                "INSERT INTO files(volume, file_ref, created, folder_id, mid, name, ext, kind, size, mtime,
+                    unpaired, pending, seq, changed)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, 1, ?11, ?11)",
             )?,
             // A known row is updated only while it is as the walk read it when it listed the folder (`?11`, `?12`: NULL
@@ -177,15 +225,16 @@ impl<'tx> ScanWriter<'tx> {
             // retries, which change nothing on disk. The triggers that depend on size, mtime and missing keep the
             // file's pending and change numbers, whoever writes them.
             changed_file: tx.prepare_cached(concat!(
-                "UPDATE files SET folder_id = ?2, name = ?3, ext = ?4, kind = ?5, size = ?6, mtime = ?7,
-                    missing = 0, order_key = ?8, created = coalesce(created, ?9)
+                "UPDATE files SET folder_id = ?2, mid = ?3, name = ?4, ext = ?5, kind = ?6, size = ?7, mtime = ?8,
+                    missing = 0, created = coalesce(created, ?9)
                  WHERE id = ?1 AND size IS ?10 AND mtime IS ?11 AND ",
                 not_being_written!(files)
             ))?,
             bump: tx.prepare_cached(concat!(next_seq!(), " RETURNING value"))?,
             folder_failed: tx.prepare_cached(FOLDER_FAILED)?,
             change: None,
-            key: Vec::new(),
+            volumes: Volumes::new(tx)?,
+            conn: tx,
         })
     }
 
@@ -213,30 +262,32 @@ impl<'tx> ScanWriter<'tx> {
     /// The folder is found by its `path_key` (one row per folder, whatever its case under the Windows rules). A folder
     /// found under another spelling keeps its row and takes the spelling the scan has now; a new one is made.
     pub fn folder(&mut self, path: &RulePath) -> Result<Folder> {
-        let key = self.rules.folder_key(&path.parts);
         let path_key = self.rules.path_key(path);
-        let id = match self.folder_ids.get(&path_key) {
-            Some(id) => *id,
+        let (id, mid) = match self.folder_ids.get(&path_key) {
+            Some(&found) => found,
             None => {
                 let bytes = self.rules.join(path);
-                let id: i64 = match self
+                let found = match self
                     .folder_id
-                    .query_row([&path_key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+                    .query_row([&path_key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, i64>(2)?)))
                     .optional()?
                 {
-                    Some((id, stored)) => {
+                    Some((id, stored, mid)) => {
                         if stored != bytes {
                             self.respell.execute(params![id, bytes])?;
                         }
-                        id
+                        (id, mid)
                     }
-                    None => self.new_folder.query_row(params![bytes, path_key, key], |r| r.get(0))?,
+                    None => {
+                        let mid = merged_folder(self.conn, &self.rules.folder_key(&path.parts))?;
+                        (self.new_folder.query_row(params![bytes, path_key, mid], |r| r.get(0))?, mid)
+                    }
                 };
-                self.folder_ids.insert(path_key, id);
-                id
+                self.folder_ids.insert(path_key, found);
+                found
             }
         };
-        Ok(Folder { id: FolderId::new(id), key })
+        Ok(Folder { id: FolderId::new(id), mid })
     }
 
     /// Record a file the scan found, by identity. A file moved or renamed keeps its row, and so
@@ -258,24 +309,21 @@ impl<'tx> ScanWriter<'tx> {
             changed_file,
             bump,
             change,
-            key,
+            volumes,
             ..
         } = self;
-        key.clear();
-        key.extend_from_slice(&folder.key);
-        f.name.push_name_key(key);
         let (volume, file_ref) = (identity_to_sql(f.identity.volume), identity_to_sql(f.identity.file_index));
-        let (ext, kind, size) = (f.ext.key(), f.ext.kind().key(), f.size);
+        let (ext, kind, size) = (f.ext.code(), f.ext.kind().code(), f.size);
         let hit = known
             .query_row(params![volume, file_ref, under.key, under.upper], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
-                    && r.get_ref(3)?.as_str()? == ext
-                    && r.get_ref(4)?.as_str()? == kind
+                    && r.get::<_, i64>(3)? == ext
+                    && r.get::<_, i64>(4)? == kind
                     && r.get::<_, u64>(5)? == size
                     && r.get::<_, i64>(6)? == f.mtime
                     && r.get::<_, i64>(7)? == 0
-                    && r.get_ref(8)?.as_blob()? == &key[..];
+                    && r.get::<_, i64>(8)? == folder.mid;
                 Ok(Hit {
                     id: r.get(0)?,
                     same,
@@ -287,7 +335,8 @@ impl<'tx> ScanWriter<'tx> {
             })
             .optional()?;
         let Some(hit) = hit else {
-            write_new(new_file, f, folder, &key[..], change_number(bump, change)?)?;
+            let volume = volumes.id(volume)?;
+            write_new(new_file, f, folder, volume, change_number(bump, change)?)?;
             mark_new_seen(last_id, insert_seen)?;
             return Ok(Recorded::Changed);
         };
@@ -299,14 +348,15 @@ impl<'tx> ScanWriter<'tx> {
         }
         if matches!((hit.created, f.created), (Some(a), Some(b)) if a != b) {
             displace.execute(params![hit.id])?;
-            write_new(new_file, f, folder, &key[..], change_number(bump, change)?)?;
+            let volume = volumes.id(volume)?;
+            write_new(new_file, f, folder, volume, change_number(bump, change)?)?;
             mark_new_seen(last_id, insert_seen)?;
             return Ok(Recorded::Changed);
         }
         if hit.created.is_none() && f.created.is_some() {
             backfill.execute(params![hit.id, f.created])?;
         }
-        if hit.same || write_changed(changed_file, f, folder, &key[..], hit.id)? == 0 {
+        if hit.same || write_changed(changed_file, f, folder, hit.id)? == 0 {
             insert_seen.execute(params![hit.id, hit.unpaired])?;
             return Ok(Recorded::Same);
         }
@@ -404,10 +454,11 @@ impl<'tx> AnalysisWriter<'tx> {
             delete_pairs: tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare_cached(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
-                    format, orientation, width, height, frames, taken, taken_utc, duration_ms, poster_ms, borders_due)
+                    format, orientation, width, height, frames, taken, taken_utc, duration_ms, poster_ms, borders_due,
+                    codec)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), NULL, ?7, ?8, ?9, ?10, ?11,
                          CASE WHEN ?13 THEN unixepoch(?12, 'unixepoch', 'localtime') ELSE ?12 END,
-                         CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0)",
+                         CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0, ?16)",
             )?,
             owe_pairs: tx.prepare_cached("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
             owe_hashes: tx.prepare_cached("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
@@ -479,8 +530,9 @@ impl<'tx> AnalysisWriter<'tx> {
             item.size,
             item.mtime,
             item.turns.get(),
-            item.kind.key(),
-            a.format(),
+            item.kind.code(),
+            // An image's format as its code, a video's codec as FFmpeg's name (an open set): two columns.
+            image.map(|i| i.format.code()),
             a.orientation.get(),
             a.width,
             a.height,
@@ -490,6 +542,7 @@ impl<'tx> AnalysisWriter<'tx> {
             // An unknown length is `Entry::NO_DURATION` in the model, and NULL in the catalog.
             video.and_then(|v| (v.duration_ms != Entry::NO_DURATION).then_some(v.duration_ms)),
             video.map(|v| v.poster_ms),
+            video.map(|v| v.codec),
         ])?;
         self.touch_file(item.id)?;
         self.owe_hashes.execute([item.id.get()])?;
@@ -543,7 +596,7 @@ impl<'tx> AnalysisWriter<'tx> {
             item.size,
             item.mtime,
             item.turns.get(),
-            item.kind.key(),
+            item.kind.code(),
             error
         ])?;
         self.touch_file(item.id)?;
@@ -824,15 +877,15 @@ impl<'tx> BordersWriter<'tx> {
             self.side.execute(params![
                 item.id.get(),
                 s.pass,
-                s.edge.key(),
-                s.kind.key(),
-                s.class().key(),
+                s.edge.code(),
+                s.kind.code(),
+                s.class().code(),
                 s.depth,
                 color,
                 s.straight,
                 s.dev,
                 s.drift,
-                s.rejected.map(|r| r.key()),
+                s.rejected.map(|r| r.code()),
             ])?;
         }
         Ok(true)
@@ -984,15 +1037,13 @@ mod tests {
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         c.add_root(&p(rules, r"D:\x")).unwrap();
-        let key = |name: &str| {
-            let folder = rules.merge(&p(rules, r"D:\x"));
-            rules.order_key(&rules.merged_key(&folder), &Name::from(name))
-        };
-        let scans: Vec<ScanId> = (0..9).map(|_| begin(&mut c, &p(rules, r"D:\x"))).collect();
+        // The file's merged folder is the folder's key (`mfolders.key`).
+        let key = rules.merged_key(&rules.merge(&p(rules, r"D:\x")));
+        let scans: Vec<ScanId> = (0..8).map(|_| begin(&mut c, &p(rules, r"D:\x"))).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
-        assert_eq!(raw::file_row(&c), ("a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        assert_eq!(raw::file_row(&c), ("a.jpg".into(), 10, 100, 0, key.clone()));
         for (scan, name, size, mtime) in [
             (scans[2], "A.jpg", 10, 100),
             (scans[3], "b.jpg", 10, 100),
@@ -1000,17 +1051,13 @@ mod tests {
             (scans[5], "b.jpg", 11, 101),
         ] {
             assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
-            assert_eq!(raw::file_row(&c), (name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
+            assert_eq!(raw::file_row(&c), (name.into(), i64::try_from(size).unwrap(), mtime, 0, key.clone()));
         }
         // Back from missing.
         raw::set_missing(&c, FileId::new(1));
         assert!(scanned(&mut c, scans[6], "b.jpg", 11, 101));
         assert_eq!(raw::file_row(&c).3, 0);
-        // An order key made by an earlier rule is made again.
-        raw::set_order_key(&c, FileId::new(1), &[0]);
-        assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
-        assert_eq!(raw::file_row(&c).4, key("b.jpg"));
-        assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
+        assert!(!scanned(&mut c, scans[7], "b.jpg", 11, 101));
     }
 
     under_both_rules!(
@@ -1046,8 +1093,12 @@ mod tests {
         let scan = begin(&mut c, &p(rules, r"D:\x"));
         let (volume, file) = (u64::MAX - 1, u64::MAX);
         assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Changed);
-        let stored: (i64, i64) =
-            c.conn.query_row("SELECT volume, file_ref FROM files", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let stored: (i64, i64) = c
+            .conn
+            .query_row("SELECT v.serial, f.file_ref FROM files f JOIN volumes v ON v.id = f.volume", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
         assert_eq!((stored.0.cast_unsigned(), stored.1.cast_unsigned()), (volume, file));
         // The same identity read back from the catalog is the same file: no new row.
         assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Same);
@@ -1067,7 +1118,7 @@ mod tests {
         assert_eq!(found_as(&mut c, scan, identity, None), Recorded::Changed);
         assert_eq!(found_as(&mut c, scan, identity, Some(5)), Recorded::Same);
         let created: Option<i64> =
-            c.conn.query_row("SELECT created FROM files WHERE volume = 1", [], |r| r.get(0)).unwrap();
+            c.conn.query_row("SELECT created FROM files WHERE volume IS NOT NULL", [], |r| r.get(0)).unwrap();
         assert_eq!(created, Some(5));
         // A different creation time is a different file: the row is displaced, and a new row takes the identity.
         assert_eq!(found_as(&mut c, scan, identity, Some(6)), Recorded::Changed);
@@ -2287,7 +2338,7 @@ mod tests {
             c.conn
                 .execute(
                     "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, pdq_quality, pdq_dihedral)
-                     VALUES (?1, 1, 10, 100, 0, 'image', 0, 100, zeroblob(128))",
+                     VALUES (?1, 1, 10, 100, 0, 0, 0, 100, zeroblob(128))",
                     [next + 1],
                 )
                 .unwrap();

@@ -5,8 +5,8 @@ use crate::core::Catalog;
 use crate::error::{Error, Result};
 use pg_model::tree::{FolderTree, TreeBuilder};
 
-/// The present files of each folder, counted from the `files_present` index alone (no sort, no table), and each
-/// folder's path.
+/// The present files of each folder, counted from the `files_fm` index alone (it is in folder order and holds
+/// `missing`: no sort, no table), and each folder's path.
 pub(super) const FOLDER_COUNTS: &str = "SELECT c.folder_id, (SELECT path FROM folders WHERE id = c.folder_id), c.n
     FROM (SELECT folder_id, count(*) AS n FROM files WHERE missing = 0 GROUP BY folder_id) c";
 

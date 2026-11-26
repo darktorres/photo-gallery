@@ -45,9 +45,9 @@ macro_rules! failures_relisted {
 macro_rules! has_borders {
     () => {
         concat!(
-            "error IS NULL AND kind = '",
+            "error IS NULL AND kind = ",
             pg_model::kind_image!(),
-            "' AND frames <= 1 AND min(width, height) >= ",
+            " AND frames <= 1 AND min(width, height) >= ",
             pg_model::min_side!()
         )
     };

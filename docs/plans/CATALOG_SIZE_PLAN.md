@@ -1,9 +1,56 @@
 # Plan: shrink the catalog (495 MiB -> about 200 MiB on this library)
 
-## Status (2026-11-25)
+## Status (2026-11-26)
 
-**Not started.** No phase is built, and none of the gates G1-G4 has run. The plan was written on 2026-11-19, against a
-catalog of schema v20 with a migration chain. This version re-bases it on the code of 2026-11-25:
+**Phases 1 and 2 are built** (uncommitted when this was written), and the gates ran on a scratch copy of the owner's
+catalog (715,152 files; a read-only `VACUUM INTO` copy, carried by this build's rebuild):
+
+- **G1 passes.** `crates/catalog/examples/name_index_probe.rs`, release build, each side's better of two alternated runs
+  (warm cache): the expression index against `(mid, missing, name)` takes 0.99x the time for 100,000 inserts and 1.23x
+  for 200,000 pinned lookups (1.48 s against 1.21 s); its build was not slower. The bar was 2x.
+- **G2 changed the table** (Gates, G2's result): NTFS's upcase is Unicode 5.1's, round-trip mappings only.
+- **G3:** the carried file is 192.7 MiB after its owed `VACUUM` (D6), from 426.3 MiB: `files` 72.7, `files_mn` 39.3,
+  `analysis` 36.4, the identity index 12.3, `files_fm` 10.0, `files_seq` 8.2 (the files side 142.5, against about 149
+  expected), `analysis_borders_due` 8.1, `hashes_owed` 5.5. The grid's, the count's and the pairing probe's plans are
+  the pinned ones (the plan tests in `browse/read/tests.rs` and `pair.rs`); no sorter.
+- **G4 passes.** `real_names_sort_and_scope_as_the_reference` on the carried copy: 68 adjacent pairs of the 715,152
+  names changed order, every one a `_` now after the letters; the grid's SQL order equals the Rust sort; every folder
+  in every scope agrees with the reference match.
+- **The rehearsal** (`crates/catalog/tests/rehearsal.rs`, strengthened: `integrity_check` with the functions, exact
+  sequences) passes on the copy: every row carried, the foreign keys whole, the upgrade 32 s in a debug build.
+
+Still open: the Linux pass (Verification, step 7), the benchmarks (step 6: the bench data is to be regenerated as
+`v2-windows-rules`), and the docs of Verification step 8 other than this one. What was built differs from the text
+below in these points, each decided while building:
+
+- **No `exts` table.** An extension's code is its position in `pg_model::media::EXTENSIONS`, a table that is only ever
+  appended to (`Ext::code`, pinned by a test), so a later build's code past this build's table is an extension it
+  doesn't hold (`lifecycle::mark_unheld_missing`). A table of names in the catalog would cost a join on every grid read
+  for nothing a fixed list doesn't give; the SQL that shows a name uses the registered `pg_ext(code)`.
+- **`analysis.codec`.** A video's codec was stored in `analysis.format`, which `format_at` then misread as an unknown image
+  format (an existing bug). `format` is now an image's `Format::code` (NULL for a video), and `codec` a video's text.
+- **`files_fm` is `(folder_id, mid, missing)`**, not `(folder_id, missing)`: its leading pair is the composite foreign
+  key's child index, which SQLite needs to check a folder's update or delete without a scan.
+- **The composite foreign key is `ON UPDATE CASCADE`**: a folder moved to another merged folder (`recompute_keys`)
+  carries its files' `mid` in the same statement.
+- **`path_name_key` is registered by `bring_to` too**, so every connection that makes the schema or migrates it has it;
+  `core::register` takes the rules, and `core::read_only` registers it on the readers. The Python tools register it
+  through `tools/pgtools.py` (`register_catalog_functions`), `bench_data.py` before its `VACUUM INTO` (which remakes the
+  indexes) as well as `grow_catalog.py`.
+- **`thumb_sources` joins `volumes`** (its `volume` is the serial), so the thumbnail pass's volume filter seeks the serial
+  and then the identity index; `+volume` keeps the since-checkpoint read on `files_seq`.
+- **The carry's conversions are expressions** (`rebuild::converted`), one per retyped or new column, each reading both
+  the old shape and this one, so one copy path serves the earlier layout and a drift of this one. `volumes` is made from
+  the old serials when the old file has no such table; `mfolders` is one placeholder row the copied folders hold until
+  `recompute_keys` moves each to its key's row. An old extension name this build doesn't hold is stored as -1 and its
+  file is missing.
+- **`crates/model/tests/reference_keys.tsv` is kept as the record of the old keys**, not re-pinned: `rules_reference.rs`
+  checks that the fold changed exactly for the characters the upcase table explains, and counts the order changes.
+- **`stmt_journal_probe` is brought to this layout** (the writer's statements, the walk's seen set in place of
+  `last_scan`), as Phase 1 asked.
+
+The plan was written on 2026-11-19, against a catalog of schema v20 with a migration chain. The version of 2026-11-25
+re-based it on the code of that day:
 
 - **No migrations.** The chain was baked into one baseline (`crates/catalog/src/baseline.sql`, `BASELINE_SCHEMA = 1`,
   `MIGRATIONS` empty), and the baseline is edited in place until the first release (`RELEASED` empty,
@@ -97,9 +144,10 @@ only in the index; the table keeps the name once.
 - **Posix key:** the identity function (exact bytes). The index then holds the name bytes once, and the 65 MiB that a
   stored key would add on Posix rules never appears.
 - **Folder keys use the same mapping.** `folders.path_key` and `folders.match_key` (and so `mfolders.key`, which is the
-  `match_key`) map each part through the rules' name key instead of today's lowercase. Otherwise `ς`/`σ` would be one name
-  on NTFS (both upcase to `Σ`) and two folders. The keys stay stored byte keys (334 rows), so `prefix_upper_bound`
-  subtree ranges work unchanged.
+  `match_key`) map each part through the rules' name key instead of today's lowercase, so a folder and a file are one
+  name under the same rule NTFS applies. (This text first said `ς`/`σ` are one name on NTFS; gate G2 showed they are
+  not: NTFS keeps only uppercase mappings that round-trip, and `Σ` lowercases to `σ`.) The keys stay stored byte keys
+  (334 rows), so `prefix_upper_bound` subtree ranges work unchanged.
 - **Version stamp:** the `key_version` mark exists (`KEY_ALGO_VERSION`, with `set_key_version` and `recompute_keys` in
   `crates/catalog/src/lifecycle.rs`). Its value becomes the embedded table's hash plus a key-format number, in place of
   the toolchain's Unicode version. When it differs on open, `recompute_keys` rewrites the folder keys, then
@@ -188,8 +236,12 @@ cache entry then matches only when size, mtime and the generation all agree, whi
 
 ### D6. Compaction
 
-A rebuild writes a fresh file, so a catalog carried across these edits is compact with no `VACUUM` owed. The existing
-`meta.vacuum_owed` and `lifecycle::vacuum_if_owed` (`VACUUM_ROOM`, `MIGRATION_ROOM`) stay for what still sets it. After
+A rebuild writes a fresh file, but not a compact one: the carry fills the indexes row by row (in id order, not key
+order), and the key recompute moves every file's index entries. Measured on the owner's catalog (2026-11-26): 213.9 MiB
+carried, 22.7 MiB of it unused inside pages; a `VACUUM` (3.6 s; it copies each index in key order) makes it 192.7 MiB
+with 1.6 MiB unused. So a rebuild that carried rows sets `meta.vacuum_owed`, and the start's `lifecycle::vacuum_if_owed`
+runs it (under the rebuild's exclusive hold, with `VACUUM_ROOM`; a failure keeps the mark for the next start, where a
+failure inside the rebuild would carry nothing). `MIGRATION_ROOM` stays for what else sets it. After
 the borders and hashes passes free their queues (10.6 + 7 MiB) and `analysis` grows (about 15 MiB unused), another
 compaction is wanted: add an automatic trigger when free pages pass a threshold (no periodic trigger exists;
 `Catalog::shrink` in `crates/catalog/src/removal.rs` only runs `incremental_vacuum` after removals).
@@ -227,11 +279,25 @@ duplicate-serial refusal stays.
 - **G2. NTFS on this machine.** In a temp directory create `σ.txt` and `ς.txt` (does the second collide?), `𐐨.txt` and `𐐀.txt`
   (Deseret, supplementary), `İ.txt` and `i̇.txt`, and compare the answers with the embedded table and with
   `RtlUpcaseUnicodeChar`. This writes a few temporary files; run it at the start of implementation.
+
+  **Result (2026-11-26, C:, Windows 10 19045, NTFS):** run over the whole BMP, not only these pairs. A file was made
+  for every BMP character in one folder, in code-point order, and a refused create named the character it folds onto:
+  973 characters fold. `σ`/`ς`, `𐐨`/`𐐀`, `İ`/`i̇`, `ß`/`ẞ`, `ı`/`I`, `ſ`/`S`, `µ`/`Μ` and `ǅ`/`Ǆ` are all two names.
+  The table first generated (Unicode 15.1.0's simple uppercase, 1,190 pairs) folded 217 characters NTFS keeps apart.
+  The rule that reproduces all 973 folds, and the character each folds onto, exactly is **Unicode 5.1.0's simple
+  uppercase, kept only where the uppercase's simple lowercase is the character back** (973 pairs): a one-way mapping
+  (`ς`, `ı`, `ſ`, `µ`, the titlecase digraphs, the Greek symbol forms) and every case pair added from 5.2 on (Latin
+  Extended-C's later letters, Georgian Mtavruli, Cherokee small letters, Latin Extended-D) are their own uppercase. The
+  table was regenerated so (`tools/gen_upcase.py`, with the rule in its doc). `RtlUpcaseUnicodeChar` was not compared:
+  the volume's own answers are what names collide by. Another volume, formatted by another Windows, may carry another
+  `$UpCase`; the library's volume (D:) was not probed, since the probe writes files to it.
 - **G3. The full `files` side under B** on the scratch copy (the name part alone measured 78.5 MiB, identical to an
   exact-bytes index): expected about 149 MiB, against 156.7 MiB for the lowercase sparse stored key. Also EXPLAIN the grid
   (ascending and descending), the count and the pairing probe on the real data, with no `TEMP B-TREE`.
 - **G4. The ordering differences list**: sort the real names by today's key and by the new key and list every position
-  where they differ; they must all be of the punctuation, supplementary or `ς` kinds.
+  where they differ; they must all be of the punctuation, supplementary or `ς` kinds. (The test that lists them,
+  `real_names_sort_and_scope_as_the_reference`, accepts a pair whose first differing characters are not both ASCII
+  letters or digits, or one name in two cases.)
 
 ## Phase 1: indexes (-32 MiB repacked, -41 MiB on today's pages)
 

@@ -119,6 +119,12 @@ fn make_replacement(path: &Path, set: &SchemaSet<'_>, rules: PathRules, from: Op
     let counts = match from {
         Some(old) => {
             carry_rows(&mut conn, old, set, rules)?;
+            // The copy fills the indexes by row (in id order, not key order), and the keys' recompute moves every file's
+            // index entries: the pages are part full (21 MiB of 214 on the owner's catalog). The start compacts the file
+            // once (`lifecycle::vacuum_if_owed`, under the exclusive hold the rebuild has, with its room check): a
+            // `VACUUM` copies each index in key order (193 MiB then). A failure there keeps the mark for the next start,
+            // where one here would fail the rebuild and carry nothing.
+            conn.execute("UPDATE meta SET value = 1 WHERE key = 'vacuum_owed'", [])?;
             // A `COUNT(*)` is a `u64` read: a negative one is an error, not a 0.
             let count = |table: &str| -> rusqlite::Result<u64> {
                 conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
@@ -145,6 +151,10 @@ fn remove_database(path: &Path) -> Result<()> {
 pub(crate) const CARRIED: &[&str] = &[
     "meta",
     "scans",
+    // Before the files, which hold its ids: the old file's, or made from its files' serials ([`converted`]).
+    "volumes",
+    // Made, not copied: one placeholder the folders hold until the keys are made ([`crate::lifecycle::recompute_keys`]).
+    "mfolders",
     "folders",
     "files",
     // Keyed to `files` alone: its rows (each file's placeholder) are its own, and outlive a re-analysis.
@@ -205,19 +215,50 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
     for (name, _) in &triggers {
         tx.execute_batch(&format!("DROP TRIGGER main.\"{name}\""))?;
     }
+    let old_has_volumes = !table_columns(&tx, "carried", "volumes")?.is_empty();
+    let mut placeholder_mid = None;
     for table in CARRIED {
         let new_columns = table_columns(&tx, "main", table)?;
         let old_columns = table_columns(&tx, "carried", table)?;
+        if *table == "mfolders" {
+            // The merged folders are made from the folders' paths, whatever the old file holds: one row with a key no
+            // folder has (a key is empty or ends in 0x01, and no name holds a NUL) until then.
+            placeholder_mid =
+                Some(tx.query_row("INSERT INTO main.mfolders(key) VALUES (x'00') RETURNING id", [], |r| {
+                    r.get::<_, i64>(0)
+                })?);
+            continue;
+        }
+        if *table == "volumes" && !old_has_volumes {
+            // An older layout held each file's serial in `files.volume`: its volumes are those serials.
+            if table_columns(&tx, "carried", "files")?.iter().any(|c| c == "volume") {
+                tx.execute(
+                    "INSERT INTO main.volumes(serial) SELECT DISTINCT volume FROM carried.files WHERE volume IS NOT NULL",
+                    [],
+                )?;
+            }
+            continue;
+        }
         if matches!(*table, "folders" | "folder_failures") && !old_columns.is_empty() {
-            copy_folder_rows(&tx, table, &old_columns)?;
+            copy_folder_rows(&tx, table, &old_columns, placeholder_mid)?;
             continue;
         }
-        let common: Vec<&str> =
-            new_columns.iter().map(String::as_str).filter(|c| old_columns.iter().any(|o| o.as_str() == *c)).collect();
-        if common.is_empty() {
+        // Each column of the new layout the old file has, or one a conversion makes from the old file's columns.
+        let mut columns: Vec<&str> = Vec::new();
+        let mut values: Vec<String> = Vec::new();
+        for column in &new_columns {
+            if let Some(value) = converted(table, column, &old_columns, old_has_volumes) {
+                columns.push(column);
+                values.push(value);
+            } else if old_columns.iter().any(|o| o == column) {
+                columns.push(column);
+                values.push(column.clone());
+            }
+        }
+        if columns.is_empty() {
             continue;
         }
-        let columns = common.join(", ");
+        let (columns, values) = (columns.join(", "), values.join(", "));
         if *table == "meta" {
             // The file's own `path_rules` is this build's, and its `vacuum_owed` is the one this file's creation set: the
             // copy's value for it is not the old file's. Its `key_version` is not the old file's either: the keys are made
@@ -232,11 +273,14 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
         } else {
             // A plain insert: a row the layout refuses (a CHECK, a NOT NULL, a UNIQUE) is an error that rolls the copy back,
             // not a row dropped. The old file has this build's layout, so none is expected.
-            tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"), [])?;
+            tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {values} FROM carried.{table}"), [])?;
         }
     }
-    // The folders' and the files' keys are made by this build's algorithm from the paths, merging the folders the rules
-    // make one (the placeholders [`copy_folder_rows`] gave them are replaced here).
+    // An extension the old file named and this build doesn't hold has no code ([`converted`]'s -1): its files are
+    // missing, as `lifecycle::mark_unheld_missing` makes a later build's.
+    tx.execute("UPDATE main.files SET missing = 1 WHERE ext < 0 AND missing = 0", [])?;
+    // The folders' and the merged folders' keys are made by this build's algorithm from the paths, merging the folders
+    // the rules make one (the placeholders [`copy_folder_rows`] gave them are replaced here, and the files follow).
     crate::lifecycle::recompute_keys(&tx, rules)?;
     // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
     for step in set.migrations.iter().flat_map(|migration| migration.steps.iter()) {
@@ -252,16 +296,70 @@ fn copy_tables(conn: &mut Connection, set: &SchemaSet<'_>, rules: PathRules) -> 
     Ok(())
 }
 
+/// The value a carried row's `column` of `table` takes when the old layout stored it in another shape, as an expression
+/// over the old row: `None` when the column is copied as it is (or the old file has nothing it is made from). Each
+/// expression reads both shapes (a value already of this layout's shape is kept), so a catalog of this layout carries
+/// through them unchanged.
+///
+/// - `files.volume`: the id of the volume of the old file's serial, when the old file had no `volumes` table.
+/// - `files.mid`: the merged folder of the row's folder (the placeholder until the keys are made).
+/// - `files.ext`: the extension's code ([`pg_model::media::Ext::code`]) for its old name; -1 for a name this build
+///   doesn't hold.
+/// - `files.kind`, `analysis.kind`: the kind's code for `image` and `video`.
+/// - `analysis.format`, `analysis.codec`: an image's format code for its old name; a video's old `format` (its codec's
+///   name) is its `codec`.
+/// - `border_sides.edge`, `.kind`, `.class`, `.rejected`: the codes for their old names.
+fn converted(table: &str, column: &str, old: &[String], old_has_volumes: bool) -> Option<String> {
+    use pg_model::detection::{Class, Edge, Kind as SideKind, Reason};
+    use pg_model::format::Format;
+    use pg_model::media::Ext;
+    let has = |c: &str| old.iter().any(|o| o == c);
+    // `CASE column WHEN 'name' THEN code … ELSE other END` for every code a type has, `other` the column itself (already a
+    // code) or what a name with no code becomes.
+    fn names<T>(column: &str, from_code: fn(i64) -> Option<T>, key: fn(T) -> &'static str, other: &str) -> String {
+        let arms: String =
+            (0..256).filter_map(|code| from_code(code).map(|v| format!(" WHEN '{}' THEN {code}", key(v)))).collect();
+        format!("CASE {column}{arms} ELSE {other} END")
+    }
+    let kind = "CASE kind WHEN 'image' THEN 0 WHEN 'video' THEN 1 ELSE kind END";
+    match (table, column) {
+        ("files", "volume") if has("volume") && !old_has_volumes => {
+            Some("(SELECT id FROM main.volumes WHERE serial = volume)".to_string())
+        }
+        ("files", "mid") => Some("(SELECT mid FROM main.folders WHERE id = folder_id)".to_string()),
+        ("files", "ext") if has("ext") => Some(format!(
+            "CASE WHEN typeof(ext) = 'text' THEN {} ELSE ext END",
+            names("lower(ext)", Ext::from_code, Ext::key, "-1")
+        )),
+        ("files" | "analysis", "kind") if has("kind") => Some(kind.to_string()),
+        ("analysis", "format") if has("format") && has("kind") => Some(format!(
+            "CASE WHEN typeof(format) <> 'text' THEN format WHEN kind IN ('video', 1) THEN NULL ELSE {} END",
+            names("format", Format::from_code, Format::key, "NULL")
+        )),
+        ("analysis", "codec") if !has("codec") && has("format") && has("kind") => {
+            Some("CASE WHEN typeof(format) = 'text' AND kind IN ('video', 1) THEN format END".to_string())
+        }
+        ("border_sides", "edge") if has("edge") => Some(names("edge", Edge::from_code, Edge::key, "edge")),
+        ("border_sides", "kind") if has("kind") => Some(names("kind", SideKind::from_code, SideKind::key, "kind")),
+        ("border_sides", "class") if has("class") => Some(names("class", Class::from_code, Class::key, "class")),
+        ("border_sides", "rejected") if has("rejected") => {
+            Some(names("rejected", Reason::from_code, Reason::key, "rejected"))
+        }
+        _ => None,
+    }
+}
+
 /// The folder tables are copied with their ids kept (the files and the ledger point at them), each row's path as bytes (the
-/// old layout stored it as text), and its keys as placeholders: a `path_key` unique to the row (its id's digits), and the
-/// old `key` as the `match_key` where the old file had one. The keys are made from the paths, and the folders the new
-/// rules make one are merged, by [`crate::lifecycle::recompute_keys`], which the copy runs next.
-fn copy_folder_rows(tx: &rusqlite::Transaction<'_>, table: &str, old: &[String]) -> Result<()> {
+/// old layout stored it as text), and its keys as placeholders: a `path_key` unique to the row (its id's digits), and, for
+/// the folders, the placeholder merged folder `mid`. The keys are made from the paths, the folders the new rules make one
+/// are merged, and each folder is moved to its merged folder, by [`crate::lifecycle::recompute_keys`], which the copy runs
+/// next.
+fn copy_folder_rows(tx: &rusqlite::Transaction<'_>, table: &str, old: &[String], mid: Option<i64>) -> Result<()> {
     let new = table_columns(tx, "main", table)?;
     let mut columns: Vec<String> = Vec::new();
     let mut values: Vec<String> = Vec::new();
     for column in &new {
-        if column == "path_key" || column == "match_key" || !old.iter().any(|o| o == column) {
+        if column == "path_key" || column == "mid" || !old.iter().any(|o| o == column) {
             continue;
         }
         columns.push(column.clone());
@@ -270,9 +368,10 @@ fn copy_folder_rows(tx: &rusqlite::Transaction<'_>, table: &str, old: &[String])
     // The id's decimal digits: unique to the row, and never a key a folder gets (a key ends in a terminator byte).
     columns.push("path_key".to_string());
     values.push("CAST(id AS BLOB)".to_string());
-    if new.iter().any(|c| c == "match_key") {
-        columns.push("match_key".to_string());
-        values.push(if old.iter().any(|o| o == "key") { "CAST(key AS BLOB)".to_string() } else { "x''".to_string() });
+    if new.iter().any(|c| c == "mid") {
+        let mid = mid.ok_or(Error::Stored { what: "the merged folders are made before the folders" })?;
+        columns.push("mid".to_string());
+        values.push(mid.to_string());
     }
     tx.execute(
         &format!("INSERT INTO main.{table} ({}) SELECT {} FROM carried.{table}", columns.join(", "), values.join(", ")),
@@ -406,6 +505,85 @@ mod tests {
         let key: Vec<u8> = new.query_row("SELECT path_key FROM folders WHERE id = 1", [], |r| r.get(0)).unwrap();
         let folder = PATH_RULES.parse(r"D:\p").unwrap();
         assert_eq!(key, PATH_RULES.path_key(&folder));
+        drop(new);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The layout before the size plan (`docs/plans/CATALOG_SIZE_PLAN.md`) held names where this one holds codes, each
+    /// file's volume serial, and stored keys (`folders.match_key`, `files.order_key`); a video's codec was its
+    /// `analysis.format`. Carried, each name is its code, the serials are interned, the keys are made from the paths
+    /// (two drives' copies of a folder are one merged folder), and the codec is in its own column. An extension this
+    /// build doesn't hold leaves its file missing. (Windows: the paths are drive paths.)
+    #[cfg(windows)]
+    #[test]
+    fn the_layout_before_the_codes_carries_over_converted() {
+        use pg_model::detection::{Class, Edge, Kind as SideKind, Reason};
+        use pg_model::format::Format;
+        use pg_model::media::Ext;
+        let dir = run_folder("scratch_catalog", "carry-codes").unwrap();
+        let old_path = dir.join("old.sqlite");
+        {
+            let old = Connection::open(&old_path).unwrap();
+            old.execute_batch(
+                r"CREATE TABLE folders(id INTEGER PRIMARY KEY, path BLOB NOT NULL, path_key BLOB NOT NULL UNIQUE,
+                     match_key BLOB NOT NULL);
+                 CREATE TABLE files(id INTEGER PRIMARY KEY, volume INTEGER, file_ref INTEGER, folder_id INTEGER NOT NULL,
+                     name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL,
+                     mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, order_key BLOB NOT NULL);
+                 CREATE TABLE analysis(file_id INTEGER PRIMARY KEY, version INTEGER NOT NULL, size INTEGER NOT NULL,
+                     mtime INTEGER NOT NULL, rotation INTEGER NOT NULL, kind TEXT NOT NULL, analyzed INTEGER NOT NULL,
+                     format TEXT);
+                 CREATE TABLE border_sides(file_id INTEGER NOT NULL, pass INTEGER NOT NULL, edge TEXT NOT NULL,
+                     kind TEXT NOT NULL, class TEXT NOT NULL, depth INTEGER NOT NULL, straight REAL NOT NULL,
+                     rejected TEXT, PRIMARY KEY(file_id, pass, edge)) WITHOUT ROWID;
+                 INSERT INTO folders VALUES (1, CAST('D:\p' AS BLOB), x'01', x'00'), (2, CAST('E:\P' AS BLOB), x'02', x'00');
+                 INSERT INTO files VALUES (1, 9000000000, 1, 1, x'612e6a7067', 'jpg', 'image', 1, 1, 0, x'00'),
+                     (2, -5, 2, 2, x'622e6d7034', 'mp4', 'video', 1, 1, 0, x'00'),
+                     (3, 9000000000, 3, 1, x'632e787878', 'xxx', 'image', 1, 1, 0, x'00');
+                 INSERT INTO analysis VALUES (1, 1, 1, 1, 0, 'image', 1, 'jpeg'), (2, 1, 1, 1, 0, 'video', 1, 'h264');
+                 INSERT INTO border_sides VALUES (1, 0, 'left', 'blur', 'blur', 3, 1.0, 'no_seam');",
+            )
+            .unwrap();
+        }
+        let new_path = dir.join("new.sqlite");
+        let mut new = made(&new_path, true);
+        carry_rows(&mut new, &old_path, &SCHEMA, PATH_RULES).unwrap();
+        let files: Vec<(i64, i64, i64, i64, i64)> = {
+            let mut stmt = new
+                .prepare("SELECT f.id, v.serial, f.ext, f.kind, f.missing FROM files f JOIN volumes v ON v.id = f.volume ORDER BY f.id")
+                .unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        let code = |e: &str| Ext::of(e).unwrap().code();
+        assert_eq!(files, [(1, 9000000000, code("jpg"), 0, 0), (2, -5, code("mp4"), 1, 0), (3, 9000000000, -1, 0, 1)]);
+        let volumes: i64 = new.query_row("SELECT count(*) FROM volumes", [], |r| r.get(0)).unwrap();
+        assert_eq!(volumes, 2, "one row a serial");
+        // Both drives' `p` are one merged folder, of the rules' key, and the files are in it.
+        let merged: Vec<(i64, Vec<u8>)> = {
+            let mut stmt = new.prepare("SELECT id, key FROM mfolders").unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect()
+        };
+        assert_eq!(merged.len(), 1, "{merged:?}");
+        assert_eq!(merged[0].1, PATH_RULES.folder_key(&PATH_RULES.parse(r"D:\p").unwrap().parts));
+        let elsewhere: i64 =
+            new.query_row("SELECT count(*) FROM files WHERE mid <> ?1", [merged[0].0], |r| r.get(0)).unwrap();
+        assert_eq!(elsewhere, 0);
+        let analysis: Vec<(i64, Option<i64>, Option<String>)> = {
+            let mut stmt = new.prepare("SELECT kind, format, codec FROM analysis ORDER BY file_id").unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+        };
+        assert_eq!(analysis, [(0, Some(Format::Jpeg.code()), None), (1, None, Some("h264".to_string()))]);
+        let side: (i64, i64, i64, Option<i64>) = new
+            .query_row("SELECT edge, kind, class, rejected FROM border_sides", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        assert_eq!(side, (Edge::Left.code(), SideKind::Blur.code(), Class::Blur.code(), Some(Reason::NoSeam.code())));
+        let check: String = new.query_row("PRAGMA foreign_key_check", [], |r| r.get(0)).unwrap_or_else(|_| "ok".into());
+        assert_eq!(check, "ok", "no row breaks a foreign key");
         drop(new);
         let _ = std::fs::remove_dir_all(&dir);
     }

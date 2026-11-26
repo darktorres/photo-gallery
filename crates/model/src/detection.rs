@@ -26,13 +26,41 @@ pub enum Edge {
     Right,
 }
 
+/// An enum's catalog code: `code` (fixed per variant, never reused, so a new variant takes the next code) and its
+/// inverse `from_code`.
+macro_rules! stored_codes {
+    ($ty:ty { $($variant:ident = $code:literal),+ $(,)? }) => {
+        impl $ty {
+            /// The code the catalog stores this under (fixed per variant, never reused).
+            pub const fn code(self) -> i64 {
+                match self {
+                    $(<$ty>::$variant => $code,)+
+                }
+            }
+
+            /// The variant a stored code stands for, if it is one this build knows.
+            pub const fn from_code(code: i64) -> Option<$ty> {
+                match code {
+                    $($code => Some(<$ty>::$variant),)+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+stored_codes!(Edge { Top = 0, Bottom = 1, Left = 2, Right = 3 });
+stored_codes!(Kind { Solid = 0, Blur = 1 });
+stored_codes!(Class { Black = 0, White = 1, Color = 2, Blur = 3 });
+stored_codes!(Reason { TooDeep = 0, NoSeam = 1, SeamNotStraight = 2, UnpairedBlur = 3, NotFlat = 4, TooLittleLeft = 5 });
+
 impl Edge {
-    /// The name in the catalog (`border_sides.edge`).
+    /// The edge's name.
     pub fn key(self) -> &'static str {
         self.into()
     }
 
-    /// The edge the catalog's name stands for, if it is one.
+    /// The edge a name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Edge> {
         key.parse().ok()
     }
@@ -59,12 +87,12 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// The name in the catalog (`border_sides.kind`).
+    /// The kind's name.
     pub fn key(self) -> &'static str {
         self.into()
     }
 
-    /// The kind the catalog's name stands for, if it is one.
+    /// The kind a name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Kind> {
         key.parse().ok()
     }
@@ -85,12 +113,12 @@ pub enum Class {
 }
 
 impl Class {
-    /// The name in the catalog (`border_sides.class`).
+    /// The class's name (the facet's key).
     pub fn key(self) -> &'static str {
         self.into()
     }
 
-    /// The class the catalog's name stands for, if it is one.
+    /// The class a name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Class> {
         key.parse().ok()
     }
@@ -125,12 +153,12 @@ pub enum Reason {
 }
 
 impl Reason {
-    /// The name in the catalog (`border_sides.rejected`).
+    /// The reason's name.
     pub fn key(self) -> &'static str {
         self.into()
     }
 
-    /// The reason the catalog's name stands for, if it is one.
+    /// The reason a name stands for, if it is one.
     pub fn from_key(key: &str) -> Option<Reason> {
         key.parse().ok()
     }
@@ -228,9 +256,25 @@ mod tests {
 
     use super::*;
 
-    /// The names the catalog stores: a change to any of them is a change to the catalog's data.
+    /// The codes the catalog stores (`border_sides`): a change to any of them is a change to the catalog's data.
     #[test]
-    fn the_keys_are_the_catalog_names() {
+    fn the_stored_codes_are_pinned() {
+        assert_eq!(Edge::iter().map(Edge::code).collect::<Vec<_>>(), [0, 1, 2, 3]);
+        assert_eq!(Kind::iter().map(Kind::code).collect::<Vec<_>>(), [0, 1]);
+        assert_eq!(Class::iter().map(Class::code).collect::<Vec<_>>(), [0, 1, 2, 3]);
+        assert_eq!(Reason::iter().map(Reason::code).collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5]);
+        for edge in Edge::iter() {
+            assert_eq!(Edge::from_code(edge.code()), Some(edge));
+        }
+        for reason in Reason::iter() {
+            assert_eq!(Reason::from_code(reason.code()), Some(reason));
+        }
+        assert_eq!(Class::from_code(4), None);
+    }
+
+    /// The names (the facets' keys, the eval's JSON).
+    #[test]
+    fn the_keys_are_the_names() {
         assert_eq!(Edge::iter().map(Edge::key).collect::<Vec<_>>(), ["top", "bottom", "left", "right"]);
         assert_eq!(Kind::iter().map(Kind::key).collect::<Vec<_>>(), ["solid", "blur"]);
         assert_eq!(Class::iter().map(Class::key).collect::<Vec<_>>(), ["black", "white", "color", "blur"]);

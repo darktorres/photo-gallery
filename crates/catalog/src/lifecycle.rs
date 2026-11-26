@@ -13,7 +13,6 @@ use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
 use crate::transaction::write_transaction;
 use crate::types::{TAKEN_ZONE_QUERY, Versions, key_version_text, rules_name};
-use pg_model::name::Name;
 use std::collections::BTreeMap;
 
 /// Why the paths of the catalog on `conn` don't read as paths under `rules` (`meta.path_rules`): they were stored under
@@ -212,10 +211,11 @@ pub(crate) fn meta_text(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).ok()
 }
 
-/// A folder row as the key recomputation reads it: its id, its path, and its stored path key and match key.
+/// A folder row as the key recomputation reads it: its id, its path, its stored path key, and its merged folder's
+/// stored key.
 type StoredFolder = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
 
-/// A folder with the keys it is recomputed to: its id, its new and its stored path key, and its new and its stored match
+/// A folder with the keys it is recomputed to: its id, its new and its stored path key, and its new and its stored merged
 /// key (see [`recompute_keys`]).
 type SettledFolder = (i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
@@ -225,37 +225,41 @@ fn placeholder(namespace: u8, id: i64) -> Vec<u8> {
     std::iter::once(namespace).chain(id.to_be_bytes()).collect()
 }
 
-/// Make the stored keys of the folders, the folder ledger and the files follow this build's key algorithm (the
-/// `key_version` mark changed, or a carried catalog's rows are made): each folder's `path_key` and `match_key` from its
-/// path, then folders that now share a `path_key` merged ([`merge_folder`]: the lowest id is kept), the folder ledger's
-/// keys likewise (a folder's failure is one row, the lowest id kept), and each file's order key from its folder's
-/// `match_key` and its name, in pages of files by id. Only the rows whose key changed are written. A row whose path
-/// doesn't parse under the catalog's rules keeps its keys, which is logged, not an error.
+/// Make the stored keys of the folders, the merged folders and the folder ledger follow this build's key algorithm (the
+/// `key_version` mark changed, or a carried catalog's rows are made): each folder's `path_key` and merged key from its
+/// path, then folders that now share a `path_key` merged ([`merge_folder`]: the lowest id is kept), each folder moved to
+/// the merged folder of its key (made when there is none; its files follow, `ON UPDATE CASCADE`), the merged folders no
+/// folder has deleted, and the folder ledger's keys likewise (a folder's failure is one row, the lowest id kept). Only
+/// the rows whose key changed are written. A row whose path doesn't parse under the catalog's rules keeps its keys,
+/// which is logged, not an error. The files hold no key: their name index (`files_mn`, on the name key's function) is
+/// rebuilt by the caller that changed the algorithm ([`set_key_version`]).
 ///
 /// Paths stored outside the folder rows are not re-keyed: a queued write's temp file (`file_writes.temp`), the paths in
 /// a notice's JSON (`notices.data`), and the `folder` column of the `thumb_sources` view, which names the survivor's
 /// spelling for a merged folder's files. Nothing looks a folder up by one of them: a file's folder is its `folder_id`.
 pub(crate) fn recompute_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<()> {
     let folders: Vec<StoredFolder> = tx
-        .prepare("SELECT id, path, path_key, match_key FROM folders ORDER BY id")?
+        .prepare(
+            "SELECT fo.id, fo.path, fo.path_key, m.key FROM folders fo JOIN mfolders m ON m.id = fo.mid ORDER BY fo.id",
+        )?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<rusqlite::Result<_>>()?;
     // The new keys, by path key: the folders that share one are one folder.
     let mut by_key: BTreeMap<Vec<u8>, Vec<i64>> = BTreeMap::new();
     let mut settled: Vec<SettledFolder> = Vec::with_capacity(folders.len());
-    for (id, path, stored_path_key, stored_match) in folders {
-        let (path_key, match_key) = match rules.parse_bytes(&path) {
+    for (id, path, stored_path_key, stored_merged) in folders {
+        let (path_key, merged_key) = match rules.parse_bytes(&path) {
             Some(parsed) => (rules.path_key(&parsed), rules.folder_key(&parsed.parts)),
             None => {
                 pg_log::warn(
                     "catalog",
                     &format!("folder {id}: its path doesn't parse under the path rules; its keys are kept"),
                 );
-                (stored_path_key.clone(), stored_match.clone())
+                (stored_path_key.clone(), stored_merged.clone())
             }
         };
         by_key.entry(path_key.clone()).or_default().push(id);
-        settled.push((id, path_key, stored_path_key, match_key, stored_match));
+        settled.push((id, path_key, stored_path_key, merged_key, stored_merged));
     }
     let mut merged = 0_u64;
     for ids in by_key.values().filter(|ids| ids.len() > 1) {
@@ -275,57 +279,47 @@ pub(crate) fn recompute_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<(
         );
     }
     // Two passes, so no row takes a key another row still holds: the changed keys go to placeholders, then to the keys.
-    for (id, path_key, stored_path_key, match_key, stored_match) in &settled {
-        if by_key.get(path_key).and_then(|ids| ids.first()) != Some(id) {
-            continue;
-        }
-        if path_key != stored_path_key || match_key != stored_match {
+    // Two passes, so no row takes a path key another row still holds: the changed keys go to placeholders, then to the
+    // keys.
+    let kept = |id: &i64, path_key: &Vec<u8>| by_key.get(path_key).and_then(|ids| ids.first()) == Some(id);
+    for (id, path_key, stored_path_key, _, _) in &settled {
+        if kept(id, path_key) && path_key != stored_path_key {
             tx.execute(
                 "UPDATE folders SET path_key = ?1 WHERE id = ?2",
                 rusqlite::params![placeholder(0xFE, *id), id],
             )?;
         }
     }
-    for (id, path_key, stored_path_key, match_key, stored_match) in &settled {
-        if by_key.get(path_key).and_then(|ids| ids.first()) != Some(id) {
+    for (id, path_key, stored_path_key, merged_key, stored_merged) in &settled {
+        if !kept(id, path_key) {
             continue;
         }
-        if path_key != stored_path_key || match_key != stored_match {
-            tx.execute(
-                "UPDATE folders SET path_key = ?1, match_key = ?2 WHERE id = ?3",
-                rusqlite::params![path_key, match_key, id],
-            )?;
+        if path_key != stored_path_key {
+            tx.execute("UPDATE folders SET path_key = ?1 WHERE id = ?2", rusqlite::params![path_key, id])?;
+        }
+        if merged_key != stored_merged {
+            // The merged folder of the new key, found or made: the folder moves to it, and its files with it (the cascade;
+            // written out too, for a connection whose foreign keys are off, where it is the only move).
+            let mid = crate::writers::merged_folder(tx, merged_key)?;
+            tx.execute("UPDATE folders SET mid = ?1 WHERE id = ?2", rusqlite::params![mid, id])?;
+            tx.execute("UPDATE files SET mid = ?1 WHERE folder_id = ?2 AND mid <> ?1", rusqlite::params![mid, id])?;
         }
     }
+    // The merged folders no folder is in any more: a key of the old algorithm, or a merged folder's last folder merged.
+    tx.execute("DELETE FROM mfolders WHERE id NOT IN (SELECT mid FROM folders)", [])?;
     recompute_failure_keys(tx, rules)?;
-    let folder_keys: BTreeMap<i64, Vec<u8>> = tx
-        .prepare("SELECT id, match_key FROM folders")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut after = 0_i64;
-    loop {
-        let page: Vec<(i64, i64, Vec<u8>, Vec<u8>)> = tx
-            .prepare("SELECT id, folder_id, name, order_key FROM files WHERE id > ?1 ORDER BY id LIMIT 4096")?
-            .query_map([after], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        let Some(last) = page.last() else { break };
-        after = last.0;
-        for (id, folder, name, stored) in page {
-            let Some(folder_key) = folder_keys.get(&folder) else { continue };
-            let key = rules.order_key(folder_key, &Name::from_raw(&name));
-            if key != stored {
-                tx.execute("UPDATE files SET order_key = ?1 WHERE id = ?2", rusqlite::params![key, id])?;
-            }
-        }
-    }
     Ok(())
 }
 
-/// Merge the folder `drop` into `keep`, the same folder: its files are re-pointed to `keep`, and its row is deleted. The
-/// files keep their rows and their names, so two files of one name may now share a folder (no key forbids it, and each
-/// file has its own identity). Returns the files moved.
+/// Merge the folder `drop` into `keep`, the same folder: its files are re-pointed to `keep` (and to its merged folder),
+/// and its row is deleted. The files keep their rows and their names, so two files of one name may now share a folder
+/// (no key forbids it, and each file has its own identity). Returns the files moved. A merged folder left with no folder
+/// is the caller's to delete.
 pub(crate) fn merge_folder(tx: &Transaction<'_>, keep: i64, drop: i64) -> Result<u64> {
-    let moved = tx.execute("UPDATE files SET folder_id = ?1 WHERE folder_id = ?2", rusqlite::params![keep, drop])?;
+    let moved = tx.execute(
+        "UPDATE files SET folder_id = ?1, mid = (SELECT mid FROM folders WHERE id = ?1) WHERE folder_id = ?2",
+        rusqlite::params![keep, drop],
+    )?;
     tx.execute("DELETE FROM folders WHERE id = ?1", [drop])?;
     Ok(u64::try_from(moved).unwrap_or(u64::MAX))
 }
@@ -363,9 +357,14 @@ fn recompute_failure_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<()> 
     Ok(())
 }
 
-/// Set the catalog's `key_version` mark to this build's, and recompute the keys when it was another ([`recompute_keys`]).
+/// Set the catalog's `key_version` mark to this build's, and recompute the keys when it was another ([`recompute_keys`]),
+/// with the name index (`files_mn`): its entries are the name key function's values, which the algorithm changed, so it
+/// is rebuilt from the rows by this build's function (on the connection's registration, `core::register`).
 pub(crate) fn set_key_version(conn: &Connection, rules: PathRules) -> Result<()> {
-    set_mark(conn, "key_version", &key_version_text(), |tx| recompute_keys(tx, rules))
+    set_mark(conn, "key_version", &key_version_text(), |tx| {
+        recompute_keys(tx, rules)?;
+        Ok(tx.execute_batch("REINDEX files_mn")?)
+    })
 }
 
 /// The free space a migration needs, in multiples of the catalog file's size: the copy aside (`rebuild::back_up`) and
@@ -466,12 +465,14 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
 /// started are looked at again at this build's next start.
 pub(crate) fn mark_unheld_missing(conn: &Connection) -> Result<()> {
     set_mark(conn, "held_exts", &pg_model::media::held_exts(), |tx| {
-        let exts: Vec<String> = tx
+        // The codes stored (`Ext::code`): a later build's table is this one's with more after it, so a code past this
+        // build's is an extension it doesn't hold.
+        let exts: Vec<i64> = tx
             .prepare("SELECT DISTINCT ext FROM files WHERE missing = 0")?
             .query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
         let mut mark = tx.prepare("UPDATE files SET missing = 1 WHERE ext = ?1 AND missing = 0")?;
-        for ext in exts.iter().filter(|ext| Ext::of(ext.as_str()).is_none()) {
+        for ext in exts.iter().filter(|&&ext| Ext::from_code(ext).is_none()) {
             mark.execute([ext])?;
         }
         Ok(())
@@ -551,7 +552,6 @@ pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod key_version_tests {
     use pg_model::ids::{FileId, FolderId};
-    use pg_model::name::Name;
     use pg_platform::native::PATH_RULES;
     use rusqlite::{Connection, params};
 
@@ -570,25 +570,16 @@ mod key_version_tests {
             .unwrap();
     }
 
-    /// The stored keys: the folder's, then each file's order key, by id.
+    /// The stored keys: each folder's path key and its merged folder's key, by id, then each file's merged folder's key
+    /// (which the file's `mid` names), by id.
     fn keys_of(c: &Catalog) -> Vec<Vec<u8>> {
-        let folders: Vec<Vec<u8>> = c
-            .conn
-            .prepare("SELECT match_key FROM folders ORDER BY id")
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let files: Vec<Vec<u8>> = c
-            .conn
-            .prepare("SELECT order_key FROM files ORDER BY id")
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        folders.into_iter().chain(files).collect()
+        let column = |sql: &str| -> Vec<Vec<u8>> {
+            c.conn.prepare(sql).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+        };
+        let folders = column("SELECT fo.path_key FROM folders fo ORDER BY fo.id");
+        let merged = column("SELECT m.key FROM folders fo JOIN mfolders m ON m.id = fo.mid ORDER BY fo.id");
+        let files = column("SELECT m.key FROM files f JOIN mfolders m ON m.id = f.mid ORDER BY f.id");
+        folders.into_iter().chain(merged).chain(files).collect()
     }
 
     /// A catalog at `name` with one folder and two files, and the keys they were stored with.
@@ -649,8 +640,9 @@ mod key_version_tests {
     fn stale_keys_are_recomputed_when_the_mark_is_another() {
         let (path, keys) = catalog_with_files("another-mark");
         let raw = Connection::open(&path).unwrap();
+        // The folder's path key and its merged folder's key as an older algorithm left them.
         raw.execute_batch(
-            "UPDATE folders SET match_key = x'00'; UPDATE files SET order_key = x'00';
+            "UPDATE folders SET path_key = x'00'; UPDATE mfolders SET key = x'00';
              UPDATE meta SET value = 'an older key algorithm' WHERE key = 'key_version';",
         )
         .unwrap();
@@ -658,6 +650,10 @@ mod key_version_tests {
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
         assert_eq!(keys_of(&c), keys, "the keys are this build's again");
         assert_eq!(super::meta_text(&c.conn, "key_version").as_deref(), Some(key_version_text().as_str()));
+        let stale: i64 = c.conn.query_row("SELECT count(*) FROM mfolders WHERE key = x'00'", [], |r| r.get(0)).unwrap();
+        assert_eq!(stale, 0, "the stale merged folder is gone with its last folder");
+        let check: String = c.conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(check, "ok", "the name index is the rows' (rebuilt)");
     }
 
     /// A rebuild carries the rows, and the carry needs the mark to say which keys they have: a catalog without the mark
@@ -678,8 +674,9 @@ mod key_version_tests {
         assert_eq!(indexes, 0, "the file is as the refusal left it");
     }
 
-    /// A large catalog with half its order keys stale: the recompute makes every key this build's, and writes the rows
-    /// that changed (one transaction, paged by id). The wall clock is not asserted; the profile's budget gates it.
+    /// A large catalog whose folders' merged key is stale: the recompute moves the folders to the merged folder of their
+    /// key, and their files with them (the cascade), and the name index is rebuilt. The files are found by name through
+    /// the index afterwards. The wall clock is not asserted; the profile's budget gates it.
     #[test]
     fn a_large_catalog_has_its_stale_keys_recomputed() {
         const FILES: i64 = 200_000;
@@ -688,37 +685,48 @@ mod key_version_tests {
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
         state::add_scan(&c, 1, "D:\\p").unwrap();
         state::add_folder(&c, 1, "D:\\p").unwrap();
-        let folder_key: Vec<u8> =
-            c.conn.query_row("SELECT match_key FROM folders WHERE id = 1", [], |r| r.get(0)).unwrap();
         let tx = c.conn.unchecked_transaction().unwrap();
+        tx.execute("INSERT OR IGNORE INTO volumes(id, serial) VALUES (1, 1)", []).unwrap();
         {
+            let jpg = pg_model::media::Ext::of("jpg").unwrap().code();
             let mut insert = tx
                 .prepare(
-                    "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, order_key)
-                     VALUES (1, ?1, 1, ?2, 'jpg', 'image', 1, 1, ?3)",
+                    "INSERT INTO files(volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
+                     VALUES (1, ?1, 1, (SELECT mid FROM folders WHERE id = 1), ?2, ?3, 0, 1, 1)",
                 )
                 .unwrap();
             for n in 0..FILES {
-                let name = format!("f{n:06}.jpg");
-                // Every other file's key is the stale one.
-                let key =
-                    if n % 2 == 0 { PATH_RULES.order_key(&folder_key, &Name::from(name.as_str())) } else { vec![0] };
-                insert.execute(params![n + 1, name.as_bytes(), key]).unwrap();
+                insert.execute(params![n + 1, format!("f{n:06}.jpg").as_bytes(), jpg]).unwrap();
             }
         }
         tx.commit().unwrap();
-        c.conn.execute("UPDATE meta SET value = 'an older key algorithm' WHERE key = 'key_version'", []).unwrap();
+        let folder_key: Vec<u8> = c
+            .conn
+            .query_row("SELECT m.key FROM folders fo JOIN mfolders m ON m.id = fo.mid WHERE fo.id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        c.conn
+            .execute_batch(
+                "UPDATE mfolders SET key = x'00';
+                 UPDATE meta SET value = 'an older key algorithm' WHERE key = 'key_version';",
+            )
+            .unwrap();
         drop(c);
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
-        let mut wrong = 0_i64;
-        let mut stmt = c.conn.prepare("SELECT name, order_key FROM files").unwrap();
-        for row in stmt.query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?))).unwrap() {
-            let (name, key) = row.unwrap();
-            if key != PATH_RULES.order_key(&folder_key, &Name::from_raw(&name)) {
-                wrong += 1;
-            }
-        }
-        assert_eq!(wrong, 0, "every key is this build's after the recompute");
+        let wrong: i64 = c
+            .conn
+            .query_row(
+                "SELECT count(*) FROM files f JOIN mfolders m ON m.id = f.mid WHERE m.key <> ?1",
+                [&folder_key],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(wrong, 0, "every file is in its folder's merged folder after the recompute");
+        let found = c.file_by_path(&PATH_RULES.parse("D:\\p\\F123456.JPG").unwrap()).unwrap();
+        assert!(found.is_some(), "a file is found by its name key, through the rebuilt index");
+        let check: String = c.conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(check, "ok");
     }
 }
 
@@ -759,11 +767,15 @@ mod tests {
     use pg_model::rules::PathRules;
     use pg_model::versions::IMPORT_VERSION;
     use pg_testkit::run_folder;
-    use rusqlite::Connection;
+    use rusqlite::{Connection, params};
     use std::path::Path;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = "scratch_catalog";
+
+    /// The code a later build stores for an extension this one doesn't hold (`xyz`): past this build's table (`Ext::code`
+    /// is a position in it, and a later build only appends).
+    const LATER_EXT: i64 = 1000;
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
     const BEFORE_ORDER_KEY: &str = r"
@@ -792,6 +804,46 @@ mod tests {
             query TEXT NOT NULL, sort TEXT NOT NULL);
         CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         PRAGMA user_version = 1;";
+
+    /// A connection without the catalog's functions (another program's, or one that attaches the catalog) reads every
+    /// table and view the readers outside the catalog read, a merged folder's files by the name index's `(mid, missing)`
+    /// prefix among them, and passes `quick_check`; it can't write a file row, whose name index needs `path_name_key`.
+    #[test]
+    fn a_connection_without_the_functions_reads_and_is_refused_writes_of_files() {
+        let dir = run_folder(SCRATCH, "no-functions").unwrap();
+        let path = dir.join("catalog.sqlite");
+        {
+            let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
+            fixture::state::add_scan(&c, 1, r"D:\p").unwrap();
+            fixture::state::add_folder(&c, 1, r"D:\p").unwrap();
+            fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5)]).unwrap();
+        }
+        let bare = Connection::open(&path).unwrap();
+        for sql in [
+            "SELECT count(*) FROM files",
+            "SELECT count(*) FROM thumb_sources",
+            "SELECT count(*) FROM thumb_volumes",
+            "SELECT count(*) FROM thumb_failures",
+            "SELECT seq FROM thumb_clock",
+            "SELECT count(*) FROM files INDEXED BY files_mn WHERE mid = 1 AND missing = 0",
+        ] {
+            let n: i64 = bare.query_row(sql, [], |r| r.get(0)).unwrap_or_else(|e| panic!("{sql}: {e}"));
+            assert!(n >= 0, "{sql}");
+        }
+        let check: String = bare.query_row("PRAGMA quick_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(check, "ok");
+        let refused = bare
+            .execute(
+                "INSERT INTO files(volume, file_ref, folder_id, mid, name, ext, kind, size, mtime)
+                 SELECT volume, file_ref + 1, folder_id, mid, x'622e6a7067', ext, kind, size, mtime FROM files",
+                [],
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("path_name_key"), "{refused}");
+        drop(bare);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// `pairs_again` merges the WAL it writes into the file, so the pass that follows does not merge it: the `-wal`
     /// is empty once it returns.
@@ -874,9 +926,9 @@ mod tests {
         let count = |conn: &Connection, table: &str| -> i64 {
             conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
         };
-        // The old layout lacks a column the new one needs as NOT NULL (`files.order_key`; the folders' keys are made from
-        // their paths by the carry): the copy fails as a whole, so nothing of the old rows is in the new catalog (not even
-        // its folders), and the reason is said. The earlier one is kept whole, rows and all, beside it.
+        // The old layout lacks a column the new one needs as NOT NULL (`analysis.rotation`; the files' codes, volumes and
+        // merged folders are made by the carry): the copy fails as a whole, so nothing of the old rows is in the new
+        // catalog (not even its folders), and the reason is said. The earlier one is kept whole, rows and all, beside it.
         let r = c.rebuilt().expect("moved aside");
         assert!(
             matches!(&r.carried, Carried::Nothing { reason: why } if why.starts_with("NOT NULL constraint failed")),
@@ -1242,7 +1294,7 @@ mod tests {
         // The same object names: an added column, an index on other columns, an object this build doesn't make.
         for (name, sql, named) in [
             ("edited-column", "ALTER TABLE files ADD COLUMN extra INTEGER;", "files"),
-            ("edited-index", "DROP INDEX files_changed; CREATE INDEX files_changed ON files(name);", "files_changed"),
+            ("edited-index", "DROP INDEX files_seq; CREATE INDEX files_seq ON files(name);", "files_seq"),
             ("edited-table", "CREATE TABLE extra(x INTEGER);", "extra"),
         ] {
             let dir = run_folder(SCRATCH, &format!("{name}-{}", rules_name(rules))).unwrap();
@@ -1314,12 +1366,14 @@ mod tests {
                 drop(writer);
                 tx.commit().unwrap();
             }
-            // What a build that holds `xyz` leaves: its row, and its set in the mark (its scan stamped it).
-            c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();
+            // What a build that holds `xyz` leaves: its row (its code, past this build's table), and its set in the mark
+            // (its scan stamped it).
+            c.conn.execute("UPDATE files SET ext = ?2 WHERE name = ?1", params![b"b.jpg".to_vec(), LATER_EXT]).unwrap();
             c.conn.execute("UPDATE meta SET value = 'jpg,xyz;mp4' WHERE key = 'held_exts'", []).unwrap();
         }
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
-        let missing: i64 = c.conn.query_row("SELECT missing FROM files WHERE ext = 'xyz'", [], |r| r.get(0)).unwrap();
+        let missing: i64 =
+            c.conn.query_row("SELECT missing FROM files WHERE ext = ?1", [LATER_EXT], |r| r.get(0)).unwrap();
         assert_eq!(missing, 1);
         let mark: String =
             c.conn.query_row("SELECT value FROM meta WHERE key = 'held_exts'", [], |r| r.get(0)).unwrap();
@@ -1389,14 +1443,16 @@ mod tests {
         lease(&mut c, scan, &p(rules, r"D:\x")).pair_after_scan(coverage).unwrap();
         assert_eq!(mark(&c), pg_model::media::held_exts(), "the pairing after the scan stamps the mark");
         // The other build records a row of an extension this one doesn't hold, and stamps its set.
-        c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();
+        c.conn.execute("UPDATE files SET ext = ?2 WHERE name = ?1", params![b"b.jpg".to_vec(), LATER_EXT]).unwrap();
         c.conn.execute("UPDATE meta SET value = ?1 WHERE key = 'held_exts'", [other]).unwrap();
         drop(c);
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(!present(&c, "b.jpg") && present(&c, "a.jpg"), "another build's set: looked for, and marked missing");
         assert_eq!(mark(&c), pg_model::media::held_exts());
         // With this build's set as the mark, a start reads no file: a row it doesn't hold is left as it is.
-        c.conn.execute("UPDATE files SET ext = 'xyz', missing = 0 WHERE name = ?1", [b"a.jpg".to_vec()]).unwrap();
+        c.conn
+            .execute("UPDATE files SET ext = ?2, missing = 0 WHERE name = ?1", params![b"a.jpg".to_vec(), LATER_EXT])
+            .unwrap();
         drop(c);
         let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(present(&c, "a.jpg"), "this build's set: not looked for");

@@ -57,27 +57,27 @@ impl Catalog {
 pub(crate) fn border_sides_on(conn: &Connection, file_id: FileId) -> Result<detection::Sides> {
     let mut stmt = conn.prepare_cached(
         "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
-         ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
+         ORDER BY pass, edge",
     )?;
     let mut rows = stmt.query([file_id.get()])?;
     let mut sides = detection::Sides::new();
+    // A stored code that names no value: a damaged row, an error.
+    let bad = |i: usize, column: &'static str, code: i64| bad_value(i, Type::Integer, column, &code.to_string());
     while let Some(r) = rows.next()? {
-        let (edge, kind) = (r.get_ref(1)?.as_str()?, r.get_ref(2)?.as_str()?);
+        let (edge, kind) = (r.get_ref(1)?.as_i64()?, r.get_ref(2)?.as_i64()?);
         let color: Option<i64> = r.get(4)?;
         let side = detection::Side {
             pass: r.get(0)?,
-            edge: detection::Edge::from_key(edge).ok_or_else(|| bad_value(1, Type::Text, "border_sides.edge", edge))?,
-            kind: detection::Kind::from_key(kind).ok_or_else(|| bad_value(2, Type::Text, "border_sides.kind", kind))?,
+            // In edge order (top, bottom, left, right): the codes are in that order.
+            edge: detection::Edge::from_code(edge).ok_or_else(|| bad(1, "border_sides.edge", edge))?,
+            kind: detection::Kind::from_code(kind).ok_or_else(|| bad(2, "border_sides.kind", kind))?,
             depth: r.get(3)?,
             color: color.map(detection::Side::unpacked_color),
             straight: r.get(5)?,
             dev: r.get(6)?,
             drift: r.get(7)?,
-            rejected: match r.get_ref(8)?.as_str_or_null()? {
-                Some(k) => Some(
-                    detection::Reason::from_key(k)
-                        .ok_or_else(|| bad_value(8, Type::Text, "border_sides.rejected", k))?,
-                ),
+            rejected: match r.get_ref(8)?.as_i64_or_null()? {
+                Some(k) => Some(detection::Reason::from_code(k).ok_or_else(|| bad(8, "border_sides.rejected", k))?),
                 None => None,
             },
         };

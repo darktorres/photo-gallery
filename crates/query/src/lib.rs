@@ -4,7 +4,9 @@
 //! is read and written here too (`from_json`, `to_json`).
 //!
 //! The SQL expects the browse query's aliases: `f` the file, `a` its analysis (joined only without an error), `r`
-//! its rating, `m` its border mark (`f.order_key` is the name order).
+//! its rating, `m` its border mark, `mf` its folder's merged key (`mfolders`); the name order is
+//! `(mf.key, path_name_key(f.name), f.id)`. The stored kind, extension and border class are codes
+//! (`pg_model::media::Kind::code`, `Ext::code`, `detection::Class::code`).
 
 #![forbid(unsafe_code)]
 
@@ -16,8 +18,10 @@ use serde::de::DeserializeOwned;
 use strum::IntoEnumIterator;
 
 use pg_model::group_distance;
-use pg_model::media::MediaType;
+use pg_model::media::{Ext, MediaType};
+use pg_model::name::Name;
 use pg_model::query::{BorderFacet, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::rules::PathRules;
 
 // SQL used in more than one place is a macro, so every piece is a constant (`concat!`).
 
@@ -50,16 +54,17 @@ macro_rules! border_none {
     };
 }
 
-/// A border class's facet (its `BorderFacet::key`).
+/// A border class's facet, by the class's stored code (`detection::Class::code`; the test beside `border_sql` pins the
+/// literals to the codes).
 macro_rules! border_class {
-    ($class:literal) => {
+    ($code:literal) => {
         concat!(
             "(",
             bordered!(),
             " AND EXISTS (SELECT 1 FROM border_sides s
-                     WHERE s.class = '",
-            $class,
-            "' AND s.file_id = f.id AND s.rejected IS NULL))"
+                     WHERE s.class = ",
+            $code,
+            " AND s.file_id = f.id AND s.rejected IS NULL))"
         )
     };
 }
@@ -92,38 +97,27 @@ const MB: f64 = 1_048_576.0;
 /// The condition of a type's value.
 fn media_sql(media: MediaType) -> &'static str {
     match media {
-        MediaType::Image => concat!("(f.kind = '", pg_model::kind_image!(), "' AND coalesce(a.frames, 1) <= 1)"),
-        MediaType::Animated => concat!("(f.kind = '", pg_model::kind_image!(), "' AND a.frames > 1)"),
-        MediaType::Video => concat!("f.kind = '", pg_model::kind_video!(), "'"),
+        MediaType::Image => concat!("(f.kind = ", pg_model::kind_image!(), " AND coalesce(a.frames, 1) <= 1)"),
+        MediaType::Animated => concat!("(f.kind = ", pg_model::kind_image!(), " AND a.frames > 1)"),
+        MediaType::Video => concat!("f.kind = ", pg_model::kind_video!()),
     }
 }
 
-/// The catalog's volumes, by a loose index scan over a `files` table's `(volume, file_ref)` index: one step a volume (the
-/// `min` of the volumes above the last one found), not a read of every file. A displaced row (no volume) is none. `$files`
-/// is the table as the statement names it: `"files"` in the catalog, `"cat.files"` over an attached catalog.
+/// The catalog's volumes that hold files, as their serials, ascending: the `thumb_volumes` view, which reads the interned
+/// `volumes` table and probes the identity index once a volume, not a read of every file. `$view` is the view as the
+/// statement names it: `"thumb_volumes"` in the catalog, `"cat.thumb_volumes"` over an attached catalog.
 #[macro_export]
 macro_rules! volumes_sql {
-    ($files:literal) => {
-        concat!(
-            "WITH RECURSIVE v(volume) AS (
-                 SELECT min(volume) FROM ",
-            $files,
-            " WHERE volume IS NOT NULL
-                 UNION ALL
-                 SELECT (SELECT min(volume) FROM ",
-            $files,
-            " WHERE volume > v.volume) FROM v WHERE v.volume IS NOT NULL
-             )
-             SELECT volume FROM v WHERE volume IS NOT NULL"
-        )
+    ($view:literal) => {
+        concat!("SELECT volume FROM ", $view, " ORDER BY volume")
     };
 }
 
 /// The type of a row, for the counts (`browse::read::facets`): a `MediaType`'s key, from the stored kind.
 pub const MEDIA_CASE: &str = concat!(
-    "CASE WHEN f.kind = '",
+    "CASE WHEN f.kind = ",
     pg_model::kind_video!(),
-    "' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END"
+    " THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END"
 );
 
 /// The condition of a shape's value. The `* 100` is a 1% margin, cross-multiplied so no division is needed; it is not a
@@ -153,10 +147,10 @@ fn status_sql(status: Status) -> &'static str {
 pub fn border_sql(border: BorderFacet) -> &'static str {
     match border {
         BorderFacet::None => border_none!(),
-        BorderFacet::Black => border_class!("black"),
-        BorderFacet::White => border_class!("white"),
-        BorderFacet::Color => border_class!("color"),
-        BorderFacet::Blur => border_class!("blur"),
+        BorderFacet::Black => border_class!("0"),
+        BorderFacet::White => border_class!("1"),
+        BorderFacet::Color => border_class!("2"),
+        BorderFacet::Blur => border_class!("3"),
     }
 }
 
@@ -253,7 +247,13 @@ pub fn condition_without(query: &Query, skip: Option<Counted>) -> Condition {
     }
     if !query.exts.is_empty() && skip != Some(Counted::Exts) {
         among(and(&mut sql), "f.ext", query.exts.len());
-        params.extend(query.exts.iter().map(|e| Value::Text(e.trim_start_matches('.').to_lowercase())));
+        // The stored codes of the extensions typed; one the library doesn't hold matches no file (no code is -1).
+        params.extend(
+            query
+                .exts
+                .iter()
+                .map(|e| Value::Integer(Ext::of(&e.trim_start_matches('.').to_lowercase()).map_or(-1, Ext::code))),
+        );
     }
     let unrated = query.ratings.contains(&RatingFilter::Unrated);
     let stars: Vec<u8> = query
@@ -389,13 +389,15 @@ const NOT_DUPLICATES: &str = concat!(
 );
 
 /// The value a sort orders by, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
-/// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
-/// the same folder on two drives), which is also every other key's order for ties (`browse::read::list_grid`).
+/// comes last either way); `None` for name order (the folder's merged key, the name key, then the id for files of the
+/// same name in the same folder on two drives), which is also every other key's order for ties
+/// (`browse::read::list_grid`).
 pub fn key_sql(sort: Sort) -> Option<&'static str> {
     match sort.key {
         SortKey::Name => None,
-        // Text, not a number: the grid compares it as SQLite does (`compare_keys`). No extension is NULL, last.
-        SortKey::Extension => Some("NULLIF(f.ext, '')"),
+        // Text, not a number: the extension's name (`pg_ext` of its stored code), which the grid compares as SQLite
+        // does (`compare_keys`). Every stored file has an extension the library holds.
+        SortKey::Extension => Some("pg_ext(f.ext)"),
         SortKey::Size => Some("f.size"),
         SortKey::Modified => Some("f.mtime"),
         SortKey::Taken => Some(concat!(
@@ -428,8 +430,33 @@ pub fn key_sql(sort: Sort) -> Option<&'static str> {
     }
 }
 
-/// SQL functions the conditions use, registered on every catalog connection (`Catalog::prepare`, `Catalog::open`).
-pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
+/// SQL functions the conditions use, registered on every catalog connection (`Catalog::prepare`, `Catalog::open`, its
+/// readers and the rebuild's), under the catalog's path rules:
+///
+/// - `path_name_key(name)`: a stored name's key under the rules (`PathRules::push_name_key`), which the `files_mn`
+///   expression index holds. Deterministic and innocuous, as an index's function must be; a NULL is NULL. A connection
+///   without it can read every table and index, but not write `files` or check or rebuild the index.
+/// - `pg_ext(code)`: an extension's name from its stored code (`Ext::from_code`); NULL for a code this build doesn't
+///   hold.
+/// - `pg_contains(name, text)`: the name filter.
+pub fn register_functions(conn: &Connection, rules: PathRules) -> rusqlite::Result<()> {
+    let pure = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
+    conn.create_scalar_function("path_name_key", 1, pure, move |ctx| {
+        Ok(match ctx.get_raw(0) {
+            ValueRef::Blob(name) | ValueRef::Text(name) => {
+                let mut key = Vec::with_capacity(name.len());
+                rules.push_name_key(&Name::from_raw(name), &mut key);
+                Value::Blob(key)
+            }
+            _ => Value::Null,
+        })
+    })?;
+    conn.create_scalar_function("pg_ext", 1, pure, |ctx| {
+        Ok(match ctx.get_raw(0) {
+            ValueRef::Integer(code) => Ext::from_code(code).map_or(Value::Null, |e| Value::Text(e.key().to_string())),
+            _ => Value::Null,
+        })
+    })?;
     // Whether a name contains a text, ignoring case as Windows does (Unicode, unlike SQLite's LIKE). A name is its
     // stored bytes (`files.name` is a BLOB); it is matched as its display text, so an unpaired surrogate is U+FFFD.
     conn.create_scalar_function(
@@ -536,7 +563,7 @@ mod tests {
         let mut texts = strings(2);
         texts.extend(["σσ", "ΣΣΕ", "ος", "i\u{307}st", "STRASS", "ße_s", "kelvin"].map(String::from));
         let conn = Connection::open_in_memory().unwrap();
-        register_functions(&conn).unwrap();
+        register_functions(&conn, PathRules::Windows).unwrap();
         let mut stmt = conn.prepare("SELECT pg_contains(CAST(value AS BLOB), ?1) FROM json_each(?2)").unwrap();
         let names_json = serde_json::to_string(&names).unwrap();
         for text in &texts {
@@ -563,7 +590,7 @@ mod tests {
     #[test]
     fn a_name_that_is_no_utf8_is_matched_by_its_valid_parts() {
         let conn = Connection::open_in_memory().unwrap();
-        register_functions(&conn).unwrap();
+        register_functions(&conn, PathRules::Windows).unwrap();
         let found = |name: &[u8], text: &str| -> bool {
             conn.query_row("SELECT pg_contains(?1, ?2)", (name, text), |r| r.get::<_, bool>(0)).unwrap()
         };
@@ -573,6 +600,64 @@ mod tests {
         assert!(found(surrogate, "\u{FFFD}") && !found(surrogate, "o.j"));
         let raw: &[u8] = b"IMG_\xFF";
         assert!(found(raw, "img_") && found(raw, "\u{FFFD}"));
+    }
+
+    /// `path_name_key` is the rules' name key, in SQL, for both rule sets; `pg_ext` names a stored code. Both can be in an
+    /// index (deterministic), and an expression index on the key is used by a lookup that names the same expression.
+    #[test]
+    fn the_key_and_extension_functions_are_the_models() {
+        for rules in [PathRules::Windows, PathRules::Posix] {
+            let conn = Connection::open_in_memory().unwrap();
+            register_functions(&conn, rules).unwrap();
+            for name in [&b"Plain.JPG"[..], "ΑΣ ας.png".as_bytes(), b"a\xED\xA0\x80b", b"x\xFF"] {
+                let sql: Vec<u8> = conn.query_row("SELECT path_name_key(?1)", [name], |r| r.get(0)).unwrap();
+                assert_eq!(sql, rules.name_key(&Name::from_raw(name)), "{rules:?} {name:?}");
+            }
+            let null: Option<Vec<u8>> = conn.query_row("SELECT path_name_key(NULL)", [], |r| r.get(0)).unwrap();
+            assert_eq!(null, None);
+            conn.execute_batch(
+                "CREATE TABLE t(name BLOB); CREATE INDEX t_key ON t(path_name_key(name));
+                 INSERT INTO t VALUES (CAST('Ab' AS BLOB)), (CAST('aB' AS BLOB)), (CAST('c' AS BLOB));",
+            )
+            .unwrap();
+            let same: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM t WHERE path_name_key(name) = path_name_key(CAST('AB' AS BLOB))",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(same, if rules == PathRules::Windows { 2 } else { 0 });
+            let plan: String = conn
+                .query_row("EXPLAIN QUERY PLAN SELECT name FROM t WHERE path_name_key(name) = ?1", [b"AB"], |r| {
+                    r.get(3)
+                })
+                .unwrap();
+            assert!(plan.contains("USING INDEX t_key"), "{plan}");
+        }
+        let conn = Connection::open_in_memory().unwrap();
+        register_functions(&conn, PathRules::Windows).unwrap();
+        let ext = |code: i64| -> Option<String> { conn.query_row("SELECT pg_ext(?1)", [code], |r| r.get(0)).unwrap() };
+        assert_eq!(ext(Ext::of("png").unwrap().code()).as_deref(), Some("png"));
+        assert_eq!(ext(-1), None);
+    }
+
+    /// The border facets' SQL literals are the classes' stored codes, and the kind literals the kinds'.
+    #[test]
+    fn the_sql_literals_are_the_stored_codes() {
+        use pg_model::detection::Class;
+        for (facet, class) in [
+            (BorderFacet::Black, Class::Black),
+            (BorderFacet::White, Class::White),
+            (BorderFacet::Color, Class::Color),
+            (BorderFacet::Blur, Class::Blur),
+        ] {
+            assert!(border_sql(facet).contains(&format!("s.class = {} ", class.code())), "{facet:?}");
+        }
+        assert!(media_sql(MediaType::Video).ends_with(&pg_model::media::Kind::Video.code().to_string()));
+        let q = Query { exts: vec![".PNG".into(), "txt".into()], ..Query::default() };
+        let c = condition(&q);
+        assert_eq!(c.params, [Value::Integer(Ext::of("png").unwrap().code()), Value::Integer(-1)]);
     }
 
     #[test]
@@ -681,8 +766,10 @@ mod tests {
         for (count, b) in counts.iter().zip(BorderFacet::iter()) {
             assert_eq!(count, &format!("coalesce(sum(CASE WHEN (x = 1) AND {} THEN 1 ELSE 0 END), 0)", border_sql(b)));
         }
+        // Each class facet compares the stored class code of its own name (`detection::Class::code`).
         for b in BorderFacet::iter().skip(1) {
-            assert!(border_sql(b).contains(&format!("s.class = '{}'", b.key())), "{b:?}");
+            let class = pg_model::detection::Class::from_key(b.key()).unwrap_or_else(|| panic!("{b:?}: no class"));
+            assert!(border_sql(b).contains(&format!("s.class = {} ", class.code())), "{b:?}");
         }
     }
 

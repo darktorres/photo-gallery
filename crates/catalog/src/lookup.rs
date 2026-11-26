@@ -104,7 +104,8 @@ impl Catalog {
         let row: Option<(i64, i64, i64, i64)> = self
             .conn
             .query_row(
-                "SELECT volume, file_ref, size, mtime FROM files WHERE id = ?1 AND volume IS NOT NULL",
+                "SELECT v.serial, f.file_ref, f.size, f.mtime FROM files f JOIN volumes v ON v.id = f.volume
+                 WHERE f.id = ?1",
                 [file_id.get()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
@@ -123,7 +124,8 @@ impl Catalog {
         let id: Option<i64> = self
             .conn
             .query_row(
-                "SELECT id FROM files WHERE volume = ?1 AND file_ref = ?2 AND size = ?3 AND mtime = ?4 AND missing = 0",
+                "SELECT id FROM files WHERE volume = (SELECT id FROM volumes WHERE serial = ?1) AND file_ref = ?2
+                   AND size = ?3 AND mtime = ?4 AND missing = 0",
                 params![
                     crate::convert::identity_to_sql(stamp.identity.volume),
                     crate::convert::identity_to_sql(stamp.identity.file_index),
@@ -155,25 +157,24 @@ impl Catalog {
         Ok(WriteTarget { path: self.file_path_of(&folder, &name)?, format, kind })
     }
 
-    /// The present file at an absolute path (Windows paths: any case).
+    /// The present file at an absolute path (Windows paths: any case, as NTFS compares them). Ties (one name in two
+    /// spellings in one folder, a case-sensitive folder) give the lowest id.
     pub fn file_by_path(&self, path: &RulePath) -> Result<Option<FileId>> {
         let Some((folder, name)) = self.rules.split_file_name(path) else { return Ok(None) };
-        let key = self.rules.folder_key(&folder.parts);
-        let name_key = name.name_key();
-        // The files of the folder's key (every drive's copy of it), then the one at this path by the rules: the same
-        // drive, and a name equal by key, which is case-insensitive where the rules are (SQLite's lower() is ASCII).
+        // The present files of the folder's merged key (every drive's copy of it) whose name has this name's key (equal
+        // under the rules: `files_mn`), by id; then the one in this path's folder by the rules (the same drive).
         let mut stmt = self.conn.prepare_cached(
-            "SELECT f.id, f.name, fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id
-             WHERE fo.match_key = ?1 AND f.missing = 0",
+            "SELECT f.id, fo.path FROM files f INDEXED BY files_mn JOIN folders fo ON fo.id = f.folder_id
+             WHERE f.mid = (SELECT id FROM mfolders WHERE key = ?1) AND f.missing = 0
+               AND path_name_key(f.name) = ?2
+             ORDER BY f.id",
         )?;
-        let rows =
-            stmt.query_map([key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, Vec<u8>>(2)?)))?;
+        let rows = stmt.query_map(params![self.rules.folder_key(&folder.parts), self.rules.name_key(&name)], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })?;
         for row in rows {
-            let (id, stored_name, stored_folder) = row?;
-            let same_folder = self.rules.parse_bytes(&stored_folder).is_some_and(|f| self.rules.same(&f, &folder));
-            let mut stored_key = Vec::new();
-            Name::from_raw(&stored_name).push_name_key(&mut stored_key);
-            if same_folder && stored_key == name_key {
+            let (id, stored_folder) = row?;
+            if self.rules.parse_bytes(&stored_folder).is_some_and(|f| self.rules.same(&f, &folder)) {
                 return Ok(Some(FileId::new(id)));
             }
         }
@@ -213,12 +214,12 @@ impl Catalog {
                 let (orientation, w, h): (Orientation, u32, u32) =
                     (Orientation::from_tag(r.get(5)?), r.get(6)?, r.get(7)?);
                 let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
-                let format = r.get_ref(4)?.as_str()?;
-                let format = Format::from_key(format).ok_or_else(|| {
+                let code = r.get_ref(4)?.as_i64()?;
+                let format = Format::from_code(code).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(
                         4,
-                        Type::Text,
-                        format!("unknown image format {format}").into(),
+                        Type::Integer,
+                        format!("unknown image format code {code}").into(),
                     )
                 })?;
                 let (folder, name) = (r.get_ref(0)?.as_blob()?, r.get_ref(1)?.as_blob()?);

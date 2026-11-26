@@ -291,8 +291,10 @@ impl Catalog {
         }
         let snapshot = self.conn.unchecked_transaction()?;
         {
-            let mut by_identity = snapshot
-                .prepare_cached("SELECT size, mtime, changed FROM files WHERE volume = ?1 AND file_ref = ?2")?;
+            let mut by_identity = snapshot.prepare_cached(
+                "SELECT size, mtime, changed FROM files
+                 WHERE volume = (SELECT id FROM volumes WHERE serial = ?1) AND file_ref = ?2",
+            )?;
             for (identity, prior) in identities.iter().zip(out.iter_mut()).filter(|(_, prior)| prior.is_none()) {
                 let (volume, file_ref) = key(identity);
                 let row = by_identity
@@ -317,12 +319,22 @@ pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RuleP
     let rows = {
         let mark: i64 =
             snapshot.prepare_cached("SELECT value FROM meta WHERE key = 'seq'")?.query_row([], |r| r.get(0))?;
+        let path_key = rules.path_key(folder);
+        // A folder new to the catalog has no row, and no files: its merged folder is none (0, no `mfolders` id).
+        let mid: i64 = snapshot
+            .prepare_cached("SELECT mid FROM folders WHERE path_key = ?1")?
+            .query_row([&path_key], |r| r.get(0))
+            .optional()?
+            .unwrap_or(0);
+        // The rows by identity: the volume's serial (the interned id's), and the reference.
         let rows = snapshot
             .prepare_cached(
-                "SELECT volume, file_ref, id, unpaired, missing, name, ext, kind, size, mtime, order_key, created
-                 FROM files WHERE folder_id = (SELECT id FROM folders WHERE path_key = ?1) AND volume IS NOT NULL",
+                "SELECT v.serial, f.file_ref, f.id, f.unpaired, f.missing, f.name, f.ext, f.kind, f.size, f.mtime, f.mid,
+                        f.created
+                 FROM files f JOIN volumes v ON v.id = f.volume
+                 WHERE f.folder_id = (SELECT id FROM folders WHERE path_key = ?1)",
             )?
-            .query_map([rules.path_key(folder)], |r| {
+            .query_map([&path_key], |r| {
                 let row = FolderRow {
                     id: r.get(2)?,
                     unpaired: r.get::<_, i64>(3)? != 0,
@@ -332,13 +344,13 @@ pub(crate) fn folder_rows_on(conn: &Connection, rules: PathRules, folder: &RuleP
                     kind: kind_at(r, 7)?,
                     size: r.get(8)?,
                     mtime: r.get(9)?,
-                    order_key: r.get(10)?,
+                    mid: r.get(10)?,
                     created: r.get(11)?,
                 };
                 Ok(((r.get(0)?, r.get(1)?), row))
             })?
             .collect::<rusqlite::Result<_>>()?;
-        FolderRows { mark, key: rules.folder_key(&folder.parts), rows }
+        FolderRows { mark, mid, rows }
     };
     snapshot.commit()?;
     Ok(rows)
@@ -362,7 +374,7 @@ impl FolderRowReader {
     /// A reader of the catalog at `file` (its [`Catalog::file`]). It fails while another program is changing the file.
     pub fn open(file: &str, rules: PathRules) -> Result<FolderRowReader> {
         let hold = crate::lifecycle::take_shared(std::path::Path::new(file))?;
-        let conn = crate::core::read_only(file, READER_CACHE_KIB)?;
+        let conn = crate::core::read_only(file, rules, READER_CACHE_KIB)?;
         Ok(FolderRowReader { conn, rules, _hold: hold })
     }
 
@@ -901,15 +913,15 @@ mod tests {
         for id in 1..=FOLDERS {
             fixture::state::add_folder(&c, id, &format!("/r/f{id}")).unwrap();
         }
+        c.conn.execute("INSERT INTO volumes(id, serial) VALUES (1, 1)", []).unwrap();
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   turns, order_key)
-                 SELECT i, 1, i, i % ?2 + 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
-                        CAST(printf('%08d', i) AS BLOB)
+                 INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime, missing, turns)
+                 SELECT i, 1, i, i % ?2 + 1, (SELECT mid FROM folders WHERE id = i % ?2 + 1), CAST(i || '.jpg' AS BLOB),
+                        ?3, ?4, 10, 100, 0, 0
                  FROM n",
-                [FILES, FOLDERS],
+                [FILES, FOLDERS, Ext::of("jpg").unwrap().code(), pg_model::media::Kind::Image.code()],
             )
             .unwrap();
         let root = p(rules, r"D:\r");
@@ -952,9 +964,8 @@ mod tests {
         drop(writer);
         tx.commit().unwrap();
         let rows = c.folder_rows(&root).unwrap();
-        let mut key = Vec::new();
-        assert!(rows.unchanged(&file(10), &mut key).is_some(), "the listing matches the row");
-        assert!(rows.unchanged(&file(11), &mut key).is_none(), "a size change is for the batch");
+        assert!(rows.unchanged(&file(10)).is_some(), "the listing matches the row");
+        assert!(rows.unchanged(&file(11)).is_none(), "a size change is for the batch");
     }
 
     under_both_rules!(

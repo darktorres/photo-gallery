@@ -17,12 +17,13 @@ CREATE TABLE analysis(
     size        INTEGER NOT NULL,  -- the file as analyzed
     mtime       INTEGER NOT NULL,
     rotation    INTEGER NOT NULL,  -- files.turns it was decoded with
-    kind        TEXT NOT NULL,     -- files.kind it was analyzed as
+    kind        INTEGER NOT NULL,  -- files.kind it was analyzed as (media::Kind::code)
     analyzed    INTEGER NOT NULL,  -- Unix seconds
     error       TEXT,              -- set when the file couldn't be read or decoded; the rest is then NULL
     file_hash   BLOB,              -- tier 0a: BLAKE3 of the bytes
     pixel_hash  BLOB,              -- tier 0b: XXH3-128 of the upright decoded pixels
-    format      TEXT,
+    format      INTEGER,           -- an image's format::Format::code; NULL for a video
+    codec       TEXT,              -- a video's codec, as FFmpeg names it; NULL for an image
     orientation INTEGER,
     width       INTEGER,           -- upright, full size
     height      INTEGER,
@@ -52,15 +53,15 @@ CREATE TABLE analysis(
 CREATE TABLE border_sides(
     file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     pass     INTEGER NOT NULL,  -- the peeling round (nested borders come later)
-    edge     TEXT NOT NULL CHECK (edge IN ('top', 'bottom', 'left', 'right')),
-    kind     TEXT NOT NULL CHECK (kind IN ('solid', 'blur')),
-    class    TEXT NOT NULL CHECK (class IN ('black', 'white', 'color', 'blur')),
+    edge     INTEGER NOT NULL CHECK (edge BETWEEN 0 AND 3),   -- detection::Edge::code
+    kind     INTEGER NOT NULL CHECK (kind BETWEEN 0 AND 1),   -- detection::Kind::code
+    class    INTEGER NOT NULL CHECK (class BETWEEN 0 AND 3),  -- detection::Class::code
     depth    INTEGER NOT NULL,  -- stored pixels from the edge of what earlier rounds left
     color    INTEGER,           -- solid: 0xRRGGBB at the edge
     straight REAL NOT NULL,
     dev      REAL,              -- solid and measured: flatness
     drift    REAL,
-    rejected TEXT,              -- detection::Reason key; NULL: accepted
+    rejected INTEGER,           -- detection::Reason::code; NULL: accepted
     PRIMARY KEY(file_id, pass, edge)
 ) WITHOUT ROWID;
 
@@ -204,17 +205,32 @@ CREATE TABLE root_removals(
 
 CREATE TABLE "roots"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UNIQUE, added INTEGER NOT NULL);
 
--- One row per folder, found by path_key: the spelling under the path rules (case-folded on Windows, so one folder is one
--- row whatever its case). path is the spelling last seen, for display. match_key is the drive-free key the files'
--- order keys are made from. See pg_model::rules::PathRules::path_key.
-CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL, path_key BLOB NOT NULL UNIQUE, match_key BLOB NOT NULL);
+-- The volumes the files are on, interned: a file row holds the id (one byte for a small catalog), not the 64-bit
+-- serial. The serial is the volume's identity (pg_model::ids::FileIdentity::volume, stored signed); a row is made the
+-- first time a file of the volume is written, and kept. Reads that hand a volume out map the id back to its serial.
+CREATE TABLE volumes(id INTEGER PRIMARY KEY, serial INTEGER NOT NULL UNIQUE);
 
-CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER, file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL REFERENCES folders(id), name BLOB NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, order_key BLOB NOT NULL, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref));
+-- One row per merged folder key (pg_model::rules::PathRules::folder_key: drive-free, each part by its name key), so
+-- every drive's copy of a folder is one row, and its files interleave by name. The grid orders by (key, the name key,
+-- the id). Not AUTOINCREMENT: nothing keeps an id of it, and a row with no folder is deleted with its last folder.
+CREATE TABLE mfolders(id INTEGER PRIMARY KEY, key BLOB NOT NULL UNIQUE);
+
+-- One row per folder, found by path_key: the spelling under the path rules (case-folded on Windows, so one folder is one
+-- row whatever its case). path is the spelling last seen, for display. mid is its merged folder (mfolders). See
+-- pg_model::rules::PathRules::path_key.
+CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL, path_key BLOB NOT NULL UNIQUE, mid INTEGER NOT NULL REFERENCES mfolders(id), UNIQUE(id, mid));
+
+-- A file: its identity (volume: volumes.id), its folder and merged folder (the composite key makes the database keep
+-- mid equal to its folder's, and a folder's re-key carries to its files: ON UPDATE CASCADE), its exact name, its
+-- extension and kind as codes (media::Ext::code, media::Kind::code).
+CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER REFERENCES volumes(id), file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL, mid INTEGER NOT NULL, name BLOB NOT NULL, ext INTEGER NOT NULL, kind INTEGER NOT NULL CHECK (kind IN (0, 1)), size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref), FOREIGN KEY(folder_id, mid) REFERENCES folders(id, mid) ON UPDATE CASCADE);
 
 -- indexes
-CREATE INDEX analysis_file_hash ON analysis(file_hash);
+-- The hash indexes hold only the hashed rows: a row with no hash (not hashed yet, a video's pixel hash) is never looked
+-- up by it, and an `x = ?` term implies `x IS NOT NULL`, so the lookups use them as they are.
+CREATE INDEX analysis_file_hash ON analysis(file_hash) WHERE file_hash IS NOT NULL;
 
-CREATE INDEX analysis_pixel_hash ON analysis(pixel_hash);
+CREATE INDEX analysis_pixel_hash ON analysis(pixel_hash) WHERE pixel_hash IS NOT NULL;
 
 CREATE INDEX analysis_failed ON analysis(file_id) WHERE error IS NOT NULL;
 
@@ -240,17 +256,14 @@ CREATE INDEX folder_failures_serial ON folder_failures(serial);
 
 CREATE INDEX folder_failures_root ON folder_failures(root);
 
-CREATE INDEX folders_match_key ON folders(match_key);
+CREATE INDEX folders_mid ON folders(mid);
 
-CREATE INDEX files_changed ON files(changed);
+-- The grid's order (both directions) and the name lookups: a merged folder's files by their name key (the registered
+-- function path_name_key, the rules' name key), present and missing apart.
+CREATE INDEX files_mn ON files(mid, missing, path_name_key(name));
 
-CREATE INDEX files_folder ON files(folder_id, name);
-
-CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
-
-CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
-
-CREATE INDEX files_ref ON files(file_ref);
+-- A folder's files, present and missing apart; its leading (folder_id, mid) is the composite foreign key's child index.
+CREATE INDEX files_fm ON files(folder_id, mid, missing);
 
 CREATE INDEX files_seq ON files(seq);
 
@@ -259,24 +272,27 @@ CREATE INDEX files_to_import ON files(volume, file_ref & 0xFFFFFFFFFFFF) WHERE m
 -- views
 CREATE VIEW thumb_clock AS SELECT value AS seq FROM meta WHERE key = 'seq';
 
+-- volume is the serial (a present file has one: a displaced row is missing). A filter on it seeks the volume by its
+-- serial, then its files by the identity index; `+volume` leaves the planner on another index (`files_seq`).
 CREATE VIEW thumb_sources AS
-    SELECT f.id, f.volume, f.file_ref, f.folder_id,
+    SELECT f.id, v.serial AS volume, f.file_ref, f.folder_id,
            (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
            f.name, f.mtime, f.turns, f.size, f.seq,
-           CASE WHEN f.kind = 'video' THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
+           CASE WHEN f.kind = 1 THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
            END AS poster_ms
-    FROM files f
+    FROM files f JOIN volumes v ON v.id = f.volume
     WHERE f.missing = 0
       AND EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id AND error IS NULL AND mtime = f.mtime);
 
 -- The thumbnail cache reads the catalog through these views only (`pg_thumbcache`'s reader, with `thumb_clock` and
 -- `thumb_sources` above): the id high-water mark (the ids are never reissued), the ids that exist, the volumes the
--- catalog holds, and the thumbnail failures.
+-- catalog holds files on (their serials: one probe of the identity index a volume), and the thumbnail failures.
 CREATE VIEW thumb_high_water AS SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'files'), 0) AS high;
 
 CREATE VIEW thumb_file_ids AS SELECT id FROM files;
 
-CREATE VIEW thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
+CREATE VIEW thumb_volumes AS
+    SELECT v.serial AS volume FROM volumes v WHERE EXISTS (SELECT 1 FROM files f WHERE f.volume = v.id);
 
 CREATE VIEW thumb_failures AS SELECT file_id, pass, mtime, size, rotation, retry FROM file_failures;
 

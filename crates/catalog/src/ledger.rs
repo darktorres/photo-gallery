@@ -536,7 +536,7 @@ mod tests {
         c.conn
             .execute(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
-                 VALUES (?1, ?2, ?3, ?4, 0, 'image', 5, ?5)",
+                 VALUES (?1, ?2, ?3, ?4, 0, 0, 5, ?5)",
                 params![id, versions().import, size, mtime, error],
             )
             .unwrap();
@@ -815,7 +815,7 @@ mod tests {
         c.conn
             .execute(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
-                 VALUES (1, ?1, 10, 100, 3, 'image', 5, 'no')",
+                 VALUES (1, ?1, 10, 100, 3, 0, 5, 'no')",
                 (versions().import,),
             )
             .unwrap();
@@ -1079,15 +1079,15 @@ mod tests {
         const N: i64 = 100_000;
         const BOUND: std::time::Duration = std::time::Duration::from_secs(30);
         let c = catalog_of(PathRules::Posix, 0);
+        c.conn.execute("INSERT OR IGNORE INTO volumes(serial) VALUES (1)", []).unwrap();
         c.conn
             .execute(
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, missing,
-                                   turns, order_key)
-                 SELECT i, 1, i, 1, CAST(i || '.jpg' AS BLOB), 'jpg', 'image', 10, 100, 0, 0,
-                        CAST(printf('%08d', i) AS BLOB)
+                 INSERT INTO files(id, volume, file_ref, folder_id, mid, name, ext, kind, size, mtime, missing, turns)
+                 SELECT i, (SELECT id FROM volumes WHERE serial = 1), i, 1, (SELECT mid FROM folders WHERE id = 1),
+                        CAST(i || '.jpg' AS BLOB), ?2, 0, 10, 100, 0, 0
                  FROM n",
-                [N],
+                rusqlite::params![N, pg_model::media::Ext::of("jpg").unwrap().code()],
             )
             .unwrap();
         let failures: Vec<Failure> = (1..=N).map(|i| failure(i, "no")).collect();

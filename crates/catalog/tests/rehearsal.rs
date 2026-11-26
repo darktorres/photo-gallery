@@ -36,9 +36,21 @@ fn mebibytes(path: &Path) -> u64 {
     std::fs::metadata(path).map_or(0, |m| m.len() / (1 << 20))
 }
 
-/// The catalog's integrity after the upgrade or the removal: foreign keys, sequences and the auto-vacuum.
+/// The id high-water marks of the `AUTOINCREMENT` tables (`sqlite_sequence`), read without changing the file.
+fn sequences(path: &Path) -> rusqlite::Result<Vec<(String, i64)>> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut stmt = conn.prepare("SELECT name, seq FROM sqlite_sequence ORDER BY name")?;
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
+}
+
+/// The catalog's integrity after the upgrade or the removal: the whole file (`integrity_check`, with the catalog's
+/// functions, which its name index is on), foreign keys, sequences and the auto-vacuum.
 fn check(path: &Path, label: &str) -> rusqlite::Result<()> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    pg_query::register_functions(&conn, pg_platform::native::PATH_RULES)?;
+    let problems: Vec<String> =
+        conn.prepare("PRAGMA integrity_check")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    assert_eq!(problems, ["ok"], "{label}: integrity_check");
     let broken: Vec<String> = conn
         .prepare("PRAGMA foreign_key_check")?
         .query_map([], |r| Ok(format!("{}:{}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
@@ -86,6 +98,7 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() -> Res
     eprintln!("rehearsal copy: {} ({} MiB)", copy.display(), mebibytes(&copy));
 
     let before = counts(&copy)?;
+    let sequences_before = sequences(&copy)?;
     eprintln!("tables before: {}", before.len());
     let source_version: i64 = Connection::open_with_flags(&copy, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .unwrap()
@@ -127,6 +140,12 @@ fn the_upgrade_and_a_removal_keep_every_row_and_leave_the_catalog_clean() -> Res
         }
     }
     assert!(lost.is_empty(), "the upgrade lost or changed rows:\n{}", lost.join("\n"));
+    // The ids are never reissued: each sequence the old file had is the new one's, exactly (a carry restores it).
+    let sequences_after = sequences(&copy)?;
+    for (table, seq) in &sequences_before {
+        let now = sequences_after.iter().find(|(t, _)| t == table).map(|(_, s)| *s);
+        assert_eq!(now, Some(*seq), "{table}'s sequence after the upgrade");
+    }
     let added: Vec<&str> =
         after.iter().map(|(t, _)| t.as_str()).filter(|t| !before.iter().any(|(b, _)| b == t)).collect();
     eprintln!("tables added by the upgrade: {added:?}");

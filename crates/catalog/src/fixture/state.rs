@@ -19,10 +19,10 @@ pub fn add_scan(c: &Catalog, id: i64, root: &str) -> Result<()> {
 
 /// A folder row (see [`add_scan`]).
 pub fn add_folder(c: &Catalog, id: i64, path: &str) -> Result<()> {
-    let (bytes, path_key, key) = super::folder_row(c, path)?;
+    let (bytes, path_key, mid) = super::folder_row(c, path)?;
     c.conn.execute(
-        "INSERT INTO folders(id, path, path_key, match_key) VALUES (?1, ?2, ?3, ?4)",
-        params![id, bytes, path_key, key],
+        "INSERT INTO folders(id, path, path_key, mid) VALUES (?1, ?2, ?3, ?4)",
+        params![id, bytes, path_key, mid],
     )?;
     Ok(())
 }
@@ -148,8 +148,10 @@ pub fn shown_pairs(c: &Catalog) -> Result<Vec<(i64, i64, i64)>> {
 /// The file's volume went away and came back renumbered, and it was not there meanwhile: its row is missing, on the
 /// volume `volume` (one no scan sees), under the name `name`, as a scan of the old volume left it.
 pub fn on_lost_volume(c: &Catalog, id: FileId, volume: i64, name: &str) -> Result<()> {
+    // The volume's serial, interned as a writer interns it.
+    c.conn.execute("INSERT OR IGNORE INTO volumes(serial) VALUES (?1)", [volume])?;
     c.conn.execute(
-        "UPDATE files SET volume = ?2, name = ?3, missing = 1 WHERE id = ?1",
+        "UPDATE files SET volume = (SELECT id FROM volumes WHERE serial = ?2), name = ?3, missing = 1 WHERE id = ?1",
         params![id.get(), volume, name.as_bytes()],
     )?;
     Ok(())
@@ -220,10 +222,12 @@ pub fn stored_hashes(c: &Catalog) -> Result<Vec<StoredHashes>> {
 
 /// The media rows of the present files (see [`MediaRow`]).
 pub fn media_rows(c: &Catalog) -> Result<Vec<MediaRow>> {
-    let mut stmt = c.conn.prepare(
-        "SELECT CAST(f.name AS TEXT), f.kind, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
-             FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name",
-    )?;
+    let mut stmt = c.conn.prepare(concat!(
+        "SELECT CAST(f.name AS TEXT), CASE f.kind WHEN ",
+        pg_model::kind_video!(),
+        " THEN 'video' ELSE 'image' END, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
+             FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name"
+    ))?;
     let rows =
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

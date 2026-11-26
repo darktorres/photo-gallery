@@ -10,7 +10,7 @@ use rusqlite::types::Value;
 use strum::{EnumCount, IntoEnumIterator};
 
 use super::grid::FILE_JOINS;
-use super::scope::scope;
+use super::scope::{SCOPE_FROM, scope};
 use pg_model::media::MediaType;
 use pg_model::query::{BorderFacet, Query};
 use pg_model::rules::Merged;
@@ -33,7 +33,8 @@ impl Catalog {
 
         // The select list, in order: the group's type and extension, the files, the matching files, the files of each
         // type and of each extension, and of each border value. Each condition's values are bound where it appears.
-        let mut select = vec![MEDIA_CASE.to_string(), "f.ext".to_string(), "count(*)".to_string()];
+        // The extension by its name (`pg_ext` of its stored code), grouped by the code.
+        let mut select = vec![MEDIA_CASE.to_string(), "pg_ext(f.ext)".to_string(), "count(*)".to_string()];
         let mut values: Vec<Value> = Vec::new();
         for cond in [&all, &types, &exts] {
             select.push(format!("coalesce(sum(CASE WHEN ({}) THEN 1 ELSE 0 END), 0)", cond.sql));
@@ -46,7 +47,7 @@ impl Catalog {
         }
         values.extend(scope_values);
         let sql = format!(
-            "SELECT {} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} GROUP BY {MEDIA_CASE}, f.ext",
+            "SELECT {} FROM {SCOPE_FROM} {FILE_JOINS} WHERE f.missing = 0 AND {scope} GROUP BY {MEDIA_CASE}, f.ext",
             select.join(", ")
         );
 

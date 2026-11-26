@@ -8,8 +8,10 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
@@ -188,6 +190,64 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest().upper()
+
+
+# The upcase table the catalog's Windows name key maps each UTF-16 unit through (`pg_model::upcase`), as generated.
+UPCASE_TABLE = REPO / "crates" / "model" / "src" / "upcase_table.rs"
+
+
+def catalog_name_key(rules: str) -> Callable[[bytes | str | None], bytes | None]:
+    """The catalog's `path_name_key` SQL function under `rules` (its `meta.path_rules`): the catalog's name index
+    (`files_mn`) is on it, so a connection that writes file rows, or remakes the indexes (`VACUUM INTO`), registers it, as
+    `pg_query::register_functions` does. POSIX: the exact bytes. Windows: each BMP character upcased through the table,
+    as WTF-8; a supplementary character, an encoded surrogate and a stray byte are kept
+    (`pg_model::name::Name::push_upcase`). A name is a blob; text (which the app never writes) is read as its UTF-8, and
+    anything else has no key."""
+
+    def as_bytes(name: bytes | str | None) -> bytes | None:
+        if isinstance(name, str):
+            return name.encode("utf-8", "surrogatepass")
+        return name if isinstance(name, bytes) else None
+
+    if rules != "windows":
+        return as_bytes
+    pairs = {
+        int(a, 16): int(b, 16) for a, b in re.findall(r"\(0x([0-9A-Fa-f]+), 0x([0-9A-Fa-f]+)\)", UPCASE_TABLE.read_text("utf-8"))
+    }
+
+    def key(value: bytes | str | None) -> bytes | None:
+        name = as_bytes(value)
+        if name is None:
+            return None
+        out = bytearray()
+        i = 0
+        while i < len(name):
+            lead = name[i]
+            width = 1 if lead < 0x80 else 2 if lead >> 5 == 0b110 else 3 if lead >> 4 == 0b1110 else 4
+            try:
+                text = name[i : i + width].decode("utf-8", "surrogatepass")
+            except UnicodeDecodeError:
+                text = ""
+            if len(text) != 1:
+                # Not a character: a stray byte, kept.
+                out.append(lead)
+                i += 1
+                continue
+            point = ord(text)
+            if point < 0x10000 and not 0xD800 <= point <= 0xDFFF:
+                out += chr(pairs.get(point, point)).encode("utf-8")
+            else:
+                out += name[i : i + width]
+            i += width
+        return bytes(out)
+
+    return key
+
+
+def register_catalog_functions(conn: sqlite3.Connection) -> None:
+    """Registers the catalog's `path_name_key` on `conn`, under the rules its main database records."""
+    rules = conn.execute("SELECT value FROM meta WHERE key = 'path_rules'").fetchone()[0]
+    conn.create_function("path_name_key", 1, catalog_name_key(rules), deterministic=True)
 
 
 def run(cmd: list[str], env: dict[str, str] | None = None, quiet: bool = False, cwd: Path = REPO) -> None:

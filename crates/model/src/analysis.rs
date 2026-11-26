@@ -110,7 +110,8 @@ pub struct VideoFacts {
 }
 
 impl Analysis {
-    /// The format's name for an image, or the codec for a video (the catalog's `format` column).
+    /// The format's name for an image, or the codec for a video. The catalog stores them apart: an image's format as its
+    /// code (`analysis.format`), a video's codec as its name (`analysis.codec`).
     pub fn format(&self) -> &'static str {
         match &self.media {
             Media::Image(image) => image.format.key(),

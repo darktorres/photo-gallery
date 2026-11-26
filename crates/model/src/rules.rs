@@ -4,6 +4,11 @@
 //! not part of a folder's key, so one folder on every drive is one key (as the tree and the catalog have always had
 //! it); the anchor is kept for display and compared in [`PathRules::is_under`].
 //!
+//! A name has three facets (`docs/plans/CATALOG_SIZE_PLAN.md`, D1): its identity is its exact bytes; its equivalence
+//! (when two names are one name) is the file system's, which is the name key ([`PathRules::push_name_key`]: NTFS's
+//! unit-by-unit upcase on Windows, the exact bytes on Posix); and the catalog's order is the byte order of the key, then
+//! the row's id.
+//!
 //! [`PathRules`] is a closed enum, not a trait: two rule sets, both testable on every host, passed as a value.
 //! Only [`PathRules::parse`] turns user text into a path; actions go by ids, not by path strings.
 
@@ -16,10 +21,11 @@ use crate::name::Name;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathRules {
     /// Windows: `\` separates, a drive (`D:`) or the UNC root (`\\server\share`) is the anchor, names compare
-    /// case-insensitively (per character, Unicode) and folder keys are drive-free.
+    /// case-insensitively as NTFS does (each UTF-16 unit through the upcase table, `crate::upcase`) and folder keys
+    /// are drive-free.
     Windows,
-    /// POSIX: `/` separates, the anchor is always empty, names are case-sensitive but ordered case-insensitively
-    /// first (so `Pics` and `pics` are distinct, and sort together).
+    /// POSIX: `/` separates, the anchor is always empty, and names are their exact bytes: compared and ordered as
+    /// bytes (so `Pics` and `pics` are two names, and `Pics` sorts before `a`).
     Posix,
 }
 
@@ -225,29 +231,35 @@ impl PathRules {
         out
     }
 
-    /// The folder's key (the part of an order key that orders folders), appended to `key`. Windows: each part in
-    /// per-character lower case, then 0x01 (a byte 0x01 or 0x02 in the lower-cased name is escaped as 0x02 0x02
-    /// or 0x02 0x03, which keeps the order). Posix: each part as its lower case, 0x00, its exact bytes, 0x01, both
-    /// escaped the same way. Parts are prefix-free under the terminator, so a folder's key is a prefix of its
-    /// subfolders' keys.
+    /// A name's key under these rules, appended to `out`: the name in the form two names that are one name share, and
+    /// whose byte order is the catalog's name order. Windows: each UTF-16 unit through the embedded upcase table, as
+    /// WTF-8 ([`Name::push_upcase`]): NTFS's own comparison, the same on every machine. Posix: the exact bytes. The
+    /// catalog's `path_name_key` SQL function and its expression index are this function.
+    pub fn push_name_key(self, name: &Name, out: &mut Vec<u8>) {
+        match self {
+            PathRules::Windows => name.push_upcase(out),
+            PathRules::Posix => out.extend_from_slice(name.as_bytes()),
+        }
+    }
+
+    /// [`PathRules::push_name_key`] as a new vector.
+    pub fn name_key(self, name: &Name) -> Vec<u8> {
+        let mut key = Vec::with_capacity(name.as_bytes().len());
+        self.push_name_key(name, &mut key);
+        key
+    }
+
+    /// The folder's key (the drive-free key that orders folders: the catalog's `mfolders.key`), appended to `key`: each
+    /// part's name key ([`PathRules::push_name_key`]), then 0x01. A byte 0x01 or 0x02 of a part's key is escaped as
+    /// 0x02 0x02 or 0x02 0x03, which keeps the order, so parts are prefix-free under the terminator and a folder's key
+    /// is a prefix of its subfolders' keys.
     pub fn push_folder_key(self, key: &mut Vec<u8>, parts: &[Name]) {
+        let mut part_key = Vec::new();
         for part in parts {
-            match self {
-                PathRules::Windows => {
-                    let mut lower = Vec::with_capacity(part.as_bytes().len());
-                    part.push_lower(&mut lower);
-                    push_escaped(key, &lower);
-                    key.push(0x01);
-                }
-                PathRules::Posix => {
-                    let mut lower = Vec::with_capacity(part.as_bytes().len());
-                    part.push_lower(&mut lower);
-                    push_escaped(key, &lower);
-                    key.push(0x00);
-                    push_escaped(key, part.as_bytes());
-                    key.push(0x01);
-                }
-            }
+            part_key.clear();
+            self.push_name_key(part, &mut part_key);
+            push_escaped(key, &part_key);
+            key.push(0x01);
         }
     }
 
@@ -258,60 +270,42 @@ impl PathRules {
         key
     }
 
-    /// The order key of a file: its folder's key, then its name's ([`Name::push_name_key`]).
-    pub fn order_key(self, folder_key: &[u8], name: &Name) -> Vec<u8> {
-        let mut key = Vec::with_capacity(folder_key.len() + name.as_bytes().len() * 2 + 2);
-        key.extend_from_slice(folder_key);
-        name.push_name_key(&mut key);
-        key
-    }
-
-    /// The order keys of a folder's files as a range `lo..hi` (`hi` is `None` when nothing sorts above it): the
-    /// folder's own files, or with `recursive` every file below it too.
+    /// The folder keys a folder's scope covers, as a range `lo..hi` (`hi` is `None` when nothing sorts above it): the
+    /// folder's own key alone, or with `recursive` its key and every key below it. A file is in the scope when its
+    /// folder's key is.
     pub fn scope_keys(self, parts: &[Name], recursive: bool) -> (Vec<u8>, Option<Vec<u8>>) {
-        let mut lo = self.folder_key(parts);
+        let lo = self.folder_key(parts);
         let hi = if recursive {
             // Every key below the folder starts with its key, and nothing else does from `lo` up to the bound.
             prefix_upper_bound(&lo)
         } else {
-            let hi = [lo.as_slice(), &[0x01]].concat();
-            lo.push(0x00);
-            Some(hi)
+            // The least key above `lo` is `lo` 0x00, and a subfolder's key is `lo`, then an escaped byte (never below
+            // 0x02, since no name holds a NUL and 0x01 is escaped), so the range holds `lo` alone.
+            Some([lo.as_slice(), &[0x00]].concat())
         };
         (lo, hi)
     }
 
     /// The key that finds a folder by its spelling under these rules, unique to that spelling: the anchor (a Windows
-    /// drive or UNC root, per-character lower case, then 0x00; a POSIX path has none), then each part, then its
-    /// terminator 0x01. Each byte of an anchor or a part is escaped as `push_escaped` does, so the terminators stay
-    /// unambiguous. A Windows part is compared lower-cased, a POSIX part exactly, as [`PathRules::is_under`] compares
-    /// them. A folder's key is a prefix of its subfolders' keys, so the subtree of a folder is the range
+    /// drive or UNC root as its name key, then 0x00; a POSIX path has none), then the folder key of its parts
+    /// ([`PathRules::push_folder_key`]). Each byte of the anchor is escaped as the parts are, so the terminators stay
+    /// unambiguous. A Windows part is compared by its upcase key, a POSIX part exactly, as [`PathRules::is_under`]
+    /// compares them. A folder's key is a prefix of its subfolders' keys, so the subtree of a folder is the range
     /// [`PathRules::subtree`] gives.
     ///
-    /// Worked examples: `C:\Photos\Raw` is `c:` 0x00 `photos` 0x01 `raw` 0x01, and `/photos/raw` is `photos` 0x01
+    /// Worked examples: `C:\Photos\Raw` is `C:` 0x00 `PHOTOS` 0x01 `RAW` 0x01, and `/photos/raw` is `photos` 0x01
     /// `raw` 0x01 (the POSIX root is the empty key).
     ///
     /// Not folded, so one folder can still be two keys: the drive letter (a re-lettered drive is another anchor, as
-    /// [`PathRules::parse`] keeps it), a verbatim volume spelling (`\\?\Volume{...}`), NTFS's own case table where it
-    /// differs from Rust's per-character lower case (`σ`/`ς`, `ſ`, `İ`, the Kelvin sign: see the test that pins them),
-    /// trailing dots and spaces, 8.3 short names, and junctions.
+    /// [`PathRules::parse`] keeps it), a verbatim volume spelling (`\\?\Volume{...}`), a volume whose own `$UpCase`
+    /// differs from the embedded table, trailing dots and spaces, 8.3 short names, and junctions.
     pub fn path_key(self, path: &Path) -> Vec<u8> {
         let mut key = Vec::new();
-        match self {
-            PathRules::Windows => {
-                let mut anchor = Vec::with_capacity(path.anchor.as_bytes().len());
-                path.anchor.push_lower(&mut anchor);
-                push_escaped(&mut key, &anchor);
-                key.push(0x00);
-                self.push_folder_key(&mut key, &path.parts);
-            }
-            PathRules::Posix => {
-                for part in &path.parts {
-                    push_escaped(&mut key, part.as_bytes());
-                    key.push(0x01);
-                }
-            }
+        if self == PathRules::Windows {
+            push_escaped(&mut key, &self.name_key(&path.anchor));
+            key.push(0x00);
         }
+        self.push_folder_key(&mut key, &path.parts);
         key
     }
 
@@ -347,12 +341,7 @@ impl PathRules {
 
     fn same_part(self, a: &Name, b: &Name) -> bool {
         match self {
-            PathRules::Windows => {
-                let (mut la, mut lb) = (Vec::new(), Vec::new());
-                a.push_lower(&mut la);
-                b.push_lower(&mut lb);
-                la == lb
-            }
+            PathRules::Windows => self.name_key(a) == self.name_key(b),
             PathRules::Posix => a == b,
         }
     }
@@ -455,11 +444,20 @@ mod tests {
     }
 
     #[test]
-    fn posix_names_differing_in_case_are_distinct_but_sort_together() {
+    fn posix_names_differing_in_case_are_two_folders_in_byte_order() {
         let lower = PathRules::Posix.folder_key(&names(&["pics"]));
         let upper = PathRules::Posix.folder_key(&names(&["Pics"]));
         assert_ne!(lower, upper);
+        assert!(upper < PathRules::Posix.folder_key(&names(&["a"])), "Pics sorts before a: byte order");
         assert_ne!(PathRules::Posix.folder_key(&names(&["pics"])), PathRules::Posix.folder_key(&names(&["Pics", "x"])),);
+    }
+
+    #[test]
+    fn a_name_key_is_the_upcase_on_windows_and_the_bytes_on_posix() {
+        let name = Name::from("Ασ.jpg");
+        assert_eq!(PathRules::Windows.name_key(&name), "ΑΣ.JPG".as_bytes());
+        assert_eq!(PathRules::Posix.name_key(&name), name.as_bytes());
+        assert_eq!(PathRules::Windows.name_key(&Name::from("αΣ.JPG")), PathRules::Windows.name_key(&name));
     }
 
     #[test]
@@ -482,11 +480,11 @@ mod tests {
         assert_eq!(name, Name::from("b.jpg"));
     }
 
-    /// The order key of the file at `text` (a Windows path), as the catalog stores it.
+    /// The folder key of the file at `text` (a Windows path): what a scope range is tested against.
     fn file_key(text: &str) -> Vec<u8> {
         let path = PathRules::Windows.parse(text).unwrap();
-        let (folder, name) = PathRules::Windows.split_file_name(&path).unwrap();
-        PathRules::Windows.order_key(&PathRules::Windows.folder_key(&folder.parts), &name)
+        let (folder, _) = PathRules::Windows.split_file_name(&path).unwrap();
+        PathRules::Windows.folder_key(&folder.parts)
     }
 
     #[test]
@@ -504,11 +502,14 @@ mod tests {
     }
 
     #[test]
-    fn a_final_sigma_folder_scopes_its_files_under_the_writers_key() {
-        // The writer stores a folder's key per character (Σ is σ, never ς); the scope reads it the same way.
-        let file = file_key(r"D:\ΑΣ\a.jpg");
+    fn a_sigma_folder_scopes_its_files_in_any_case() {
+        // σ upcases to Σ, so ασ and ΑΣ are one folder key, and one scope; the final ς keeps its own name (as on NTFS),
+        // so ας is another folder.
+        let file = file_key(r"D:\ασ\a.jpg");
         let (lo, hi) = PathRules::Windows.scope_keys(&names(&["ΑΣ"]), false);
-        assert!(file >= lo && hi.is_some_and(|hi| file < hi));
+        assert!(file >= lo && hi.as_ref().is_some_and(|hi| file < *hi));
+        let final_sigma = file_key(r"D:\ας\a.jpg");
+        assert!(!(final_sigma >= lo && hi.is_some_and(|hi| final_sigma < hi)));
     }
 
     #[test]
@@ -576,11 +577,16 @@ mod tests {
         let hi = hi.unwrap();
         let mut below = parent.clone();
         below.push(Name::from_raw(b"\xFFa"));
-        let key = rules.order_key(&rules.folder_key(&below), &Name::from("x.jpg"));
+        let key = rules.folder_key(&below);
         assert!(lo <= key && key < hi, "{key:?} not in {lo:?}..{hi:?}");
         // A sibling whose name extends the folder's is outside.
-        let sibling = rules.order_key(&rules.folder_key(&names(&["photos\u{1}"])), &Name::from("x.jpg"));
+        let sibling = rules.folder_key(&names(&["photos\u{1}"]));
         assert!(sibling >= hi);
+        // Without `recursive`, the folder's key alone.
+        let (own, own_hi) = rules.scope_keys(&parent, false);
+        let own_hi = own_hi.unwrap();
+        assert!(own <= rules.folder_key(&parent) && rules.folder_key(&parent) < own_hi);
+        assert!(key >= own_hi, "a subfolder is not in the folder's own scope");
     }
 }
 
@@ -617,14 +623,15 @@ mod byte_tests {
         rules.path_key(&rules.parse(text).unwrap())
     }
 
-    // The worked examples of `path_key`: a Windows folder is its drive, then its lower-cased parts; a POSIX folder is its
+    // The worked examples of `path_key`: a Windows folder is its drive, then its upcased parts; a POSIX folder is its
     // exact parts, and the root is the empty key.
     #[test]
     fn a_folder_key_is_its_anchor_then_its_parts() {
-        assert_eq!(key_of(PathRules::Windows, r"C:\Photos\Raw"), b"c:\x00photos\x01raw\x01");
+        assert_eq!(key_of(PathRules::Windows, r"C:\Photos\Raw"), b"C:\x00PHOTOS\x01RAW\x01");
+        assert_eq!(key_of(PathRules::Windows, r"c:\photos\raw"), b"C:\x00PHOTOS\x01RAW\x01");
         assert_eq!(key_of(PathRules::Posix, "/photos/raw"), b"photos\x01raw\x01");
         assert_eq!(key_of(PathRules::Posix, "/"), b"");
-        assert_eq!(key_of(PathRules::Windows, r"D:\"), b"d:\x00");
+        assert_eq!(key_of(PathRules::Windows, r"D:\"), b"D:\x00");
     }
 
     // The spelling is the key: a Windows folder in another case is the same key, a POSIX one is not.
@@ -634,18 +641,22 @@ mod byte_tests {
         assert_ne!(key_of(PathRules::Posix, "/Photos"), key_of(PathRules::Posix, "/photos"));
     }
 
-    // The residual cases of the Windows fold, pinned: the key folds each character as Rust lower-cases it, which is not
-    // NTFS's own case table on these, so they stay apart here (the gap is in the audit).
+    // The edge cases of the Windows fold, pinned: the key upcases each UTF-16 unit by the embedded table, NTFS's way, so
+    // a letter is one name with its single-unit uppercase when that lowercases back to it, and with nothing else (gate
+    // G2 of the catalog-size plan checked the table against NTFS itself, over the whole BMP).
     #[test]
-    fn the_windows_fold_keeps_the_residual_cases_as_rust_folds_them() {
+    fn the_windows_fold_is_the_tables_unit_by_unit() {
         let key = |text: &str| key_of(PathRules::Windows, &format!(r"D:\{text}"));
-        // Rust's lower case keeps these apart, where NTFS's table may not.
-        for (a, b) in [("σ", "ς"), ("ſ", "s"), ("İ", "i")] {
-            assert_ne!(key(a), key(b), "{a} and {b}");
-        }
-        // Rust's lower case joins these, as it does every upper case with its lower case.
-        for (a, b) in [("Σ", "σ"), ("\u{212A}", "k")] {
+        // One unit upcases to the other, and back: one folder.
+        for (a, b) in [("Σ", "σ"), ("é", "É"), ("ÿ", "Ÿ")] {
             assert_eq!(key(a), key(b), "{a} and {b}");
+        }
+        // Two folders: an uppercase that lowercases to another letter (ς, ſ and ı against Σ, S and I), the Kelvin sign
+        // and İ (their own upper case), ß (none in one unit), and a supplementary letter (Deseret: not folded at all).
+        for (a, b) in
+            [("σ", "ς"), ("ſ", "s"), ("ı", "i"), ("İ", "i"), ("\u{212A}", "k"), ("ß", "ẞ"), ("\u{10428}", "\u{10400}")]
+        {
+            assert_ne!(key(a), key(b), "{a} and {b}");
         }
     }
 

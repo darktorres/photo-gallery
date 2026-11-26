@@ -51,9 +51,28 @@ impl Format {
         }
     }
 
-    /// The name the catalog stores the format under.
+    /// The format's name (`jpeg`, `png`, …).
     pub fn key(self) -> &'static str {
         self.into()
+    }
+
+    /// The code the catalog stores the format under (`analysis.format`). Fixed per format, never reused: a new format
+    /// takes the next code.
+    pub const fn code(self) -> i64 {
+        match self {
+            Format::Jpeg => 0,
+            Format::Png => 1,
+            Format::Gif => 2,
+            Format::Webp => 3,
+            Format::Bmp => 4,
+            Format::Tiff => 5,
+        }
+    }
+
+    /// The format a stored code stands for, if it is one this build knows.
+    pub fn from_code(code: i64) -> Option<Format> {
+        use strum::IntoEnumIterator;
+        Format::iter().find(|f| f.code() == code)
     }
 }
 
@@ -106,5 +125,15 @@ mod tests {
             assert_eq!(Format::from_key(f.key()), Some(f));
         }
         assert_eq!(Format::from_key("jpg"), None);
+    }
+
+    /// The stored codes are pinned: `analysis.format` holds them in every catalog.
+    #[test]
+    fn the_stored_codes_are_pinned() {
+        assert_eq!(Format::iter().map(Format::code).collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5]);
+        for f in Format::iter() {
+            assert_eq!(Format::from_code(f.code()), Some(f));
+        }
+        assert_eq!(Format::from_code(6), None);
     }
 }

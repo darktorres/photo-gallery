@@ -25,6 +25,10 @@ import sys
 from itertools import count
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from pgtools import register_catalog_functions
+
 GRID = 16
 # The copy's ids: each original's file id and its copy's.
 MAPPING = "CREATE TEMP TABLE copied(old INTEGER PRIMARY KEY, new INTEGER NOT NULL)"
@@ -98,6 +102,8 @@ def main() -> None:
     src.backup(dst)
     src.close()
     dst.execute("PRAGMA foreign_keys = ON")
+    # The copies are file rows: the name index's function is the catalog's.
+    register_catalog_functions(dst)
 
     originals = [
         r[0]

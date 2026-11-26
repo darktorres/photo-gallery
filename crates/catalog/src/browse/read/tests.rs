@@ -10,7 +10,7 @@ use pg_model::facets::Facets;
 use pg_query::condition;
 use rusqlite::types::Value;
 
-use super::scope::scope;
+use super::scope::{SCOPE_FROM, scope};
 use crate::core::Catalog;
 use crate::error::Result;
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
@@ -36,10 +36,11 @@ fn folder(text: &str) -> Merged {
     rules.merge(&rules.parse(text).unwrap())
 }
 
-/// The order key of the file `name` in the folder at `folder_text` (a Windows path), as the catalog stores it.
-fn order_key_of(folder_text: &str, name: &str) -> Vec<u8> {
+/// The sort key of the file `name` in the folder at `folder_text` (a Windows path), as the grid orders by it: its merged
+/// folder's key (`mfolders.key`), then its name's key (`path_name_key`); the id breaks a tie.
+fn order_key_of(folder_text: &str, name: &str) -> (Vec<u8>, Vec<u8>) {
     let rules = PathRules::Windows;
-    rules.order_key(&rules.merged_key(&folder(folder_text)), &Name::from(name))
+    (rules.merged_key(&folder(folder_text)), rules.name_key(&Name::from(name)))
 }
 
 /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
@@ -422,34 +423,35 @@ fn real_tree_is_built_as_before() {
 #[test]
 fn name_order() {
     use std::cmp::Ordering::*;
-    let cmp = |a: &str, b: &str| Name::from(a).name_key().cmp(&Name::from(b).name_key());
-    // Case-insensitively first (Unicode, unlike SQLite's NOCASE), then exactly, so the order is total.
+    let cmp = |a: &str, b: &str| {
+        PathRules::Windows.name_key(&Name::from(a)).cmp(&PathRules::Windows.name_key(&Name::from(b)))
+    };
+    // By the upcase, unit by unit (NTFS's comparison, Unicode, unlike SQLite's NOCASE); names in two cases are one key,
+    // and the grid breaks the tie by the id.
     assert_eq!(cmp("a.jpg", "B.jpg"), Less);
     assert_eq!(cmp("Ä.jpg", "b.jpg"), Greater);
-    assert_eq!(cmp("ä.jpg", "Ä.JPG"), Greater);
-    assert_eq!(cmp("B.jpg", "b.jpg"), Less);
-    assert_eq!(cmp("img10", "IMG10"), Greater);
-    assert_eq!(cmp("abc", "ABC"), Greater);
+    assert_eq!(cmp("ä.jpg", "Ä.JPG"), Equal);
+    assert_eq!(cmp("B.jpg", "b.jpg"), Equal);
+    assert_eq!(cmp("img10", "IMG10"), Equal);
     assert_eq!(cmp("ab", "abc"), Less);
     assert_eq!(cmp("same", "same"), Equal);
+    // Upcase order puts `[ \ ] ^ _` and the backtick after the letters, where a lower case put them before.
+    assert_eq!(cmp("_a", "b"), Greater);
 }
 
-/// The order before the key (kept as the reference): folders by their parts, each lower-cased character by character
-/// (the scope's sort), then names by the PATH collation (characters lowercased one by one, then bytes). Empty parts
-/// are dropped, as the tree did.
+/// The reference order: folders by their parts, then names, each by its upcase, one UTF-16 unit at a time through the
+/// table (`pg_model::upcase::upcase`, unit by unit here, where the key encodes it as WTF-8). Empty parts are dropped, as
+/// the tree did. Two names with one upcase are equal: the grid orders them by id.
 fn reference_order(a: (&str, &str), b: (&str, &str)) -> std::cmp::Ordering {
-    let parts_of = |p: &str| -> Vec<Vec<u8>> { folder(p).parts().iter().map(lower).collect() };
-    let collation = |a: &str, b: &str| {
-        a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase)).then_with(|| a.cmp(b))
-    };
-    parts_of(a.0).cmp(&parts_of(b.0)).then_with(|| collation(a.1, b.1))
+    let parts_of = |p: &str| -> Vec<Vec<u16>> { folder(p).parts().iter().map(upper).collect() };
+    parts_of(a.0).cmp(&parts_of(b.0)).then_with(|| upper(&Name::from(a.1)).cmp(&upper(&Name::from(b.1))))
 }
 
-/// A name's lower case, character by character, as the keys hold it.
-fn lower(part: &Name) -> Vec<u8> {
-    let mut out = Vec::new();
-    part.push_lower(&mut out);
-    out
+/// A name's upcase, unit by unit, as UTF-16 units: the reference the keys are checked against. UTF-16 unit order and
+/// the key's WTF-8 byte order agree except for a supplementary character against U+E000..U+FFFF, which the corpus
+/// below has neither of together.
+fn upper(part: &Name) -> Vec<u16> {
+    part.to_wide().into_iter().map(pg_model::upcase::upcase).collect()
 }
 
 /// Paths and names made of the pieces where lowercasing and byte order are tricky.
@@ -469,9 +471,9 @@ fn random_file(rng: &mut Rng) -> (String, String) {
     (folder, part(rng))
 }
 
-// Windows-only: the order keys fold case per character and leave the drives out, and the cases named are Windows'.
+// Windows-only: the keys fold case unit by unit and leave the drives out, and the cases named are Windows'.
 #[test]
-fn order_keys_sort_as_before() {
+fn order_keys_sort_as_the_reference() {
     let mut rng = Rng::new(0x9E37_79B9_7F4A_7C15);
     let files: Vec<(String, String)> = (0..400).map(|_| random_file(&mut rng)).collect();
     for a in &files {
@@ -485,24 +487,25 @@ fn order_keys_sort_as_before() {
     before((r"D:\p", "z.jpg"), (r"D:\p\sub", "a.jpg"));
     before((r"D:\p\sub", "z.jpg"), (r"D:\p-x", "a.jpg"));
     before((r"E:\P", "a.jpg"), (r"D:\p", "b.jpg"));
-    before((r"D:\ας", "a"), (r"D:\ασ", "a"));
     before((r"D:\a\b", "z"), ("D:\\a\\b\u{1}c", "a"));
-    // A final Σ in a folder name is σ, character by character: `ΑΣ` is not `ας`, and it lists its own files.
+    // σ upcases to Σ, as NTFS folds it: `ΑΣ` and `ασ` are one folder, on any drive. The final ς keeps its own name
+    // (Σ lowercases to σ, and NTFS folds only what round-trips): `ας` is another folder.
     assert_eq!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ασ", "a"));
     assert_ne!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ας", "a"));
 }
 
-/// Folder keys are made per character: each part lower-cased character by character (a Σ is σ wherever it stands,
-/// where `str::to_lowercase` would make a final one ς), escaped, then 0x01. The writer stores these keys and the
-/// scope reads them, so the two agree.
-// Windows-only: the folder key lower-cases each character as Windows does (a POSIX key holds the exact bytes).
+/// Folder keys are made per UTF-16 unit: each part upcased unit by unit through the table (σ is Σ, ς is ς), escaped,
+/// then 0x01. The writer stores these keys and the scope reads them, so the two agree. A name's key is its upcase, as
+/// WTF-8.
+// Windows-only: the folder key upcases as Windows does (a POSIX key holds the exact bytes).
 #[test]
-fn folder_keys_are_made_per_character() {
+fn folder_keys_are_made_per_unit() {
     let rules = PathRules::Windows;
+    let upcased = |part: &Name| -> Vec<u8> { Name::from_wide(&upper(part)).as_bytes().to_vec() };
     let reference = |parts: &[Name]| -> Vec<u8> {
         let mut key = Vec::new();
         for part in parts {
-            for b in lower(part) {
+            for b in upcased(part) {
                 match b {
                     0x01 => key.extend([0x02, 0x02]),
                     0x02 => key.extend([0x02, 0x03]),
@@ -527,21 +530,29 @@ fn folder_keys_are_made_per_character() {
         let parts = folder(&text).parts().to_vec();
         assert_eq!(rules.folder_key(&parts), reference(&parts), "{text:?}");
     }
-    for name in ["a.JPG", "ΑΣ.jpg", "\u{130}.png", ""] {
-        let key = rules.order_key(b"k\x01", &Name::from(name));
-        assert_eq!(key, [&b"k\x01"[..], &Name::from(name).name_key()].concat());
+    for name in ["a.JPG", "ΑΣ.jpg", "ας.jpg", "\u{130}.png", ""] {
+        assert_eq!(rules.name_key(&Name::from(name)), upcased(&Name::from(name)), "{name:?}");
     }
 }
 
-/// On a real catalog's names (read-only, any layout): `PG_TEST_CATALOG=… cargo test -p pg-catalog real_names --
-/// --ignored`.
+/// Gate G4 of `docs/plans/CATALOG_SIZE_PLAN.md`, on a real catalog's names (read-only, any layout):
+/// `PG_TEST_CATALOG=… cargo test -p pg-catalog real_names -- --ignored --nocapture`.
+///
+/// - **Order:** the names sorted by the new key (each part's upcase, unit by unit) against the old one (each part
+///   lower-cased character by character, then the exact name). Every adjacent pair the two put the other way round is
+///   listed, and each must be one the new fold explains: the first characters where the two differ are not both ASCII
+///   letters or digits (punctuation between the cases, `[ \ ] ^ _` and the backtick; a non-ASCII letter ordered by its
+///   capital; a supplementary character), or the two are one name in two cases (the id breaks that tie now, the exact
+///   bytes did before).
+/// - **Scopes:** every folder against every scope, recursive and not: the reference match (the parts, each upcased) and
+///   the key range agree.
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
-fn real_names_sort_and_scope_as_before() {
+fn real_names_sort_and_scope_as_the_reference() {
     let path = std::env::var_os(pg_testkit::inputs::TEST_CATALOG).expect(pg_testkit::inputs::TEST_CATALOG);
     let rules = raw::recorded_rules(std::path::Path::new(&path));
-    // The reference order and scopes below are Windows': per-character case folding, drives merged. A POSIX catalog
-    // is checked by the rule-generic tests instead.
+    // The reference order and scopes below are Windows': case folding, drives merged. A POSIX catalog is checked by the
+    // rule-generic tests instead.
     assert_eq!(rules, PathRules::Windows, "the reference order and scopes are Windows'");
     let c = crate::core::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let files: Vec<(String, String)> = raw::rows_of(
@@ -550,35 +561,80 @@ fn real_names_sort_and_scope_as_before() {
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     );
+    // The old key: each part lower-cased character by character, then the name likewise, then its exact bytes.
+    let old = |(folder_text, name): &(String, String)| {
+        let lower = |s: &str| s.chars().flat_map(char::to_lowercase).collect::<String>();
+        let parts: Vec<String> = folder(folder_text).parts().iter().map(|p| lower(&p.display())).collect();
+        (parts, lower(name), name.clone())
+    };
     let mut by_key = files.clone();
     by_key.sort_by_cached_key(|(folder, name)| order_key_of(folder, name));
+    let explained = |a: &str, b: &str| {
+        let (la, lb) = (a.to_lowercase(), b.to_lowercase());
+        if la == lb {
+            return true;
+        }
+        let first = la.chars().zip(lb.chars()).find(|(x, y)| x != y);
+        first.is_none_or(|(x, y)| !(x.is_ascii_alphanumeric() && y.is_ascii_alphanumeric()))
+    };
+    let mut changed = Vec::new();
     for pair in by_key.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
-        assert_ne!(reference_order((&a.0, &a.1), (&b.0, &b.1)), std::cmp::Ordering::Greater, "{a:?}, {b:?}");
+        if old(a) > old(b) {
+            let (left, right) = if a.0 == b.0 { (&a.1, &b.1) } else { (&a.0, &b.0) };
+            assert!(explained(left, right), "an order change the new fold does not explain: {a:?}, {b:?}");
+            changed.push((a.clone(), b.clone()));
+        }
     }
-    // Every folder against every scope, recursive and not: the old match (the parts, each lower-cased) and the key range.
+    for (a, b) in &changed {
+        eprintln!("order changed: {a:?} now before {b:?}");
+    }
+    // The grid's SQL order of every present file is the Rust sort of the keys (`order_key_of`, then the id).
+    let present: Vec<(i64, Vec<u8>, Vec<u8>)> = raw::rows_of(
+        &c,
+        "SELECT f.id, fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.missing = 0",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    );
+    let mut by_rust: Vec<(Vec<u8>, Vec<u8>, i64)> = present
+        .iter()
+        .map(|(id, folder, name)| {
+            let parts = rules.parse_bytes(folder).expect("a stored folder parses").parts;
+            (rules.folder_key(&parts), rules.name_key(&Name::from_raw(name)), *id)
+        })
+        .collect();
+    by_rust.sort();
+    let rust: Vec<i64> = by_rust.into_iter().map(|(_, _, id)| id).collect();
+    let sql: Vec<i64> = ids(&c, "", true, &Query::default(), Sort::default());
+    assert_eq!(sql, rust, "the SQL order is the Rust sort");
+    // Every folder against every scope, recursive and not: the reference match (the parts, each upcased) and the range.
     let folders: Vec<String> = raw::rows_of(&c, "SELECT CAST(path AS TEXT) FROM folders", [], |r| r.get(0));
     let in_range = |scope_text: &str, recursive: bool, folder_text: &str| {
         let (_, values) = scope(c.rules(), &folder_of(&c, scope_text), recursive);
-        let key = order_key_of(folder_text, "a");
+        let key = order_key_of(folder_text, "a").0;
         let blob = |v: &Value| match v {
             Value::Blob(b) => b.clone(),
             _ => unreachable!(),
         };
         key >= blob(&values[0]) && values.get(1).is_none_or(|hi| key < blob(hi))
     };
-    let lower_parts = |text: &str| -> Vec<Vec<u8>> { folder(text).parts().iter().map(lower).collect() };
+    let upper_parts = |text: &str| -> Vec<Vec<u16>> { folder(text).parts().iter().map(upper).collect() };
     for scope_folder in &folders {
-        let merged = lower_parts(scope_folder);
+        let merged = upper_parts(scope_folder);
         for folder_text in &folders {
-            let m = lower_parts(folder_text);
+            let m = upper_parts(folder_text);
             for recursive in [false, true] {
-                let before = m == merged || (recursive && (merged.is_empty() || m.starts_with(&merged)));
-                assert_eq!(in_range(scope_folder, recursive, folder_text), before, "{folder_text} in {scope_folder}");
+                let inside = m == merged || (recursive && (merged.is_empty() || m.starts_with(&merged)));
+                assert_eq!(in_range(scope_folder, recursive, folder_text), inside, "{folder_text} in {scope_folder}");
             }
         }
     }
-    eprintln!("{} files, {} folders: same order and scopes", files.len(), folders.len());
+    eprintln!(
+        "{} files, {} folders: {} adjacent pairs changed order, all explained",
+        files.len(),
+        folders.len(),
+        changed.len()
+    );
 }
 
 // Windows-only: the scopes are ranges of Windows keys, and the cases name drives, a UNC root and case folding.
@@ -586,7 +642,8 @@ fn real_names_sort_and_scope_as_before() {
 fn scopes_are_key_ranges() {
     let inside = |scope_of: (&str, bool), file: (&str, &str)| {
         let (sql, values) = scope(PathRules::Windows, &folder(scope_of.0), scope_of.1);
-        let key = order_key_of(file.0, file.1);
+        // The scope is a range of merged folder keys: the name doesn't enter it.
+        let key = order_key_of(file.0, file.1).0;
         let bound = |v: &Value| match v {
             Value::Blob(b) => b.clone(),
             _ => unreachable!(),
@@ -649,23 +706,47 @@ fn lists_read_the_order_index(rules: PathRules) {
                 &grid_sql(&scope, &unrated.sql, sort),
                 params_from_iter(values.into_iter().chain(unrated.params)),
             );
-            assert!(plan.contains("USING INDEX files_order"), "{plan}");
+            assert!(plan.contains("USING INDEX files_mn"), "{plan}");
+            assert!(plan.contains("SEARCH mf USING COVERING INDEX sqlite_autoindex_mfolders_1"), "{plan}");
             assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
         }
-        // The list's size, from the index alone.
+        // The list's size, from the indexes alone.
         let (scope, values) = scope(c.rules(), &folder_of(&c, text), recursive);
         let plan = raw::query_plan(
             &c,
-            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+            &format!("SELECT count(*) FROM {SCOPE_FROM} WHERE f.missing = 0 AND {scope}"),
             params_from_iter(values),
         );
-        assert!(plan.contains("COVERING INDEX files_order"), "{plan}");
+        assert!(plan.contains("COVERING INDEX files_mn"), "{plan}");
     }
     let plan = raw::query_plan(&c, FOLDER_COUNTS, []);
-    assert!(plan.contains("COVERING INDEX files_present") && !plan.contains("TEMP B-TREE"), "{plan}");
+    assert!(plan.contains("COVERING INDEX files_fm") && !plan.contains("TEMP B-TREE"), "{plan}");
 }
 
 under_both_rules!(lists_read_the_order_index, lists_read_the_order_index_windows, lists_read_the_order_index_posix);
+
+/// The Duplicates filter's hash probes use the partial hash indexes (which hold only hashed rows): its `x = y` terms
+/// imply `x IS NOT NULL`, so the planner takes them, in both directions of the filter.
+fn the_duplicates_filter_reads_the_partial_hash_indexes(rules: PathRules) {
+    let c = library(rules);
+    for wanted in [true, false] {
+        let (scope, values) = scope(c.rules(), &folder_of(&c, ""), true);
+        let duplicates = condition(&Query { duplicates: Some(wanted), ..Query::default() });
+        let plan = raw::query_plan(
+            &c,
+            &grid_sql(&scope, &duplicates.sql, Sort::default()),
+            params_from_iter(values.into_iter().chain(duplicates.params)),
+        );
+        assert!(plan.contains("INDEX analysis_file_hash (file_hash=?)"), "{wanted}: {plan}");
+        assert!(plan.contains("INDEX analysis_pixel_hash (pixel_hash=?)"), "{wanted}: {plan}");
+    }
+}
+
+under_both_rules!(
+    the_duplicates_filter_reads_the_partial_hash_indexes,
+    the_duplicates_filter_reads_the_partial_hash_indexes_windows,
+    the_duplicates_filter_reads_the_partial_hash_indexes_posix
+);
 
 fn facets_filter(rules: PathRules) {
     let c = mixed_library(rules);
@@ -674,15 +755,19 @@ fn facets_filter(rules: PathRules) {
         f(&mut q);
         ids(&c, "", true, &q, Sort::default())
     };
-    assert_eq!(q(&|_| {}), [2, 6, 1, 7, 8, 3, 4, 5]);
+    // `sub`'s two files: `c.bmp` (4) and `Clip.MP4` (5). Windows orders names by their upcase (`C.BMP`, `CLIP.MP4`),
+    // POSIX by their bytes (`C` before `c`).
+    let sub: &[i64] = if rules == PathRules::Windows { &[4, 5] } else { &[5, 4] };
+    let with_sub = |head: &[i64]| -> Vec<i64> { head.iter().chain(sub).copied().collect() };
+    assert_eq!(q(&|_| {}), with_sub(&[2, 6, 1, 7, 8, 3]));
     assert_eq!(q(&|q| q.types = vec![MediaType::Video]), [5]);
     assert_eq!(q(&|q| q.types = vec![MediaType::Animated, MediaType::Video]), [6, 5]);
     assert_eq!(q(&|q| q.types = vec![MediaType::Image]), [2, 1, 7, 8, 3, 4]);
     assert_eq!(q(&|q| q.exts = vec!["JPG".into()]), [1, 7, 3]);
     assert_eq!(q(&|q| q.shapes = vec![Shape::Square]), [6]);
-    assert_eq!(q(&|q| q.shapes = vec![Shape::Landscape]), [2, 1, 3, 4, 5]);
+    assert_eq!(q(&|q| q.shapes = vec![Shape::Landscape]), with_sub(&[2, 1, 3]));
     assert!(q(&|q| q.shapes = vec![Shape::Portrait]).is_empty());
-    assert_eq!(q(&|q| q.megapixels.min = Some(5e-6)), [2, 6, 1, 3, 4, 5]);
+    assert_eq!(q(&|q| q.megapixels.min = Some(5e-6)), with_sub(&[2, 6, 1, 3]));
     assert_eq!(q(&|q| q.megapixels.max = Some(1e-5)), [6]);
     assert_eq!(q(&|q| q.size_mb = Range { min: Some(20.0 / 1_048_576.0), max: Some(40.0 / 1_048_576.0) }), [1, 3, 4]);
     assert_eq!(q(&|q| q.duration_s.min = Some(10.0)), [5]);
@@ -690,7 +775,7 @@ fn facets_filter(rules: PathRules) {
     assert_eq!(q(&|q| q.duplicates = Some(false)), [6, 5]);
     assert_eq!(q(&|q| q.status = vec![Status::Failed]), [7]);
     assert_eq!(q(&|q| q.status = vec![Status::Pending]), [8]);
-    assert_eq!(q(&|q| q.status = vec![Status::Imported]), [2, 6, 1, 3, 4, 5]);
+    assert_eq!(q(&|q| q.status = vec![Status::Imported]), with_sub(&[2, 6, 1, 3]));
     let day = |from: &str, to: &str| DateRange { from: Day::parse(from), to: Day::parse(to) };
     assert_eq!(q(&|q| q.taken = day("2024-05-01", "2024-05-01")), [1]);
     assert!(q(&|q| q.taken.from = Day::parse("2024-05-02")).is_empty());
@@ -839,7 +924,7 @@ fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, que
     let count = |skip: Option<Counted>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
         let cond = condition_without(query, skip);
         let sql = format!(
-            "SELECT {select}, count(*) FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
+            "SELECT {select}, count(*) FROM {SCOPE_FROM} {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
             cond.sql
         );
         let values = scope_values.iter().cloned().chain(cond.params);
@@ -848,7 +933,7 @@ fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, que
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     };
     let total: i64 = conn.query_row(
-        &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+        &format!("SELECT count(*) FROM {SCOPE_FROM} WHERE f.missing = 0 AND {scope}"),
         rusqlite::params_from_iter(&scope_values),
         |r| r.get(0),
     )?;
@@ -858,12 +943,12 @@ fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, que
         .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
         .collect();
     types.sort();
-    let exts = count(Some(Counted::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
+    let exts = count(Some(Counted::Exts), "pg_ext(f.ext)", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
     let cond = condition_without(query, Some(Counted::Borders));
     let mut borders = Vec::new();
     for b in BorderFacet::iter() {
         let sql = format!(
-            "SELECT count(*) FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND ({}) AND {}",
+            "SELECT count(*) FROM {SCOPE_FROM} {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND ({}) AND {}",
             cond.sql,
             border_sql(b)
         );
@@ -904,16 +989,22 @@ under_both_rules!(
     the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet_posix
 );
 
-/// A folder whose name ends in Σ lists its files: the writer keys it character by character (σ), and the scope reads
-/// that same key. (In an older build the scope lower-cased the name whole, to ς, and listed nothing.)
+/// A folder whose name ends in Σ lists its files: the writer keys it unit by unit, and the scope reads that same key.
+/// (In an older build the scope lower-cased the name whole, to ς, and listed nothing.) `ας` is another folder under
+/// both rules: on Windows the final ς keeps its own name, as on NTFS (Σ lowercases to σ, and NTFS folds only what
+/// round-trips), and `ασ` is the same folder; on POSIX names are exact.
 fn a_folder_ending_in_sigma_lists_its_files(rules: PathRules) {
     let c = library(rules);
     crate::fixture::state::add_folder(&c, 9, &spelled(rules, r"D:\ΑΣ")).unwrap();
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(9), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "ΑΣ", false, &Query::default(), Sort::default()), [9]);
     assert_eq!(ids(&c, "ΑΣ", true, &Query::default(), Sort::default()), [9]);
-    // A different folder: the lower-cased ς is not σ.
     assert_eq!(ids(&c, "ας", false, &Query::default(), Sort::default()), Vec::<i64>::new());
+    let small = ids(&c, "ασ", false, &Query::default(), Sort::default());
+    match rules {
+        PathRules::Windows => assert_eq!(small, [9]),
+        PathRules::Posix => assert_eq!(small, Vec::<i64>::new()),
+    }
 }
 
 under_both_rules!(

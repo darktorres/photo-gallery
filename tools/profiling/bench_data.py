@@ -38,6 +38,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from pgtools import register_catalog_functions
+
 # The ledger rows a `-large` layout is seeded to, with the import's own failures counted.
 LARGE_LEDGER_ROWS = 100_000
 # The seeded rows' fixed fields: the same data on every run.
@@ -108,6 +112,8 @@ def seed_ledger(catalog: Path, rows: int) -> None:
     (not in file_failures, which has no `hidden`), and they count toward `rows` the same. A catalog made before the
     migration and then opened by a build after it (which backfills the import's rows) has the same rows either way."""
     conn = sqlite3.connect(catalog)
+    # The VACUUM below remakes the name index, which is on the catalog's function.
+    register_catalog_functions(conn)
     ledger = columns(conn, "file_failures")
     after = "hidden" in ledger
     have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
@@ -153,6 +159,8 @@ def main() -> int:
     target.mkdir(parents=True)
 
     src = read_only(args.catalog_dir / "catalog.sqlite")
+    # VACUUM INTO makes the copy's indexes, the name index among them, which is on the catalog's function.
+    register_catalog_functions(src)
     src.execute("VACUUM INTO ?", (str(target / "catalog.sqlite"),))
     src.close()
     if ledger_rows > 0:

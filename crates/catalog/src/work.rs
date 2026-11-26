@@ -19,7 +19,7 @@ use pg_model::analysis::PLACEHOLDER_VERSION;
 
 /// `Catalog::volumes`' query (`pg_query::volumes_sql!`): the thumbnail cache runs the same statement over the attached
 /// catalog.
-const VOLUMES: &str = pg_query::volumes_sql!("files");
+const VOLUMES: &str = pg_query::volumes_sql!("thumb_volumes");
 
 /// A file that can have a thumbnail (`thumb_sources`), as the thumbs pass's candidates stream it (section 10, D10): its
 /// id, where it is (its folder's id and path, its name), what it is (its time, its turns, its size, a video's poster
@@ -161,18 +161,20 @@ impl Catalog {
     /// The volumes the files `ids` are on, as the catalog stores them (the ids that are not in the catalog are none). A job
     /// that changes those files holds the lanes of those volumes while it does.
     pub fn volumes_of(&self, ids: &[FileId]) -> Result<BTreeSet<u64>> {
-        let mut stmt = self.conn.prepare_cached("SELECT volume FROM files WHERE id = ?1")?;
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT v.serial FROM files f JOIN volumes v ON v.id = f.volume WHERE f.id = ?1")?;
         let mut volumes = BTreeSet::new();
         for id in ids {
-            // A volume id is stored as the SQL integer of its bits: the identity edge (`convert::identity_to_sql`).
+            // A volume's serial is stored as the SQL integer of its bits: the identity edge (`convert::identity_to_sql`).
             let found: Option<i64> = stmt.query_row([id.get()], |row| row.get(0)).optional()?;
             volumes.extend(found.map(i64::cast_unsigned));
         }
         Ok(volumes)
     }
 
-    /// The distinct volumes the catalog holds files on, ascending (the non-NULL `files.volume`s). The cost is one index
-    /// probe a volume, whatever the number of files: a plain `SELECT DISTINCT volume` would read the whole index.
+    /// The distinct volumes the catalog holds files on, as their serials, ascending. The cost is one index probe a
+    /// volume (`thumb_volumes`), whatever the number of files.
     pub fn volumes(&self) -> Result<Vec<i64>> {
         let mut stmt = self.conn.prepare_cached(VOLUMES)?;
         Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
@@ -293,8 +295,9 @@ pub(crate) const PICTURES: &str = "SELECT file_id, pdq_dihedral, pdq_quality FRO
 /// The files with an identity, from `UNIQUE(volume, file_ref)`'s index alone (NULLs sort first, so this is one range).
 pub(crate) const WITH_IDENTITY: &str = "SELECT id FROM files WHERE volume IS NOT NULL";
 /// The present files, and the present ones the import has yet to analyze: those of the first and not the second make
-/// their pairs ([`OWED`]'s rule), and only they count as legacy.
-pub(crate) const PRESENT: &str = "SELECT id FROM files INDEXED BY files_present WHERE missing = 0";
+/// their pairs ([`OWED`]'s rule), and only they count as legacy. The present files are read from `files_fm`'s entries
+/// (the index holds `missing`, so no row is read), in the index's order; the caller sorts them.
+pub(crate) const PRESENT: &str = "SELECT id FROM files INDEXED BY files_fm WHERE missing = 0";
 pub(crate) const PRESENT_PENDING: &str =
     "SELECT id FROM files INDEXED BY files_to_import WHERE missing = 0 AND pending = 1";
 /// The pictures that owe their pairs.
@@ -651,7 +654,7 @@ impl Catalog {
             |r| r.get(0),
         )?;
         let mut stmt = tx.prepare(&format!(
-            "SELECT {}, CASE WHEN f.kind = '{}' THEN coalesce(a.poster_ms, 0) END AS poster_ms {OWED_PLACEHOLDERS}{and}
+            "SELECT {}, CASE WHEN f.kind = {} THEN coalesce(a.poster_ms, 0) END AS poster_ms {OWED_PLACEHOLDERS}{and}
              ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
             work_columns!(),
             pg_model::kind_video!(),
@@ -851,8 +854,10 @@ mod tests {
     #[test]
     fn volumes_is_a_search_of_the_volume_index_not_a_scan_of_files() {
         let c = three_volumes();
+        // Each interned volume, and a probe of the identity index for a file on it.
         let plan = raw::query_plan(&c, VOLUMES, []);
-        assert!(plan.contains("sqlite_autoindex_files_1 (volume>?)") && !plan.contains("SCAN files"), "{plan}");
+        assert!(plan.contains("sqlite_autoindex_files_1 (volume=?)") && !plan.contains("SCAN files"), "{plan}");
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
 
     #[test]
@@ -875,15 +880,16 @@ mod tests {
     #[test]
     fn the_volume_clause_is_a_literal_list() {
         assert_eq!(VolumeSet::All.and_in("f.volume"), "");
-        // A volume id is stored as the SQL integer of its bits: u64::MAX is -1.
-        assert_eq!(VolumeSet::Only(vec![3, u64::MAX]).and_in("f.volume"), " AND f.volume IN (3,-1)");
-        assert_eq!(VolumeSet::Only(vec![]).and_in("f.volume"), " AND f.volume IN ()");
+        // A volume's serial is stored as the SQL integer of its bits: u64::MAX is -1. The serials are mapped to their ids.
+        let ids = |list: &str| format!(" AND f.volume IN (SELECT id FROM volumes WHERE serial IN ({list}))");
+        assert_eq!(VolumeSet::Only(vec![3, u64::MAX]).and_in("f.volume"), ids("3,-1"));
+        assert_eq!(VolumeSet::Only(vec![]).and_in("f.volume"), ids(""));
     }
 
     #[test]
     fn the_import_list_filters_by_its_volumes_in_record_order() {
         let sql = pending_import_sql(&VolumeSet::Only(vec![3]));
-        assert_eq!(sql.matches("f.volume IN (3)").count(), 1, "{sql}");
+        assert_eq!(sql.matches("serial IN (3)").count(), 1, "{sql}");
         assert!(!pending_import_sql(&VolumeSet::All).contains("IN ("));
         assert!(pending_import_sql(&VolumeSet::All).ends_with("ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"));
     }
@@ -891,7 +897,7 @@ mod tests {
     #[test]
     fn a_volume_set_limits_each_pending_list_to_its_volumes() {
         let (c, id) = crate::test_support::one_file(pg_model::rules::PathRules::Posix);
-        let volume: i64 = c.conn.query_row("SELECT volume FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        let volume = raw::volume_of(&c, FileId::new(id)).unwrap();
         let here = VolumeSet::Only(vec![volume.cast_unsigned()]);
         let elsewhere = VolumeSet::Only(vec![volume.cast_unsigned() + 1]);
         assert_eq!(c.pending_import(&VolumeSet::All).unwrap().len(), 1);

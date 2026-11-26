@@ -237,8 +237,9 @@ References, for design ideas only:
 - **Main risks:**
   - One shared device: decoding and Qt's rendering on one immediate context. From the sources, multithread
     protection plus one FFmpeg device context is enough for correctness (mpv works this way), provided only
-    Qt's render thread sets pipeline state and ring slots wait for `frameSwapped`. The spike measures
-    throughput; a frame lock (`afterRendering` → `frameSwapped`) would stall decoding only for Qt's final replay
+    Qt's render thread sets pipeline state and ring slots wait for `frameSwapped`. The spike measured it:
+    paced playback holds 60 Hz, but decoding flat out drops Qt's render loop to 20–40 fps (see "Spikes → Spike
+    results"). A frame lock (`afterRendering` → `frameSwapped`) would stall decoding only for Qt's final replay
     plus `Present`, not a vsync. A grab (`grabWindow`, used by `--screenshot`) emits `afterRendering` but not
     `frameSwapped`, so such a lock must also be released if still held at the next `beforeRendering`. See
     "Research 2026-11-25 → Shared device".
@@ -295,7 +296,7 @@ without D3D11), the default silently falls back to `gpu`, so we pass
   multithread protection itself (so our device must not be created single-threaded). By default that is one copy per
   frame on the same device; zero-copy is an option with documented driver caveats.
   - `hwdec=d3d11va` (`auto` and `auto-safe` are the same, and pick the decoder themselves), with `hwdec-codecs` set
-    per file from our AV1 check on the shared adapter. The manual lists d3d11va for `vo=gpu` and `gpu-next` only. The code needs just a D3D11 render context, which the render API provides, and it does: on this machine (the daily build `20261030-git-8e5a96fc45`, a pre-0.42.0 master build, `gpu` renderer, `hwdec-current` = `d3d11va`, frames rendered), H.264 and VP9 decode through d3d11va, and 8-bit 4:2:0 HEVC Main does too (tested on a synthetic clip only). AV1 does not on this Turing GPU: the first frame fails, and mpv falls back to software for the rest of the clip, so playback works without hardware decode. That was the `gpu` renderer; with gpu-next, d3d11va uses the same `hwdec_d3d11va` interop with its textures wrapped by `pl_d3d11_wrap`, but nobody has tested that through the render API on Windows, so the spike retests it.
+    per file from our AV1 check on the shared adapter. The manual lists d3d11va for `vo=gpu` and `gpu-next` only. The code needs just a D3D11 render context, which the render API provides, and it does: on this machine (the daily build `20261030-git-8e5a96fc45`, a pre-0.42.0 master build, `gpu` renderer, `hwdec-current` = `d3d11va`, frames rendered), H.264 and VP9 decode through d3d11va, and 8-bit 4:2:0 HEVC Main does too (tested on a synthetic clip only). AV1 does not on this Turing GPU: the first frame fails, and mpv falls back to software for the rest of the clip, so playback works without hardware decode. That was the `gpu` renderer; with gpu-next, d3d11va uses the same `hwdec_d3d11va` interop with its textures wrapped by `pl_d3d11_wrap`, and the spike (2026-11-26, gpu-next through the render API) has `hwdec-current` = `d3d11va` for H.264, HEVC Main10, VP9, HDR10 and Dolby Vision profile 5 (see "Spikes → Spike results").
   - mpv falls back to software after 3 consecutive decode errors (`hwdec-software-fallback`). A watchdog of ours
     reopens with `hwdec=no` when the decoder produces no frames.
 - **Control.** Commands and properties go through the client API:
@@ -475,7 +476,104 @@ first step of each option is the decision test.
 
 **Decisions before shipping either:** the app's own licence (it has none yet; way 1 links the GPL FFmpeg, so its libmpv is GPL whatever mpv's `gpl` option says), and for B whether way 1's
 toolchain is acceptable (way 2 means two FFmpeg copies). The options are in "Research 2026-11-25 → Licences".
-Also: re-pin FFmpeg past BtbN's zvbi fix (a build from 2026-11-07 or later) before any public binary.
+Also: re-pin FFmpeg past BtbN's zvbi fix (the 9.0 `gpl-shared` builds from `autobuild-2026-11-12-15-40` on; the
+2026-11-30 month-end build, see "Research → Licences") before any public binary.
+
+### Spike results (2026-11-26)
+
+Both decision tests pass. The spikes are throwaway C++ (Qt 6.12.0, MSVC, CMake) outside the repo, in
+`D:\scratch\player-spikes`: `a\` (2.2k lines; C++ rather than Rust, since what it tests is D3D11 and Qt),
+`b\` (1.0k lines), the test bed from `tools/gen_player_media.sh` in `media\`, and synthetic clips in `bench\`.
+Not run on either: the driver reset (`dxcap -forcetdr` resets the GPU for the whole desktop; both spikes have
+the recovery written and wait for it), the filmed A/V offset, a system default-device change and an unplug.
+
+**Option A:**
+
+- **Step 0 passes.** qsb 6.12 with `--hlsl 50 -c` and fxc on PATH stores DXBC 50 for both stages (`qsb -d`);
+  the 6.12 runtime loads and draws them.
+- **Step 1 passes.**
+  - Decoders chosen by name through the table: H.264, HEVC Main and Main10, VP9 profiles 0 and 2 on the GPU;
+    AV1 has no profile, so libdav1d. One session on one device ran H.264 (NV12), AV1 in software, HEVC Main10
+    (P010) and VP9 in turn. The debug layer logged nothing in any run (a provoked invalid `CreateTexture2D`
+    proved its queue records).
+  - Ring: no slot was ever rewritten against the rule. A grab (`grabWindow`) emits `afterRendering` and no
+    `frameSwapped` (79 grabs: 355 of each before/after signal, 276 swaps); the item latched a new frame during 51
+    of them; with the frame lock on, `beforeRendering` released a lock left by a grab 81 times. Pause and resizing
+    (every 300 ms) had no violations either.
+  - Paced playback holds 60 Hz on the shared device: 1080p60 and 2160p30 H.264, p50 16.67 ms between swaps and
+    p99 17–18 ms in clean runs, the same as software decoding of the same files. The frame lock made no
+    measurable difference. Late swaps showed up in every mode alike, from other load on the machine.
+  - Unpaced decoding (headless, then with the render loop, debug layer off): 1080p H.264 650–670 fps alone and
+    480–560 fps with the render loop; 2160p about 190 fps either way (the decoder is the limit). Meanwhile Qt's
+    render loop drops to about 40 fps (1080p) and 21 fps (2160p), with or without the frame lock. So bursts of
+    decoding as fast as possible (seek's decode-and-discard, preloading) cost the UI frames: rate-limit them, or
+    accept it during a seek.
+  - Fallback: 3 injected errors at frame 120 reopened `h264` in software, first frame 117 ms later (decoding
+    from the keyframe), no frame lost (120 + 178 frames in 5 s). The real case, `av1` with d3d11va on this GPU
+    (table bypassed), fails at hwaccel init on each packet ("Function not implemented"); after 3, libdav1d
+    took over in 7.6 ms. The spike's fallback re-seeks the one demuxer, so audio re-syncs too; the engine needs
+    a re-read for video only.
+  - Orientation: rotations of 90, 180 and 270, both mirrors and 90 + mirror match FFmpeg's autorotate. The
+    shader's UV transform is the transpose of the display matrix's normalised 2×2 part.
+  - Colour: bar centres within 3 levels of FFmpeg's own RGB conversion for BT.601 and BT.709, limited and full
+    range, 10-bit HEVC (P010), VP9 profile 2 and AV1 in software. HDR was shown untone-mapped (the spike has the
+    SDR matrices only).
+  - Qt's kit ships its own `avcodec-63.dll` (same name as ours, no libdav1d) in its `bin`. With that on PATH
+    it is loaded instead of ours: the spike's first runs used it unnoticed. Ours must be beside the exe, as the
+    app's deploy already does. QRhi's headers need `Qt6::GuiPrivate` in CMake.
+- **Step 2, in part.** WASAPI shared and event-driven, float at the content's rate in the mix's channels,
+  `AUTOCONVERTPCM | SRC_DEFAULT_QUALITY`, a 100 ms buffer, MMCSS "Audio", the clock from `GetPosition`
+  extrapolated with its QPC time. All runs were muted (gain 0, stream running).
+  - The player's own offset, heard audio minus the shown frame at `frameSwapped`: constant within a run (spread
+    0.5–17 ms), its mean 2–15 ms depending on the vsync phase. A lead of about half a refresh centres it. This
+    leaves out the compositor and the device; the filmed measurement is still to do.
+  - Written minus position: 111–136 ms. 44.1 kHz content on the 48 kHz mix shows no difference from 48 kHz
+    content beyond the ±5 ms between runs, so the converter's delay is not visible at this resolution.
+    `GetPosition` runs 50 ppm slower than QPC on the HDMI endpoint, about 0 on the virtual one.
+  - Seek: first frame 6–627 ms on a clip with 4.2 s between keyframes (decode-and-discard is most of it).
+    Step: the next frame latched in 2–10 ms. Loop: gapless (one frame, 33.3 ms, between the last frame of a
+    pass and the first of the next), no underruns.
+  - Device switch chosen in the app (HDMI to the virtual Steam endpoint): rebuilt in 30 ms, no underrun, swaps
+    unchanged (p99 17.9 ms). Not written: the default-device notification (`IMMNotificationClient`).
+- **Step 3, in part.** All 60 fixtures played windowed with audio: MKV, AVI, WMV, MPG, TS, M4V, 3GP, truncated
+  files, 10-bit HEVC, HDR10, HLG, and 5.1 and 7.1 in AAC, AC-3, E-AC-3 and Opus mixed down to the stereo mix.
+  None had a debug-layer message, an underrun or a ring violation. The MP4 with no `moov` fails to open,
+  cleanly. All 1,712 dataset videos decode headless: 837 H.264 and 748 VP9 on the GPU, 127 VP8 in software,
+  no fallbacks. Animations on the item and removing Qt Multimedia are app work, not done.
+
+**Option B** (zhongfly `2026-11-26-1eab28e7b5`, `mpv-dev-lgpl-x86_64-20261126-git-1eab28e7b5.7z`, sha256
+`0e1fa6a8008f253117e79d0933d975e0447ac262dc2fb24f6a0d5c96bdc45213`; its dev package leaves out
+`render_d3d11.h`, taken from mpv at the same commit):
+
+- **Step 1 passes.** Client API 2.7; the render context with `gpu-next` (libplacebo v7.401.0) on our device,
+  into the item's colour texture inside `beginExternal`/`endExternal`. `hwdec-current` = `d3d11va` under
+  gpu-next for H.264, HEVC Main10, VP9, HDR10 HEVC and Dolby Vision profile 5. AV1 plays through libdav1d (mpv
+  picks it first even with `hwdec-codecs=all`). HDR10 and profile 5 match mpv.exe's own gpu-next window to
+  about 0.06 % RMSE (dither); profile 5 is reshaped (the plain base layer decodes green). Resizing every 250 ms
+  had no errors. The debug layer showed nothing, but mpv and libplacebo read and clear the shared device's
+  message queue and add a storage filter, so the app sees D3D11 messages only in mpv's log.
+- **Step 2, in part.**
+  - Shader compiles run inside `mpv_render_context_render` and stall Qt's render thread for 160–270 ms. With
+    `gpu-shader-cache-dir` set, the worst render fell from 223 to 10 ms and opening from 245 to 60 ms: always
+    set it.
+  - Opening (to `playback-restart`): 230–265 ms for the first file in a process, 74–305 ms later. The render
+    context costs 100–150 ms once. Render-thread time per frame, p50/p95: SDR 720p 0.6–1.2/1.3–2.8 ms,
+    HDR10 1.4/2.9 ms, profile 5 1080p into 720p 4.4/9.4 ms.
+  - Loop: by default (`video-sync=audio`) the wrap takes 1–2 vsyncs extra and 7–17 % of swaps leave the cadence;
+    `video-sync=display-resample` with `display-fps-override=60` gives exactly one frame at the wrap and about
+    2 % off cadence. The render API reports no display fps, so the override is required.
+  - Seek 25–350 ms (4.2 s between keyframes), 25–91 ms (1 s). `frame-step` moves one frame; `frame-back-step`
+    is slow on long GOPs.
+  - Audio: switching `audio-device` through every device, to a missing one with `audio-fallback-to-null`,
+    `ao-reload`, and `aid=no` then `aid=auto` all kept playing. Endpoint removal and re-add (#18823) not tested.
+  - A new mpv bug, 3 of 3: with `loop-file=inf`, changing `audio-device` in the last 0.3 s of a pass leaves
+    the player on the last frame with no sound; only `aid=no` then `aid=auto` recovers it.
+  - A/V: mpv's own `avsync` estimate averages 0.01 ms (1.8 ms with `display-resample`); not a measurement.
+- **Step 3 not run:** way 1 needs its own MSYS2 root on D: with shaderc, spirv-cross and libplacebo (1–2 GB).
+
+**What the spikes add to the comparison:** on A, one shared device is fine for playback but decoding flat out
+takes the render loop down to 20–40 fps; on B, mpv's shader compiles freeze the whole scene unless the shader
+cache is set, and its loop needs display-resample with a fixed display fps. Neither changes the decision tests.
 
 ## Videos and animations (M2)
 

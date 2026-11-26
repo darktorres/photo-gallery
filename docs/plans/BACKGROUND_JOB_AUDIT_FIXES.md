@@ -9,7 +9,7 @@
 > (`IMPORT_FAILURES_PLAN.md` item 5); zero-listing and volume-change refusals, and the waiting-root state
 > (`MOUNT_POINTS_PLAN.md`); lanes, the busy requeue, unplugged roots and the pairing cooldown (`MULTI_DRIVE_LANES_PLAN.md`);
 > the notification ledger (`NOTIFICATIONS_PLAN.md`).
-
+>
 > **Built (2026-11-25), sections 2–10.** One `cargo check`, then `cargo test` for the crates touched (1069 passed) and
 > `just lint`, all clean. Where the build departs from the text:
 >

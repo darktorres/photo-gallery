@@ -61,16 +61,17 @@ pub enum Taken { Wall(WallClock), Zoned(WallClock, UtcOffset), Utc(Instant) }
 
 The public boundaries that carry raw file or remote values today (**read**), and what each becomes:
 
-| Crate | Today | Becomes |
-|---|---|---|
-| pg-metadata | `Meta.taken: Option<i64>`, `Meta.frames: u32` | `Option<Taken>`, `Frames` |
-| pg-container | `PngAnimation::frames`, `WebpAnimation::frames -> u32`; `GifImage` `u16` sizes; `ExtendedChunk.full/offset: usize` | `NonZeroU32`; a checked GIF frame rectangle; the chunk positions stay `usize` (bounded by the buffer, read with `.get`) |
-| pg-codec | `Info.full_width/full_height/scale_denom`, `Dims`, `animation::Frame` size and `delay_ms`, `jpeg_quality -> Option<u8>` | `Size`, a scale enum, a delay type, the quality type |
-| pg-video | the probe's width, height, duration, frames; `Taken` with a public payload | the Phase 0 facts function's domain types |
-| pg-yandex | `OtherSize`/`SimilarItem` sizes and `pos`; URLs as `String` | `Size`/`Option<Size>`; `pos` stays `u32`, shown with `checked_add`; `ResultUrl` |
-| pg-model | `Analysis` width, height, frames; `VideoFacts` duration and poster; `Taken::Wall/Utc(i64)` | Phases 1 and 2 |
+| Crate        | Today                                                                                                                   | Becomes                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| pg-metadata  | `Meta.taken: Option<i64>`, `Meta.frames: u32`                                                                           | `Option<Taken>`, `Frames`                                                                                               |
+| pg-container | `PngAnimation::frames`, `WebpAnimation::frames -> u32`; `GifImage` `u16` sizes; `ExtendedChunk.full/offset: usize`      | `NonZeroU32`; a checked GIF frame rectangle; the chunk positions stay `usize` (bounded by the buffer, read with `.get`) |
+| pg-codec     | `Info.full_width/full_height/scale_denom`, `Dims`, `animation::Frame` size and `delay_ms`, `jpeg_quality -> Option<u8>` | `Size`, a scale enum, a delay type, the quality type                                                                    |
+| pg-video     | the probe's width, height, duration, frames; `Taken` with a public payload                                              | the Phase 0 facts function's domain types                                                                               |
+| pg-yandex    | `OtherSize`/`SimilarItem` sizes and `pos`; URLs as `String`                                                             | `Size`/`Option<Size>`; `pos` stays `u32`, shown with `checked_add`; `ResultUrl`                                         |
+| pg-model     | `Analysis` width, height, frames; `VideoFacts` duration and poster; `Taken::Wall/Utc(i64)`                              | Phases 1 and 2                                                                                                          |
 
 In pg-metadata:
+
 - `tiff` moves under `exif`; `Tiff::unsigned`, `Value::Number(u64)` and `number` become `pub(super)`. `u64` stays: it is the lossless join of BYTE, SHORT, LONG and LONG8 (commit 16895197), and the patcher in `orientation.rs` does not use it.
 - Each tag's accessor returns its meaning. `Exif::orientation() -> Orientation` already does. `Exif::rating()` and `rating_percent()` stop returning `u64` and return a `RatingField`, with Windows' clamps applied there; `xmp_stars` and `xmp_percent_stars` do the same. `lib.rs` only chains the four fields.
 - `enum RatingField { Unrated, Rejected, Stars(Rating) }`. The first field the file holds decides, in Windows' order: Microsoft percent, EXIF percent, `xmp:Rating`, EXIF `Rating`. So a held `xmp:Rating = -1` masks a lower EXIF rating, where today it reads as absent and falls through. The catalog has no reject state: `Rejected` maps to no stars, and `Rating` stays 1–5. **To verify first:** what Explorer shows for a synthetic file with `xmp:Rating=-1` and EXIF `Rating=4`; the repo's rule is "as Windows shows it", and the order follows that measurement.

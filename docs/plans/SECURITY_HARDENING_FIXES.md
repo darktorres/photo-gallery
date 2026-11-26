@@ -27,6 +27,7 @@ SEC-016 (names), SEC-015, SEC-018, SEC-072, SEC-126 (the recorded temp), SEC-083
 - A real scan cannot produce these names. A damaged or crafted `catalog.sqlite` can.
 
 Fix:
+
 - The catalog refuses, on read, a stored name holding a separator, `.` or `..`, `:`, NUL or a reserved device name (`file_path_of`). Such a row is a damaged row, reported as one.
 - A recorded temp is never used as a path. It is derived again with `temp_of(original, kind)` and compared, or not stored at all.
 - Writers check that the final path, resolved, is under its root (with the reparse checks of SEC-079 and SEC-128).
@@ -38,6 +39,7 @@ SEC-052, SEC-055, SEC-050/SEC-057 (`pos + 1`). **Read**; ureq APIs checked again
 `Fetcher::download` (`crates/yandex/src/fetch.rs`) GETs whatever URL the page returned, with no scheme, host or address check. Downloads start as results arrive, four at a time (`crates/app/src/yandex/images.rs`), up to 100 MB each, into the decoders. ureq's defaults: 10 redirects, and the `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY` variables are read.
 
 Fix:
+
 - **`ResultUrl`** in pg-yandex, private field, built by the parser: http or https, a host, no userinfo. `Fetcher::download` takes `&ResultUrl`.
 - **A resolver that admits public addresses only.** Implement `ureq::unversioned::resolver::Resolver` around `DefaultResolver`; refuse the host when any resolved address is not public, with `ureq::Error::Other`. Install with `Agent::with_parts(config, DefaultConnector::default(), PublicOnly)`. Every redirect hop resolves through it (`run.rs` `connect`), and the TCP connector dials exactly the checked addresses, so DNS rebinding cannot get past it. IP literals and odd forms (a decimal integer host) are covered, since the check is on the resolved result.
 - **`.proxy(None)`.** With a proxy set, ureq does not resolve the target, so the policy would silently stop. A proxy, if ever wanted, is an explicit preference.
@@ -55,6 +57,7 @@ Fix:
 Release builds link a static FFmpeg built with `--disable-network --enable-protocol=file` and five demuxers (`tools/build_static_ffmpeg.py`). A dev build against a full FFmpeg (`FFMPEG_DIR`) is not limited: HLS, concat and `image2` with `split_planes` open further inputs through `AVFormatContext::io_open`. `protocol_whitelist=file` is not the fix: `file` is exactly the nested local read to stop.
 
 pg-video, in `Input::open` (`crates/video/src/ffi.rs`), before `avformat_open_input`:
+
 1. `(*ctx).io_open = Some(refuse)`, where `refuse` returns `AVERROR(EPERM)`; leave `io_close2` at its default. The main input never calls `io_open`, since `s->pb` is set, and nested contexts inherit the callback. This holds whichever FFmpeg is linked.
 2. `format_whitelist=mov,matroska,avi,mpegts,image2` and `codec_whitelist=h264,hevc,vp9,mpeg4,mjpeg` in the options dictionary. In `Decoder::open`, check the codec id against a Rust enum before `avcodec_find_decoder`.
 3. After the open, a non-empty options dictionary (`av_dict_count`) is an error, so a misspelled option cannot silently do nothing. Add `av_dict_set`, `av_dict_count` and `av_dict_free` to `Api` in `load.rs` and to `linked()`.
@@ -76,6 +79,7 @@ Today: `trusted_schema` on, DEFENSIVE off, double-quoted strings on, URIs on (`S
 - `ENABLE_VIEW` off blocks the app's own views, so it is not usable.
 
 Fix:
+
 - **One opener**, `pg_dbfile::open(path, mode)`, for every connection. It omits `SQLITE_OPEN_URI` and sets `SQLITE_DBCONFIG_DEFENSIVE`, `TRUSTED_SCHEMA` off, `DQS_DDL` and `DQS_DML` off, `SQLITE_LIMIT_ATTACH` 1, and on connections that attach a file, `ATTACH_WRITE` and `ATTACH_CREATE` off. `clippy.toml` bans `rusqlite::Connection::open*` so tests run hardened too.
 - **The fork's build** (`photo-gallery-defaults`): drop `-DSQLITE_USE_URI`; add `-DSQLITE_TRUSTED_SCHEMA=0`, `-DSQLITE_DQS=0`, `-DSQLITE_OMIT_LOAD_EXTENSION`; drop FTS3, FTS5, RTREE, DBSTAT and SOUNDEX by editing the `ENABLE_*` list in `build.rs`, not by `-U` order.
 - **Function flags**: `pg_ext` and `pg_contains` are `SQLITE_DIRECTONLY` (no schema uses them); `path_name_key` stays `SQLITE_INNOCUOUS` (the `files_mn` index needs it).

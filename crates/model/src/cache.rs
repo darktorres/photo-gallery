@@ -1,7 +1,7 @@
 //! The thumbnail cache's size limit as a value.
 
 /// A cache's size limit, in bytes: above zero and under `i64::MAX`, so no cap evicts every thumbnail or saturates. The
-/// front ends read the number (the command line's `--cap-gib`, the app's `PG_THUMB_CAP_GIB`) and word their own errors.
+/// front ends read the number (the app's `PG_THUMB_CAP_GIB` and its Library panel) and word their own errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThumbCap(i64);
 

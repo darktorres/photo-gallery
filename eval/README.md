@@ -19,8 +19,8 @@ scripts load `.env` themselves; a variable already set in the environment wins o
 
 Each of these can be overridden by its own variable: `PG_DATA_ROOT`, `PG_WORK_DIR`, `PG_CACHE_DIR`, `PG_TOOLS_DIR`,
 `PG_QUANT_PYTHON`, `PG_TRT10_DIR` (see `.env.example`).
-`--trim` runs the gallery's border detector (`crates/analysis/src/borders.rs`) through `gallery borders --stdin`: it
-needs `target\release\gallery.exe` built (`just build`), or `PG_GALLERY` pointing at one.
+`--trim` runs the gallery's border detector (`crates/analysis/src/borders.rs`) through `pg-driver borders`: it
+needs `target\release\pg-driver.exe` built (`cargo build --release -p pg-driver`), or `PG_DRIVER` pointing at one.
 
 ## Ground truth
 
@@ -42,7 +42,7 @@ $py = "$env:PG_ROOT\venv-eval\Scripts\python.exe"
 & $py embed.py --model sscd           # embed all images -> emb_sscd.npy
 & $py evaluate.py --model sscd        # recall, thresholds, flagged pairs, CSVs
 & $py synth.py --model sscd           # robustness to crops, flips, overlays...
-& $py embed.py --model sscd_fp16 --trim   # borders cut first (gallery borders --stdin) -> emb_sscd_fp16_trim.npy
+& $py embed.py --model sscd_fp16 --trim   # borders cut first (pg-driver borders) -> emb_sscd_fp16_trim.npy
 & $py synth.py --model sscd_fp16 --trim   # ... and its synthetic robustness (edited copies trimmed too)
 & $py check_groups.py                 # audit dups2/<NNN> folders for unrelated pictures
 & $py verify.py --model sscd_fp16     # second stage: align pairs, classify match / unrelated

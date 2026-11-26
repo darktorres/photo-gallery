@@ -77,7 +77,11 @@ WebP 1.88 TB, AVIF 1.47 TB.
 
 ## Background task priority (M1 import, `dups2`, 2026-10-30)
 
-The thumbnail task runs at idle **CPU** priority, with normal I/O priority. Windows' background mode
+> Superseded: idle priority was removed. Every background pass now runs its threads at BelowNormal CPU priority, with
+> normal I/O priority (`crates/library/src/inner.rs`; `docs/plans/STORAGE_AND_CLEANUPS_PLAN.md`), and the command line
+> this was measured with (`crates/cli`) is gone. The measurement below is kept as recorded.
+
+The thumbnail task ran at idle **CPU** priority, with normal I/O priority. Windows' background mode
 (`PROCESS_MODE_BACKGROUND_BEGIN`) also throttles I/O on an idle disk: with it the task ran at 64 files/s, and at
-normal priority 415 files/s. Idle CPU priority alone gives 330 files/s with other load on the machine.
-(`crates/cli/src/lib.rs`, `Command::Thumbs`.)
+normal priority 415 files/s. Idle CPU priority alone gave 330 files/s with other load on the machine.
+(Then `crates/cli/src/lib.rs`, `Command::Thumbs`.)

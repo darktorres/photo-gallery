@@ -1,6 +1,7 @@
 //! `pg-driver`: the developer's command line over `pg_driver::Headless`, for scripts and measurements. Not shipped. Every command takes
 //! `--home`, the folder its catalog, preferences and log live in; nothing is read from the user's library. Results are printed as
-//! JSON, one object per line, on stdout; progress and errors go to stderr.
+//! JSON, one object per line, on stdout; progress and errors go to stderr. `borders` is the exception: it takes no home,
+//! and answers piped images with plain lines (the eval's protocol, `pg_driver::borders`).
 
 #![forbid(unsafe_code)]
 
@@ -100,6 +101,9 @@ enum Command {
         /// The perf log file.
         file: PathBuf,
     },
+    /// The border detector over a pipe, for the eval: each image on stdin as its width and height (u32, little-endian)
+    /// and its RGB pixels; for each, `left top right bottom` of what is left without its borders, a line on stdout.
+    Borders,
 }
 
 fn main() -> ExitCode {
@@ -195,6 +199,10 @@ fn run(cli: Cli) -> Result<()> {
             for line in table.lines() {
                 stdout_line(line)?;
             }
+            Ok(())
+        }
+        Command::Borders => {
+            pg_driver::borders::serve(io::stdin().lock(), io::stdout().lock())?;
             Ok(())
         }
     }

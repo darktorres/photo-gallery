@@ -19,6 +19,9 @@ path = "src/main.rs"
 fault = ["pg-app/fault", "pg-writeback/fault"]
 
 [dependencies]
+# The border detector over a pipe (`pg-driver borders`, for the eval's `embed.py --trim`).
+pg-analysis = { path = "../analysis" }
+pg-codec = { path = "../codec" }
 pg-app = { path = "../app" }
 pg-catalog = { path = "../catalog" }
 pg-library = { path = "../library" }

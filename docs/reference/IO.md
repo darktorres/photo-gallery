@@ -25,8 +25,9 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
     each cost a disk rotation.
   - **Caveat: this folder was copied in one go, so it is nearly ideal** (1.2% of files fragmented).
     Older parts of the 70M library are likely more scattered, which favors MFT or cluster order
-    even more. The import already reads in MFT record order, with 8 readers (`pending_import` in
-    `crates/catalog/src/work.rs`). Reading the MFT or the USN journal in the scanner, instead of listing folders,
+    even more. Every pass reads in MFT record order (`pending_import` and the others in
+    `crates/catalog/src/work.rs`); its reads in flight are tuned per drive, from 2 on an HDD up to 16
+    (`pg_jobs::tuner`, `docs/plans/ADAPTIVE_READERS_PLAN.md`). Reading the MFT or the USN journal in the scanner, instead of listing folders,
     is planned in [`NTFS_MFT_SCAN_PLAN.md`](../plans/NTFS_MFT_SCAN_PLAN.md).
   - Sparse sample (every 25th file, `--stride 25`): every order runs at ~140 files/s (random 125),
     and 8 in flight gives ~245. When files are far apart, each read pays a seek whatever the order;
@@ -34,8 +35,8 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
   - At ~1,600 files/s the disk is no longer the bottleneck for a 70M pass; decoding is.
 - **Read buffers (the former `pipeline::Options::budget`, 2026-11-01; the byte budget is removed, and a pass now holds
   what its files in flight take): the pass's file buffers must cover a file per
-  read in flight and per worker, since a worker holds its file while it decodes it.** `gallery import`,
-  8 readers, 12 workers, on the first 1,000 files (5.9 GiB, 24 MP Sony A6000 JPEGs, 6 MiB average) of
+  read in flight and per worker, since a worker holds its file while it decodes it.** `gallery import` (the removed
+  command line, when the import still decoded), 8 readers, 12 workers, on the first 1,000 files (5.9 GiB, 24 MP Sony A6000 JPEGs, 6 MiB average) of
   a camera folder on another drive, in on-disk order, purged from the file cache before each run (an unbuffered
   open drops a file's cached pages), three runs each in rotating order, medians:
 

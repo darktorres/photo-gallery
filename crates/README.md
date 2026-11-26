@@ -26,7 +26,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   `tools/boundaries.py` checks it. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/reference/PROFILING.md`).
-- `perf` (`pg-perf`): the perf log, `PG_PERF_LOG`: timed spans of the background job's rounds, its passes and their sub-steps (time, self time, items, bytes, the pipeline's stage shares, the catalog's write-lock waits), written as JSON lines and read back by `gallery perf` (`docs/reference/PROFILING.md`, "Reading the perf log"). Unset, a span costs one flag test.
+- `perf` (`pg-perf`): the perf log, `PG_PERF_LOG`: timed spans of the background job's rounds, its passes and their sub-steps (time, self time, items, bytes, the pipeline's stage shares, the catalog's write-lock waits), written as JSON lines and read back by `pg-driver perf` (`docs/reference/PROFILING.md`, "Reading the perf log"). Unset, a span costs one flag test.
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
   memory for the window's log view (`crates/log/src/lib.rs`). Only the window writes it; the driver prints to stdout and stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
@@ -115,8 +115,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   to its inbox, which logs it.
 - `driver` (`pg-driver`, a library and the binary `pg-driver`; not shipped): the developer's driver of the library job without a
   window. `Headless` starts the app's service over a home folder, adds folders, runs its passes until it is quiet, and reads the
-  catalog back; it holds no pass logic. The binary prints JSON for scripts and measurements, and `pg-driver perf` prints a perf
-  log's table. The command line of the program is gone: its developer uses are this.
+  catalog back; it holds no pass logic. The binary prints JSON for scripts and measurements, `pg-driver perf` prints a perf
+  log's table, and `pg-driver borders` runs the border detector on images piped in (the eval's `embed.py --trim`). The
+  command line of the program is gone: its developer uses are this.
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
   flat folder), the image providers and the GPU device. The only crate that links Qt. Each cxx-qt bridge is a file in
   `src/bridges/` (cxx-qt needs one directory for a QML module's Rust sources), declared by `src/bridges.rs`, so the two
@@ -358,13 +359,15 @@ console window opens when it starts from Explorer. PowerShell doesn't wait for a
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
   keeps its row and its analysis. It records the files whose extension is a supported format (`crates/model/src/media.rs`), with
   their extension and kind.
-- **Import** reads each file's header and container only, in MFT-record order with 8 reads in flight: the format, the
+- **Import** reads each file's header and container only, in MFT-record order, with the reads in flight tuned per
+  drive (`pg_jobs::tuner`; `docs/plans/ADAPTIVE_READERS_PLAN.md`): the format, the
   dimensions (from the codec's header, with the EXIF orientation applied), the frame count (from the GIF, APNG or WebP
   container), and the date taken (EXIF DateTimeOriginal, else XMP). No pixel is decoded and no hash is made. A JPEG is
   read up to the end of its header (`pg_container::jpeg_import_bytes`: 16 KiB, then on as its segments say), and a PNG
   over 256 KiB at its two ends, without its image data (`pg_container::png_import_bytes`); each is read whole when its
   header is not as those reads expect. Both open the file for random access (no read-ahead). The import owes the duplicate hashes: a row of `hashes_owed` for each picture. The Hashes pass makes them,
-  from a DCT-scaled decode (libjpeg-turbo, to ≥ 512 × 320), with each PDQ hash stored with its 8 orientations; a
+  from a DCT-scaled decode (libjpeg-turbo, to ≥ 512 × 320), with each PDQ hash stored in 4 orientations (the pairing
+  join probes all 8, mirrors included); a
   picture of reliable quality then owes its tier-1 pairs (a row of `pairs_owed`), and the pairing pass finds them
   (d ≤ 31). With duplicates detection off (the Library panel) the hashes stay owed until a
   later Hashes pass makes them. A video (`crates/video/src/lib.rs`) is probed by its container at import, and hashed by
@@ -376,7 +379,7 @@ console window opens when it starts from Explorer. PowerShell doesn't wait for a
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
   in the cache, so the app and the driver keep to the same one: a twentieth of its drive (1 to 50 GB) for a new cache, changed by
-  the app's `PG_THUMB_CAP_GIB` (the Library panel sets it too), and shown in the Library panel. The background job (or `pg-driver run --passes thumbs`) fills it at idle CPU
+  the app's `PG_THUMB_CAP_GIB` (the Library panel sets it too), and shown in the Library panel. The background job (or `pg-driver run --passes thumbs`) fills it at BelowNormal CPU
   priority for the grid's current height, evicting only other heights, and starts over when the size changes.
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
   A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so

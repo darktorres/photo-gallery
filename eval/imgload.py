@@ -41,8 +41,9 @@ class FileSource:
         return load_rgb(self.root / self.files[i], draft_sides=self.draft_sides)
 
 
-# The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
-GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / exe_name("gallery")))
+# The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `pg-driver borders`
+# (crates/driver/src/borders.rs).
+DRIVER = Path(os.environ.get("PG_DRIVER", Path(__file__).resolve().parents[1] / "target" / "release" / exe_name("pg-driver")))
 
 
 class _Detector:
@@ -55,7 +56,7 @@ def content_box(im: Image.Image) -> tuple[int, int, int, int]:
     """What is left of `im` without its solid or blurred padding borders, as (left, top, right, bottom): the
     gallery's detector, one process per worker, kept running."""
     if _Detector.process is None or _Detector.process.poll() is not None:
-        args = [str(GALLERY), "borders", "--stdin"]
+        args = [str(DRIVER), "borders"]
         _Detector.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     process = _Detector.process
     assert process.stdin is not None and process.stdout is not None
@@ -64,7 +65,7 @@ def content_box(im: Image.Image) -> tuple[int, int, int, int]:
     process.stdin.flush()
     line = process.stdout.readline()
     if not line:
-        raise RuntimeError(f"{GALLERY} borders --stdin ended (build it: cargo build --release)")
+        raise RuntimeError(f"{DRIVER} borders ended (build it: cargo build --release -p pg-driver)")
     left, top, right, bottom = map(int, line.split())
     return left, top, right, bottom
 

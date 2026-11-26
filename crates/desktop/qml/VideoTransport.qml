@@ -52,7 +52,9 @@ Rectangle {
         anchors.rightMargin: 8
         spacing: 8
         ToolButton {
-            text: transport.playing ? "⏸" : "▶"
+            // ⏸ with VS16 (U+FE0F), the emoji; ▶ a symbol.
+            text: transport.playing ? "⏸️" : "▶"
+            font.family: transport.playing ? Theme.emojiFamily : Theme.symbolFamily
             font.pixelSize: 18
             onClicked: transport.playRequested()
             ToolTip.visible: hovered
@@ -83,6 +85,7 @@ Rectangle {
         }
         ToolButton {
             text: transport.muted || transport.volume === 0 ? "🔇" : "🔊"
+            font.family: Theme.emojiFamily
             font.pixelSize: 16
             onClicked: transport.muteRequested()
             ToolTip.visible: hovered

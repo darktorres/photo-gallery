@@ -50,6 +50,7 @@ Rectangle {
             visible: bar.hasBorders
             checkable: true
             checked: bar.borderMarked
+            font.family: Theme.symbolFamily
             font.pixelSize: 22
             font.strikeout: bar.borderMarked
             ToolTip.visible: hovered
@@ -58,6 +59,7 @@ Rectangle {
         }
         ToolButton {
             text: "⟲"
+            font.family: Theme.symbolFamily
             font.pixelSize: 22
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-left")
@@ -69,6 +71,8 @@ Rectangle {
                 id: star
                 required property int index
                 text: Ratings.symbol(index)
+                // ☆ (no rating) is a symbol; the other ratings are emoji.
+                font.family: index === 0 ? Theme.symbolFamily : Theme.emojiFamily
                 font.pixelSize: 22
                 ToolTip.visible: hovered
                 ToolTip.text: words.phrase("ui-stars", index, ("" + (index)), "")
@@ -83,6 +87,7 @@ Rectangle {
         }
         ToolButton {
             text: "⟳"
+            font.family: Theme.symbolFamily
             font.pixelSize: 22
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-right")

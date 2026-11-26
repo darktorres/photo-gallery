@@ -1,11 +1,24 @@
 // The colours the components name, each written once: the Yandex panel and its parts, the filter bar, the status bar with
 // its lane rows, the grid's labels, the inbox and log rows, and the scrims over pictures. Each name says what the colour is
-// for; the values are the ones those components used as literals.
+// for; the values are the ones those components used as literals. And the fonts of the texts that show symbols and emoji.
 pragma Singleton
 pragma ComponentBehavior: Bound
 import QtQuick
 
 QtObject {
+    // The fonts that keep Qt from building its font fallback list. The first time a text needs a glyph its own font lacks,
+    // Qt loads every installed font family to build that list: once per process, some 370 ms on the GUI thread, before
+    // the first frame when the startup window needs it. Two things need it:
+    // - a symbol the window's font (Segoe UI on Windows) lacks: ▾ ▸ ▴ ▭ ▶ ⟲ ⟳ ✓ ✕ ☆. Segoe UI Symbol has each, and its Latin
+    //   letters are Segoe UI's, so a whole label of words can use it. It has no bold: a bold label with words keeps the
+    //   window's font and a symbol Segoe UI has (the grid's ► badge).
+    // - an emoji (the ratings, ⚠️ ⏸️ 🔇 🔊): Qt draws one from a colour font, and the text's own font is searched first.
+    //   Segoe UI Emoji is one; with any other font Qt searches the fallback list for one. An emoji's text is the emoji
+    //   alone, in this font: it lacks most of the letters. ⚠ and ⏸ carry VS16 (U+FE0F), which asks for the emoji.
+    // A family list (font.families) would not help: Qt builds the fallback list for one at once. Where a family isn't
+    // installed (Linux), Qt uses the application font's family instead (QFont's load, qfontdatabase.cpp).
+    readonly property string symbolFamily: "Segoe UI Symbol"
+    readonly property string emojiFamily: "Segoe UI Emoji"
     // The dimmed window behind the Yandex panel.
     readonly property color panelScrim: "#b0000000"
     // The full-size preview's background.

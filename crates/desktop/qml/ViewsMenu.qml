@@ -28,7 +28,9 @@ Button {
         views.clicked();
     }
 
+    // "Views ▾": the symbol's font.
     text: words.text("ui-views")
+    font.family: Theme.symbolFamily
     onClicked: viewsMenu.popup(views, 0, views.height)
 
     Menu {

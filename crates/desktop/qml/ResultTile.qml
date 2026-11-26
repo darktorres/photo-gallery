@@ -70,6 +70,7 @@ Item {
         Label {
             anchors.centerIn: parent
             text: "✓"
+            font.family: Theme.symbolFamily
             color: Theme.pickedText
             font.pixelSize: 13
             font.bold: true

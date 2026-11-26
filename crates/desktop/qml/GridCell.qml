@@ -150,6 +150,7 @@ Item {
         anchors.margins: 4
         visible: cell.content.width > 0
         text: "▭"
+        font.family: Theme.symbolFamily
         font.pixelSize: 12
         font.bold: true
         font.strikeout: cell.bordersMarked
@@ -168,7 +169,10 @@ Item {
         anchors.bottom: parent.bottom
         anchors.margins: 4
         visible: cell.rating > 0
-        text: Ratings.symbol(cell.rating)
+        // No text for no rating: a hidden text is laid out all the same, and ☆ (no rating) is no emoji. The ratings shown
+        // are emoji, in the emoji font (Theme.emojiFamily).
+        text: cell.rating > 0 ? Ratings.symbol(cell.rating) : ""
+        font.family: Theme.emojiFamily
         style: Text.Outline
         styleColor: "black"
         font.pixelSize: 16

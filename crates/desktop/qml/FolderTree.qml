@@ -50,6 +50,7 @@ WheelListView {
             Label {
                 textFormat: Text.PlainText
                 text: node.expandable ? (node.expanded ? "▾" : "▸") : ""
+                font.family: Theme.symbolFamily
                 Layout.preferredWidth: 12
                 TapHandler {
                     onTapped: tree.toggleRequested(node.index)

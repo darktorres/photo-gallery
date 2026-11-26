@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
+import QtQuick.Layouts
 import pg.gallery
 
 Item {
@@ -66,6 +67,8 @@ Item {
         style: Text.Outline
         styleColor: "black"
         text: keymap.viewerHint(hud.kind, hud.hasBorders)
+        // The hint names the turns by their symbols (⟲ ⟳).
+        font.family: Theme.symbolFamily
     }
     ToolButton {
         id: closeButton
@@ -73,20 +76,44 @@ Item {
         anchors.top: parent.top
         anchors.margins: 4
         text: "✕"
+        font.family: Theme.symbolFamily
         onClicked: hud.closeRequested()
     }
 
-    Label {
+    // The line's text, in three parts: the item, its rating, then its zoom, modes and state. The rating is an emoji, alone
+    // in the emoji font (Theme.emojiFamily); each other part keeps the window's font and takes no more than its width.
+    component InfoText: Label {
         textFormat: Text.PlainText
+        color: "#cccccc"
+        style: Text.Outline
+        styleColor: "black"
+        Layout.fillWidth: true
+        Layout.maximumWidth: implicitWidth
+    }
+    RowLayout {
         anchors.left: parent.left
         anchors.right: ratingBar.left
         anchors.verticalCenter: ratingBar.verticalCenter
         anchors.margins: 10
-        elide: Text.ElideMiddle
-        color: "#cccccc"
-        style: Text.Outline
-        styleColor: "black"
-        text: hud.info + (hud.rating > 0 ? " · " + Ratings.symbol(hud.rating) : "") + (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+        spacing: 0
+        InfoText {
+            elide: Text.ElideMiddle
+            text: hud.info + (hud.rating > 0 ? " · " : "")
+        }
+        InfoText {
+            visible: hud.rating > 0
+            text: hud.rating > 0 ? Ratings.symbol(hud.rating) : ""
+            font.family: Theme.emojiFamily
+            Layout.fillWidth: false
+        }
+        InfoText {
+            elide: Text.ElideRight
+            text: (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+        }
+        // The parts keep to the left.
+        Item {
+            Layout.fillWidth: true
+        }
     }
 
     RatingBar {

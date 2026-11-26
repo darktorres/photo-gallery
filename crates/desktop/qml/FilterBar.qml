@@ -206,6 +206,8 @@ Pane {
                         delegate: Chip {
                             required property int index
                             text: Ratings.symbol(index) + (index === 0 ? " " + words.text("ui-unrated") : "")
+                            // ☆ and its words (unrated) in the symbol font; the other ratings are emoji alone.
+                            font.family: index === 0 ? Theme.symbolFamily : Theme.emojiFamily
                             onClicked: filters.toggle(Filters.Ratings, key)
                         }
                     }

@@ -89,6 +89,7 @@ ToolBar {
         }
         Button {
             text: (bar.filterActive > 0 ? words.phrase("ui-filters-count", 0, ("" + (bar.filterActive)), "") : words.text("ui-filters")) + (bar.filtersOpen ? " ▴" : " ▾")
+            font.family: Theme.symbolFamily
             highlighted: bar.filterActive > 0
             onClicked: bar.filtersToggled()
             ToolTip.visible: hovered

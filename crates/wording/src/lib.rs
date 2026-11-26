@@ -162,12 +162,13 @@ pub fn describe(q: &Query) -> String {
     if parts.is_empty() { render(&Message::FilterAll) } else { parts.join(&render(&Message::FilterPartSeparator)) }
 }
 
-/// The badge on a grid cell: a video's length, an animation's format; nothing for a still image.
+/// The badge on a grid cell: a video's length, an animation's format; nothing for a still image. A video's mark is ►, a
+/// glyph the window's font has (text.ftl, `msg-badge-video`).
 pub fn badge(media: MediaType, duration_ms: Option<u32>, ext: &str) -> String {
     match media {
         MediaType::Video => match duration_ms {
             Some(ms) => render(&Message::BadgeVideo { time: timecode((u64::from(ms) + 500) / 1000) }),
-            None => "▶".to_string(),
+            None => "►".to_string(),
         },
         MediaType::Animated if ext == "png" => render(&Message::BadgeApng),
         MediaType::Animated => ext.to_uppercase(),
@@ -483,9 +484,9 @@ mod tests {
 
     #[test]
     fn a_video_badge_rounds_its_length_to_the_second() {
-        assert_eq!(badge(MediaType::Video, Some(1499), "mp4"), "▶ 0:01");
-        assert_eq!(badge(MediaType::Video, Some(1500), "mp4"), "▶ 0:02");
-        assert_eq!(badge(MediaType::Video, None, "mp4"), "▶");
+        assert_eq!(badge(MediaType::Video, Some(1499), "mp4"), "► 0:01");
+        assert_eq!(badge(MediaType::Video, Some(1500), "mp4"), "► 0:02");
+        assert_eq!(badge(MediaType::Video, None, "mp4"), "►");
         assert_eq!(badge(MediaType::Animated, None, "png"), "APNG");
         assert_eq!(badge(MediaType::Animated, None, "gif"), "GIF");
         assert_eq!(badge(MediaType::Image, None, "jpg"), "");

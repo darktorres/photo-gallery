@@ -40,8 +40,9 @@ msg-filter-borders-marked = borders marked not a border
 msg-filter-borders-not-marked = borders not marked
 msg-filter-name = name has "{ $name }"
 
-# The grid cell's badge
-msg-badge-video = ▶ { $time }
+# The grid cell's badge. The video's mark is ► (U+25BA), not ▶ (U+25B6): Segoe UI has ► in its bold face, which the badge
+# uses, and a glyph the window's font lacks makes Qt load every installed font once (Theme.qml, symbolFamily).
+msg-badge-video = ► { $time }
 msg-badge-apng = APNG
 
 # The info line

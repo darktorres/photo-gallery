@@ -137,7 +137,9 @@ Rectangle {
         }
         // No focus for the buttons: the arrow keys and Space stay the preview's.
         Button {
+            // "Picked ✓": the symbol's font.
             text: preview.picked ? words.text("ui-picked") : words.text("ui-pick")
+            font.family: Theme.symbolFamily
             highlighted: preview.picked
             focusPolicy: Qt.NoFocus
             onClicked: preview.pickRequested(preview.item)

@@ -95,13 +95,26 @@ ToolBar {
             }
             // The newest notice, as a toast: a warning or an error stays until it is dismissed or replaced; a click opens
             // the inbox.
-            Label {
+            RowLayout {
                 visible: bar.toast.length > 0
-                text: (bar.toastLevel > 0 ? "⚠ " : "") + bar.toast
-                textFormat: Text.PlainText
-                color: bar.toastLevel > 0 ? Theme.statusWarning : Theme.statusText
-                elide: Text.ElideMiddle
+                spacing: 4
                 Layout.maximumWidth: 500
+                // A warning's or an error's mark: ⚠ with VS16 (U+FE0F), the emoji, alone in the emoji font
+                // (Theme.emojiFamily).
+                Label {
+                    visible: bar.toastLevel > 0
+                    text: "⚠️"
+                    font.family: Theme.emojiFamily
+                    textFormat: Text.PlainText
+                }
+                Label {
+                    text: bar.toast
+                    textFormat: Text.PlainText
+                    color: bar.toastLevel > 0 ? Theme.statusWarning : Theme.statusText
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: implicitWidth
+                }
                 TapHandler {
                     onTapped: bar.inboxRequested()
                 }

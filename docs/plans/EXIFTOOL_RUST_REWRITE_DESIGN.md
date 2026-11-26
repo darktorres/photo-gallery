@@ -1,7 +1,8 @@
 # A standalone Rust reimplementation of ExifTool
 
-> **Status (2026-11-26).** Design only; nothing is built. Revised after five adversarial reviews the same day (their
-> corrections are folded in; the counts they rest on are in "ExifTool by the numbers"). It replaces the port plans
+> **Status (2026-11-26).** Design only; nothing of the engine is built. Revised after five adversarial reviews the
+> same day (their corrections are folded in; the counts they rest on are in "ExifTool by the numbers"). The first
+> dump and the classifier census have run (see "The first dump"); their output is not committed, pending the licence. It replaces the port plans
 > (`EXIFTOOL_PORT_PLAN.md`, `EXIFTOOL_PORT_DESIGN.md`, removed), which ported ExifTool's Perl one-for-one into
 > photo-gallery. The engine is a standalone crate in a repository of its own; this file moves there when the
 > repository is made. Figures are marked **measured** (callgrind in photo-gallery's container, against the exiftool-rs
@@ -71,7 +72,8 @@ Both follow from running ExifTool's design, so the engine does not.
 ## ExifTool by the numbers
 
 **Counted** in ExifTool 13.64's `lib/Image` (225 modules, 320K lines), with regular expressions over the source, so
-the figures are approximate:
+the figures are approximate. Where the first dump measured the same thing, its figure replaces the count (marked
+**dumped**); the dump's own figures are in "The first dump".
 
 | Shape | Count | What it means for the engine |
 |---|---:|---|
@@ -84,12 +86,12 @@ the figures are approximate:
 | `$$self{OPTIONS}` | 110 | Extraction that depends on the options |
 | `DOC_NUM` | 148 | Sub-documents (MPF images, embedded previews, frames), each with its own directories and tags |
 | `$$valPt` | 497 | Byte sniffing of the value itself |
-| Sub definitions / subs referenced from tables | 1,439 / 331 (by 1,764 references) | Code, not data |
-| Anonymous subs in tables | 177 | Code, not data |
+| Sub definitions / named subs referenced from tables | 1,439 / 300 (**dumped**) | Code, not data |
+| Anonymous subs in tables | 177 (**dumped**, all deparsed) | Code, not data |
 | `Process*` subs / `ProcessProc` | about 500 / 157 | Processing procedures: the bulk of ExifTool's reading code |
 | `WriteProc` / `Write*` subs | 49 / 72 | Writing procedures, besides TagLookup (14.2K lines) and the inverses |
 | `DATAMEMBER` / variable formats | 258 / 127 | Binary tables whose layout depends on earlier values |
-| Tag IDs with a list of definitions | 425 | One ID, several definitions chosen by condition |
+| Tag IDs with a list of definitions | 377 (**dumped**) | One ID, several definitions chosen by condition |
 | One-line `ValueConv` / `PrintConv` reading `$$self{...}` | 53 | Conversions that read state, after reading |
 | `Priority` / `Avoid` / `PRIORITY_DIR` | 334 / 106 / 18 | Which of several same-named tags wins |
 | `AddTagToTable` | 104 | Tags created at run time |
@@ -100,8 +102,78 @@ NikonCustom (11.4K), and the French language module (11.3K; `Lang/` has 18 langu
 exiftool-rs's dumps of the same tables are 11.3 MB.
 
 The tables convert mechanically, except their `OTHER` handlers; the code does not. Hand-ported code is the largest
-part of the work: ExifTool's 1,439 subs (about 500 of them processing procedures, 331 referenced from tables), the
-177 anonymous subs, and the expressions the generator cannot classify (hundreds of distinct ones).
+part of the work: ExifTool's 1,439 subs (about 500 of them processing procedures, 300 referenced from tables), the
+177 anonymous subs, the 453 `OTHER` handlers, and the 1,120 distinct strings the census could not classify.
+
+## The first dump
+
+Run on 2026-11-26 in photo-gallery's container (Perl 5.40.1, B::Deparse 1.76) against the clone at tag 13.64, with
+no config file. The script, its cross-check and the census are in photo-gallery's ignored evaluation folder
+(`target/exiftool-rs-eval/dump/`: `dump.pl`, `check.py`, `census.py`); they move to the engine's `dump/` when its
+repository is made. The output (12 MB, 156 files) is not committed until the licence is settled.
+
+**How.** ExifTool's own `LoadAllTables()` builds every table (each module's, Extra and Composite, every table a
+SubDirectory names, the tags write procs add), then `XMP::AddFlattenedTags` adds the flattened structure fields of
+the XMP tables, as ExifTool's BuildTagLookup does (`BuildTagLookup.pm` 877–880). The output is JSON Lines, one file
+per module, one record per table and per tag definition; a value table used in several places is written once and
+referenced, under ExifTool's variable name when it has one (`%Image::ExifTool::Exif::orientation`); named subs are
+written by full name, anonymous ones by file, line and deparsed source; languages, shortcuts and `meta.json`
+(versions, counts) are files of their own.
+
+**Checks.** Three runs give identical output. Every tag name `exiftool -list` prints (21,586) is in the dump; the dump
+has 1,593 more, the SubDirectory and hidden entries `-list` leaves out. All 177 anonymous subs deparsed; all 19,463
+non-ASCII strings are valid UTF-8 and none carries Perl's UTF-8 flag; no number needed more precision than its text;
+no cycles; no load warnings.
+
+| Measured | Count |
+|---|---:|
+| Tables | 1,532 |
+| Tag definitions (of which flattened XMP structure fields, made at run time) | 36,222 (2,702) |
+| Distinct tag names | 23,177 |
+| Tag IDs with a list of definitions | 377 |
+| Value tables shared between definitions | 448 |
+| Translations (18 languages) | 19,907 |
+| `PrintConv`: hash / string / code / list | 5,661 / 3,477 / 141 / 74 |
+| `ValueConv`: string / code / hash / list | 2,976 / 112 / 16 / 8 |
+| `RawConv`: string / code | 1,300 / 45 |
+| `Condition` strings / `Hook` strings | 2,299 / 47 |
+| Inverse conversions (`RawConvInv`, `ValueConvInv`, `PrintConvInv`): strings / code / lists | 2,934 / 133 / 26 |
+| Value tables with an `OTHER` handler / `BITMASK` | 453 / 120 |
+
+**Where strings run.** ExifTool evaluates every table string in package `Image::ExifTool` (in `GetTagInfo`,
+`FoundTag` and `GetValue` in `ExifTool.pm`, and in `Writer.pl`), whatever module the table belongs to. A name in a
+string therefore means the same thing in every table, so a string's text alone identifies what it does.
+
+**Census.** The census (`census.py`) sorts each of the 13,027 strings into the typed shapes the generator would
+accept, recognized on the whole string, never on part of it. Conditions are split on `and`, `or`, `not` and
+parentheses after their regex and string literals are masked; a condition is classified only if every atom is one
+of: a regex, comparison or bit test on a context field or option; a regex, comparison or length test on the bytes
+(`$$valPt`) or a byte at an offset; a comparison on the count, format or value. Conversions are classified as
+identity, constant, arithmetic formula, `sprintf` of a formula, interpolated text (`"$val mm"`), one substitution,
+a call of a named sub with plain arguments, a store into the context, or a ternary on a predicate whose two branches
+are themselves classified.
+
+| Field | Strings | Classified | Hand ports (distinct) |
+|---|---:|---:|---:|
+| `Condition` | 2,299 | 97.5% | 58 (43) |
+| `RawConv` | 1,300 | 69.6% | 395 (218) |
+| `ValueConv` | 2,976 | 70.5% | 878 (409) |
+| `PrintConv` | 3,474 | 90.9% | 315 (177) |
+| `RawConvInv` | 57 | 15.8% | 48 (26) |
+| `ValueConvInv` | 1,442 | 74.5% | 367 (145) |
+| `PrintConvInv` | 1,432 | 75.0% | 358 (79) |
+| `Hook` (always ported) | 47 | 0% | 47 (40) |
+| **All** | **13,027** | **81.1%** | **2,466 (1,120)** |
+
+Strings call 170 distinct subs by name (2,806 calls; the most called are `ConvertDateTime`, `GPS::ToDMS`,
+`Exif::ConvertFraction`, `Exif::PrintExposureTime` and `InverseDateTime`); each is a hand port the classified calls
+refer to. 16 strings use regex features beyond a plain engine (lookaround, backreferences), so the predicates need
+a backtracking regex engine for those, or a hand port each.
+
+What is left is real code: splitting and re-joining value lists, `pack` and `unpack`, decryption, date arithmetic,
+side effects on the context inside conditions (`$$self{CoordUnits} = 1`), and the hooks that adjust a binary
+table's layout by firmware version. A richer classifier (lists of formulas, chained substitutions) would take some
+of it; the rest is ported by hand.
 
 ## Principles
 
@@ -133,7 +205,7 @@ A workspace of its own:
 
 | Part | Role |
 |---|---|
-| `schema-data/` (not a crate) | The tag data, one file per ExifTool module, checked in and reviewed |
+| `schema-data/` (not a crate) | The tag data as JSON Lines, one file per ExifTool module, checked in and reviewed |
 | `schema-ids` (not a crate) | The identifier registry: every table's and definition's stable identifier (see API stability) |
 | `dump/` (Perl) | Dumps ExifTool's tables from a loaded Perl ExifTool into `schema-data/` |
 | `*-schema-gen` | Reads `schema-data/` and `schema-ids`, writes the generated Rust |
@@ -331,18 +403,19 @@ so none is dropped silently.
 
 The tables convert mechanically; the code is ported by hand.
 
-1. **Dump.** A Perl script loads every ExifTool module with Perl ExifTool 13.64, lets each finish building its tables
-   (`AddTagToTable`, `AddCompositeTags`, tables built in loops), and only then writes them to `schema-data/`: one
-   record per tag definition, with its fields and value tables. Strings (conditions, conversions) are written as
-   their Perl source, with the package they run in. A code reference is written as its sub's full name
-   (`B::svref_2object`), or, for an anonymous sub, as its deparsed source (`B::Deparse`) and its file and line. The
-   dump runs on one pinned Perl version, because deparsed text differs between versions. No config file is loaded.
-2. **Classify.** The generator maps each condition and conversion to a typed form by its shape. Unmatched ones go to a
-   list of hand ports, each keyed by its source text together with the resolved names of the subs and package
-   variables it uses (an unqualified `PrintLens` or `%lensTypes` means a different thing in each package), so the
-   same expression is ported once wherever it means the same thing. The counts above give the scale: about half of
-   the one-line conditions and a third of the one-line conversions match the simplest shapes; a richer classifier
-   will match more, and the first dump measures how many.
+1. **Dump.** A Perl script loads Perl ExifTool 13.64 with no config file, builds every table with ExifTool's own
+   `LoadAllTables()` and `XMP::AddFlattenedTags` (so what ExifTool builds at load time and at run time is included),
+   and writes them to `schema-data/` as JSON Lines: one record per table and per tag definition, with its fields;
+   shared value tables once, by name. Strings (conditions, conversions) are written as their Perl source. A code
+   reference is written as its sub's full name (`B::svref_2object`), or, for an anonymous sub, as its deparsed source
+   (`B::Deparse`) and its file and line. The dump runs on one pinned Perl version, because deparsed text differs
+   between versions, and records it with the ExifTool version. It is deterministic: the same inputs give the same
+   bytes. (Run once; see "The first dump".)
+2. **Classify.** The generator maps each condition and conversion to a typed form by its shape, recognized on the
+   whole string. Unmatched ones go to a list of hand ports, each keyed by its source text: every string runs in
+   package `Image::ExifTool`, so the same text means the same thing in every table, and is ported once. The census
+   measured the scale: 81.1% of the 13,027 strings (97.5% of the conditions) match the shapes, leaving 1,120
+   distinct texts to port.
 3. **Hand ports.** Expressions, subs and processing procedures become Rust functions in modules of their own, each
    with tests against ExifTool's results. The generator refers to them by name and fails the build on an unmapped one.
 4. **New releases.** Run the dump with the new release; review the diff of `schema-data/`; port what the generator
@@ -383,7 +456,7 @@ Semantic versioning. Identifiers are stable across releases through `schema-ids`
 to each new table and each new definition, and never reuses one.
 
 Neither can be recognized by name alone. ExifTool renames and splits tables (per-model `CameraInfo` tables, for
-one). Within a table, about 425 IDs have a list of definitions chosen by condition, ExifTool inserts new variants in the
+one). Within a table, 377 IDs have a list of definitions chosen by condition, ExifTool inserts new variants in the
 middle of such lists, and XMP's IDs are property names, which a rename changes. So the generator matches a new
 release to the registry by a stated heuristic:
 
@@ -426,6 +499,4 @@ Planned only once the licence is settled.
 
 - The licence (blocking, above).
 - The crate's name.
-- The schema-data file format (line-oriented text so diffs review well, versus a structured format such as RON);
-  decided with the first dump.
 - Which public corpus, and how it is fetched for CI (size, caching, licences per file).

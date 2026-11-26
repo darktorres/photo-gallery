@@ -70,6 +70,9 @@ def pin_values() -> list[tuple[str, str]]:
         ("PG_QT_DIR", qt_dir),
         ("AQTINSTALL_COMMIT", just_value("aqtinstall_commit")),
         ("EXIFTOOL_VERSION", just_value("exiftool_version")),
+        # The ExifTool archive for this platform (tools/install_exiftool.py takes either).
+        ("EXIFTOOL_URL", just_value("exiftool_windows_url" if sys.platform == "win32" else "exiftool_source_url")),
+        ("EXIFTOOL_SHA256", just_value("exiftool_windows_sha256" if sys.platform == "win32" else "exiftool_source_sha256")),
         # The FFmpeg archive's SHA-256: the FFmpeg cache's key, so a new pin is a new cache.
         ("FFMPEG_SHA256", just_value("ffmpeg_sha256")),
         (
@@ -89,9 +92,6 @@ def pin_values() -> list[tuple[str, str]]:
         values += [
             ("QMAKE", f"{qt_dir}/bin/qmake"),
             ("LD_LIBRARY_PATH", f"{qt_dir}/lib"),
-            ("EXIFTOOL_SOURCE_VERSION", just_value("exiftool_source_version")),
-            ("EXIFTOOL_SOURCE_URL", just_value("exiftool_source_url")),
-            ("EXIFTOOL_SOURCE_SHA256", just_value("exiftool_source_sha256")),
         ]
     return values
 

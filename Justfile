@@ -106,14 +106,18 @@ sccache_version := "0.20.1"
 # Python for CI's jobs (setup-python, which runs before the pins step, so ci.yml holds the literal; the tools test asserts it
 # is this value). The local tools' Python is the same patch (tools/pgtools.py needs 3.12 or later).
 python_version := "3.12.10"
-# ExifTool for CI's Windows job (Chocolatey). Pinned, so a new release does not change the metadata tests unasked.
-exiftool_version := "13.59.0"
-# The same release for Linux (the container and CI's Linux job; tools/install_exiftool.py): its version as ExifTool reports it,
-# and its source archive, checked by SHA-256 before anything is unpacked. The archive is SourceForge's copy: exiftool.org
-# keeps only the newest release, and CPAN has no 13.59.
-exiftool_source_version := "13.59"
-exiftool_source_url := "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download"
-exiftool_source_sha256 := "668ea3acececb7235fbd0f4900e72d5f12c9b07e5c778fd36cb1e9b5828fd65a"
+# ExifTool for the container and CI's two jobs (tools/install_exiftool.py), as ExifTool reports it. Pinned, so a new release
+# does not change the metadata tests unasked; it is the release the port plans cite (docs/plans/EXIFTOOL_PORT_PLAN.md).
+# Each archive is checked by SHA-256 (the value exiftool.org's checksums.txt lists) before anything is unpacked. The
+# archives are SourceForge's copies: exiftool.org keeps only the newest release. Chocolatey is not used: it has approved no
+# ExifTool package after 13.59 (13.60 to 13.64 are still in moderation).
+exiftool_version := "13.64"
+# Linux (the container and CI's Linux job): the source archive.
+exiftool_source_url := "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.64.tar.gz/download"
+exiftool_source_sha256 := "dcb9f6be1f6705ee826a92d1522e3fec1d0b3749cdc061b03c46873d5fe204fc"
+# Windows (CI's Windows job): the Windows package, with its bundled perl.
+exiftool_windows_url := "https://sourceforge.net/projects/exiftool/files/exiftool-13.64_64.zip/download"
+exiftool_windows_sha256 := "72c29c44d1e860eebcaefa71692d979af9858fe9a6d7d791a5e7f1dac77804af"
 qt_version := "6.12.0"
 # The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
 aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"

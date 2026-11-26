@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import tomllib
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -28,6 +29,7 @@ PINNED = {
     "aqtinstall_commit": just_value("aqtinstall_commit"),
     "exiftool_version": just_value("exiftool_version"),
     "exiftool_source_sha256": just_value("exiftool_source_sha256"),
+    "exiftool_windows_sha256": just_value("exiftool_windows_sha256"),
     "ffmpeg_sha256": just_value("ffmpeg_sha256"),
     "rustup_init_sha256": just_value("rustup_init_sha256"),
 }
@@ -115,6 +117,13 @@ class Pins(unittest.TestCase):
     def test_the_justfile_pins_are_what_their_names_say(self):
         self.assertRegex(PINNED["qt_version"], r"^\d+\.\d+\.\d+$")
         self.assertRegex(PINNED["aqtinstall_commit"], r"^[0-9a-f]{40}$")
+        # ExifTool reports two parts (13.64); both archives are of that release.
+        version = PINNED["exiftool_version"]
+        self.assertRegex(version, r"^\d+\.\d+$")
+        self.assertRegex(PINNED["exiftool_source_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(PINNED["exiftool_windows_sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn(f"/Image-ExifTool-{version}.tar.gz/", just_value("exiftool_source_url"))
+        self.assertIn(f"/exiftool-{version}_64.zip/", just_value("exiftool_windows_url"))
 
     def test_the_windows_kit_is_under_the_drive_root(self):
         with mock.patch.object(sys, "platform", "win32"):
@@ -122,6 +131,10 @@ class Pins(unittest.TestCase):
         self.assertEqual(values["PG_QT_DIR"], f"C:\\Qt\\{PINNED['qt_version']}\\msvc2022_64")
         self.assertEqual(values["QT_INSTALL_ROOT"], "C:\\")
         self.assertNotIn("QMAKE", values)
+        # The Windows package, not the source archive: its bundled perl is what runs the tests there.
+        self.assertEqual(values["EXIFTOOL_URL"], just_value("exiftool_windows_url"))
+        self.assertEqual(values["EXIFTOOL_SHA256"], PINNED["exiftool_windows_sha256"])
+        self.assertEqual(values["EXIFTOOL_VERSION"], PINNED["exiftool_version"])
 
     def test_the_ffmpeg_checksum_is_exported_as_the_cache_key(self):
         # The FFmpeg cache's key is this value (ci.yml), so a new pin is a new cache.
@@ -144,9 +157,9 @@ class Pins(unittest.TestCase):
         self.assertEqual(values["PG_QT_DIR"], kit)
         self.assertEqual(values["QMAKE"], f"{kit}/bin/qmake")
         self.assertEqual(values["LD_LIBRARY_PATH"], f"{kit}/lib")
-        self.assertEqual(values["EXIFTOOL_SOURCE_SHA256"], PINNED["exiftool_source_sha256"])
-        self.assertEqual(values["EXIFTOOL_SOURCE_VERSION"], just_value("exiftool_source_version"))
-        self.assertTrue(values["EXIFTOOL_SOURCE_URL"].startswith("https://"))
+        self.assertEqual(values["EXIFTOOL_SHA256"], PINNED["exiftool_source_sha256"])
+        self.assertEqual(values["EXIFTOOL_VERSION"], PINNED["exiftool_version"])
+        self.assertEqual(values["EXIFTOOL_URL"], just_value("exiftool_source_url"))
         self.assertEqual(
             values["TAIKI_TOOLS"],
             f"just@{PINNED['just_version']},cargo-deny@{PINNED['cargo_deny_version']},"
@@ -197,6 +210,39 @@ class InstallExifTool(unittest.TestCase):
         self.addCleanup(shutil.rmtree, prefix, True)
         with self.assertRaises(SystemExit):
             install(url, digest, "13.59", prefix)
+
+    def windows_package(self, version: str) -> tuple[str, str]:
+        """A Windows-package-shaped zip (exiftool-<version>_64/exiftool(-k).exe and exiftool_files/), its URL and SHA-256.
+        The program is a shell script, so the zip is installed and run here as on Windows."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        archive = Path(folder.name, "package.zip")
+        top = f"exiftool-{version}_64"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr(f"{top}/exiftool(-k).exe", f"#!/bin/sh\necho {version}\n")
+            package.writestr(f"{top}/exiftool_files/lib/Image/ExifTool.pm", "1;\n")
+            package.writestr(f"{top}/README.txt", "\n")
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        return archive.as_uri(), digest
+
+    def test_installs_the_windows_package_as_exiftool_exe_beside_its_files(self):
+        url, digest = self.windows_package("13.64")
+        prefix = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, prefix, True)
+        install(url, digest, "13.64", prefix)
+        self.assertTrue(os.access(prefix / "exiftool.exe", os.X_OK))
+        self.assertTrue((prefix / "exiftool_files" / "lib" / "Image" / "ExifTool.pm").is_file())
+        self.assertFalse((prefix / "exiftool(-k).exe").exists())
+
+    def test_an_archive_of_another_kind_is_refused(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        archive = Path(folder.name, "page.html")
+        archive.write_text("<html>a download page, not the archive</html>", encoding="utf-8")
+        prefix = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, prefix, True)
+        with self.assertRaises(SystemExit):
+            install(archive.as_uri(), hashlib.sha256(archive.read_bytes()).hexdigest(), "13.64", prefix)
 
 
 class WorkflowPins(unittest.TestCase):

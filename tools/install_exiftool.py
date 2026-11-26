@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Installs ExifTool on Linux at the release the Justfile pins (exiftool_source_*): the release's source archive is fetched
-from its URL and checked against its SHA-256 before anything is unpacked. The `exiftool` program and its lib folder go to
-PREFIX, where the program finds its modules beside it; put PREFIX on PATH. The version the program reports must be the
-pinned one. Used by the container (docker/Dockerfile, which passes the pins as arguments) and by CI's Linux job (its pins
-step writes them). Standard library only.
+"""Installs ExifTool at the release the Justfile pins (exiftool_version): the release's archive is fetched from its URL and
+checked against its SHA-256 before anything is unpacked. Two archives, told apart by their first bytes:
 
-    python3 tools/install_exiftool.py --url URL --sha256 HEX --version 13.59 --prefix /opt/exiftool
+- the source archive (a .tar.gz; exiftool_source_*), on Linux: the `exiftool` program and its lib folder go to PREFIX,
+  where the program finds its modules beside it;
+- the Windows package (a .zip; exiftool_windows_*), on Windows: its `exiftool(-k).exe` goes to PREFIX as `exiftool.exe`,
+  and its `exiftool_files` folder (the bundled perl and lib) beside it, as the package's README says.
+
+Put PREFIX on PATH. The version the program reports must be the pinned one. Used by the container (docker/Dockerfile,
+which passes the pins as arguments) and by CI's two jobs (their pins step writes them). Standard library only.
+
+    python3 tools/install_exiftool.py --url URL --sha256 HEX --version 13.64 --prefix /opt/exiftool
 """
 
 import argparse
@@ -17,7 +22,30 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
+
+GZIP_MAGIC = b"\x1f\x8b"
+ZIP_MAGIC = b"PK\x03\x04"
+# The Windows package's program: the "-k" in its name makes it wait for a key at the end, so it is renamed on install.
+WINDOWS_PROGRAM = "exiftool(-k).exe"
+
+
+def unpack(archive: bytes, url: str, work: Path) -> Path:
+    """The archive unpacked into `work`; returns the program it installs (in the release's one top folder)."""
+    if archive.startswith(GZIP_MAGIC):
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+            tar.extractall(work, filter="data")
+        name = "exiftool"
+    elif archive.startswith(ZIP_MAGIC):
+        with zipfile.ZipFile(io.BytesIO(archive)) as package:
+            # zipfile drops absolute paths and `..` from member names, so nothing lands outside `work`.
+            package.extractall(work)  # noqa: S202 (the archive is the pinned one, its SHA-256 checked above)
+        name = WINDOWS_PROGRAM
+    else:
+        sys.exit(f"the ExifTool archive from {url} is neither a .tar.gz nor a .zip")
+    (source,) = [path for path in work.iterdir() if path.is_dir()]
+    return source / name
 
 
 def install(url: str, sha256: str, version: str, prefix: Path) -> None:
@@ -27,18 +55,20 @@ def install(url: str, sha256: str, version: str, prefix: Path) -> None:
     if digest != sha256:
         sys.exit(f"the ExifTool archive from {url} has SHA-256 {digest}; the Justfile pins {sha256}")
     with tempfile.TemporaryDirectory() as work:
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
-            tar.extractall(work, filter="data")
-        (source,) = [path for path in Path(work).iterdir() if path.is_dir()]
+        source = unpack(archive, url, Path(work))
         prefix.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source / "exiftool", prefix / "exiftool")
-        (prefix / "exiftool").chmod(0o755)
-        shutil.rmtree(prefix / "lib", ignore_errors=True)
-        shutil.copytree(source / "lib", prefix / "lib")
+        if source.name == WINDOWS_PROGRAM:
+            program, modules = prefix / "exiftool.exe", "exiftool_files"
+        else:
+            program, modules = prefix / "exiftool", "lib"
+        shutil.copy2(source, program)
+        program.chmod(0o755)
+        shutil.rmtree(prefix / modules, ignore_errors=True)
+        shutil.copytree(source.parent / modules, prefix / modules)
     # The program loads its modules when it starts, so this fails when the copy is incomplete.
-    reported = subprocess.run([str(prefix / "exiftool"), "-ver"], capture_output=True, text=True, check=True).stdout.strip()
+    reported = subprocess.run([str(program), "-ver"], capture_output=True, text=True, check=True).stdout.strip()
     if reported != version:
-        sys.exit(f"{prefix / 'exiftool'} reports ExifTool {reported}; the Justfile pins {version}")
+        sys.exit(f"{program} reports ExifTool {reported}; the Justfile pins {version}")
     print(f"ExifTool {reported} installed in {prefix}")
 
 

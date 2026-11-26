@@ -10,8 +10,9 @@
 #     The pins step sets PG_QT_DIR to that kit, as a developer's .env does.
 #   - FFmpeg 9.0 shared build, GPL (BtbN's month-end autobuild, the Justfile's ffmpeg_url): pinned in the Justfile, which `just setup` fetches and
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
-#   - ExifTool at the Justfile's pins: Chocolatey's package (exiftool_version) on Windows, the release's source archive
-#     (exiftool_source_*, tools/install_exiftool.py) on Linux. The rest of the Linux packages are in docker/apt-packages.txt.
+#   - ExifTool at the Justfile's pins (exiftool_version), installed by tools/install_exiftool.py from the release's archive,
+#     checked by SHA-256: the Windows package (exiftool_windows_*) on Windows, the source archive (exiftool_source_*) on
+#     Linux. The rest of the Linux packages are in docker/apt-packages.txt.
 #
 # The screenshot comparison is a waiver (continue-on-error) until it is stable, as defined at its step.
 name: CI
@@ -134,8 +135,12 @@ jobs:
           just setup
           python tools/ci/github_files.py path .deps/ffmpeg/bin
 
-      - name: ExifTool (the metadata tests)
-        run: choco install exiftool --version=${{ env.EXIFTOOL_VERSION }} -y --no-progress
+      # ExifTool at the Justfile's pinned release (the Windows package, checked by SHA-256), the tests' program on Windows.
+      - name: ExifTool (the pinned release, for the metadata tests)
+        run: |
+          python tools/install_exiftool.py --url "$EXIFTOOL_URL" --sha256 "$EXIFTOOL_SHA256" \
+            --version "$EXIFTOOL_VERSION" --prefix "$RUNNER_TEMP/exiftool"
+          python tools/ci/github_files.py path "$RUNNER_TEMP/exiftool"
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         id: cache
@@ -277,8 +282,8 @@ jobs:
       # ExifTool at the Justfile's pinned release (its source archive, checked by SHA-256), the tests' program on Linux.
       - name: ExifTool (the pinned release, for the metadata tests)
         run: |
-          python3 tools/install_exiftool.py --url "$EXIFTOOL_SOURCE_URL" --sha256 "$EXIFTOOL_SOURCE_SHA256" \
-            --version "$EXIFTOOL_SOURCE_VERSION" --prefix "$RUNNER_TEMP/exiftool"
+          python3 tools/install_exiftool.py --url "$EXIFTOOL_URL" --sha256 "$EXIFTOOL_SHA256" \
+            --version "$EXIFTOOL_VERSION" --prefix "$RUNNER_TEMP/exiftool"
           python3 tools/ci/github_files.py path "$RUNNER_TEMP/exiftool"
 
       - name: Build environment (libclang and the video build's key, for the steps after this one)

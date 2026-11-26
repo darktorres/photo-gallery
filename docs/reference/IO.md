@@ -85,7 +85,7 @@ Measured results moved here from the former `FINDINGS.md` log. Each entry says w
 - **Folders ending in a dot or a space.** A plain path drops the dot or space from a folder's name on Windows, so
   `D:\a.\x.jpg` opens `D:\a\x.jpg`; the verbatim form keeps it. Every stored path reaches the disk verbatim
   (`pg_platform::names::disk_path`). Probed (2026-11-10, Windows 10, folders `a.` and `a` side by side):
-  - ExifTool 13.60 (the Windows install; the CI pin is 13.59, not re-probed) takes the verbatim form, through the stay-open argument file and from the command line, with a
+  - ExifTool 13.60 (the Windows install; re-probed on 13.64, the CI pin, 2026-11-25, with the same result) takes the verbatim form, through the stay-open argument file and from the command line, with a
     non-ASCII name too: `-Rating=5` on `\\?\…\a.\x.jpg` wrote `a.\x.jpg`, and on the plain path it wrote `a\x.jpg`.
     The write-back and the crop give it the verbatim path. (An earlier note here said ExifTool did not read `\\?\`:
     wrong for 13.60.)

@@ -13,8 +13,8 @@
 //! (`NativePath::set_plain`, the crate's own) as they always did.
 //!
 //! ExifTool reads and writes a verbatim path, through its stay-open argument file and its command line alike (checked
-//! with ExifTool 13.60, the Windows install, in a folder `Fotos ä.` beside `Fotos ä`; the CI pin is 13.59, which this was
-//! not run on). Two readers normalize every name they are given, the
+//! with ExifTool 13.60, the Windows install, in a folder `Fotos ä.` beside `Fotos ä`; again with 13.64, the CI pin, on
+//! 2026-11-25). Two readers normalize every name they are given, the
 //! verbatim one too: Qt's file engine (`GetFullPathNameW`, in `QFSFileEnginePrivate::longFileName`), so the video
 //! player is given the file open (`file::player_handle`); and the shell's parse, so a folder dialog starts at the
 //! nearest folder whose names survive it ([`check_folder_names`], `picker::start_folder`).

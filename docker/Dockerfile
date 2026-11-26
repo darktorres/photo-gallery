@@ -13,7 +13,7 @@ ARG CARGO_MODULES_VERSION
 ARG SCCACHE_VERSION
 ARG AQTINSTALL_COMMIT
 ARG QT_VERSION
-ARG EXIFTOOL_SOURCE_VERSION
+ARG EXIFTOOL_VERSION
 ARG EXIFTOOL_SOURCE_URL
 ARG EXIFTOOL_SOURCE_SHA256
 
@@ -47,7 +47,7 @@ RUN apt-get update \
 # every user reads. Not an apt package: apt would give whatever release the image carries, not the one the tests are pinned to.
 COPY tools/install_exiftool.py /opt/pg/install_exiftool.py
 RUN python3 /opt/pg/install_exiftool.py --url "${EXIFTOOL_SOURCE_URL}" --sha256 "${EXIFTOOL_SOURCE_SHA256}" \
-      --version "${EXIFTOOL_SOURCE_VERSION}" --prefix /opt/exiftool
+      --version "${EXIFTOOL_VERSION}" --prefix /opt/exiftool
 
 # libclang for bindgen: the newest LLVM the image has, at a fixed path (LIBCLANG_PATH), as CI finds it.
 RUN ln -sfn "$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)" /opt/libclang

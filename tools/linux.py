@@ -55,7 +55,7 @@ PINS = {
     "SCCACHE_VERSION": "sccache_version",
     "AQTINSTALL_COMMIT": "aqtinstall_commit",
     "QT_VERSION": "qt_version",
-    "EXIFTOOL_SOURCE_VERSION": "exiftool_source_version",
+    "EXIFTOOL_VERSION": "exiftool_version",
     "EXIFTOOL_SOURCE_URL": "exiftool_source_url",
     "EXIFTOOL_SOURCE_SHA256": "exiftool_source_sha256",
 }

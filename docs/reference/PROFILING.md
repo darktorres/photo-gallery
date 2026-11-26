@@ -1243,8 +1243,8 @@ About 37 MiB fixed, 0.35 KB per picture of the library and 0.41 KB per owed pict
 −8 MiB). So a slice bounds the query side only: the stored side, every picture in all its orientations, is in memory in
 every slice, and the pass grows with the library whatever the slice (about 0.35 GB a million pictures; past
 `MAX_PICTURES`, 268,435,455, the join refuses). A slice sized by memory was weighed and not built: bounding the pass
-itself is `docs/plans/BOUNDED_MEMORY_PLAN.md`'s (Phase 5, the on-disk tier-1 index in a budget `W`), which replaces this
-join. Until then 200,000 is kept: this library is one slice, and a larger one pays 26 - 35% for a query side bounded
+itself is `docs/plans/BOUNDED_MEMORY_PLAN.md`'s (Phase 5, an on-disk store of the stored side, so the pass holds one slice;
+no memory budget), which replaces this join's store. Until then 200,000 is kept: this library is one slice, and a larger one pays 26 - 35% for a query side bounded
 at ~80 MiB.
 
 #### Both rounds against the pass before them, measured again

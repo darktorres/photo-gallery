@@ -13,7 +13,7 @@ Six findings from the type-mismatch review are still open. The findings were fir
 
 3. **A shown file can change without a save.** The shown file is the viewer's while it is open, and the selection's otherwise (`crates/desktop/src/gallery.rs:41-56`). It is published again on every revision change (`crates/desktop/src/gallery/model.rs:301`, `:309`). The session save is armed only by a change of the current index: `CurrentChanged` (`crates/client/src/controller.rs:363`), which the QML `onCurrentChanged` handler sends when the grid's current item changes (`crates/desktop/qml/Main.qml:184`). `set_current_item` (`gallery/model.rs:251-253`) returns early when the index is unchanged, so the handler does not fire. A file deleted from disk is marked missing by the folder's scan sweep (`crates/catalog/src/roots.rs:206`). A re-list then removes the selected file (`onScanned` after the scan, or `onImported`, `crates/desktop/qml/Main.qml:155-156`, then `Event::Reload`, `controller.rs:413`), `selection_after` keeps the index (`crates/client/src/grid.rs:456`), or moves it to the last item if the list got shorter. Only the kept index is the case here: it now holds a neighbouring file, nothing is armed, and the stored stamp keeps the removed file. (A moved index changes the current item and arms the save.) The restore then finds nothing, though the neighbour was on screen. Traced from the code; not run. A grid rating changes no shown file and arms nothing, and viewer navigation does arm the save, through the viewer's `onIndexChanged` (`Main.qml`, the viewer element, which calls `shell.currentChanged`).
 
-*Related, not reconciled:* `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508) names `save_last_file(Option)` and `loadedAnchor`, which overlap this item's proposed Rust-side ownership.
+*Related, not reconciled:* `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 names `save_last_file(Option)` and `loadedAnchor`, which overlap this item's proposed Rust-side ownership.
 
 *History:* before `fab0512c`, the prefs held an `Option<FileId>`, stored on disk as `-1` for none. A row id names a file only in the catalog that assigned it. The rebuild keeps ids (`crates/catalog/src/rebuild.rs:188`, and the high-water mark carried over, `rebuild.rs:284-297`), but a catalog made anew hands ids out again from 1, so a saved id could name a different file. The stamp replaced the id for that reason.
 
@@ -57,7 +57,7 @@ Six findings from the type-mismatch review are still open. The findings were fir
 - a lookup that finds no row is a success for the notice's resolver, and only a failed lookup posts `LastFileNotKept`;
 - a failed start reports `LastFileNotKept`, and the notice's own checks pass: the sample, its golden line, the `ordinal`, the resolver table and the words (`crates/model/src/notice.rs`, `crates/wording`).
 
-**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 6); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9 (line 1508), which names a `save_last_file(Option)` that this item does not add.
+**Out of scope.** The Qt sentinel sweep (`docs/plans/QT_SENTINEL_SWEEP.md`); counts and positions (item 6); and the overlap with `docs/plans/BOUNDED_MEMORY_PLAN.md` step 7.9, which names a `save_last_file(Option)` that this item does not add.
 
 **Not verified.** The NTFS behaviour is measured on synthetic files on the local NTFS volumes, not on the library. Network identity is not measured: the share `Y:` is NTFS and was not written to. A notice raised at the flush is logged: `inbox.post` writes it to the log before anything else (`crates/app/src/inbox.rs:433-434`), and the log is an appended line (`crates/log/src/file.rs:60`). The viewer's and the grid's paths to the save were traced from the code and not run.
 
@@ -321,7 +321,7 @@ The Qt model API (rowCount, index, begin/insert/remove/move) stays `int` and is 
 - A CLI index above `i32::MAX` is refused with a message (next to the existing `index` tests, `command_line.rs`).
 - A width or height above `i32::MAX`, or a remote `u32` maximum, yields "unknown" and a notice.
 - Each SMALL bound has a pinned test. Existing: `command_line.rs:596`, `ledgers.rs:36`, `keymap.rs:229`.
-- Phase 7: the window laws at `2^31+2^20+7` and `2^40` (`BOUNDED_MEMORY_PLAN.md` line 1550), the id round trips at line 352, and a position that reaches the scene graph stays viewport-relative (the P10 harness).
+- Phase 7: the window laws at `2^31+2^20+7` and `2^40` (`BOUNDED_MEMORY_PLAN.md`, Phase 7 tests), the id round trips (its step 1.7), and a position that reaches the scene graph stays viewport-relative (the P10 harness).
 
 **Evidence.**
 

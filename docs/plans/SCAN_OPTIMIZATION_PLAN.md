@@ -109,9 +109,8 @@ The main anchors now:
 
 1. **Resolved (2026-11-17): the fork route.** Both flags are the fork's `photo-gallery-defaults` feature (`8ec47c7`
    on the pinned branch `photo-gallery-0.41.1`, pushed). `bed9346`'s `.cargo/config.toml` is removed.
-2. **A conflict with the bounded-memory plan.** `docs/plans/BOUNDED_MEMORY_PLAN.md:167` would set
-   `LIBSQLITE3_FLAGS = "SQLITE_TEMP_STORE=0 SQLITE_DEFAULT_MEMSTATUS=1"`. That reverts `bed9346`'s `MEMSTATUS=0`.
-   Whichever lands must keep one value.
+2. **Resolved (2026-11-25): no conflict with the bounded-memory plan.** Its step 1.1 now adds `SQLITE_TEMP_STORE=0`
+   to the same fork feature, beside `MEMSTATUS=0`, and pins both in one test.
 3. **The Linux container.** Confirm that the pg-dev run sees `.cargo/config.toml`. The Linux pass was not run here.
 
 ## Summary

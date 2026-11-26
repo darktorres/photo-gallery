@@ -1,5 +1,20 @@
 # Plan: scanning NTFS volumes from the MFT, kept current by the USN journal
 
+> **Journal passes moved (user decision, 2026-11-25).** The app has one journal pass: step 3.9 of
+> `docs/plans/BOUNDED_MEMORY_PLAN.md` (its Q-N1). It takes directory-index values as the truth (that plan's §1.3, value
+> truth), keeps a cursor per root (an MFT read stores its U0 as the cursor of every root it covered), and adopts three
+> things from this plan: the own-write bracket rule, data-change reasons, and `files.content_gen`. This plan keeps the
+> full MFT read, the helper, its requests (`ResizeJournal` included) and the bracket rule's write-back side. Its
+> "Journal passes (state-based)" section, the per-volume `volumes.next_usn` position, the `OpenFileById` live values and
+> the `links` table for journal passes are superseded.
+>
+> **Value truth (user decision, 2026-11-07; applied here 2026-11-25).** Every scan source records the values a directory
+> listing returns (size, mtime and creation time from the directory index), so the walk, the MFT read and a journal pass
+> give the same catalog. This plan took live per-file values before; that is reversed. The MFT read takes its values
+> from the directories' index entries (`$INDEX_ROOT` and `$INDEX_ALLOCATION`), not from `$STANDARD_INFORMATION` and
+> `$DATA`, and keeps only the folders the unelevated client can list. The walker keeps the listing's values. See the
+> walker rule (Unit of work), The MFT read (Index sweep, Access), and steps 2, 4 and 8.
+
 ## Context
 
 The scanner (`crates/scan/src/lib.rs`, over `pg_platform::dir::Lister`) lists every folder with
@@ -15,7 +30,8 @@ number with the sequence number in the top 16 bits (checked: the live ID `ce0000
 
 ### Unit of work: the volume
 
-One MFT read covers **every library root on that volume**; the journal position is per volume. The runner groups queued
+One MFT read covers **every library root on that volume**; its start USN becomes the journal cursor of each root it
+covered (the cursors are per root since 2026-11-25, see the note at the top). The runner groups queued
 roots by volume (`GetVolumePathNameW` → `GetVolumeNameForVolumeMountPointW` → `\\?\Volume{GUID}`).
 
 Which source a scan uses:
@@ -41,13 +57,17 @@ Which source a scan uses:
 - **SMB shares are refused** (decided 2026-11-01). A share has no MFT, no journal and no mount GUID. Two shares of one
   server volume report the same serial with overlapping trees. It doesn't fit volume-relative paths or the
   duplicate-serial rule, and supporting it properly would be a design of its own.
-- **The walker** (for a non-admin, and for the differential tests) is exact, not fast. A listing's size and mtime come
-  from the directory index, whose copy is stale for a file with several links (verified: the other link's `$FILE_NAME`
-  copy still said size 0 and an older mtime), and a listing can't tell the link count. So the walker lists names and IDs
-  only, then opens each media file by ID (in ID order, 8 in flight) for its live size, mtime, attributes and link count
-  (`FileStandardInfo`, `FileBasicInfo`). It is the fallback, so correctness comes first. Today the walker still takes size
-  and mtime from the listing (`crates/platform/src/dir.rs:394`, `:401`); step 2 changes that.
-- **Flags:** `gallery scan --full` forces the MFT read; `--walk` forces the walker (the differential test).
+- **The walker** (for a non-admin, and for the differential tests) records what the listing returns, as it does today
+  (`crates/platform/src/dir.rs`, the size and mtime of each entry). That is the value truth for every source (the note at
+  the top). A listing's size and mtime come from the directory index, whose copy is stale for a file with several links
+  (verified: the other link's `$FILE_NAME` copy still said size 0 and an older mtime), and a listing can't tell the link
+  count. That staleness is accepted: it is deviation J-a of `docs/plans/BOUNDED_MEMORY_PLAN.md` (§7), bounded by its
+  verification walks. The 2026-11-14 design (names and IDs from the listing, then each media file opened by ID for live
+  values) is dropped. Live values would make the walk differ from a journal pass, which relists through the walk, and
+  from an MFT read of the same index.
+- **Flags:** the command line is gone (`docs/plans/HEADLESS_SESSION_PLAN.md`), so the flags are the driver's:
+  `pg-driver run --passes scans --full` forces the MFT read, and `--walk` forces the walker (the differential test). In the
+  app, "Full rescan" forces the MFT read where it is available, else the walk.
 
 **Volume serial collisions:** a cloned disk keeps its serial, and `files.volume` would merge two drives' files. Refuse a
 volume whose serial equals another mounted volume's. This is a flaw in today's identity too. No duplicate serials among
@@ -79,7 +99,8 @@ with the filtered token. The raw MFT read needs an elevated handle, so the desig
 `windows-sys` alone (no `pg-*` crate; the progress count is a plain counter the caller reads). It is not `gallery.exe`,
 for three reasons:
 
-- `run_command` (`crates/cli/src/lib.rs:131`) opens, and would create, the catalog (`:136`) before dispatching;
+- the app and the driver open, and would create, the catalog at start (the 2026-11-14 reason named the command line's
+  `run_command`, since removed);
 - Qt and FFmpeg DLLs would load elevated (`just deploy` puts them next to `gallery.exe`);
 - an elevated UI can't receive drops from Explorer.
 
@@ -124,8 +145,9 @@ The media extensions come in the request (`pg_model::media` keeps the list). An 
 
 The helper sends every directory under the roots (the catalog keeps them all) and the media files under them, and nothing
 else. Wire format: length-prefixed little-endian frames, 1 MiB writes; pipe backpressure is the pause. Each file frame
-carries its reparse tag (read from `$REPARSE_POINT`, see The MFT read). The parent applies the same filter as the walker
-(`listing.rs`), so the MFT and walk paths agree; the helper applies no filter of its own.
+carries its values and reparse tag as its index entry holds them (see The MFT read, Index sweep). The parent applies the
+same filter as the walker (`listing.rs`) and the walker's access rule (see Access), so the MFT and walk paths agree; the
+helper applies no filter of its own.
 
 **DLL planting is closed:** `pg-volume.exe` links with `/DEPENDENTLOADFLAG:0x800` (`LOAD_LIBRARY_SEARCH_SYSTEM32`; set in
 `build.rs` as `cargo:rustc-link-arg-bin=pg-volume=/DEPENDENTLOADFLAG:0x800`, so no other target gets it). Its static
@@ -157,9 +179,11 @@ and G:).
 
 1. Query the journal → U0.
 2. `FlushFileBuffers` on a **separate, short-lived** volume handle opened `GENERIC_WRITE` (required by the call; a
-   prototype took 939 ms on C:, one run). The reading handle stays read-only.
-3. Read raw.
-4. Store U0 in `volumes`; the journal pass from U0 replays what changed during the read.
+   prototype took 939 ms on C:, one run). The reading handle stays read-only. The flush covers the index blocks as well
+   as the records.
+3. Read raw: the record sweep, then the index sweep.
+4. Store U0 as the journal cursor of every root the read covered (`usn_roots`, `docs/plans/BOUNDED_MEMORY_PLAN.md` step
+   3.9); the journal pass from U0 replays what changed during the read.
 
 The flush is needed because the MFT records of recent changes can sit dirty in the cache. Measured 2026-11-14 on C:: 8
 rounds of 200 new files, read raw right after the files closed, before the flush: 0 to 28 of 200 records read as
@@ -168,10 +192,12 @@ a deleted name from a free record. After the flush: 200 of 200 `present` in ever
 Control: the same files with no flush and a 160 ms wait left the disk state unchanged in all 4 rounds. That excludes the
 lazy writer for a 160 ms window only. A longer-wait control is step 4's test.
 
-**A record that can't be read is never a missing file.** That covers a fixup mismatch, a parse error, a read error, and a
-parent cycle.
+**A record or index block that can't be read is never a missing file.** That covers a fixup mismatch, a parse error, a
+read error, and a parent cycle. Since files come from their folders' index entries (Index sweep), what can be unreadable
+is a directory: its record, or one of its index blocks.
 
-- It is read again after the pass; if it still fails, its ref is resolved live (`OpenFileById`).
+- It is read again after the pass; if it still fails, the directory is listed live by the walker's own lister (as the
+  unelevated client), so its entries carry the listing's values, as the value truth requires.
 - If that fails too, the record goes on the pass's **unknown** list: nothing under an unknown directory, and no unknown
   file, is marked missing or loses a link, and the scan reports them as errors.
 - The walker has the same rule. At `4e1ad4d`, `mark_missing` ran after folders that couldn't be listed and hid their files
@@ -194,29 +220,75 @@ don't fit: `mft` 0.9.1 gives each `MftEntry` its own `Vec<u8>`, an allocation pe
 dev-dependency oracle on a captured `$MFT`; `ntfs` reads every record through `Read + Seek` (`Ntfs::file(fs,
 record_number)`).
 
-Per record (layout checked by a prototype on C: and E:):
+**The record sweep.** Only directory records are parsed in full; a file record is checked for its flags and skipped.
+Per directory record (layout checked by a prototype on C: and E:):
 
 - fixups; the in-use and directory flags; the base reference;
-- `$STANDARD_INFORMATION`: mtime at +8, attributes at +32. The prototype's mtime equals `GetFileInformationByHandle`'s
-  exactly (C:);
 - `$FILE_NAME`: parent +0, name length +64, namespace +65, name +66. Keep POSIX (0), Win32 (1) and Win32+DOS (3); skip DOS
-  (2). `CreateHardLink` made POSIX names in the measurement: a link was namespace 0;
-- unnamed `$DATA`: `DataSize` +0x30 if non-resident, the value length if resident. The size equals the live value (C:);
-- `$REPARSE_POINT`: the tag.
+  (2). `CreateHardLink` made POSIX names in the measurement: a link was namespace 0. This builds the tree;
+- `$REPARSE_POINT`: the tag (a reparse folder is not descended, as in the walk);
+- `$INDEX_ROOT` (`$I30`): its resident index entries;
+- `$INDEX_ALLOCATION` (`$I30`): its data runs, the index blocks to read in the index sweep;
+- `$BITMAP` (`$I30`): which index blocks are in use. A block not in use is never read, since its entries are stale.
 
 Extension records are merged into their base at the end. Attribute lists are never read, since every extension record
-names its base.
+names its base. `$STANDARD_INFORMATION` and unnamed `$DATA` are not read: they hold the live values, which no listing
+returns. (The 2026-11-14 prototype's check that `$STANDARD_INFORMATION` mtime and `$DATA` size equal the live values
+stands as a measurement; they are not what the catalog records.)
+
+**The index sweep.** Every directory's in-use index blocks (`INDX`, the volume's index block size, 4 KiB on these
+volumes) are collected as (LCN, cluster count, directory), sorted by LCN, and read in that order: an elevator sweep, with
+the same unbuffered overlapped reads as the record sweep. Gaps between runs below a threshold are read through rather
+than skipped; the threshold is measured in step 8. Each block's update sequence fixups are applied, and its magic and
+virtual cluster number are checked, before its entries are parsed. Per index entry:
+
+- the file reference (record number and sequence);
+- its `$FILE_NAME` copy: parent, creation time, mtime, real size, file attributes, the reparse tag field (the value a
+  listing returns in `EaSize` when the reparse attribute is set), namespace and name. These are the fields
+  `FileIdBothDirectoryInfo` returns, so the read records what the walk would. Not yet checked on a real block: that
+  every field, the reparse tag included, equals the listing's for the same entry. Step 3's capture checks it, entry by
+  entry, against `FileIdBothDirectoryInfo` of the same folder.
+
+An entry whose namespace is DOS (2) is skipped, as in the record sweep. An entry for a subdirectory is matched to its
+record from the record sweep by reference, sequence included; a mismatch means the entry is stale, and the directory goes
+on the unknown list.
+
+- **Filter-hidden tags.** The WOF filter hides its reparse point from enumeration (see WOF below), so the walk sees a WOF
+  file as a plain file. The raw index may still carry the reparse attribute and the tag. For the two sources to agree, a
+  tag the filter stack hides from listings is treated as absent: WOF `0x80000017` (measured), and dedup `0x80000013` if a
+  machine with dedup shows the same. Step 4's differential test is what finds any other.
+- **Cost:** not measured. The index holds one entry per link (~100 B with a short name), so on E: (~97.6M records) the
+  blocks in use are likely 10-20 GB, spread over the disk in one or a few runs per directory. On an SSD the sweep is
+  bandwidth-bound; on the Exos HDD the elevator order bounds the seeks to one pass across the platter, but how close that
+  comes to sequential speed depends on the gaps. Step 8 measures it beside the record sweep.
+
+**Access: the client's view.** The walk runs as the unelevated user, so it never lists a folder that user may not list:
+the folder is recorded as failed and not descended, and its files are not marked missing. The MFT read runs elevated, so
+the parent applies the same rule. When the first entry of a directory arrives, the parent opens that directory by ID
+(`OpenFileById` on the root's handle) with `FILE_LIST_DIRECTORY` and makes one listing call. That is the walker's own
+access check (`first_call`, `docs/plans/BOUNDED_MEMORY_PLAN.md` step 1.6), made with the user's unelevated token.
+
+- If it fails, the directory is treated as the walk treats it: recorded as a failed folder, its subtree dropped, and its
+  path on the scan's skip list, so nothing under it is marked missing.
+- The answer is cached per directory, so each is checked once. The checks run on a few threads beside the stream. On E:
+  that is ~3.2M opens; their cost is measured in step 8.
+- Opening by ID skips the traverse check on the path. The walk does not pay it either while SeChangeNotifyPrivilege is
+  enabled (bypass traverse checking, on for every user by default). A token without it walks: the bounded-memory plan's
+  journal ladder already requires the privilege, and the MFT read takes the same rung.
+- The helper sends everything and checks nothing; the elevated process makes no access decision.
 
 **Tree:** directories by record number → `(parent, sequence, name)`: ~3.2M on E:, a few hundred MB. Each directory's place
 is memoized. **Cycles** in the parent chain are detected; those records go on the unknown list, not dropped, so nothing
 under them is marked missing.
 
-**Streaming, in bounded memory:** a media file whose ancestry is resolved is sent at once, as
-`Folder { dir_ref, rel_path, root }` once per folder, then `File`. Unresolved files wait, up to a budget (default 512 MiB,
-~40 B per file plus its name). Past it, the deferred files of a chunk are dropped and the chunk's number is kept. After the
-pass the tree is complete, so only those chunks are read again, and every file in them resolves. The deferred files stay
-within the budget whatever the layout; the second read costs only what overflowed. The directory tree (a few hundred MB on
-E:) grows with the directories and sits outside that budget.
+**Streaming:** the index sweep runs after the record sweep, so the tree is complete when entries arrive, and every entry
+resolves at once: a media entry is sent as `Folder { dir_ref, rel_path, root }` once per folder, then `File`, with no
+deferral. The deferral budget of the 2026-11-14 design (unresolved files waiting up to 512 MiB, overflowing chunks read
+again) is no longer needed, since files no longer come from the record sweep. The directory tree (a few hundred MB on
+E:) grows with the directories. Under the bounded-memory plan's rule (no structure grows with the library), it spills
+past a fixed size to an on-disk table keyed by record number; the sorted run list of the index sweep spills the same way
+(`pg-spill`'s ExtSort, `docs/plans/BOUNDED_MEMORY_PLAN.md` D14). The helper links no `pg-*` crate, so it carries its own
+copy of that sort.
 
 **Progress:** the reader reports records read against `MftValidDataLength / record size`, and `pg-library` shows them through
 `Control::begin` (`crates/jobs/src/control.rs:219`).
@@ -248,14 +320,14 @@ and algorithm tried.
 
 The WOF filter hides the reparse point from directory enumeration, `GetFileAttributes` and `fsutil reparsepoint query`.
 So the listing can't see WOF. `fsutil file layout` still shows the reparse attribute, a 24-byte `$REPARSE_POINT` and the
-`WofCompressedData` stream, so the MFT read sees it. The tag's value is read from the MFT record.
+`WofCompressedData` stream, so a raw read sees it. Since the walk can't, the MFT read treats the WOF tag as absent (Index
+sweep, filter-hidden tags), and both record a WOF file as a plain file with the size its index entry holds.
 
 **Hard links are modelled, not collapsed.** Every name of a file under a root is a link (see Catalog). A hard-linked photo
 appears in each of its folders, as in Explorer; ratings and analysis stay per file. Every pass, journal passes included,
 has a `scans` row, and a link not seen by a full pass is gone (seen: in the pass's seen set, see `ScanWriter` under
-Catalog). A listing's size and mtime can be wrong for a hard-linked
-file, as the walker section says; step 2's walker takes every value from the file itself, and the MFT read takes them from
-`$STANDARD_INFORMATION` and `$DATA`.
+Catalog). A listing's size and mtime can be stale for a hard-linked file, as the walker section says. Both sources record
+them as the index holds them, per link (value truth), and the staleness is the bounded-memory plan's deviation J-a.
 
 **`FileId == 0`** is counted in `ScanStats::errors`. In the tree, the folder is treated as unreadable instead
 (`crates/scan/src/lib.rs:201–226`). The Z: result above shows the rule holds on FAT32 too.
@@ -293,21 +365,34 @@ path, except for the OneDrive folder itself, which the tag can't see.
 
 ### Catalog
 
-Schema changes are migrations (`crates/catalog/src/schema.rs:43–64`). The baseline stays frozen at version 1, and
-`MIGRATIONS` reaches version 15 (`TO_13_PAIRS_OWED`, committed in `d3d307a`; `TO_14_PAIRING_EPOCH` and
-`TO_15_HASHES_OWED` after it).
+**Re-based 2026-11-25.** The user decided the model below: **a row per link** (the `links` table) and **volume-relative
+paths** (the `volumes` table; drive letters are never stored). What changed around it since 2026-11-14:
 
-**Migrations.** Every schema change below is a migration after those of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, which
-lands first (its decision D5, 2026-11-15), in one transaction with its version. The pairing work took versions 13 to 15, and
-the scan plan takes the next one. A migration converts the rows whose meaning changes, with Rust steps:
+- **No migrations.** The migration chain was baked into one baseline (`crates/catalog/src/baseline.sql`,
+  `BASELINE_SCHEMA = 1`, `MIGRATIONS` empty), and the baseline is edited in place until the first release (`RELEASED`
+  empty, `crates/catalog/src/classify.rs`). There is no back-compat (`docs/plans/HEADLESS_SESSION_PLAN.md`). So every
+  schema change below is an edit to `baseline.sql`, and a catalog of the earlier layout takes `classify`'s
+  `RebuildCarry`: the rebuild makes a fresh catalog and carries the old rows into it. The table-rebuild machinery below
+  (items 1-7 and 9) is moot; item 8 (the carry's conversions) and item 10 (the defaults) stay. They are kept in full as the
+  record of why.
+- **One schema change at a time, in order:** `docs/plans/CATALOG_SIZE_PLAN.md` Phase 2 (`mfolders`, `path_name_key`) lands
+  first, then this plan's step 1, then `docs/plans/BOUNDED_MEMORY_PLAN.md` Phase 2 (its Q-N3). The link split moves the
+  catalog-size plan's `mid`, `name` and `files_mn` index from `files` to `links`.
+- **Journal state is per root,** in the bounded-memory plan's `usn_roots`, not in `volumes` (the note at the top).
+- **The journal pass's per-directory state** (its 2026-11-07 `usn_dirs` mirror) becomes a side table of `folders`, since
+  `folders` now has a row for every directory (below).
 
-- `links`: one per old file row;
-- `volumes`: from the old serial;
-- `content_gen`: from mtime;
+**The carry's conversions** (rebuild, `crates/catalog/src/rebuild.rs`; see item 8):
+
+- `links`: one per old file row, from its `folder_id`, `name`, `ext` and `order_key`;
+- `volumes`: from the old serials;
+- `folders` and `roots`: the volume and the path inside it, from the old full path;
+- `folder_failures.path` and `scans.root`: likewise;
+- `content_gen`: 1 for every carried file (its analysis records the same generation, so nothing is re-imported);
 - `own_usn` and `own_from` are added in step 6, not here.
 
-**The table-rebuild step.** The `files`/`links` split takes columns off `files`, and SQLite can do that only by
-rebuilding the table.
+**The table-rebuild step (moot since 2026-11-25; kept as the record).** The `files`/`links` split takes columns off
+`files`, and SQLite can do that only by rebuilding the table.
 
 **Three tables are rebuilt, not one:**
 
@@ -393,7 +478,8 @@ and the code.
    `files_new` would be rewritten (`sqlite3.c:122560-122569`).
 7. **`meta.vacuum_owed` = 1**, since the old table's pages stay free in the file otherwise. `lifecycle.rs:148-187` runs
    the VACUUM after the commit.
-8. **The catalog rebuild** (`rebuild.rs`) needs two changes.
+8. **The catalog rebuild** (`rebuild.rs`) needs two changes. **This item stands** (2026-11-25): the rebuild is now the
+   only route from the earlier layout, so its carry must convert, not copy shared columns.
    - **It can't fill a new NOT NULL column with no default.**
      - `copy_tables` copies every table by its shared columns first (`rebuild.rs:197-225`). Only after that does it run
        the `Rust` steps that would fill the new columns (`:230-234`).
@@ -408,9 +494,9 @@ and the code.
        very mistake item 10 wants caught, so defaults are not the fix.
    - **`CARRIED` gains `links` and `volumes`.** `carried_is_every_table_of_the_current_schema` (in `catalog/src/schema.rs`)
      enforces it.
-   - **The every-version test carries rows.** `every_older_version_reaches_the_current_one_on_both_paths`
-     (`lifecycle.rs:1422`) rebuilds empty catalogs, so it can't catch a failed copy. It gets at least one row in each
-     carried table, at each version, and checks that the row arrives.
+   - **The carry test carries rows.** With no versions to step through (2026-11-25), the test builds a catalog of the
+     layout before the split, with at least one row in each table (two links of one file included), rebuilds it, and
+     checks that every row arrives converted. The child rows listed in item 9 are checked the same way.
 9. **Tests:**
    - **Before and after, not only against `expected`.** `expected_for` runs the same step, so an object the step loses
      is missing from the expected schema too, and "equals `expected`" still holds. So compare the schema before and
@@ -434,9 +520,9 @@ and the code.
     `analysis_added` stamps `seq` and `changed` again when the analysis is stored. This rebuild may remove them, so that
     an INSERT that leaves one out fails. That is a guard, not a fix, so decide it with the rest of the split.
 
-Each Rust step checks the old shape by its columns and is idempotent (`schema.rs:15–16, 30`), since the rebuild
-(`rebuild.rs`) runs the steps again on carried rows. The rebuild runs only when a catalog's schema differs from this
-build's at its version. Existing catalogs keep their rows.
+Each carry conversion checks the old shape by its columns, so a catalog already in the new layout copies plainly. The
+rebuild runs only when a catalog's schema differs from this build's. Existing catalogs keep their rows (the user's
+catalog included), through the rebuild.
 
 **Volumes of the old rows.**
 
@@ -450,10 +536,12 @@ build's at its version. Existing catalogs keep their rows.
 **Volume identity: the 64-bit NTFS serial.** Done: the serial is read as 64 bits (`FILE_ID_INFO`,
 `crates/platform/src/dir.rs:299–311`) and carried as `FileIdentity::volume: u64` (`crates/model/src/ids.rs:37`). Measured
 on C: 2026-11-14: `FileIdInfo` gives the 64-bit serial `2cac2355ac2318ba`, whose low half is `vol`. The low 32 bits equal
-`dwVolumeSerialNumber` on four volumes (`fsutil` vs `vol`). What changes is storage: `files.volume` is `INTEGER`
-(`crates/catalog/src/schema.rs:553`), and the `volumes` table is new. `FSCTL_GET_NTFS_VOLUME_DATA` in the helper gives the
-same value. The serial is stored as `volume.cast_signed()` (`crates/catalog/src/writers.rs:32`), so
-`volumes(serial PRIMARY KEY)` holds the signed form. Clones still copy the serial, so the duplicate refusal stays.
+`dwVolumeSerialNumber` on four volumes (`fsutil` vs `vol`). `FSCTL_GET_NTFS_VOLUME_DATA` in the helper gives the same
+value. What changes is storage: `docs/plans/CATALOG_SIZE_PLAN.md` (its D8, landing before this step) interns the volume,
+as `volumes(id INTEGER PRIMARY KEY, serial INTEGER NOT NULL UNIQUE)` with `files.volume` its id, and this step extends
+that table (below) instead of making one keyed by serial. The serial is stored as `volume.cast_signed()`
+(`crates/catalog/src/writers.rs`), so `volumes.serial` holds the signed form. Clones still copy the serial, so the
+duplicate refusal stays.
 
 **Paths relative to their volume; the drive letter is never stored.**
 
@@ -477,8 +565,7 @@ same value. The serial is stored as `volume.cast_signed()` (`crates/catalog/src/
   back on `pg-thumbcache` from either.
 - The rebuild connection (`rebuild`, `crates/catalog/src/rebuild.rs:53`, opened at `:105`; `carry_rows` attaches the old
   catalog as `carried` at `:175`) must have `pg_path` too, when it copies paths.
-- `file_by_path` (`crates/catalog/src/lookup.rs:98`, used by `crates/cli/src/borders.rs:191` and
-  `crates/cli/src/lib.rs:398`; tests at `crates/catalog/src/lifecycle.rs:688–689`) resolves a full path to
+- `file_by_path` (`crates/catalog/src/lookup.rs`; its command-line callers are gone, its tests remain) resolves a full path to
   `(volume, rel_path)` first.
 - Roots by `(volume, rel_path)`: `Catalog::roots`, `add_root` and `remove_root` (`crates/catalog/src/roots.rs:55`, `:70`,
   `:89`). `is_under` (`PathRules::is_under`, `crates/model/src/rules.rs:281`) has these users: `crates/catalog/src/roots.rs:75`,
@@ -519,15 +606,34 @@ statement each.
   merged first.
 - The tree in the UI is unaffected: its counts come from links (today `FOLDER_COUNTS`,
   `crates/catalog/src/browse/read/tree.rs:10`, from `files`), so folders without media still don't show.
+- **The journal pass's per-directory state** lives beside it, in a NOT_CARRIED side table keyed by `folders.id`: the
+  listing state (listed, unreadable, reparse), the error, the entry, media and reparse-file counts, and the walk key
+  (`docs/plans/BOUNDED_MEMORY_PLAN.md` step 3.9, which called it the `usn_dirs` mirror before folders had a row per
+  directory). The bounded-memory plan's 2026-11-07 reason for a separate mirror ("folder rows are created lazily, so they
+  cannot carry directory identity") no longer holds once this rule lands.
+- **Cost at scale:** a row per directory, not per media folder. On E: that is ~3.2M rows against today's 334, about
+  100-150 B each with the identity and path indexes; at 1B files and 10-50M directories, 1-7 GB. A first scan writes them
+  once; a rescan writes only the changes.
 
 **Identity and location split.**
 
 - `files` keeps identity (`volume`, `file_ref`), `size`, `mtime`, `kind`, `missing`, `pending`, `seq` and the per-file data
   (analysis, ratings, writes).
-- A new **`links(id, file_id, folder_id, name, ext, order_key)`**, `UNIQUE(folder_id, name)`, takes `folder_id`,
-  `name`, `ext` and `order_key` off `files`. `files_order` and `files_present` move to `links`. The grid, the folder counts
-  and the order list read links. A file reads and writes through any present link (`crates/writeback/src/lib.rs`, the
-  import's paths). A file is missing when it has no present link. The migration makes one link per old row.
+- A new **`links(id, file_id, folder_id, name, ext, order_key, size, mtime, ctime)`**, `UNIQUE(folder_id, name)`, takes
+  `folder_id`, `name`, `ext` and `order_key` off `files`. `files_order` and `files_present` move to `links`. The grid, the
+  folder counts and the order list read links. A file reads and writes through any present link
+  (`crates/writeback/src/lib.rs`, the import's paths). A file is missing when it has no present link. The carry makes one
+  link per old row.
+- **Values per link, and the file's from them (decided with the value truth, 2026-11-25).** Each link records the values
+  its own listing returns, and two links of one file can disagree (the index keeps a stale copy for the link that was not
+  used). The file's `size` and `mtime` are those of its present link with the greatest (mtime, size). That rule does not
+  depend on the order the links are met, so the walk, the MFT read and a journal pass give the same file values whatever
+  order they list in. The stale copy has the older mtime, so the rule picks the copy closest to the live file. A link
+  write that changes the file's values goes through the same rule, and only a change of the file's values bumps
+  `content_gen`.
+- **Order by link.** The grid shows one entry per link, in link order (`order_key`). The Duplicates filter is per file:
+  two links of one file are one file, not duplicates of each other.
+- **Root removal with links:** removing a root deletes its links; a file with a link under another root stays present.
 - Everything that reads `files.folder_id`, `name` or `order_key` moves to `links`: 57 lines reference `folder_id` in
   `crates/catalog/src` and one in `crates/thumbcache/src` (the grep count of 2026-11-14; recount before step 1). Also the name
   filter `pg_contains(f.name, ?)` (`crates/query/src/lib.rs:308`), the name order `f.order_key` in
@@ -540,8 +646,13 @@ trust mtime. A rewrite that keeps the mtime, which the journal now detects, woul
 thumbnails current forever.
 
 - **`files.content_gen`** goes up on a change of size or mtime, and on a journal data-change reason that isn't ours.
-- `analysis` records the `content_gen` it was made from, and `stale!` compares it (with rotation and kind).
-- The thumbnail cache's `Source` becomes `(content_gen, rotation)`. The cache schema is edited in place, at version 1.
+- **It joins the by-value comparison; it does not replace it** (reconciled 2026-11-25 with
+  `docs/plans/CATALOG_SIZE_PLAN.md` D4, which keeps staleness by value so the thumbnail cache survives a catalog rebuild
+  on its own evidence). `analysis` records the `content_gen` it was made from beside its size, mtime, rotation and kind,
+  and `stale!` compares all five. A carried catalog keeps `content_gen` verbatim; a catalog made again starts every file
+  at 1, and then an old entry matches only when size, mtime and generation all agree.
+- The thumbnail cache's `Source` becomes `(mtime, rotation, content_gen)`, with a `CACHE_VERSION` bump that starts the
+  cache over (`crates/model/src/versions.rs`; the old "edited in place, at version 1" rule is gone).
 - Writeback's own writes and `borders_cut` bump it too. `borders_cut` updates size and mtime only today, so it changes; its
   analysis is redone as now. The metadata-only carry-over in `file_rewritten` moves `analysis.content_gen` to the new
   generation in the same transaction, so a rating write keeps its analysis current.
@@ -549,10 +660,14 @@ thumbnails current forever.
   between mtimes today.
 - The import's check that a file didn't change while it was read (`AnalysisWriter`'s `current`) compares `content_gen`.
 
-**Volumes and the mark.** `volumes(serial PRIMARY KEY, guid_path, journal_id, next_usn, synced)` is created in step 1, since
-offline mounts need it. Its journal columns are written by the full read (step 4 stores U0 there) and used by the journal
-pass in step 6. Until step 6, a full read misses changes made during it, and the next full scan catches them.
-`Catalog::mark_missing_ref(volume, file_ref)` is new.
+**Volumes and the mark.** Step 1 adds `guid_path` and `label` to the catalog-size plan's `volumes(id, serial UNIQUE)`
+(its D8), since offline mounts need them; `folders` and `roots` reference `volumes.id`. It has no journal columns (2026-11-25): a full read stores U0 as the cursor of each root it covered, in the
+bounded-memory plan's `usn_roots`, which its step 3.9 reads. Until that step lands, a full read misses changes made during
+it, and the next full scan catches them. `Catalog::mark_missing_ref(volume, file_ref)` is new.
+
+**Offline volumes and the lanes.** The library's lanes are keyed by volume already (`crates/library/src/lanes.rs`), so an
+offline volume's lane has nothing to run: its passes skip it, its writes stay queued, and its files keep their rows
+unchanged (offline is not missing, so no `missing` flip and no removal cost).
 
 **`mark_missing(root, scan, skipped)`** (`crates/catalog/src/roots.rs:150`; today its third argument is the skip list, called
 from `crates/scan/src/lib.rs:591`) becomes: links under `root` that this scan didn't see (not in its seen set) are deleted, except under the pass's
@@ -598,14 +713,20 @@ It keeps the rules of `docs/plans/SCAN_OPTIMIZATION_PLAN.md`, whose Phases 1 and
     rows from its own snapshot, which it takes before it reads the MFT.
   - `mark_missing`, the link sweep and the identity pairing read it, so a pass that changes nothing writes nothing.
   - That is why `links` has no `last_scan`, and why `files` has already lost its own (the scan plan's Phase 3).
-  - A journal pass sees only the changed refs, so it sweeps nothing by the set. Its deletions come from the journal, as
-    described under Journal passes.
+  - A journal pass claims what it relists and sub-walks into the same two sets, and its sweep runs over its own scopes
+    (the folders it relisted, the subtrees it sub-walked, the refs it dropped), not over the whole root
+    (`docs/plans/BOUNDED_MEMORY_PLAN.md` D38 and step 3.9).
+  - The sets are temp tables, on disk once the bounded-memory plan's step 1.1 moves SQLite's temp storage there, so they
+    cost no RAM per file.
 
 **Reused:** the catalog's statement style (constants, `concat!` macros) and `rebuild` (`crates/catalog/src/rebuild.rs:53`).
 `Ext::of_name_bytes` (`crates/model/src/media.rs:108`; the older name `of_name_utf16` at `4e1ad4d`), `Control`
 (`crates/jobs/src/control.rs`), and `normalize_path` (`crates/platform/src/names.rs:171`).
 
 ### Journal passes (state-based)
+
+> **Superseded (2026-11-25)** by `docs/plans/BOUNDED_MEMORY_PLAN.md` step 3.9 (see the note at the top). Kept for the
+> measurements and the reasons it records; the own-write bracket below stays in force.
 
 1. Read from the saved USN (in the helper, or unprivileged as the fallback). Group the records by file ref, keeping each
    record's USN and reason, since the own-write rule needs each record's USN.
@@ -725,8 +846,9 @@ committed at `724a882` ("Borders cut in place"), and the tree was clean on 2026-
 (`bff2224`). Step 1 starts from that commit. If that work changes again before step 1, its owner commits it first, since step 1
 edits the same files. `crates/catalog/src/browse/` gets the same check before step 1.
 
-**Also before step 1:** `docs/plans/SCAN_OPTIMIZATION_PLAN.md` lands first (its D5, decided 2026-11-15). Step 1 starts
-from what that plan leaves:
+**Also before step 1:** `docs/plans/SCAN_OPTIMIZATION_PLAN.md` landed (its Phases 1-5, 2026-11-17), and
+`docs/plans/CATALOG_SIZE_PLAN.md` Phase 2 lands before this step (the order of Catalog, above). Step 1 starts from what
+the scan plan left:
 
 - `files` without `files_added`, `last_scan` or `files_fresh`, with its column defaults kept;
 - removing a library folder ends the scans under it (that plan's Phase F2);
@@ -737,7 +859,8 @@ from what that plan leaves:
 
 Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schema.rs` before step 1.
 
-1. **Catalog model.** Files: `crates/catalog/src/` (`schema.rs` migrations after the scan plan's, the table-rebuild step, `links`, `volumes`; `writers.rs`
+1. **Catalog model.** Files: `crates/catalog/src/` (`baseline.sql`: `links`, `volumes`, the folder and root columns, the
+   journal side table; the rebuild's carry conversions, item 8; `writers.rs`
    `ScanWriter`; `roots.rs` `mark_missing`, `mark_missing_ref`, roots by volume; `rebuild.rs`; `queue.rs` `file_rewritten`;
    `sql.rs` `stale!`; `core.rs` `prepare`/`open`; `lookup.rs` `file_by_path`; `dups.rs`; `borders.rs`; the new `move_folder`),
    `crates/catalog/src/browse/`, `crates/query/src/lib.rs` (`pg_path`; `Cargo.toml` gains `pg-platform`),
@@ -748,14 +871,15 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
    grid and viewer (`crates/desktop/src/gallery.rs`, `providers.rs`, QML). Committed as separate steps: links; serial;
    `content_gen`; relative paths and offline; folder tree, each with its tests.
    - the `files`/`links` split, with every reader moved to it (`crates/catalog`, `crates/thumbcache`, `dups.rs`, `writeback.rs`,
-     the import, and the name filter at `crates/query/src/lib.rs:308`);
+     the import, and the name filter `pg_contains` in `crates/query/src/lib.rs`), the per-link values and the file's values
+     by the greatest (mtime, size) rule;
    - `ScanWriter` writes files and links (the walker of step 2 and the read of step 4 both write through it);
    - the 64-bit serial in the catalog columns (the type is already done);
    - `content_gen` in `files`, `analysis` and the thumbnail cache;
    - volume-relative paths, roots by volume, mounts resolved at run time and refreshed on device arrival and removal, offline
-     volumes, and the `volumes` table (its journal columns come in step 6);
+     volumes, and the `volumes` table (no journal columns: the cursors are per root, in the bounded-memory plan);
    - folders as a tree (`parent_id` + `name`, derived `rel_path`), with `volume/file_ref` for the folders that hold media, and
-     `move_folder` with the merge.
+     `move_folder` with the merge. Every directory gets its row in step 2, when the walker records them.
 
    Tests: catalog unit tests (links, missing, `move_folder`, `rebuild` from an old catalog), the existing suites, and the app's
    grid and folder tree by screenshot (`run` skill). Also the detach/reattach offline test (see Testing), and the shared
@@ -764,11 +888,11 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
 2. **`listing.rs`:** the entry filter, the `FileId == 0` rule, the unknown list, the duplicate-serial refusal and the cloud rule
    (see Cloud folders). The non-NTFS and share refusals already exist (`crates/scan/src/refusal.rs`; `NetworkPath` at `:42`)
    and stay.
-   - The walker moves to `walk.rs`, records links, takes live values by ID, and no longer hides the files of folders it couldn't
-     list (already fixed; see the walker rule above).
+   - The walker moves to `walk.rs`, records links, keeps the listing's values (value truth; it no longer takes live values
+     by ID, 2026-11-25), and no longer hides the files of folders it couldn't list (already fixed; see the walker rule above).
    - **Decided:** the walk moves to `crates/library`, and `pg-scan` is folded into `pg-library`. The `Listing` trait, the filter,
      the refusals and the synthetic bench tree move with it. `pg_scan::scan`, `check_folder` and `ScanError` become `pg_library`
-     items. The callers change with them: `cli`; `bench` (the `bench` feature moves with the `pg-scan` entry in `crates/bench/Cargo.toml`); and
+     items. The callers change with them: `driver`; `bench` (the `bench` feature moves with the `pg-scan` entry in `crates/bench/Cargo.toml`); and
      `library` (`src/runner.rs`, `src/scans.rs`, `src/folders.rs`, the `tests/*.rs` files).
    - **Decided: no test moves.** `thumbs` keeps its three tests (`crates/thumbs/src/lib.rs:414, :468, :618`, working-tree lines;
      at HEAD the scan test is at `:582`) and its dev-dependency on the scan (the `pg-scan` entry in `crates/thumbs/Cargo.toml`), which is now
@@ -781,31 +905,39 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
      `docs/reference/NOTIFICATIONS_DESIGN.md:143`, `crates/library/src/folders.rs:15`, the `pg-scan` entry in `crates/library/Cargo.toml`.
    - Tests: the existing `crates/library/tests/*.rs`, plus hard-link, reparse and unreadable-folder cases (a folder with a
      deny-list ACL). New: the cloud tags on a fake listing, the OneDrive root refusal with a fake environment, duplicate serials on
-     two fake volumes, the exact-walker test (after editing a file through its second link, the walker records the new size and
-     mtime), and the dedup keep-rule unit test (tag `0x80000013` on a fake listing).
+     two fake volumes, the value-truth walker test (after editing a file through its second link, the walker records what
+     the first link's listing returns, the index's stale copy, not the live size and mtime), and the dedup keep-rule unit
+     test (tag `0x80000013` on a fake listing).
 
-3. **`crates/volume`: the parser (`record.rs`, `runs.rs`).** Files: `crates/volume/build.rs`, `crates/volume/src/{lib.rs,
-   record.rs, runs.rs}`. `Cargo.toml` gains the member. Tests:
-   - records from a builder with fixups, plus real records captured by a capture step in this step, from C: and E: (the
-     prototype's records are not kept in the repo);
+3. **`crates/volume`: the parser (`record.rs`, `index.rs`, `runs.rs`).** Files: `crates/volume/build.rs`,
+   `crates/volume/src/{lib.rs, record.rs, index.rs, runs.rs}`. `Cargo.toml` gains the member. Tests:
+   - records and `INDX` blocks from a builder with fixups, plus real records and index blocks captured by a capture step in
+     this step, from C: and E: (the prototype's records are not kept in the repo);
+   - the index-entry check: for each captured folder, every parsed entry (name, reference, size, mtime, creation time,
+     attributes, reparse tag) equals `FileIdBothDirectoryInfo` of that folder, read unelevated at the capture;
    - a mutation test: errors, never panics or hangs (the cycle rule is in step 4);
    - the `mft` crate as an oracle on a captured `$MFT`, as a dev-dependency. `just deny` runs `cargo deny` (licenses, duplicates;
      "a new license is a decision", `deny.toml`) and `cargo machete`. Whatever it pulls in must pass them, or the oracle is
      replaced by records cross-checked with `GetFileInformationByHandle`.
 
-4. **The MFT reader (`mft.rs`),** in-process when elevated, storing U0 in `volumes`. Files: `crates/volume/src/{mft.rs, usn.rs}`;
-   `Cargo.toml` gains `Win32_System_Ioctl` (for `FSCTL_GET_NTFS_VOLUME_DATA`).
+4. **The MFT reader (`mft.rs`),** in-process when elevated: the record sweep, the index sweep and the parent's access check,
+   storing U0 as the covered roots' cursors (`docs/plans/BOUNDED_MEMORY_PLAN.md` step 3.9). Files:
+   `crates/volume/src/mft.rs`; `crates/library/src/helper.rs` (the access check); `Cargo.toml` gains `Win32_System_Ioctl`
+   (for `FSCTL_GET_NTFS_VOLUME_DATA`). The journal code (`usn.rs`) is the bounded-memory plan's `pg_platform::usn`.
    The `--full`/`--walk` flags arrive in step 5, so step 4's differential test drives the reader through a test entry point.
    Tests: a parent loop goes to the unknown list, not followed (a tree unit test); the flush-consistency test (a file created
-   just before the read); a longer-wait flush control; the bounded-memory test (a few-KiB deferral budget gives the same catalog
-   as an unbounded read); the unreadable-record test (a record made unreadable in the image is resolved live, and goes to the
-   unknown list if that fails too); the progress test, in `pg-library` (records read against `MftValidDataLength / record size`,
+   just before the read, and a folder whose index gained an entry just before it); a longer-wait flush control; the
+   bounded-memory test (with a spill threshold of a few KiB, the tree and the run list spill and give the same catalog); an
+   unused index block whose stale entries are not read; a WOF file recorded as a plain file, as the walk records it; the
+   access test (a folder denied to the user by its ACL is recorded as failed, its subtree is absent and nothing under it is
+   marked missing, exactly as the walk records it); the unreadable-record test (a directory record or index block made
+   unreadable in the image is listed live, and goes to the unknown list if that fails too); the progress test, in `pg-library` (records read against `MftValidDataLength / record size`,
    through `Control::begin`). The differential test runs on the test VHD, then on the real drives.
 
 5. **`pg-volume.exe` and the pipe.** Files: `crates/library/src/helper.rs` (the parent side: `ShellExecuteExW` launch, pipe
    server, request frames), `crates/volume/build.rs` (the `/DEPENDENTLOADFLAG` link arg), `crates/volume/src/protocol.rs`,
    `crates/volume/src/bin/pg-volume.rs`, `crates/library/src/runner.rs` (volume grouping, source choice, uninterrupted reads),
-   `crates/cli/src/lib.rs` (the flags `--full`, `--walk`), and `Cargo.toml` (`Win32_System_Pipes`, `Win32_UI_Shell`,
+   `crates/driver` (the flags `--full`, `--walk`), and `Cargo.toml` (`Win32_System_Pipes`, `Win32_UI_Shell`,
    `Win32_Security_Authorization`; the current list has none of these). Tests: the pipe protocol with a fake client in-process
    (first-instance refusal, DACL, PID check, request frames); the built exe's imports checked (no DLL outside System32 is
    imported); two roots on one volume scheduled as one read; an added root queued behind a running full read, which it does not
@@ -828,6 +960,10 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
 8. **Measure once, at the end.**
    - On E:, a cold walk vs a warm walk vs the MFT read (1 vs 2 in flight) vs a journal pass, and the helper's peak memory. The
      journal pass is measured on C: as well, since most changed refs there lie outside the roots, so the resolution cost shows.
+   - The MFT read's parts, each on its own: the record sweep, the index sweep (its bytes in use, its runs, and the
+     read-through gap threshold that minimizes its time on the HDD and on an SSD), and the parent's access checks (~3.2M
+     opens on E:, against the thread count). If the index sweep on the HDD is not clearly faster than a cold walk, the
+     source choice (Unit of work) prefers the walk there, and the measurement says so.
    - Results go to `docs/reference/IO.md` ("I/O"), `docs/reference/STORAGE.md`, PLAN M1 (`docs/plans/PLAN.md:274`) and
      `crates/README.md`.
    - `docs/reference/STORAGE.md` has no Z: text today (checked 2026-11-14). Add the Z: result (see Unit of work) as a note beside
@@ -849,8 +985,9 @@ Recount this plan's line cites in `writers.rs`, `roots.rs`, `pair.rs` and `schem
   `cargo test -p pg-volume -- --ignored elevated_` and `cargo test -p pg-library -- --ignored elevated_`.
   `cargo test --workspace` runs unelevated and does not include them.
 - **Differential:** on the VHD and on D:, E:, F: and G: (scratch catalogs, `PG_CATALOG_DIR`), `--walk` and `--full` must agree
-  exactly on files, links, sizes and mtimes. The walker takes live values, so any mismatch is a bug in one of them, settled
-  against the live file.
+  exactly on files, links, sizes, mtimes, creation times, failed folders and skipped subtrees. Both record what a listing
+  returns (value truth), so any mismatch is a bug in one of them, settled against an unelevated listing of the folder,
+  not against the live file.
 - **Volumes:** detach the test VHD → its files show offline, not missing; reattach it under another letter → the same rows,
   ratings and analysis, with no rescan and nothing marked moved (step 1).
 - **Unknowns:** a folder the walker can't list (deny ACL) and an MFT record corrupted in a VHD image read offline: their files stay
@@ -871,6 +1008,10 @@ Each item says which step settles it.
   directories).
 - Whether `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` can wait for new records (`BytesToWaitFor`) (step 7).
 - Throughput with 2 reads in flight, warm-walk time, the helper's peak memory, and the journal-pass cost on a busy volume (step 8).
+- The index sweep's size and time, its gap threshold, and the cost of the access checks; whether the MFT read still beats a
+  cold walk on the HDD once it reads the index (step 8).
+- Whether every field of an index entry, the reparse tag included, equals the listing's (step 3's capture).
+- Which reparse tags the filter stack hides from listings besides WOF (dedup at least; step 4's differential test).
 - Whether a write folds into an older journal record across handles (not reproduced; step 6).
 - The longer-wait flush control (step 4).
 - Whether `thumbs` keeps a dev-only cycle with `pg-library` (step 2 confirms with a build).

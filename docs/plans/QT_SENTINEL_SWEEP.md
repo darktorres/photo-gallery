@@ -1,6 +1,6 @@
 # Qt sentinel sweep: `-1` and `-1.0` at the Rust↔QML boundary
 
-**Status:** not started. This plan was split out of item 1 of `docs/plans/TYPE_MISMATCH_VALIDATION.md`, which now covers only the saved last file. Related: `docs/plans/BOUNDED_MEMORY_PLAN.md` Phase 7 step 7.9 (the item selection design) and its decision D29 (line 131: file ids as decimal strings); item 6 of `TYPE_MISMATCH_VALIDATION.md` (counts and positions).
+**Status:** not started. This plan was split out of item 1 of `docs/plans/TYPE_MISMATCH_VALIDATION.md`, which now covers only the saved last file. Related: `docs/plans/BOUNDED_MEMORY_PLAN.md` Phase 7 step 7.9 (the item selection design) and its decision D29 (file ids as decimal strings); item 6 of `TYPE_MISMATCH_VALIDATION.md` (counts and positions).
 
 ## The problem
 

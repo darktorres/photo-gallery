@@ -66,10 +66,11 @@ still open):
 **Decisions settled with the user:**
 
 - **D-A. Thumbs retry list: the due branch now (decided).** AUDIT E.2 says "no retry-list query: the `fold`/`first_failed`
-  mechanism is deleted by BM D35/4.7". D35 (`BOUNDED_MEMORY_PLAN.md` D35, 4.4-4.6) is the unimplemented per-height cache
+  mechanism is deleted by BM D35/4.7". D35 (`BOUNDED_MEMORY_PLAN.md` D35, 4.4-4.6) was the unimplemented per-height cache
   state (cursors, laps, a `todo` set, a lease) that retires `checked`; it is not built and the landed lane refactor gave
   the checkpoint a different shape (per volume), so nothing removes `fold` yet. Decision: `first_failed` and `fold` are
-  deleted now and Thumbs gets a `thumb_due` union branch (5.4); D35 later replaces the due branch with its laps.
+  deleted now and Thumbs gets a `thumb_due` union branch (5.4). Since 2026-11-25 BM D35 keeps the per-volume checkpoints
+  and drops the laps; its 4.6 pages the due branch with the candidates.
 - **D-B. Cap and spacing (decided):** the recorded **three counted attempts**, spacing 60 s then 10 min (parameters in
   `pg_model::retry`); NotFound 60 s and Offline 5 min, never terminal.
 - **D-C. `FilePass` names (decided):** **`Duplicates`** and **`Placeholders`**.
@@ -513,7 +514,7 @@ offline-file notice") and `docs/reference/STORAGE.md`/`IO.md` where they describ
 off), `stop_at_batch.rs:74-83`, `work.rs:654-672, 694-747`, `writers.rs` tests from l.1172 (the borders-after-import tests,
 which call `pending_borders(&VolumeSet::All)`), the `b4515c7b` cache-error test, `tally.rs:195-279`, the `EXPLAIN QUERY
 PLAN` pins.
-*Reconcile first* with BM `first_failed` removal (`BOUNDED_MEMORY_PLAN.md:1261`), `GUI_THREAD_PLAN.md:784`.
+*Reconcile first* with BM step 4.7 (`BOUNDED_MEMORY_PLAN.md`; since 2026-11-25 it defers `first_failed` to D-A here), `GUI_THREAD_PLAN.md:784`.
 *Lint/doc rules* (`tools/lint.py:25-28`): `cargo doc --workspace --no-deps --document-private-items` with `-D warnings`
 (renaming/removing `Failed`, `first_failed`, `fold`, `Unwritten::write` breaks intra-doc links: grep first);
 `cargo check -p pg-model -p pg-client --target wasm32-unknown-unknown`; `cargo machete`; `tools/boundaries.py` against

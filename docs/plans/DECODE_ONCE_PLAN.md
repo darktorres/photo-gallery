@@ -27,7 +27,7 @@ No CLAUDE.md; nothing enforces it (no lint, CI, test or golden pins `IMPORT_VERS
 - `crates/README.md` cache layout paragraph (line 316);
 - `docs/plans/PLAN.md` "Schema (user decision, 2026-10-30 ...)" paragraph (line 334; "no migrations yet", line 341);
 - `d28e2f72^:docs/temp/REFACTOR_PLAN.md:390` ("no schema bumps before release");
-- `docs/plans/BOUNDED_MEMORY_PLAN.md:2004` ("the cache layout freezes with BASELINE", which rests on the rule) and `:1197` ("CACHE_VERSION stays 1").
+- `docs/plans/BOUNDED_MEMORY_PLAN.md`: done there on 2026-11-25. Its D35 and 4.4 now say a cache layout change bumps `CACHE_VERSION` and starts the cache over, and the "freezes with BASELINE" and "CACHE_VERSION stays 1" lines are gone.
 
 Not in the list: `docs/temp/S17_REMAINDERS_PLAN.md` (since deleted; it had no rule); `docs/plans/REVIEW.md` R-123 (line 85; the catalog split, not the version rule). History gets "Superseded" notes dated the day of the commit. No existing note exists to copy (the S-17.7 plan had an unrelated bullet there; that plan is removed), so the first one written sets the style: a one-line blockquote under the old rule, `> Superseded YYYY-MM-DD (commit <sha>): <new rule>.`
 

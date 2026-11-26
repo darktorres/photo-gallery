@@ -16,7 +16,8 @@ QtObject {
     //   Segoe UI Emoji is one; with any other font Qt searches the fallback list for one. An emoji's text is the emoji
     //   alone, in this font: it lacks most of the letters. ⚠ and ⏸ carry VS16 (U+FE0F), which asks for the emoji.
     // A family list (font.families) would not help: Qt builds the fallback list for one at once. Where a family isn't
-    // installed (Linux), Qt uses the application font's family instead (QFont's load, qfontdatabase.cpp).
+    // installed (Linux), Qt draws with the system's substitute for it (fontconfig's), from that fallback list
+    // (QFontDatabasePrivate::findFont, its fallbacks pass). docs/plans/FONT_FALLBACK_PLAN.md is the fix in Qt.
     readonly property string symbolFamily: "Segoe UI Symbol"
     readonly property string emojiFamily: "Segoe UI Emoji"
     // The dimmed window behind the Yandex panel.

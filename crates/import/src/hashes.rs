@@ -7,8 +7,8 @@ use crate::{Error, Result};
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::{Catalog, OwedHashes, WorkItem};
 use pg_jobs::control::Control;
-use pg_jobs::failure::Failed;
-use pg_jobs::pipeline::{self, Batch, Options, Read};
+use pg_jobs::failure::{Class, Failed};
+use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::media::Kind;
 use pg_model::progress::Phase;
 
@@ -64,23 +64,24 @@ pub fn hash(
             Read::File
         },
         || Analyzer::new().map_err(Error::Analysis),
-        |analyzer, i, bytes| {
-            let item = items.get(i).ok_or(Error::Invalid("no file to hash at this index"))?;
+        |analyzer, item, bytes| {
+            // A hash the analysis refuses is the file's failure (`Data`), as the import's (section 10, D4).
+            let refused = |e| ItemError::File(Failed::new(Class::Data, Error::Analysis(e)));
             if item.kind == Kind::Video {
-                // The hash opens the file by its disk path, as the import does.
+                // The hash opens the file by its disk path, as the import does. It is read in chunks, the stop looked for
+                // between them (section 7): a stop is "not hashed yet", not a failure.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video_file_hash(&disk).map(OwedHashes::Video).map_err(Error::Analysis)
+                let stopped = || ctl.stop_requested();
+                analyzer.video_file_hash(&disk, &stopped).map(|h| h.map(OwedHashes::Video)).map_err(refused)
             } else {
-                analyzer.hash_image(bytes, item.turns).map(OwedHashes::Image).map_err(Error::Analysis)
+                analyzer.hash_image(bytes, item.turns).map(|h| Some(OwedHashes::Image(h))).map_err(refused)
             }
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| {
-            flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()).map_err(Failed::from)
-        },
+        |(catalog, stats), batch| flush(catalog, batch, stats, ctl).map(|()| still_wanted()),
     );
-    result?;
+    result.map_err(Halt::into_pass)?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
     pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
@@ -93,23 +94,32 @@ pub fn hash(
 /// read stays owed; one that changed since it was listed is left as it is (the writer's guard).
 fn flush(
     catalog: &mut Catalog,
-    batch: &mut Vec<(usize, std::result::Result<OwedHashes, Failed>)>,
-    items: &[WorkItem],
+    batch: &mut Vec<Done<'_, WorkItem, Option<OwedHashes>, Error>>,
     stats: &mut Stats,
     ctl: &Control,
 ) -> Result<()> {
     let tx = catalog.tx()?;
     let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
     let mut done = *stats;
-    for (i, result) in batch.drain(..) {
+    for (item, result) in batch.drain(..) {
         done.files += 1;
-        let item = items.get(i).ok_or(Error::Invalid("a hash result for no file"))?;
+        let result = match result {
+            Ok(hashes) => Ok(hashes),
+            Err(ItemError::File(failed)) => Err(failed),
+            // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
+            Err(ItemError::Pass(e)) => return Err(e),
+        };
         match result {
-            Ok(hashes) => {
+            Ok(Some(hashes)) => {
                 if writer.store_hashes(item, &hashes)? {
                     done.stored += 1;
                 }
             }
+            // Stopped inside its hash (a video's, section 7): not hashed yet. It stays owed and is not counted as looked
+            // at, so the pass is not complete; the next round hashes it.
+            Ok(None) => done.files = done.files.saturating_sub(1),
+            // Changed while it was read: nothing is stored, and it stays owed, as the import leaves such a file pending.
+            Err(e) if e.is_changed() => {}
             Err(e) if e.is_read() => {
                 done.failed += 1;
                 done.unreadable += 1;

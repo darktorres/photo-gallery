@@ -5,7 +5,7 @@
 use crate::{Error, Result, side};
 use pg_model::turns::Turns;
 use std::fs::File;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 
 use crate::borders::{self, Detector};
@@ -33,11 +33,29 @@ const DECODE_MIN_SHORT: usize = 320;
 /// reads as its spec says (hashing.pdf pp. 10-11).
 const PDQ_SIDE: usize = 512;
 
-/// The content hash of a file streamed from `path`, for a video (not read whole): `FileHash::of` its bytes.
-fn file_hash_of(path: &Path) -> io::Result<FileHash> {
+/// The chunk a video's hash reads at a time: a stop waits for one chunk at most (a few milliseconds at a disk's rate),
+/// not for the whole file (section 7: about 6 s per GB on a hard disk).
+pub const HASH_CHUNK: usize = 1 << 20;
+
+/// The content hash of a file streamed from `path`, for a video (not read whole): `FileHash::of` its bytes, read in
+/// chunks of [`HASH_CHUNK`] with `stopped` asked before each. `None` when it said stop first: not hashed yet.
+fn file_hash_of(path: &Path, stopped: &dyn Fn() -> bool) -> io::Result<Option<FileHash>> {
+    let mut file = File::open(path)?;
     let mut hasher = blake3::Hasher::new();
-    hasher.update_reader(File::open(path)?)?;
-    Ok(FileHash(*hasher.finalize().as_bytes()))
+    let mut chunk = vec![0u8; HASH_CHUNK];
+    loop {
+        if stopped() {
+            return Ok(None);
+        }
+        let read = match file.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        hasher.update(chunk.get(..read).unwrap_or_default());
+    }
+    Ok(Some(FileHash(*hasher.finalize().as_bytes())))
 }
 
 /// A worker's buffers for one file's decode, scaled copies and hashes, kept from file to file (a file larger than
@@ -96,9 +114,10 @@ impl Analyzer {
         result
     }
 
-    /// The file hash (tier 0a) of a video, streamed from `path`, for the Hashes pass.
-    pub fn video_file_hash(&self, path: &Path) -> Result<FileHash> {
-        file_hash_of(path).map_err(|source| Error::Read { path: path.to_path_buf(), source })
+    /// The file hash (tier 0a) of a video, streamed from `path` in chunks, for the Hashes pass. `stopped` is asked between
+    /// chunks: `None` when it said stop, not hashed yet (not a failure: the file stays owed).
+    pub fn video_file_hash(&self, path: &Path, stopped: &dyn Fn() -> bool) -> Result<Option<FileHash>> {
+        file_hash_of(path, stopped).map_err(|source| Error::Read { path: path.to_path_buf(), source })
     }
 
     fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
@@ -233,8 +252,21 @@ mod tests {
             (0..3_000_000u32).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap()).collect();
         let path = dir.join("streamed.bin");
         std::fs::write(&path, &bytes).unwrap();
-        assert_eq!(file_hash_of(&path).unwrap(), FileHash::of(&bytes));
-        assert!(file_hash_of(&dir.join("missing.bin")).is_err());
+        assert_eq!(file_hash_of(&path, &|| false).unwrap(), Some(FileHash::of(&bytes)));
+        assert!(file_hash_of(&dir.join("missing.bin"), &|| false).is_err());
+    }
+
+    // A stop is looked for between chunks (section 7): asked after the first chunk, the hash stops there, having read
+    // one chunk, and says "not hashed yet" rather than failing.
+    #[test]
+    fn a_video_hash_stops_within_one_chunk() {
+        let dir = pg_testkit::run_folder("scratch_analysis", "analysis-stop").unwrap();
+        let path = dir.join("long.bin");
+        std::fs::write(&path, vec![7u8; HASH_CHUNK * 4]).unwrap();
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let stopped = || asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 1;
+        assert_eq!(file_hash_of(&path, &stopped).unwrap(), None);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::Relaxed), 2, "asked before the first chunk and the second");
     }
 
     // The duplicate hashes are the same whenever they are made: the decode at the hashing size is deterministic, and the

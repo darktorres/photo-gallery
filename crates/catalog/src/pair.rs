@@ -56,6 +56,32 @@ pub struct Pairing {
     pub replaced_ids: Vec<FileId>,
     /// The temp files of queued writes that were dropped with a replacement: deleted by the caller, after the commit.
     pub temps: Vec<RulePath>,
+    /// The fresh rows a rebind or a replacement deleted (their file is the old row's now): a thumbnail made for one is
+    /// forgotten by the caller, after the commit (section 10, D14).
+    pub deleted_ids: Vec<FileId>,
+}
+
+impl Pairing {
+    /// Adds what one committed batch did (`batch`) to the pairing so far.
+    fn absorb(&mut self, batch: Pairing) {
+        self.rebound = self.rebound.saturating_add(batch.rebound);
+        self.replaced = self.replaced.saturating_add(batch.replaced);
+        self.ambiguous = self.ambiguous.saturating_add(batch.ambiguous);
+        self.replaced_ids.extend(batch.replaced_ids);
+        self.temps.extend(batch.temps);
+        self.deleted_ids.extend(batch.deleted_ids);
+    }
+}
+
+/// A pairing that failed: its error, and what its batches committed before it (`done`). The committed batches' replaced
+/// rows, temp files and deleted rows are the caller's to act on all the same: their thumbnails are stale, and the temp
+/// paths are in no other list once the batch that dropped them has committed (section 5).
+#[derive(Debug)]
+pub struct PairingFailed {
+    /// Why the pairing ended.
+    pub error: Error,
+    /// What the batches committed before the error did.
+    pub done: Pairing,
 }
 
 /// A fresh row, as the pairing reads it.
@@ -82,8 +108,17 @@ impl ScanLease<'_> {
     /// Each batch's transaction holds the lease first ([`ScanLease::renew`]'s check): one that is gone (the folder
     /// removed from the library, which took it) writes nothing, and the pairing ends with [`crate::Error::RootRemoved`]
     /// or [`crate::Error::LeaseLost`]. A rebind or a replacement would otherwise bring a removed folder's rows back as
-    /// present.
-    pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> Result<Pairing> {
+    /// present. A pairing that fails returns what its committed batches did with its error ([`PairingFailed`]).
+    pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> std::result::Result<Pairing, Box<PairingFailed>> {
+        let mut out = Pairing::default();
+        match self.pair_into(coverage, &mut out) {
+            Ok(()) => Ok(out),
+            Err(error) => Err(Box::new(PairingFailed { error, done: out })),
+        }
+    }
+
+    /// [`ScanLease::pair_after_scan`], into `out`: each batch's counts and ids join it once the batch has committed.
+    fn pair_into(&self, coverage: Coverage<'_>, out: &mut Pairing) -> Result<()> {
         // The pass's span in the perf log: its tiers are its children; the transaction time it caused goes on it too.
         let mut pass = pg_perf::span("pair.after_scan");
         let tx_at = crate::transaction::tx_mark();
@@ -99,7 +134,6 @@ impl ScanLease<'_> {
             snapshot.commit()?;
             skipped
         };
-        let mut out = Pairing::default();
         // The fresh rows some tier found several candidates for; counted at the end, once each.
         let mut ambiguous = BTreeSet::new();
 
@@ -109,7 +143,7 @@ impl ScanLease<'_> {
         let mut found1 = 0u64;
         let (rebound1, tx1) = (out.rebound, crate::transaction::tx_mark());
         let tier1 = pg_perf::span("pair.tier1");
-        in_batches(conn, held, &under, &skipped, &steps1, |tx, fresh| {
+        in_batches(conn, held, &under, &skipped, &steps1, out, |tx, fresh, staged| {
             let mut same_name = tx.prepare_cached(concat!(
                 "SELECT id FROM files WHERE volume IS NOT NULL AND volume <> ?1 AND file_ref = ?2 AND folder_id = ?3
                  AND name = ?4 AND size = ?5 AND mtime = ?6 AND (created IS NULL OR ?7 IS NULL OR created = ?7)
@@ -131,8 +165,8 @@ impl ScanLease<'_> {
                     [] => {}
                     [only] => {
                         let _write = steps1.write.timer();
-                        rebind(tx, *only, f)?;
-                        out.rebound += 1;
+                        staged.deleted_ids.push(rebind(tx, *only, f)?);
+                        staged.rebound += 1;
                     }
                     _ => {
                         found1 += 1;
@@ -154,7 +188,7 @@ impl ScanLease<'_> {
             let mut found2 = 0u64;
             let (rebound2, tx2) = (out.rebound, crate::transaction::tx_mark());
             let mut tier2 = pg_perf::span("pair.tier2");
-            in_batches(conn, held, &under, &skipped, &steps2, |tx, fresh| {
+            in_batches(conn, held, &under, &skipped, &steps2, out, |tx, fresh, staged| {
                 if seen.is_none() {
                     let _volumes = volumes.timer();
                     seen = Some(seen_volumes(tx)?);
@@ -200,10 +234,10 @@ impl ScanLease<'_> {
                         [] => {}
                         [only] => {
                             let _write = steps2.write.timer();
-                            rebind(tx, *only, f)?;
+                            staged.deleted_ids.push(rebind(tx, *only, f)?);
                             // The rebound row is on this scan's volume now: seen, as a row this scan saw would be.
                             seen.insert(f.volume);
-                            out.rebound += 1;
+                            staged.rebound += 1;
                         }
                         _ => {
                             found2 += 1;
@@ -232,7 +266,7 @@ impl ScanLease<'_> {
             let mut found_r = 0u64;
             let (replaced0, txr) = (out.replaced, crate::transaction::tx_mark());
             let replace_clear = pg_perf::span("pair.replace_clear");
-            in_batches(conn, held, &under, &skipped, &steps_r, |tx, fresh| {
+            in_batches(conn, held, &under, &skipped, &steps_r, out, |tx, fresh, staged| {
                 let mut replaced_by = tx.prepare_cached(concat!(
                     "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
                      AND ((unpaired = 1 AND (volume IS NULL OR ",
@@ -257,9 +291,9 @@ impl ScanLease<'_> {
                         [] => to_clear.push(f.id),
                         [only] => {
                             let _write = steps_r.write.timer();
-                            replace(tx, rules, *only, f, &mut out.temps)?;
-                            out.replaced += 1;
-                            out.replaced_ids.push(FileId::new(*only));
+                            staged.deleted_ids.push(replace(tx, rules, *only, f, &mut staged.temps)?);
+                            staged.replaced += 1;
+                            staged.replaced_ids.push(FileId::new(*only));
                         }
                         _ => {
                             found_r += 1;
@@ -281,7 +315,7 @@ impl ScanLease<'_> {
                 drop(clear);
                 for id in cleared {
                     if ambiguous.remove(&id) {
-                        out.ambiguous += 1;
+                        staged.ambiguous += 1;
                     }
                 }
                 Ok(())
@@ -330,7 +364,7 @@ impl ScanLease<'_> {
         pass.field("rebound", out.rebound);
         pass.items(out.rebound.saturating_add(out.replaced));
         crate::transaction::attach_tx(&mut pass, tx_at);
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -377,14 +411,16 @@ impl Steps {
 /// batches of at most [`WRITE_BATCH`] by id: each batch is read in a write transaction of its own, which holds the
 /// walk's lease first (`held`), which the tier's queries and writes run in (and `meta.held_exts` is stamped in), and
 /// which commits before the next. A row a batch bound or cleared is gone from the next one's read, and an id below the
-/// last read is never read again.
+/// last read is never read again. A batch's tier writes what it did into a pairing of its own, which joins `out` only once
+/// the batch has committed: a batch rolled back adds nothing.
 fn in_batches(
     conn: &Connection,
     held: HeldLease<'_>,
     under: &Subtree,
     skipped: &BTreeSet<i64>,
     steps: &Steps,
-    mut tier: impl FnMut(&Transaction<'_>, &[Fresh]) -> Result<()>,
+    out: &mut Pairing,
+    mut tier: impl FnMut(&Transaction<'_>, &[Fresh], &mut Pairing) -> Result<()>,
 ) -> Result<()> {
     let mut after = i64::MIN;
     loop {
@@ -411,9 +447,49 @@ fn in_batches(
             crate::lifecycle::stamp_held_exts(&tx)?;
         }
         let batch: Vec<Fresh> = batch.into_iter().filter(|f| !skipped.contains(&f.folder_id)).collect();
-        tier(&tx, &batch)?;
+        let mut staged = Pairing::default();
+        tier(&tx, &batch, &mut staged)?;
+        #[cfg(test)]
+        fault::after_batch()?;
         tx.commit()?;
+        out.absorb(staged);
         after = last;
+    }
+}
+
+/// A test's failure of a pairing batch after its tier ran, before its commit: the batch rolls back, as one whose lease was
+/// lost at its commit would.
+#[cfg(test)]
+mod fault {
+    use std::cell::Cell;
+
+    use crate::error::{Error, Result};
+
+    thread_local! {
+        /// The batches still to commit before the next one fails, when a test asked for a failure.
+        static COMMITS_LEFT: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    /// On this thread, the pairing batch after `commits` committed batches fails, and so does every one after it.
+    pub(super) fn fail_after(commits: usize) {
+        COMMITS_LEFT.with(|left| left.set(Some(commits)));
+    }
+
+    /// On this thread, no pairing batch fails.
+    pub(super) fn clear() {
+        COMMITS_LEFT.with(|left| left.set(None));
+    }
+
+    /// The failure of this batch, if a test asked for one here.
+    pub(super) fn after_batch() -> Result<()> {
+        COMMITS_LEFT.with(|left| match left.get() {
+            None => Ok(()),
+            Some(0) => Err(Error::LeaseLost { root: "a test's failure".to_string() }),
+            Some(n) => {
+                left.set(Some(n.saturating_sub(1)));
+                Ok(())
+            }
+        })
     }
 }
 
@@ -471,11 +547,12 @@ fn fresh_rows(conn: &Connection, under: &Subtree, after: i64, limit: usize) -> R
 }
 
 /// Give the old row `id` the identity and the place of the fresh row `from`, which is deleted: the old row keeps its
-/// id, ratings, rotation, analysis and content.
-fn rebind(tx: &Transaction, id: i64, from: &Fresh) -> Result<()> {
+/// id, ratings, rotation, analysis and content. The fresh row's id, which is gone (its thumbnail is the caller's to forget).
+fn rebind(tx: &Transaction, id: i64, from: &Fresh) -> Result<FileId> {
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
     tx.execute("DELETE FROM temp.scan_seen WHERE id = ?1", [from.id])?;
-    take_identity(tx, REBIND, id, from)
+    take_identity(tx, REBIND, id, from)?;
+    Ok(FileId::new(from.id))
 }
 
 /// The row `?1` takes the identity and the place of a new file: its volume, reference, creation time (`created`: kept
@@ -525,8 +602,8 @@ fn take_identity(tx: &Transaction, sql: &str, id: i64, from: &Fresh) -> Result<(
 /// Give the replaced row `id` the identity of the new file `from` (deleted), and reset what was made from the old file
 /// The rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
 /// queued ratings stay, without their temp files, which hold the old file's bytes; the rating row's `value` is written
-/// again from the new file. The temp files to delete go to `temps`.
-fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mut Vec<RulePath>) -> Result<()> {
+/// again from the new file. The temp files to delete go to `temps`. The fresh row's id, which is gone.
+fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mut Vec<RulePath>) -> Result<FileId> {
     {
         let mut stmt = tx.prepare("SELECT temp FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL")?;
         for bytes in stmt.query_map([id], |r| r.get::<_, Vec<u8>>(0))? {
@@ -559,7 +636,8 @@ fn replace(tx: &Transaction, rules: PathRules, id: i64, from: &Fresh, temps: &mu
     tx.execute("DELETE FROM file_failures WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
     tx.execute("DELETE FROM temp.scan_seen WHERE id = ?1", [from.id])?;
-    take_identity(tx, REPLACE, id, from)
+    take_identity(tx, REPLACE, id, from)?;
+    Ok(FileId::new(from.id))
 }
 
 #[cfg(test)]
@@ -646,6 +724,63 @@ mod tests {
 
     fn count(c: &Catalog) -> i64 {
         c.conn.query_row("SELECT count(*) FROM files", [], |r| r.get(0)).unwrap()
+    }
+
+    /// The id of the row with this identity.
+    fn id_of(c: &Catalog, volume: i64, file_ref: i64) -> i64 {
+        c.conn
+            .query_row("SELECT id FROM files WHERE volume = ?1 AND file_ref = ?2", [volume, file_ref], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// A pairing that fails after some batches committed returns what they did with its error (section 5): here tier 1's
+    /// rebind (its batch committed, so its deleted fresh row is in the result, D14), and not the replacement, whose batch
+    /// rolled back. The catalog agrees: the rebind is in, the old row was not replaced.
+    #[test]
+    fn a_failed_pairing_returns_what_its_committed_batches_did() {
+        let rules = PathRules::Windows;
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, first, 1, 8, "b.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let old_b = id_of(&c, 1, 8);
+        // a.jpg's volume renumbered (tier 1 rebinds it); b.jpg saved over (the replacement takes it).
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "a.jpg", 10, Some(5));
+        found(&mut c, second, 1, 9, "b.jpg", 12, Some(6));
+        let fresh_a = id_of(&c, 2, 7);
+        // Tier 1's batch and tier 2's commit; the replacement's batch fails.
+        fault::fail_after(2);
+        let failed = lease(&mut c, second, &p(rules, r"D:\x"))
+            .pair_after_scan(Coverage { complete: true, skipped: &[] })
+            .expect_err("the replacement's batch fails");
+        fault::clear();
+        assert!(matches!(failed.error, Error::LeaseLost { .. }), "{:?}", failed.error);
+        let done = failed.done;
+        assert_eq!((done.rebound, done.replaced), (1, 0), "{done:?}");
+        assert_eq!(done.deleted_ids, vec![FileId::new(fresh_a)]);
+        assert!(done.replaced_ids.is_empty() && done.temps.is_empty(), "{done:?}");
+        let b_ref: i64 = c.conn.query_row("SELECT file_ref FROM files WHERE id = ?1", [old_b], |r| r.get(0)).unwrap();
+        assert_eq!(b_ref, 8, "the replacement rolled back");
+    }
+
+    /// A rebind and a replacement name the fresh rows they deleted (D14), so their thumbnails can be forgotten.
+    #[test]
+    fn a_rebind_and_a_replacement_name_the_fresh_rows_they_delete() {
+        let rules = PathRules::Windows;
+        let mut c = catalog(rules);
+        let first = begin(&mut c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, first, 1, 8, "b.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let second = begin(&mut c);
+        found(&mut c, second, 2, 7, "a.jpg", 10, Some(5));
+        found(&mut c, second, 1, 9, "b.jpg", 12, Some(6));
+        let (fresh_a, fresh_b) = (id_of(&c, 2, 7), id_of(&c, 1, 9));
+        let paired = pair(&mut c, second, true);
+        assert_eq!((paired.rebound, paired.replaced), (1, 1));
+        assert_eq!(paired.deleted_ids, vec![FileId::new(fresh_a), FileId::new(fresh_b)]);
     }
 
     // The pairing works in batches of at most `WRITE_BATCH` fresh rows, each a write transaction of its own, so no

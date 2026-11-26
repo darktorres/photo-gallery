@@ -1,4 +1,4 @@
-{"kind":"scan-failed","root":{"anchor":"D:","parts":["Photos"]},"error":"access is denied"}
+{"kind":"scan-failed","root":{"anchor":"D:","parts":["Photos"]},"error":"access is denied","walk":true}
 {"kind":"scan-note","root":{"anchor":"D:","parts":["Photos"]},"note":"duplicates","count":2}
 {"kind":"round-failed","error":"access is denied"}
 {"kind":"round-panicked","message":"index out of bounds"}
@@ -48,3 +48,5 @@
 {"kind":"cut-failed","error":"access is denied"}
 {"kind":"folder-removal-unfinished","folder":{"anchor":"D:","parts":["Photos"]},"temp":{"anchor":"D:","parts":["Photos","a.jpg.pg-write"]}}
 {"kind":"changes-unseen","error":"access is denied"}
+{"kind":"cache-not-swept","error":"access is denied"}
+{"kind":"cache-not-read","error":"access is denied"}

@@ -610,6 +610,21 @@ const PAIR: &str = "INSERT INTO pdq_pairs(a, b, distance) VALUES (?1, ?2, ?3)
      ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance WHERE excluded.distance < pdq_pairs.distance";
 const DONE: &str = "DELETE FROM pairs_owed WHERE file_id IN rarray(?1)";
 const GUARD: &str = "SELECT file_id, pdq_dihedral, pdq_quality FROM analysis WHERE file_id IN rarray(?1)";
+/// The analyses of `?1` whose stored hashes are still malformed (not a blob of `?2` bytes), checked in the write's own
+/// transaction: one analysed again since the load holds this build's hashes, and is left alone.
+macro_rules! still_malformed {
+    () => {
+        "SELECT file_id FROM analysis WHERE file_id IN rarray(?1) AND pdq_dihedral IS NOT NULL
+           AND (typeof(pdq_dihedral) <> 'blob' OR length(pdq_dihedral) <> ?2)"
+    };
+}
+const UNOWE_MALFORMED: &str = concat!(
+    "DELETE FROM pairs_owed WHERE file_id IN (",
+    still_malformed!(),
+    ") AND file_id IN (SELECT id FROM files WHERE missing = 0)"
+);
+const REPEND_MALFORMED: &str =
+    concat!("UPDATE files SET pending = 1 WHERE missing = 0 AND pending = 0 AND id IN (", still_malformed!(), ")");
 
 impl<'tx> PairsWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> PairsWriter<'tx> {
@@ -648,6 +663,20 @@ impl<'tx> PairsWriter<'tx> {
             batch.owners.iter().filter(|&&i| passes(i)).filter_map(|&i| id(i)).map(Value::Integer).collect();
         written.done = self.conn.prepare_cached(DONE)?.execute([Rc::new(owners)])?;
         Ok(Some(written))
+    }
+
+    /// The load's malformed pictures (`PairingWork::malformed`, section 6), of present files, analysed again: their owed
+    /// rows go (the pass would load them again, skip them again, and run every round for them), and their files are
+    /// pending, so the import makes their analyses again, which replaces the rows (and owes their pairs again). Each is
+    /// checked in this transaction: one analysed since the load is left alone. The files made pending.
+    pub fn repend_malformed(&mut self, work: &PairingWork) -> Result<usize> {
+        if work.malformed.is_empty() {
+            return Ok(0);
+        }
+        let ids = Rc::new(work.malformed.iter().map(|id| Value::Integer(id.get())).collect::<Vec<Value>>());
+        let bytes = i64::try_from(pg_model::pdq::BLOB_BYTES).unwrap_or(i64::MAX);
+        self.conn.prepare_cached(UNOWE_MALFORMED)?.execute(params![ids.clone(), bytes])?;
+        Ok(self.conn.prepare_cached(REPEND_MALFORMED)?.execute(params![ids, bytes])?)
     }
 
     /// The batch's pictures (owners and partners) whose analysis is the one the load read, by index, sorted. An
@@ -2285,15 +2314,49 @@ mod tests {
         }
     }
 
-    /// A picture whose stored hashes are not 4 orientations' (`pg_model::pdq::from_blob`) fails the load, naming the
-    /// file, rather than pairing what it can.
+    /// A picture whose stored hashes don't read as 4 orientations' (another length, or not a blob) is left out of the
+    /// load and named, not a failure of it (section 6). The re-pend drops its owed row and makes its file pending, so the
+    /// import analyses it again; a second re-pend, after a new analysis, leaves the file alone.
     #[test]
-    fn a_malformed_blob_fails_the_load() {
+    fn a_malformed_blob_is_left_out_of_the_load_and_analysed_again() {
+        for stored in ["zeroblob(100)", "'not a blob'"] {
+            let (mut c, id) = one_file(PathRules::Windows);
+            store_for(&mut c, id, &picture([1; 32], 100));
+            assert!(state_owed(&c).contains(&id), "{stored}: a new picture owes its pairs");
+            c.conn.execute(&format!("UPDATE analysis SET pdq_dihedral = {stored} WHERE file_id = ?1"), [id]).unwrap();
+            let work = c.pairing_work().unwrap();
+            assert!(work.ids.is_empty(), "{stored}: no picture loaded");
+            assert_eq!(work.malformed, vec![FileId::new(id)], "{stored}");
+            let tx = c.tx().unwrap();
+            assert_eq!(tx.pairs_writer().unwrap().repend_malformed(&work).unwrap(), 1, "{stored}");
+            tx.commit().unwrap();
+            assert!(!state_owed(&c).contains(&id), "{stored}: its owed row is gone");
+            let pending: i64 = c.conn.query_row("SELECT pending FROM files WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+            assert_eq!(pending, 1, "{stored}: the import analyses it again");
+            // Analysed again: this build's hashes, which the re-pend leaves alone.
+            store_for(&mut c, id, &picture([1; 32], 100));
+            let tx = c.tx().unwrap();
+            assert_eq!(tx.pairs_writer().unwrap().repend_malformed(&work).unwrap(), 0, "{stored}");
+            tx.commit().unwrap();
+        }
+    }
+
+    /// Another build's pairing (its version in the marks): the load reads no row, so a row in that build's layout is
+    /// never read (section 6).
+    #[test]
+    fn another_builds_pairing_reads_no_hashes() {
         let (mut c, id) = one_file(PathRules::Windows);
         store_for(&mut c, id, &picture([1; 32], 100));
         c.conn.execute("UPDATE analysis SET pdq_dihedral = zeroblob(100) WHERE file_id = ?1", [id]).unwrap();
-        let error = c.pairing_work().map(|_| ()).unwrap_err().to_string();
-        assert!(error.contains(&format!("file {id} has malformed stored hashes")), "{error}");
+        c.conn
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'pairing_version'",
+                [pg_model::pdq::PAIRING_VERSION.saturating_add(1)],
+            )
+            .unwrap();
+        let work = c.pairing_work().unwrap();
+        assert!(work.ids.is_empty() && work.malformed.is_empty() && work.hashes.is_empty(), "nothing read");
+        assert_ne!(work.marks.version, pg_model::pdq::PAIRING_VERSION);
     }
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {

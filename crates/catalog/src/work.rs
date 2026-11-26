@@ -7,11 +7,12 @@ use std::collections::BTreeSet;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
 use pg_model::turns::Turns;
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::convert::progress_count;
 use crate::core::{Catalog, ReadOnly, Reader};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::transaction::write_transaction;
 use crate::types::{FOLDER_PATH, PairingWork, PlaceholderWork, VolumeSet, WorkItem, folder_path, pairing_marks};
 use pg_model::analysis::PLACEHOLDER_VERSION;
@@ -19,6 +20,126 @@ use pg_model::analysis::PLACEHOLDER_VERSION;
 /// `Catalog::volumes`' query (`pg_query::volumes_sql!`): the thumbnail cache runs the same statement over the attached
 /// catalog.
 const VOLUMES: &str = pg_query::volumes_sql!("files");
+
+/// A file that can have a thumbnail (`thumb_sources`), as the thumbs pass's candidates stream it (section 10, D10): its
+/// id, where it is (its folder's id and path, its name), what it is (its time, its turns, its size, a video's poster
+/// time), its change number, and its place on its volume (the pass sorts its work by it).
+pub struct ThumbCandidate<'r> {
+    /// The file.
+    pub id: FileId,
+    /// Its folder's id.
+    pub folder_id: i64,
+    /// Its folder's path, as stored.
+    pub folder: &'r [u8],
+    /// Its name, as stored.
+    pub name: &'r [u8],
+    /// Its modification time.
+    pub mtime: i64,
+    /// Its quarter turns.
+    pub turns: u8,
+    /// Its size in bytes.
+    pub size: u64,
+    /// A video's poster time (none for a picture).
+    pub poster_ms: Option<i64>,
+    /// Its change number.
+    pub seq: i64,
+    /// Its volume.
+    pub volume: i64,
+    /// Its reference on the volume.
+    pub file_ref: i64,
+}
+
+/// What a read of the thumbs pass's candidates saw: the catalog's change number, and whether it read since a checkpoint
+/// (`since` was given and no later than that number).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CandidateRead {
+    /// The catalog's change number at the read.
+    pub seq: i64,
+    /// Whether only the files changed since the checkpoint were read.
+    pub since_checked: bool,
+}
+
+impl Catalog {
+    /// The catalog's volumes, a step per volume (`thumb_volumes`): the thumbs pass's checkpoints are kept per volume.
+    pub fn thumb_volumes(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare_cached(pg_query::volumes_sql!("thumb_volumes"))?;
+        Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The files of `volumes` that can have a thumbnail, in file-id order, each given to `each` (section 10, D10; it
+    /// returns `Break` to stop). With `since` (a checkpoint's change number) no later than the catalog's, only the files
+    /// changed after it; otherwise every one. The files that failed and haven't changed are left out (`thumb_failures`).
+    /// The change number and the candidates are one read's.
+    pub fn thumb_candidates(
+        &self,
+        volumes: &[i64],
+        since: Option<i64>,
+        each: &mut dyn FnMut(&ThumbCandidate<'_>) -> std::ops::ControlFlow<()>,
+    ) -> Result<CandidateRead> {
+        let tx = self.conn.unchecked_transaction()?;
+        let seq: i64 = tx.query_row("SELECT seq FROM thumb_clock", [], |r| r.get(0))?;
+        let since = since.filter(|&c| c <= seq);
+        let list: Vec<String> = volumes.iter().map(i64::to_string).collect();
+        // `+f.volume` keeps the planner off the volume index: the change index with a checkpoint, the table in id order
+        // without.
+        let changed = if since.is_some() { "f.seq > ?1 AND " } else { "" };
+        let sql = format!(
+            "SELECT f.id, f.folder_id, f.folder, f.name, f.mtime, f.turns, f.size, f.poster_ms, f.seq, f.volume, f.file_ref
+             FROM thumb_sources f
+             WHERE {changed}+f.volume IN ({})
+               AND NOT EXISTS (SELECT 1 FROM thumb_failures x WHERE x.file_id = f.id AND x.pass = 'thumbs'
+                               AND x.retry = 0 AND x.mtime = f.mtime AND x.size = f.size AND x.rotation = f.turns)
+             ORDER BY f.id",
+            list.join(",")
+        );
+        {
+            let mut stmt = tx.prepare(&sql)?;
+            let mut rows = match since {
+                Some(c) => stmt.query([c])?,
+                None => stmt.query([])?,
+            };
+            while let Some(r) = rows.next()? {
+                let candidate = ThumbCandidate {
+                    id: FileId::new(r.get(0)?),
+                    folder_id: r.get(1)?,
+                    folder: r.get_ref(2)?.as_blob()?,
+                    name: r.get_ref(3)?.as_blob()?,
+                    mtime: r.get(4)?,
+                    turns: r.get(5)?,
+                    size: r.get(6)?,
+                    poster_ms: r.get(7)?,
+                    seq: r.get(8)?,
+                    volume: r.get(9)?,
+                    file_ref: r.get(10)?,
+                };
+                if each(&candidate).is_break() {
+                    break;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(CandidateRead { seq, since_checked: since.is_some() })
+    }
+
+    /// The catalog's file-id high-water mark (`thumb_high_water`): ids are never reused, so a cache entry at or below it
+    /// whose file is absent was deleted for good (section 10, D11).
+    pub fn thumb_high_water(&self) -> Result<i64> {
+        Ok(self.conn.query_row("SELECT high FROM thumb_high_water", [], |r| r.get(0))?)
+    }
+
+    /// The catalog's file ids up to `upto`, in order, each given to `each` (it returns `Break` to stop): the sweep's side
+    /// of the merge with the cache's entries (section 10, D11).
+    pub fn thumb_file_ids(&self, upto: i64, each: &mut dyn FnMut(i64) -> std::ops::ControlFlow<()>) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached("SELECT id FROM thumb_file_ids WHERE id <= ?1 ORDER BY id")?;
+        let mut rows = stmt.query([upto])?;
+        while let Some(r) = rows.next()? {
+            if each(r.get(0)?).is_break() {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
 
 /// The statement `pending_borders` runs: the due analyses of the set (`from`, from `borders_from`) that the Thumbs pass has
 /// not failed, in volume then record order.
@@ -268,27 +389,42 @@ impl Columns for Slots<'_> {
     }
 }
 
+/// What one part of the load's scan left out of its columns, each in id order: the legacy rows (no stored hashes), and
+/// the malformed ones (stored hashes that don't read as this build's: another length, or not a blob at all).
+#[derive(Default)]
+struct LeftOut {
+    legacy: Vec<i64>,
+    malformed: Vec<i64>,
+}
+
 /// Scans the file ids `lo..=hi` of `analysis` on `conn` (one statement, so one snapshot), putting the analyses of the
-/// files in `identity` in `out`; returns the legacy rows' ids, in order.
-fn scan_part(conn: &Connection, identity: &IdSet, lo: i64, hi: i64, out: &mut impl Columns) -> Result<Vec<i64>> {
+/// files in `identity` in `out`; returns the rows it left out. A malformed row is left out and named, not an error: one
+/// bad row must not fail every pairing pass (section 6). Its picture is analysed again (`PairsWriter::repend_malformed`).
+fn scan_part(conn: &Connection, identity: &IdSet, lo: i64, hi: i64, out: &mut impl Columns) -> Result<LeftOut> {
     let mut identity = identity.walk_from(lo);
     let mut stmt = conn.prepare(PICTURES)?;
     let mut rows = stmt.query(rusqlite::params![pg_model::pdq::MIN_QUALITY, lo, hi])?;
-    let mut legacy = Vec::new();
+    let mut left = LeftOut::default();
     while let Some(r) = rows.next()? {
         let raw: i64 = r.get(0)?;
         if !identity.has(raw) {
             continue;
         }
-        let Some(blob) = r.get_ref(1)?.as_blob_or_null()? else {
-            legacy.push(raw);
-            continue;
+        let hashes = match r.get_ref(1)? {
+            ValueRef::Null => {
+                left.legacy.push(raw);
+                continue;
+            }
+            ValueRef::Blob(blob) => pg_model::pdq::from_blob(blob),
+            ValueRef::Integer(_) | ValueRef::Real(_) | ValueRef::Text(_) => None,
         };
-        let hashes = pg_model::pdq::from_blob(blob)
-            .ok_or_else(|| Error::Invalid(format!("file {raw} has malformed stored hashes")))?;
-        out.put(raw, hashes, r.get(2)?);
+        let quality: Option<u8> = r.get(2).ok();
+        match (hashes, quality) {
+            (Some(hashes), Some(quality)) => out.put(raw, hashes, quality),
+            _ => left.malformed.push(raw),
+        }
     }
-    Ok(legacy)
+    Ok(left)
 }
 
 /// [`Catalog::pairing_work`], read on `conn` in one transaction, with `analysis` scanned on `opener`'s connections in
@@ -306,6 +442,20 @@ fn pairing_work_on(
 ) -> Result<PairingWork> {
     let tx = conn.unchecked_transaction()?;
     let marks = pairing_marks(&tx)?;
+    // Another build prepared the catalog's pairing (section 6): its rows may be in its layout, and its pairing owes the
+    // pairs, so none is read. The pass sees the version and makes nothing.
+    if marks.version != pg_model::pdq::PAIRING_VERSION {
+        tx.commit()?;
+        return Ok(PairingWork {
+            ids: Vec::new(),
+            owed: Vec::new(),
+            hashes: Vec::new(),
+            quality: Vec::new(),
+            legacy: 0,
+            malformed: Vec::new(),
+            marks,
+        });
+    }
     let identity = IdSet::read(&tx, WITH_IDENTITY)?;
     let read_sets = || -> Result<[IdSet; 3]> {
         Ok([IdSet::read(&tx, PRESENT)?, IdSet::read(&tx, PRESENT_PENDING)?, IdSet::read(&tx, OWED_IDS)?])
@@ -313,14 +463,15 @@ fn pairing_work_on(
     // Each picture is a file with an identity: the columns never grow.
     let bound = identity.0.len();
     let parts = threads.clamp(1, bound.max(1));
-    let (columns, legacy, sets) = match opener {
+    let (columns, left, sets) = match opener {
         Some(opener) if parts > 1 => split_scan(&opener, &identity, parts, start, &read_sets)?,
         _ => {
             let mut columns = Grown::with_capacity(bound);
-            let legacy = scan_part(&tx, &identity, i64::MIN, i64::MAX, &mut columns)?;
-            (columns, legacy, read_sets()?)
+            let left = scan_part(&tx, &identity, i64::MIN, i64::MAX, &mut columns)?;
+            (columns, left, read_sets()?)
         }
     };
+    let LeftOut { legacy, malformed } = left;
     let [present, pending, owed] = sets;
     // Present and not pending: the pass can make its pairs, and only then is a legacy row counted.
     let (mut present_w, mut pending_w, mut owed_w) = (present.walk(), pending.walk(), owed.walk());
@@ -330,7 +481,15 @@ fn pairing_work_on(
     let legacy = progress_count(legacy.iter().filter(|&&id| present_w.has(id) && !pending_w.has(id)).count());
     tx.commit()?;
     let Grown { ids, hashes, quality } = columns;
-    Ok(PairingWork { ids: ids.into_iter().map(FileId::new).collect(), owed: owes, hashes, quality, legacy, marks })
+    Ok(PairingWork {
+        ids: ids.into_iter().map(FileId::new).collect(),
+        owed: owes,
+        hashes,
+        quality,
+        legacy,
+        malformed: malformed.into_iter().map(FileId::new).collect(),
+        marks,
+    })
 }
 
 /// The scan of [`pairing_work_on`] in `parts` parts at once, each on a connection of `opener`'s and a thread of its own,
@@ -343,7 +502,7 @@ fn split_scan(
     parts: usize,
     start: &(dyn Fn() + Sync),
     read_sets: &dyn Fn() -> Result<[IdSet; 3]>,
-) -> Result<(Grown, Vec<i64>, [IdSet; 3])> {
+) -> Result<(Grown, LeftOut, [IdSet; 3])> {
     let bound = identity.0.len();
     // Part k holds the identity ids cuts[k]..cuts[k + 1].
     let cuts: Vec<usize> = (0..=parts).map(|k| k * bound / parts).collect();
@@ -373,15 +532,15 @@ fn split_scan(
             let handles: Vec<_> = split
                 .into_iter()
                 .map(|(lo, hi, mut slots)| {
-                    scope.spawn(move || -> Result<(usize, Vec<i64>)> {
+                    scope.spawn(move || -> Result<(usize, LeftOut)> {
                         start();
-                        let legacy = scan_part(&opener.open()?, identity, lo, hi, &mut slots)?;
-                        Ok((slots.filled, legacy))
+                        let left = scan_part(&opener.open()?, identity, lo, hi, &mut slots)?;
+                        Ok((slots.filled, left))
                     })
                 })
                 .collect();
             let sets = read_sets();
-            let scanned: Vec<Result<(usize, Vec<i64>)>> = handles
+            let scanned: Vec<Result<(usize, LeftOut)>> = handles
                 .into_iter()
                 .map(|h| h.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
                 .collect();
@@ -391,8 +550,8 @@ fn split_scan(
     let sets = sets?;
     let scanned = scanned.into_iter().collect::<Result<Vec<_>>>()?;
     let mut filled = 0;
-    let mut legacy = Vec::new();
-    for ((part, part_legacy), &from) in scanned.into_iter().zip(&cuts) {
+    let mut left = LeftOut::default();
+    for ((part, part_left), &from) in scanned.into_iter().zip(&cuts) {
         // The first part is where it belongs already.
         if from != filled {
             columns.ids.copy_within(from..from + part, filled);
@@ -400,12 +559,13 @@ fn split_scan(
             columns.quality.copy_within(from..from + part, filled);
         }
         filled += part;
-        legacy.extend(part_legacy);
+        left.legacy.extend(part_left.legacy);
+        left.malformed.extend(part_left.malformed);
     }
     columns.ids.truncate(filled);
     columns.hashes.truncate(filled);
     columns.quality.truncate(filled);
-    Ok((columns, legacy, sets))
+    Ok((columns, left, sets))
 }
 
 impl Reader<'_> {

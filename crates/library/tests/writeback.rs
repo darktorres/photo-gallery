@@ -145,6 +145,7 @@ fn ratings_and_turns_reach_the_files() {
         &opts,
         &pg_catalog::VolumeSet::All,
         &|| true,
+        &pg_thumbs::new_maker,
         &ctl,
     )
     .unwrap();
@@ -232,6 +233,7 @@ fn ratings_and_turns_reach_the_files() {
         &opts,
         &pg_catalog::VolumeSet::All,
         &|| true,
+        &pg_thumbs::new_maker,
         &ctl,
     )
     .unwrap();
@@ -1158,7 +1160,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
 /// and once the removal has finished the add goes through (`pg-driver` finishes the removal and adds the folder, in that order).
 #[test]
 fn an_add_over_a_pending_removal_is_refused_until_the_removal_finishes() {
-    let (dir, _files, catalog_path, c) = imported("addfinish").unwrap();
+    let (dir, _files, _catalog_path, c) = imported("addfinish").unwrap();
     let images = dir.join("images");
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
@@ -1170,7 +1172,7 @@ fn an_add_over_a_pending_removal_is_refused_until_the_removal_finishes() {
         ),
         "the add is refused while the removal is pending"
     );
-    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let driven = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert!(driven.files > 0, "its files were deleted");
     assert!(c.removal_markers().unwrap().is_empty());
     let (added, new) = pg_library::folders::add_folder(&c, &images).unwrap();
@@ -1186,7 +1188,7 @@ fn an_add_over_a_pending_removal_is_refused_until_the_removal_finishes() {
 /// running): the finish does what it can, the removal stays pending, and an add over it is still refused and adds nothing.
 #[test]
 fn a_removal_kept_for_a_write_still_refuses_an_add() {
-    let (dir, _files, catalog_path, c) = imported("addkept").unwrap();
+    let (dir, _files, _catalog_path, c) = imported("addkept").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
     std::fs::copy(on_disk(&c, &db_path), on_disk(&c, &temp)).unwrap();
@@ -1195,7 +1197,7 @@ fn a_removal_kept_for_a_write_still_refuses_an_add() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let driven = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!(driven.deferred, 1, "the file with the change is kept");
     assert_eq!(c.removal_markers().unwrap().len(), 1, "the removal is still pending");
     assert!(
@@ -1226,7 +1228,7 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let driven = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!(driven.deferred, 1, "the file with a change is kept");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
 
@@ -1250,12 +1252,12 @@ fn a_removal_keeps_a_change_whose_folder_is_gone_until_it_is_discarded() {
 /// A removal's deletes end with a PASSIVE checkpoint, on the catalog that made them (section 11).
 #[test]
 fn a_removal_checkpoints_the_wal_after_its_deletes() {
-    let (dir, _files, catalog_path, c) = imported("removal-checkpoint").unwrap();
+    let (dir, _files, _catalog_path, c) = imported("removal-checkpoint").unwrap();
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
     let before = c.passive_checkpoints();
-    let driven = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let driven = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert!(driven.files > 0, "its files were deleted");
     assert!(c.passive_checkpoints() > before, "the deletes were checkpointed");
     drop(c);
@@ -1275,7 +1277,7 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     let root = c.roots().unwrap().remove(0);
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let kept = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let kept = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!(kept.deferred, 1, "the file with a change waits for the writer");
     assert_eq!(c.status().unwrap().missing, 1, "the rest of the folder went, and that one stayed (hidden)");
 
@@ -1290,7 +1292,7 @@ fn a_removal_finishes_a_change_whose_folder_is_still_there() {
     assert!(!on_disk(&c, &temp).exists(), "the writer finished the copy and took its temp");
     drop(writer);
 
-    let done = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let done = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!((done.files, done.deferred), (1, 0));
     assert!(c.removal_markers().unwrap().is_empty());
     assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
@@ -1335,7 +1337,7 @@ fn a_copy_in_progress_when_its_folder_is_removed_is_finished_and_the_removal_fol
 
     let root = c.roots().unwrap().remove(0);
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let hidden = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let hidden = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!(hidden.deferred, 1, "the file whose copy is in progress waits for the writer");
 
     HELD_COPY.open();
@@ -1348,7 +1350,7 @@ fn a_copy_in_progress_when_its_folder_is_removed_is_finished_and_the_removal_fol
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the copy in progress reached the file");
     assert!(!on_disk(&c, &pg_writeback::temp_of(&db_path, WriteKind::Rating)).exists(), "the writer took its temp");
 
-    let done = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let done = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!((done.files, done.deferred), (1, 0));
     assert!(c.removal_markers().unwrap().is_empty());
     assert_eq!(c.status().unwrap().files, 0, "the removed folder's files are gone");
@@ -1379,7 +1381,7 @@ fn a_removed_folder_added_again_gets_its_analyses_and_its_ratings_back() {
 
     let root = c.roots().unwrap().remove(0);
     assert!(matches!(c.begin_removal(root.id, &root.path).unwrap(), pg_model::removal::Begun::Started { .. }));
-    let gone = pg_library::removals::finish(&c, &thumbs, &catalog_path, &mut |_| true).unwrap();
+    let gone = pg_library::removals::finish(&c, &thumbs, &mut |_| true).unwrap();
     assert_eq!(gone.deferred, 0, "nothing was waiting to be written");
     assert_eq!(c.status().unwrap().files, 0, "the folder's files are gone");
 

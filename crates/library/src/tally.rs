@@ -24,6 +24,19 @@ struct Reads {
     drive: String,
 }
 
+/// How a lane's round ended, for the round's notices.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RoundEnd {
+    /// The round ran to its end (not preempted): it clears the lane's failure.
+    Done,
+    /// The round failed with this error.
+    Failed(String),
+    /// The round panicked with this message.
+    Panicked(String),
+    /// The round failed with an error a pass has said with a notice of its own (the thumbnail cache's): nothing more is said.
+    Said,
+}
+
 /// What the lanes hold, by lane number. A lane's entry is its latest report: a lane that reports again replaces it.
 #[derive(Default)]
 struct State {
@@ -84,17 +97,25 @@ impl Tally {
         }
     }
 
-    /// Lane `lane`'s round ended: `failure` is its error, or `None` when the round ran. The round's notice is posted with the
-    /// failing lane's error, and cleared when no lane's round has failed.
-    pub(crate) fn round(&self, lane: usize, failure: Option<String>) {
+    /// Lane `lane`'s round ended as `end`. A failure is posted with the failing lane's error (`RoundFailed`), a panic with
+    /// its message (`RoundPanicked`, a state as the failure is, section 9); both are cleared when no lane's round has failed,
+    /// by a round that ran to its end (`RoundEnd::Done`). A failure a pass has said itself (`RoundEnd::Said`) posts nothing,
+    /// and clears nothing.
+    pub(crate) fn round(&self, lane: usize, end: RoundEnd) {
         let mut state = self.state();
-        match failure {
-            Some(error) => {
+        match end {
+            RoundEnd::Failed(error) => {
                 let error = tidy(&error, ERROR_CAP);
                 self.notices.post(Notice::RoundFailed { error: error.clone() });
                 state.rounds.insert(lane, error);
             }
-            None => {
+            RoundEnd::Panicked(message) => {
+                let message = tidy(&message, ERROR_CAP);
+                self.notices.post(Notice::RoundPanicked { message: message.clone() });
+                state.rounds.insert(lane, message);
+            }
+            RoundEnd::Said => {}
+            RoundEnd::Done => {
                 state.rounds.remove(&lane);
                 if state.rounds.is_empty() {
                     self.notices.resolve(Trigger::Op(Op::Round));
@@ -247,12 +268,25 @@ mod tests {
     #[test]
     fn a_failed_round_is_cleared_only_when_every_failed_lane_has_run_again() {
         let (tally, sink) = tally();
-        tally.round(0, Some("boom".to_string()));
-        tally.round(1, Some("bang".to_string()));
+        tally.round(0, RoundEnd::Failed("boom".to_string()));
+        tally.round(1, RoundEnd::Failed("bang".to_string()));
         said(&sink);
-        tally.round(0, None);
+        tally.round(0, RoundEnd::Done);
         assert!(said(&sink).is_empty(), "lane 1's round still failed");
-        tally.round(1, None);
+        tally.round(1, RoundEnd::Done);
+        assert_eq!(said(&sink), vec!["resolve Op(Round)".to_string()]);
+    }
+
+    /// A panic is a state of the lane as a failure is (section 9): posted once per round, and cleared by the lane's next
+    /// round that runs to its end. A failure a pass said itself posts nothing and clears nothing.
+    #[test]
+    fn a_panic_is_held_by_its_lane_until_a_round_runs_and_a_said_failure_posts_nothing() {
+        let (tally, sink) = tally();
+        tally.round(0, RoundEnd::Panicked("index out of bounds".to_string()));
+        assert_eq!(said(&sink), vec!["post RoundPanicked { message: \"index out of bounds\" }".to_string()]);
+        tally.round(0, RoundEnd::Said);
+        assert!(said(&sink).is_empty(), "a said failure posts nothing, and the panic stays");
+        tally.round(0, RoundEnd::Done);
         assert_eq!(said(&sink), vec!["resolve Op(Round)".to_string()]);
     }
 

@@ -41,6 +41,8 @@ pub(crate) struct Inner {
     /// The scans refused because another walk of an overlapping folder held its lease: back in the queue at the next
     /// round, which comes by the busy retry (`lane::BUSY_RETRY`) at the latest.
     busy: Mutex<Vec<RulePath>>,
+    /// The folders whose walks lost their lease, each with the losses in a row (section 5): a complete walk ends the run.
+    losses: Mutex<Vec<(RulePath, u32)>>,
     /// Whether a round is running (`active`, with `idle` told when it ends): a holder waits for it to end.
     active: Mutex<bool>,
     idle: Condvar,
@@ -72,6 +74,7 @@ impl Inner {
             scans: Mutex::new(VecDeque::new()),
             scanning: Mutex::new(None),
             busy: Mutex::new(Vec::new()),
+            losses: Mutex::new(Vec::new()),
             active: Mutex::new(false),
             idle: Condvar::new(),
             tuning: Mutex::new(LaneTuner::new(TunerConfig::default())),
@@ -169,6 +172,26 @@ impl Inner {
         if !busy.contains(&path) {
             busy.push(path);
         }
+    }
+
+    /// The walk of `path` lost its lease: the losses of its walks in a row, this one counted.
+    pub(crate) fn lease_lost(&self, path: &RulePath) -> u32 {
+        let mut losses = self.losses.lock().unwrap_or_else(PoisonError::into_inner);
+        match losses.iter_mut().find(|(lost, _)| lost == path) {
+            Some((_, count)) => {
+                *count = count.saturating_add(1);
+                *count
+            }
+            None => {
+                losses.push((path.clone(), 1));
+                1
+            }
+        }
+    }
+
+    /// A walk of `path` completed: the run of its lost leases ends.
+    pub(crate) fn lease_kept(&self, path: &RulePath) {
+        self.losses.lock().unwrap_or_else(PoisonError::into_inner).retain(|(lost, _)| lost != path);
     }
 
     /// The scans refused by a lease go back to the end of the queue, for this round to try again.

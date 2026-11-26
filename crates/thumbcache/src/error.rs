@@ -44,6 +44,21 @@ impl Error {
         Error::Step { what: what.into(), source: Box::new(source) }
     }
 
+    /// Whether this is one row's value that its column can't hold (a stored type or range the read can't take), not a
+    /// failure of the cache: its caller treats the row as a miss (section 10, D8).
+    pub fn is_value(&self) -> bool {
+        match self {
+            Error::Value(_) => true,
+            Error::Sqlite(e) => matches!(
+                e,
+                rusqlite::Error::InvalidColumnType(..)
+                    | rusqlite::Error::FromSqlConversionFailure(..)
+                    | rusqlite::Error::IntegralValueOutOfRange(..)
+            ),
+            Error::Step { .. } | Error::Io(_) | Error::Invalid(_) => false,
+        }
+    }
+
     /// A state the cache can't be used in, or a stored value out of range, as `message`.
     pub(crate) fn invalid(message: impl Into<String>) -> Error {
         Error::Invalid(message.into())

@@ -83,6 +83,10 @@ pub struct PairStats {
     pub pairs: usize,
     /// The analyses left out for having no stored hashes (`PairingWork::legacy`).
     pub legacy: u64,
+    /// The analyses left out for stored hashes that don't read as this build's (`PairingWork::malformed`).
+    pub malformed: usize,
+    /// Of those, the files made pending, to be analysed again (`PairsWriter::repend_malformed`).
+    pub repended: usize,
     /// The write transactions that read their pictures' analyses (`PairsWritten::guarded`): something the pairs depend
     /// on changed after the load.
     pub guarded: usize,
@@ -163,6 +167,15 @@ pub fn pair_with(catalog: &mut Catalog, opts: &Options, settings: Settings, ctl:
     if work.marks.version != pg_model::pdq::PAIRING_VERSION {
         stats.complete = false;
         return Ok(stats);
+    }
+    // The stored hashes that don't read (section 6) were left out of the load, and are counted, said once per pass (its
+    // span), and analysed again: their owed rows go and their files are pending, so no pass loads them again as they are.
+    stats.malformed = work.malformed.len();
+    if !work.malformed.is_empty() {
+        pass.field("malformed", u64::try_from(stats.malformed).unwrap_or(u64::MAX));
+        let tx = catalog.tx()?;
+        stats.repended = tx.pairs_writer()?.repend_malformed(&work)?;
+        tx.commit()?;
     }
     let owed: Vec<usize> = work.owed.iter().enumerate().filter(|&(_, &o)| o).map(|(i, _)| i).collect();
     if owed.is_empty() {

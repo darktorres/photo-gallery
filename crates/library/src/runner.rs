@@ -498,7 +498,8 @@ mod tests {
     }
 
     /// A thumbnail cache that refuses its batch is said (`CacheNotStored`), and the round goes on: the hashes, the pairs
-    /// and the borders still run after the thumbnails. (Before this, the error ended the round, and they never ran.)
+    /// and the borders still run after the thumbnails. The round is a failed one for the backoff (section 10, D7), with no
+    /// `RoundFailed` of its own: the cache's state says it.
     #[test]
     fn a_thumbnail_cache_error_is_said_and_the_round_goes_on() {
         let (dir, catalog_path, _root) = library_sized("runner-cache-error", &["a.png"], 300);
@@ -507,12 +508,13 @@ mod tests {
         let sink = RecordingSink::new();
         let inner = job(&catalog_path, cache.clone(), sink.clone());
         let ended = inner.ctl.subscribe();
-        inner.round(&mut None).unwrap();
+        assert!(inner.round(&mut None).unwrap().said, "the cache's failure makes the round a failed one");
         let posted = sink.posted();
         assert!(
             posted.iter().any(|n| matches!(n, Notice::CacheNotStored { error } if error.contains("refuses"))),
             "{posted:?}"
         );
+        assert!(!posted.iter().any(|n| matches!(n, Notice::RoundFailed { .. })), "{posted:?}");
         assert_eq!(finished_order(ended.take().items), ["thumbs", "placeholders", "hashes", "pairs", "borders"]);
     }
 
@@ -543,7 +545,7 @@ mod tests {
     /// Run `pass` once on a connection of its own, as a round does.
     fn run(pass: &mut dyn for<'a> Pass<Cx<'a>>, inner: &Inner) -> Step {
         let mut catalog = Catalog::open(&inner.shared.catalog_path, PATH_RULES).unwrap();
-        pass.run(&mut Cx { inner, catalog: &mut catalog }).unwrap()
+        pass.run(&mut Cx { inner, catalog: &mut catalog, said: &mut false }).unwrap()
     }
 
     /// A file that can't be read (here, gone since the import) is said, not recorded in the ledger; once nothing is
@@ -590,7 +592,8 @@ mod tests {
         assert!(sink.calls().contains(&Call::Resolve(Trigger::Pass(FilePass::Thumbs))), "{:?}", sink.calls());
     }
 
-    /// A round that fails (its catalog can't be opened) is said; the next round that runs clears it.
+    /// A round that fails (its catalog can't be opened) is said; the lane tries again after its backoff, with no wake
+    /// (section 3), and the next round that runs to its end clears it.
     #[test]
     fn a_failed_round_is_said_and_the_next_round_clears_it() {
         let (dir, catalog_path, _root) = library("runner-round", &[]);
@@ -614,7 +617,7 @@ mod tests {
             || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })),
         );
         std::fs::rename(&aside, &catalog_path).unwrap();
-        runner.wake();
+        // No wake: the backoff (5 s after the first failure) runs the next round.
         pg_testkit::wait_until(
             Duration::from_secs(30),
             || "the failure cleared",
@@ -642,7 +645,39 @@ mod tests {
         inner.scans().extend([root.clone(), sub]);
         assert_eq!(run(&mut Scans, &inner), Step::Done);
         let duplicates = Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 1 };
-        assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), vec![duplicates])]);
+        // A failed walk of it is a condition too (section 9): the complete walk clears it.
+        assert_eq!(
+            sink.take(),
+            [
+                Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), vec![duplicates]),
+                Call::Replace(Key::all("scan-failed", Some(&root)).to_buf(), Vec::new())
+            ]
+        );
+    }
+
+    /// A library folder added while the scans pass walks another is walked, not dropped (section 2): the pass reads the
+    /// roots at each folder it takes from its queue, not once at its start. Here the folder becomes a root as the pass
+    /// takes it, after the pass began and after its first walk; a pass that read the roots once would skip it.
+    #[test]
+    fn a_root_added_while_the_scans_pass_walks_another_is_walked() {
+        let (dir, catalog_path, root) = library("runner-added", &["a.png"]);
+        let more = dir.join("more");
+        std::fs::create_dir_all(&more).unwrap();
+        std::fs::write(more.join("b.png"), pg_codec::fixtures::png_rgb(8, 8, &[7u8; 8 * 8 * 3]).unwrap()).unwrap();
+        let added = pg_platform::names::normalize_path(&more).unwrap();
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache.clone(), sink.clone());
+        let (path, adding) = (catalog_path.clone(), added.clone());
+        inner.shared.hooks.on_pop(move |popped| {
+            if *popped == adding {
+                assert!(Catalog::open(&path, PATH_RULES).unwrap().add_root(&adding).unwrap());
+            }
+        });
+        inner.scans().extend([root, added]);
+        assert_eq!(run(&mut Scans, &inner), Step::Done);
+        let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        assert_eq!(pg_catalog::fixture::state::present_files(&c).unwrap().len(), 2, "b.png of the added folder is in");
     }
 
     /// A walk refused by another's lease posts nothing, waits apart, and runs once it is put back after the lease ends.
@@ -662,7 +697,13 @@ mod tests {
         inner.requeue_busy();
         assert!(inner.busy().is_empty());
         assert_eq!(run(&mut Scans, &inner), Step::Done);
-        assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), Vec::new())]);
+        assert_eq!(
+            sink.take(),
+            [
+                Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), Vec::new()),
+                Call::Replace(Key::all("scan-failed", Some(&root)).to_buf(), Vec::new())
+            ]
+        );
     }
 
     /// A library folder the scan refuses (here, gone since it was added: its facts can't be read) is the folder

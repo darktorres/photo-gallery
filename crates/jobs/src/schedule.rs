@@ -20,14 +20,23 @@ pub trait Pass<C> {
 }
 
 /// Run the passes in the given order. A pass that is preempted ends the round at once, and so does a stop requested
-/// while a pass ran (`stopped`), so the passes after it don't start.
+/// while a pass ran (`stopped`), so the passes after it don't start. A pass that fails does not end the round: its error is
+/// kept, the passes after it still run, and the round returns the first error at its end (or at the preempt that ends it).
 pub fn round<C>(passes: &mut [&mut dyn Pass<C>], cx: &mut C, stopped: impl Fn(&C) -> bool) -> Result<Step, Failed> {
+    let mut first: Option<Failed> = None;
     for pass in passes.iter_mut() {
-        if pass.run(cx)? == Step::Preempted || stopped(cx) {
-            return Ok(Step::Preempted);
+        let preempted = match pass.run(cx) {
+            Ok(step) => step == Step::Preempted,
+            Err(e) => {
+                first.get_or_insert(e);
+                false
+            }
+        };
+        if preempted || stopped(cx) {
+            return first.map_or(Ok(Step::Preempted), Err);
         }
     }
-    Ok(Step::Done)
+    first.map_or(Ok(Step::Done), Err)
 }
 
 #[cfg(test)]
@@ -47,11 +56,13 @@ mod tests {
         }
     }
 
-    struct Fails;
+    /// Records its name in the context, and fails with it.
+    struct Fails(&'static str);
 
     impl Pass<Vec<&'static str>> for Fails {
-        fn run(&mut self, _: &mut Vec<&'static str>) -> Result<Step, Failed> {
-            Err(Failed::other("no".to_string()))
+        fn run(&mut self, cx: &mut Vec<&'static str>) -> Result<Step, Failed> {
+            cx.push(self.0);
+            Err(Failed::other(self.0.to_string()))
         }
     }
 
@@ -79,10 +90,21 @@ mod tests {
         assert_eq!((step, cx), (Step::Preempted, vec!["a"]));
     }
 
+    /// A failed pass does not stop the round: the passes after it run, and the round returns the first error at its end.
     #[test]
-    fn an_error_ends_the_round_with_it() {
-        let (mut a, mut f) = (Named("a", Step::Done), Fails);
+    fn an_error_is_kept_the_later_passes_run_and_the_round_returns_the_first() {
+        let (mut f, mut a, mut g) = (Fails("f"), Named("a", Step::Done), Fails("g"));
         let mut cx = Vec::new();
-        assert!(round(&mut [&mut a, &mut f], &mut cx, |_| false).is_err());
+        let error = round(&mut [&mut f, &mut a, &mut g], &mut cx, |_| false).unwrap_err();
+        assert_eq!((error.text(), cx), ("f", vec!["f", "a", "g"]));
+    }
+
+    /// A preempt after a failed pass ends the round, and the round still returns the failure.
+    #[test]
+    fn a_preempt_after_an_error_ends_the_round_with_the_error() {
+        let (mut f, mut a, mut b) = (Fails("f"), Named("a", Step::Preempted), Named("b", Step::Done));
+        let mut cx = Vec::new();
+        let error = round(&mut [&mut f, &mut a, &mut b], &mut cx, |_| false).unwrap_err();
+        assert_eq!((error.text(), cx), ("f", vec!["f", "a"]));
     }
 }

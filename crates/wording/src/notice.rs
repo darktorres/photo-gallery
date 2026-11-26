@@ -62,7 +62,7 @@ pub(super) fn source_id(source: Source) -> &'static str {
 /// Set the values of `notice`'s entries in `a`. The title and the body take the same values; each uses those it needs.
 pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &mut FluentArgs<'_>) {
     match notice {
-        Notice::ScanFailed { root, error } => {
+        Notice::ScanFailed { root, error, .. } => {
             a.set("root", shown(rules, root));
             a.set("error", error.clone());
         }
@@ -77,6 +77,8 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         | Notice::CatalogNotClosed { error }
         | Notice::CacheTouchesNotWritten { error }
         | Notice::CacheNotStored { error }
+        | Notice::CacheNotSwept { error }
+        | Notice::CacheNotRead { error }
         | Notice::CacheWalNotMerged { error }
         | Notice::CacheDisabled { error }
         | Notice::FolderNotAdded { error }
@@ -277,7 +279,7 @@ mod tests {
         let folder = PathRules::Windows.parse(r"D:\صور").unwrap();
         let a = values(&Notice::FolderAlreadyAdded { folder: folder.clone() });
         assert_eq!(text(&a, "folder"), isolate(r"D:\صور"));
-        let a = values(&Notice::ScanFailed { root: folder, error: "denied".into() });
+        let a = values(&Notice::ScanFailed { root: folder, error: "denied".into(), walk: true });
         assert_eq!(text(&a, "root"), isolate(r"D:\صور"));
         assert_eq!(text(&a, "error"), "denied");
 

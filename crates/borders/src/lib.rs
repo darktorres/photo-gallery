@@ -11,7 +11,7 @@ use pg_catalog::Catalog;
 use pg_catalog::ledger::Failure;
 use pg_jobs::control::Control;
 use pg_jobs::failure::{Class, Failed};
-use pg_jobs::pipeline::{self, Batch, Options, Read};
+use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
@@ -106,16 +106,23 @@ pub fn find_while(
     let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Borders)?;
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Borders, u64::try_from(items.len()).unwrap_or(u64::MAX));
-    type Done = std::result::Result<FileBorders, Failed>;
-    let flush = |catalog: &mut Catalog, batch: &mut Vec<(usize, Done)>, stats: &mut Stats| -> Result<()> {
+    let flush = |catalog: &mut Catalog,
+                 batch: &mut Vec<Done<'_, pg_catalog::WorkItem, FileBorders, Error>>,
+                 stats: &mut Stats|
+     -> Result<()> {
         let tx = catalog.tx()?;
         let mut done = *stats;
         let changed = {
             let mut writer = tx.borders_writer()?;
             let (mut failures, mut found_known) = (Vec::new(), Vec::new());
-            for (i, result) in batch.drain(..) {
+            for (item, result) in batch.drain(..) {
                 done.files += 1;
-                let item = items.get(i).ok_or(Error::Invalid("an item outside the pass"))?;
+                let result = match result {
+                    Ok(b) => Ok(b),
+                    Err(ItemError::File(failed)) => Err(failed),
+                    // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
+                    Err(ItemError::Pass(e)) => return Err(e),
+                };
                 let (size, found) = match result {
                     Ok(b) => {
                         if known.contains(&item.id) {
@@ -175,17 +182,19 @@ pub fn find_while(
             Read::File
         },
         || Analyzer::new().map_err(Error::Analysis),
-        |analyzer, i, bytes| {
-            let item = items.get(i).ok_or(Error::Invalid("an item outside the pass"))?;
+        |analyzer, item, bytes| {
             #[cfg(feature = "fault")]
             fault::in_detector(item.id);
-            analyzer.borders(bytes, item.turns).map_err(Error::Analysis)
+            // A file the detector refuses is the file's failure (`Data`, recorded): section 10, D4.
+            analyzer
+                .borders(bytes, item.turns)
+                .map_err(|e| ItemError::File(Failed::new(Class::Data, Error::Analysis(e))))
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| flush(catalog, batch, stats).map(|()| still_wanted()).map_err(Failed::from),
+        |(catalog, stats), batch| flush(catalog, batch, stats).map(|()| still_wanted()),
     );
-    result?;
+    result.map_err(Halt::into_pass)?;
     let (_, mut stats) = state;
     stats.complete = stats.files == items.len();
     pass.items(u64::try_from(stats.stored).unwrap_or(u64::MAX));

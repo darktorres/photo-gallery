@@ -22,6 +22,34 @@ pub struct Source {
     pub turns: Turns,
 }
 
+/// One entry of the cache at a height, as `ThumbCache::with_entries` streams it (section 10, D10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryRow {
+    /// An entry made from its file at this time and these turns.
+    Current {
+        /// The file.
+        file_id: FileId,
+        /// The file's time the thumbnail was made at.
+        mtime: i64,
+        /// The file's turns the thumbnail was made at.
+        rotation: i64,
+    },
+    /// An entry whose stored values a column can't hold: a miss for its file, which is forgotten (D8).
+    Bad {
+        /// The file.
+        file_id: FileId,
+    },
+}
+
+impl EntryRow {
+    /// The entry's file.
+    pub fn file_id(&self) -> FileId {
+        match *self {
+            EntryRow::Current { file_id, .. } | EntryRow::Bad { file_id } => file_id,
+        }
+    }
+}
+
 /// A thumbnail to store: the file, the height it is for, what it was made from, and its bytes.
 pub struct Thumb {
     /// The file the thumbnail is of.

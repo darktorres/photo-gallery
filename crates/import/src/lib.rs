@@ -20,7 +20,7 @@ use pg_model::media::Kind;
 
 use pg_jobs::control::Control;
 use pg_jobs::failure::{Class, Failed};
-use pg_jobs::pipeline::{self, Batch, Options, Read};
+use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::progress::Phase;
 
 const BATCH: usize = pg_catalog::WRITE_BATCH;
@@ -151,24 +151,24 @@ pub fn import_while(
             Read::File
         },
         || Analyzer::new().map_err(Error::Analysis),
-        |analyzer, i, bytes| {
-            let item = items.get(i).ok_or(Error::Invalid("no file to import at this index"))?;
+        |analyzer, item, bytes| {
+            // An analysis that refuses the file is the file's failure (`Data`, recorded): the one contract of the
+            // pipeline's passes (section 10, D4).
+            let refused = |e| ItemError::File(Failed::new(Class::Data, Error::Analysis(e)));
             if item.kind == Kind::Video {
                 // FFmpeg opens the file by its disk path: the plain one would lose a trailing dot or space in a folder's
                 // name, and open a sibling's file.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                analyzer.video(&disk, item.turns).map_err(Error::Analysis)
+                analyzer.video(&disk, item.turns).map_err(refused)
             } else {
-                analyzer.analyze(bytes, item.turns).map_err(Error::Analysis)
+                analyzer.analyze(bytes, item.turns).map_err(refused)
             }
         },
         Batch { size: BATCH, every: None },
         (catalog, Counts::default()),
-        |(catalog, counts), batch| {
-            store(catalog, counts, items, batch, ctl).map(|()| still_wanted()).map_err(Failed::from)
-        },
+        |(catalog, counts), batch| store(catalog, counts, batch, ctl).map(|()| still_wanted()),
     );
-    result?;
+    result.map_err(Halt::into_pass)?;
     let (_, counts) = state;
     stats.files = counts.files;
     stats.failed = counts.failed;
@@ -198,22 +198,32 @@ fn is_named(name: &[u8], exts: &[&[u8]]) -> bool {
 fn store(
     catalog: &mut Catalog,
     counts: &mut Counts,
-    items: &[WorkItem],
-    batch: &mut Vec<(usize, std::result::Result<Analysis, Failed>)>,
+    batch: &mut Vec<Done<'_, WorkItem, Analysis, Error>>,
     ctl: &Control,
 ) -> Result<()> {
     let mut store = STORE.timer();
     store.items(u64::try_from(batch.len()).unwrap_or(u64::MAX));
     let tx = catalog.tx()?;
     let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
-    for (i, result) in batch.drain(..) {
-        let item = items.get(i).ok_or(Error::Invalid("an import result for no file"))?;
+    for (item, result) in batch.drain(..) {
+        let result = match result {
+            Ok(a) => Ok(a),
+            Err(ItemError::File(failed)) => Err(failed),
+            // The pass's own error, met on an item: the batch stores nothing, and the pass ends with it.
+            Err(ItemError::Pass(e)) => return Err(e),
+        };
         match result {
             Ok(a) => {
                 if !writer.store_analysis(item, &a)? {
                     counts.changed += 1;
                     continue;
                 }
+            }
+            // Changed while it was read whole (section 7): its bytes are no version of the file, so nothing is stored, and
+            // the file stays pending (its next scan sees the new size and time as well).
+            Err(e) if e.is_changed() => {
+                counts.changed += 1;
+                continue;
             }
             Err(e) => {
                 if !writer.store_failure(item, e.text())? {

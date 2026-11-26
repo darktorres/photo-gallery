@@ -20,7 +20,7 @@ use pg_library::shared::{FeatureCell, Generation, HeightCell};
 use pg_model::features::Features;
 use pg_model::ids::{FileId, RootId};
 use pg_model::job::Change;
-use pg_model::notice::{Notice, Trigger};
+use pg_model::notice::{Notice, Op, Trigger};
 use pg_model::progress::LaneProgress;
 use pg_model::progress::Progress;
 use pg_model::removal::Begun;
@@ -519,11 +519,12 @@ impl LibraryService {
                     library.wake_removals();
                 }
                 None => {
-                    self.catalogs.with_catalog(|c| {
-                        pg_library::removals::finish(c, &self.thumbs, &self.catalog_path, &mut |_| true).map_err(|e| {
+                    let finished = self.catalogs.with_catalog(|c| {
+                        pg_library::removals::finish(c, &self.thumbs, &mut |_| true).map_err(|e| {
                             pg_catalog::Error::Step { what: pg_model::error::chain(&e), source: Box::new(e) }
                         })
                     })?;
+                    self.swept(&finished.swept);
                 }
             }
         }
@@ -546,8 +547,22 @@ impl LibraryService {
         for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
             pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e:#}", rules.display(&temp)));
         }
-        self.thumbs.sweep_orphans(&self.catalog_path).map_err(failed)?;
+        // The thumbnails of the files the discard dropped (section 10, D11). A sweep that fails is said as its own state,
+        // not as this discard's failure: the files are gone, and a later sweep drops their thumbnails.
+        let swept = self.catalogs.with_catalog(|c| Ok(pg_library::removals::sweep_orphans(&self.thumbs, c)))?;
+        self.swept(&swept);
         Ok(true)
+    }
+
+    /// A sweep's outcome, told through the inbox (section 10, D12): a failure is the kept `CacheNotSwept` state, and a
+    /// sweep that ran clears it.
+    fn swept(&self, outcome: &pg_library::Result<usize>) {
+        match outcome {
+            Ok(_) => self.inbox.resolve(Trigger::Op(Op::Sweep)),
+            Err(e) => self
+                .inbox
+                .post(Notice::CacheNotSwept { error: pg_model::notice::error_text(&pg_model::error::chain(e)) }),
+        }
     }
 
     /// Scan every library folder again (new, changed, moved and deleted files).

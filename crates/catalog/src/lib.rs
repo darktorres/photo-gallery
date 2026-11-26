@@ -63,6 +63,7 @@ pub use types::{
     CatalogCounts, CropSource, Folder, FolderRows, Listed, PairingMarks, PairingWork, PlaceholderWork, Prior, Rebuilt,
     Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Versions, VolumeSet, WorkItem, WriteTarget,
 };
+pub use work::{CandidateRead, ThumbCandidate};
 // The writers are reached through `Tx`'s accessors, which name them in their signatures; no other crate names one.
 pub use writers::{OwedHashes, PairsBatch};
 

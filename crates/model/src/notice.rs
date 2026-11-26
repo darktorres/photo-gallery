@@ -520,12 +520,18 @@ pub enum Notice {
     // The scans. The folders a scan couldn't read, the mounts under them it refuses and a library folder it refuses are
     // not notices: they are the catalog's per-folder ledger, one entry ([`Notice::ScanFoldersFailed`]). Their old kinds'
     // codes are retired ([`Notice::RETIRED`]).
-    /// A scan that failed. Its batches before the error are in.
+    /// A scan that failed. Its batches before the error are in. A failed walk (`walk`) is a condition of the folder, kept
+    /// until a complete walk of the library folder replaces it; a failure of what follows a walk (a replaced thumbnail
+    /// not forgotten, a temp file not deleted) is an event.
     ScanFailed {
         /// The library folder being scanned.
         root: RulePath,
         /// Why the scan failed.
         error: String,
+        /// Whether the walk itself failed (a condition of the folder), not what follows it (an event). A row an older
+        /// build wrote has none: an event, as that build kept it.
+        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
+        walk: bool,
     },
     /// What a scan of a folder counted that the user may want to know, `count` of them. A condition of the folder is
     /// kept; what one walk did is an event ([`ScanNote::lifecycle`]).
@@ -652,6 +658,17 @@ pub enum Notice {
     /// An on-demand thumbnail couldn't be stored (it was shown anyway).
     CacheNotStored {
         /// Why the thumbnail couldn't be stored.
+        error: String,
+    },
+    /// The thumbnails of files no longer in the catalog couldn't be dropped from the cache (its sweep failed): they stay
+    /// until a sweep succeeds.
+    CacheNotSwept {
+        /// Why the sweep failed.
+        error: String,
+    },
+    /// The thumbnail cache couldn't be read by the thumbnails' pass: its thumbnails wait until it can be.
+    CacheNotRead {
+        /// Why the cache couldn't be read.
         error: String,
     },
     /// The cache's WAL couldn't be merged when its writer closed.
@@ -949,6 +966,10 @@ pub enum Op {
     Views(ViewOp),
     /// An edit.
     Edit(EditOp),
+    /// A sweep of the thumbnail cache's entries whose files the catalog no longer has.
+    Sweep,
+    /// A read of the thumbnail cache by the thumbnails' pass.
+    CacheRead,
 }
 
 impl Op {
@@ -971,6 +992,8 @@ impl Op {
             Op::Edit(EditOp::Rate) => "edit-rate",
             Op::Edit(EditOp::Rotate) => "edit-rotate",
             Op::Edit(EditOp::MarkBorder) => "edit-mark-border",
+            Op::Sweep => "sweep",
+            Op::CacheRead => "cache-read",
         }
     }
 }
@@ -1142,6 +1165,8 @@ ids! {
     CacheTotalsFixed => "cache-totals-fixed",
     CacheTouchesNotWritten => "cache-touches-not-written",
     CacheNotStored => "cache-not-stored",
+    CacheNotSwept => "cache-not-swept",
+    CacheNotRead => "cache-not-read",
     CacheWalNotMerged => "cache-wal-not-merged",
     CacheStartedOver => "cache-started-over",
     CacheDisabled => "cache-disabled",
@@ -1248,6 +1273,8 @@ impl Notice {
             | Notice::PrefsNotSaved { .. }
             | Notice::CacheTouchesNotWritten { .. }
             | Notice::CacheNotStored { .. }
+            | Notice::CacheNotSwept { .. }
+            | Notice::CacheNotRead { .. }
             | Notice::CacheWalNotMerged { .. }
             | Notice::CacheStartedOver { .. }
             | Notice::ThumbsFailed { .. }
@@ -1315,6 +1342,8 @@ impl Notice {
             Notice::CacheTotalsFixed { .. }
             | Notice::CacheTouchesNotWritten { .. }
             | Notice::CacheNotStored { .. }
+            | Notice::CacheNotSwept { .. }
+            | Notice::CacheNotRead { .. }
             | Notice::CacheWalNotMerged { .. }
             | Notice::CacheStartedOver { .. }
             | Notice::CacheDisabled { .. } => Source::Cache,
@@ -1359,11 +1388,20 @@ impl Notice {
             Notice::LedgerNotWritten { .. } => {
                 self.key(None, None, Resolver::NextSuccess(Op::LedgerWrite(FilePass::Thumbs)))
             }
-            Notice::RoundFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Round)),
+            // A failed walk is a condition of its folder, as the scan notes are: a complete walk of the library folder
+            // replaces it. What follows a walk is an event.
+            Notice::ScanFailed { root, walk: true, .. } => self.key(Some(root), None, Resolver::RootWalk),
+            Notice::ScanFailed { walk: false, .. } => Lifecycle::Event,
+            // A lane's failed or panicked round is a state of the job, cleared by its next round that runs to its end.
+            Notice::RoundFailed { .. } | Notice::RoundPanicked { .. } => {
+                self.key(None, None, Resolver::NextSuccess(Op::Round))
+            }
             Notice::CacheFull { .. } => self.key(None, None, Resolver::CompletePass(FilePass::Thumbs)),
             Notice::PrefsNotSaved { .. } => self.key(None, None, Resolver::NextSave),
             Notice::CacheTouchesNotWritten { .. } => self.key(None, None, Resolver::TouchesRecovered),
             Notice::CacheNotStored { .. } => self.key(None, None, Resolver::StoreRecovered),
+            Notice::CacheNotSwept { .. } => self.key(None, None, Resolver::NextSuccess(Op::Sweep)),
+            Notice::CacheNotRead { .. } => self.key(None, None, Resolver::NextSuccess(Op::CacheRead)),
             Notice::WriteFailed { .. } | Notice::WriteStopped => self.key(None, None, Resolver::StatusPoll),
             Notice::ListingFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Listing)),
             Notice::RowReadFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::RowRead)),
@@ -1382,8 +1420,6 @@ impl Notice {
                 Lifecycle::Transient
             }
             Notice::WriteDropped { .. }
-            | Notice::ScanFailed { .. }
-            | Notice::RoundPanicked { .. }
             | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
             | Notice::BordersCut { .. }
@@ -1486,6 +1522,8 @@ impl Notice {
             | Notice::CacheTotalsFixed { .. }
             | Notice::CacheTouchesNotWritten { .. }
             | Notice::CacheNotStored { .. }
+            | Notice::CacheNotSwept { .. }
+            | Notice::CacheNotRead { .. }
             | Notice::CacheWalNotMerged { .. }
             | Notice::CacheStartedOver { .. }
             | Notice::CacheDisabled { .. }
@@ -1552,7 +1590,7 @@ impl Notice {
         };
         let error = || "access is denied".to_string();
         vec![
-            Notice::ScanFailed { root: root.clone(), error: error() },
+            Notice::ScanFailed { root: root.clone(), error: error(), walk: true },
             Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 2 },
             Notice::RoundFailed { error: error() },
             Notice::RoundPanicked { message: "index out of bounds".into() },
@@ -1634,6 +1672,8 @@ impl Notice {
                 temp: sample_path(&["Photos", "a.jpg.pg-write"]),
             },
             Notice::ChangesUnseen { error: error() },
+            Notice::CacheNotSwept { error: error() },
+            Notice::CacheNotRead { error: error() },
         ]
     }
 }
@@ -1726,10 +1766,12 @@ mod tests {
             Notice::BordersCut { .. } => 47,
             Notice::CutFailed { .. } => 48,
             Notice::FolderRemovalUnfinished { .. } => 49,
+            Notice::CacheNotSwept { .. } => 51,
+            Notice::CacheNotRead { .. } => 52,
         }
     }
 
-    const KINDS: usize = 51;
+    const KINDS: usize = 53;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {
@@ -1844,6 +1886,11 @@ mod tests {
                 r#"{"kind":"write-dropped","write":"rotation","count":2}"#,
             ),
             (Notice::ThumbsFailed { counts: None }, r#"{"kind":"thumbs-failed","counts":null}"#),
+            // What follows a walk, as an older build stored every scan failure: no `walk`.
+            (
+                Notice::ScanFailed { root: sample_path(&[]), error: "e".into(), walk: false },
+                r#"{"kind":"scan-failed","root":{"anchor":"D:","parts":[]},"error":"e"}"#,
+            ),
             (Notice::ScanFoldersFailed { counts: None }, r#"{"kind":"scan-folders-failed","counts":null}"#),
         ];
         for (notice, text) in golden {
@@ -1976,6 +2023,27 @@ mod tests {
         }
     }
 
+    /// A failed walk is a condition of its folder, kept under `(root, code)` until a complete walk replaces it; what
+    /// follows a walk is an event (section 9).
+    #[test]
+    fn a_failed_walk_is_a_condition_of_its_folder_and_its_aftermath_an_event() {
+        let root = sample_path(&["Photos"]);
+        let walk = Notice::ScanFailed { root: root.clone(), error: "e".into(), walk: true };
+        assert_eq!(walk.lifecycle(), Lifecycle::State(Key::all("scan-failed", Some(&root)), Resolver::RootWalk));
+        assert_eq!(walk.resolvers(), vec![Resolver::RootWalk, Resolver::RootRemoval]);
+        let after = Notice::ScanFailed { root, error: "e".into(), walk: false };
+        assert_eq!(after.lifecycle(), Lifecycle::Event);
+    }
+
+    /// A panicked round is a state, as a failed one is: each cleared by the next round that runs to its end.
+    #[test]
+    fn a_panicked_round_is_kept_until_a_round_runs() {
+        for notice in [Notice::RoundFailed { error: "e".into() }, Notice::RoundPanicked { message: "m".into() }] {
+            let resolver = Resolver::NextSuccess(Op::Round);
+            assert_eq!(notice.lifecycle(), Lifecycle::State(Key::all(notice.code(), None), resolver), "{notice:?}");
+        }
+    }
+
     /// A dropped write is a fact, not a condition: an event, with no key.
     #[test]
     fn a_dropped_write_is_an_event() {
@@ -1990,6 +2058,8 @@ mod tests {
         for (notice, resolver) in [
             (Notice::CacheTouchesNotWritten { error: "e".into() }, Resolver::TouchesRecovered),
             (Notice::CacheNotStored { error: "e".into() }, Resolver::StoreRecovered),
+            (Notice::CacheNotSwept { error: "e".into() }, Resolver::NextSuccess(Op::Sweep)),
+            (Notice::CacheNotRead { error: "e".into() }, Resolver::NextSuccess(Op::CacheRead)),
         ] {
             assert_eq!(notice.lifecycle(), Lifecycle::State(Key::all(notice.code(), None), resolver), "{notice:?}");
         }

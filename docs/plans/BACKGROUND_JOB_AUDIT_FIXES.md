@@ -10,6 +10,23 @@
 > (`MOUNT_POINTS_PLAN.md`); lanes, the busy requeue, unplugged roots and the pairing cooldown (`MULTI_DRIVE_LANES_PLAN.md`);
 > the notification ledger (`NOTIFICATIONS_PLAN.md`).
 
+> **Built (2026-11-25), sections 2–10.** One `cargo check`, then `cargo test` for the crates touched (1069 passed) and
+> `just lint`, all clean. Where the build departs from the text:
+>
+> - Section 3: a panicked round counts as a failed one for the backoff, as a failed round does.
+> - Section 5: `ScanError` is `Removed`, `LeaseLost` and `Failed` with fields, each carrying the committed pairing (boxed).
+>   A pairing batch's results join the total only after its commit, so a rolled-back batch adds nothing.
+> - Section 6: the re-pend of the malformed pictures is its own write transaction at the start of the write phase, not
+>   one of the pair writes; it checks each row in that transaction.
+> - Section 7: the length check is `ChangedWhileRead` (a `Read` failure). The import counts it as `changed`, and the
+>   hashes pass leaves the file owed. Other passes retry it as a read.
+> - Section 9: `ScanFailed` has `walk` (absent in older rows: an event). Only a failed walk is a `RootWalk` condition.
+> - Section 10: a cache failure sets `Cx::said`: a failed round for the backoff, with no `RoundFailed` of its own. The
+>   streamed merges are `pg_thumbs::pending::work` and `pg_library::removals::sweep_orphans`. `ThumbCache::pending` stays,
+>   for its own tests and the bench, and a test checks the merge against it. Crop's `pipeline::run` is not retyped.
+> - Not added: a `route_scans` unit test (it needs a spawned lane), a library test of a dropped catalog view (the library
+>   has no `rusqlite` dev-dependency), and the section 8 check by hand.
+
 ## Goals
 
 1. A removed folder's files are not touched again, and do not come back.

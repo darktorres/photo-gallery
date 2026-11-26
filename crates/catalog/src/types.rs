@@ -537,6 +537,9 @@ pub struct PairingWork {
     /// paired, and reported. Re-importing them (a new IMPORT_VERSION) makes them pictures; it reaches only those
     /// files, so only they are counted.
     pub legacy: u64,
+    /// Analyses whose stored hashes don't read as this build's (another length, or not a blob), in file-id order: left out
+    /// of the load, not a failure of it (section 6). The pass has them analysed again (`PairsWriter::repend_malformed`).
+    pub malformed: Vec<FileId>,
     /// The catalog's pairing marks in the load's snapshot, which the writes compare theirs with (`PairsWriter::write`).
     pub marks: PairingMarks,
 }

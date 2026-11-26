@@ -359,8 +359,13 @@ impl Error {
 
 /// Why a scan didn't run, or didn't finish: the folder is refused (before any walk; the refusal is in the folder
 /// ledger), a walk of an overlapping folder holds its lease (nothing was written: try again once it ends), the folder
-/// was removed from the library while it was walked (nothing more was written: there is nothing to try again), or the
-/// scan failed (its batches before the error are in).
+/// was removed from the library while it was walked (nothing more was written: there is nothing to try again), the
+/// walk's lease expired while it was held up (nothing more was written: walk it again), or the scan failed (its batches
+/// before the error are in).
+///
+/// A walk that ended after its pairing began carries what the pairing's committed batches did (`pairing`): their
+/// replaced rows' thumbnails and their dropped temp files are the caller's to act on, as after a walk that completed
+/// (section 5). Before the pairing, it is empty.
 #[derive(Debug)]
 pub enum ScanError {
     /// The folder is refused: its file system, or where it is, keeps the scan out (the reason says which).
@@ -379,20 +384,47 @@ pub enum ScanError {
     Removed {
         /// The folder that was removed, as the catalog holds its path.
         root: String,
+        /// What the pairing's committed batches did.
+        pairing: Box<Pairing>,
+    },
+    /// The walk's lease expired while it was held up (`pg_catalog::Error::LeaseLost`): another walk may have begun, so it
+    /// wrote nothing more. The folder is still in the library; walking it again starts from its root.
+    LeaseLost {
+        /// The folder whose walk lost its lease, as the catalog displays it.
+        root: String,
+        /// What the pairing's committed batches did.
+        pairing: Box<Pairing>,
     },
     /// The scan failed for another reason (see [`Error`]).
-    Failed(Error),
+    Failed {
+        /// Why.
+        error: Error,
+        /// What the pairing's committed batches did.
+        pairing: Box<Pairing>,
+    },
+}
+
+impl ScanError {
+    /// What the pairing's committed batches did before the scan ended with this error (empty when it never began).
+    pub fn pairing(&self) -> Option<&Pairing> {
+        match self {
+            ScanError::Removed { pairing, .. }
+            | ScanError::LeaseLost { pairing, .. }
+            | ScanError::Failed { pairing, .. } => Some(pairing.as_ref()),
+            ScanError::Refused(_) | ScanError::Busy { .. } => None,
+        }
+    }
 }
 
 impl From<Error> for ScanError {
-    fn from(e: Error) -> ScanError {
-        ScanError::Failed(e)
+    fn from(error: Error) -> ScanError {
+        ScanError::Failed { error, pairing: Box::default() }
     }
 }
 
 impl From<pg_catalog::Error> for ScanError {
     fn from(e: pg_catalog::Error) -> ScanError {
-        ScanError::Failed(Error::Catalog(e))
+        ScanError::from(Error::Catalog(e))
     }
 }
 
@@ -404,8 +436,11 @@ impl std::fmt::Display for ScanError {
             ScanError::Busy { root, holder } => {
                 write!(f, "a scan of {} is running ({holder})", PATH_RULES.display(root))
             }
-            ScanError::Removed { root } => write!(f, "{root} was removed from the library while it was scanned"),
-            ScanError::Failed(e) => write!(f, "{e:#}"),
+            ScanError::Removed { root, .. } => write!(f, "{root} was removed from the library while it was scanned"),
+            ScanError::LeaseLost { root, .. } => {
+                write!(f, "the lease of the scan of {root} was lost (it expired while the walk was held up)")
+            }
+            ScanError::Failed { error, .. } => write!(f, "{error:#}"),
         }
     }
 }
@@ -923,21 +958,29 @@ fn walk_paced<L: Listing>(
         lister.volume(&root_dir).map_err(|e| Error::step(format!("the volume of {}", rules.display(root)), e))?;
     let mut lease = catalog.begin_scan(root).map_err(|e| match e {
         pg_catalog::Error::ScanBusy { root, holder } => ScanError::Busy { root, holder },
-        e => ScanError::Failed(e.into()),
+        e => ScanError::from(e),
     })?;
     drop(setup);
     // The lease is given back when it is dropped, however the walk ends (a complete walk gave it back already, in its
     // last transaction).
+    let mut partial = Pairing::default();
     let walked = walk_leased(
         &mut lease,
         Start { path: root, dir: root_dir, device: root_device, volume: root_volume },
         ctl,
         lister,
         pacing,
+        &mut partial,
     )
-    .map_err(|e| match removed(&e) {
-        Some(root) => ScanError::Removed { root },
-        None => ScanError::Failed(e),
+    .map_err(|error| {
+        let pairing = Box::new(std::mem::take(&mut partial));
+        if let Some(root) = removed(&error) {
+            ScanError::Removed { root, pairing }
+        } else if let Some(root) = lost(&error) {
+            ScanError::LeaseLost { root, pairing }
+        } else {
+            ScanError::Failed { error, pairing }
+        }
     });
     if let Ok(stats) = &walked {
         pass.items(stats.files);
@@ -971,15 +1014,33 @@ static RENEW: pg_perf::Tally = pg_perf::Tally::new("scan.renew");
 /// The folder whose removal from the library ended the walk with `e` (`pg_catalog::Error::RootRemoved`, anywhere in its
 /// chain), if that is what ended it.
 fn removed(e: &Error) -> Option<String> {
+    catalog_cause(e, |cause| match cause {
+        pg_catalog::Error::RootRemoved { root } => Some(pg_platform::native::PATH_RULES.display(root)),
+        _ => None,
+    })
+}
+
+/// The folder whose walk lost its lease (`pg_catalog::Error::LeaseLost`, anywhere in `e`'s chain), if that is what ended it.
+fn lost(e: &Error) -> Option<String> {
+    catalog_cause(e, |cause| match cause {
+        pg_catalog::Error::LeaseLost { root } => Some(root.clone()),
+        _ => None,
+    })
+}
+
+/// The first catalog error in `e`'s chain that `pick` answers for, with its answer.
+fn catalog_cause<T>(e: &Error, pick: impl Fn(&pg_catalog::Error) -> Option<T>) -> Option<T> {
     // The catalog's error is wrapped transparently, so its source chain starts below it: it is matched here, and the
     // causes under the others are walked.
-    if let Error::Catalog(pg_catalog::Error::RootRemoved { root }) = e {
-        return Some(pg_platform::native::PATH_RULES.display(root));
+    if let Error::Catalog(catalog) = e
+        && let Some(found) = pick(catalog)
+    {
+        return Some(found);
     }
     let mut cause = std::error::Error::source(e);
     while let Some(next) = cause {
-        if let Some(pg_catalog::Error::RootRemoved { root }) = next.downcast_ref::<pg_catalog::Error>() {
-            return Some(pg_platform::native::PATH_RULES.display(root));
+        if let Some(found) = next.downcast_ref::<pg_catalog::Error>().and_then(&pick) {
+            return Some(found);
         }
         cause = next.source();
     }
@@ -993,12 +1054,16 @@ fn removed(e: &Error) -> Option<String> {
 /// whatever the workers do. The lease is renewed at each checkpoint, while this thread lists a folder (each record, once
 /// `renew_every` has passed), while it waits for a worker's listing (once that listing has moved), and with each batch.
 /// A walk that can't renew it has lost it, and ends with the error.
+///
+/// `partial` holds what the pairing's committed batches did while the walk's end runs: a walk that fails after its
+/// pairing began leaves it there for the caller, whose error carries it (section 5).
 fn walk_leased<L: Listing>(
     lease: &mut ScanLease<'_>,
     start: Start<'_, L::Dir>,
     ctl: &Control,
     lister: &mut L,
     pacing: Pacing,
+    partial: &mut Pairing,
 ) -> Result<ScanStats> {
     let Start { path: root, dir: root_dir, device: root_device, volume: root_volume } = start;
     let rules = lease.rules();
@@ -1260,13 +1325,23 @@ fn walk_leased<L: Listing>(
         // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
         // and outside the folders it skipped. Each of its transactions, and the missing marks', holds the lease first, as
         // the batches do: after the folder's removal, none of them writes.
-        stats.pairing = lease.pair_after_scan(Coverage { complete, skipped: &skipped })?;
+        // What its committed batches did is kept in `partial` first, so a failure here or in the missing marks after it
+        // still hands the caller the replaced rows and the temp files (section 5).
+        match lease.pair_after_scan(Coverage { complete, skipped: &skipped }) {
+            Ok(pairing) => *partial = pairing,
+            Err(failed) => {
+                let failed = *failed;
+                *partial = failed.done;
+                return Err(failed.error.into());
+            }
+        }
         if complete {
             // Its last transaction sweeps the folder ledger under `root` and gives the lease back.
             stats.missing = lease.mark_missing(&skipped)?;
             lease.finish_scan(scan_id)?;
             ctl.ledger_changed();
         }
+        stats.pairing = std::mem::take(partial);
         stats.complete = complete;
         stats.volume_fallbacks = lister.fallback_volumes();
         Ok(stats)
@@ -2243,7 +2318,8 @@ mod tests {
         });
         let mut c = open(&path);
         let failed = walk_in_batches(&mut c, &fake_root(), &Control::new(), &mut lister, BATCH, Duration::ZERO);
-        assert!(failed.is_err(), "a walk whose lease was taken ends with an error");
+        // Its own kind (section 5): the job walks the folder again after the busy retry, as it does for a busy lease.
+        assert!(matches!(failed, Err(ScanError::LeaseLost { .. })), "{failed:?}");
         let next = walk(&mut open(&path), &fake_root(), &Control::new(), &mut FakeListing::new(1, &tree)).unwrap();
         assert!(next.complete, "the next walk is not refused");
     }

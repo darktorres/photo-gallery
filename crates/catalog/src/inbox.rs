@@ -616,7 +616,7 @@ mod tests {
         c.replace_notices(&Key::all("scan-note", Some(&root)), &[note(&root, ScanNote::Ambiguous)], 6).unwrap();
         let notes: Vec<EntryId> = c.inbox_entries(10, false).unwrap().iter().map(|e| e.id.entry()).collect();
         assert_eq!(notes, [kept.entry()]);
-        c.post_notice(&Notice::ScanFailed { root: root.clone(), error: "e".into() }, 6).unwrap();
+        c.post_notice(&Notice::ScanFailed { root: root.clone(), error: "e".into(), walk: false }, 6).unwrap();
         c.post_notice(&failed("a"), 7).unwrap();
         let id = c.roots().unwrap()[0].id;
         c.remove_root(id).unwrap();

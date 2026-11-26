@@ -192,16 +192,34 @@ type HideHook = Arc<dyn Fn(&pg_model::rules::Path) + Send + Sync>;
 #[cfg(test)]
 type ParkedHook = Arc<dyn Fn(&pg_model::rules::Path) -> std::result::Result<(), String> + Send + Sync>;
 
+/// A hook at each folder the scans pass takes from its queue, before it reads the roots, with the folder.
+#[cfg(test)]
+type PopHook = Arc<dyn Fn(&pg_model::rules::Path) + Send + Sync>;
+
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct TestHooks {
     round: Mutex<Option<RoundHook>>,
     hide: Mutex<Option<HideHook>>,
     parked: Mutex<Option<ParkedHook>>,
+    pop: Mutex<Option<PopHook>>,
 }
 
 #[cfg(test)]
 impl TestHooks {
+    /// Runs `hook` at each folder the scans pass takes from its queue, before it reads the roots.
+    pub(crate) fn on_pop(&self, hook: impl Fn(&pg_model::rules::Path) + Send + Sync + 'static) {
+        *self.pop.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// The pop hook, if one is set.
+    pub(crate) fn at_pop(&self, path: &pg_model::rules::Path) {
+        let hook = self.pop.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(hook) = hook {
+            hook(path);
+        }
+    }
+
     /// Runs `hook` at the start of each lane round, with the lane's volumes.
     pub(crate) fn on_round(&self, hook: impl Fn(&VolumeSet) + Send + Sync + 'static) {
         *self.round.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));

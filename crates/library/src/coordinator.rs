@@ -25,7 +25,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
 use pg_model::job::Change;
-use pg_model::notice::{ERROR_CAP, Notice, tidy};
+use pg_model::notice::{ERROR_CAP, Notice, Op, Trigger, tidy};
 use pg_model::progress::LaneProgress;
 use pg_model::progress::{Phase, Progress};
 use pg_model::removal::Volumes;
@@ -39,6 +39,7 @@ use crate::lanes::{self, Place, probe_place};
 use crate::passes::{count, cut_done, error_text, file_failure};
 use crate::removals;
 use crate::shared::Shared;
+use crate::tally::RoundEnd;
 
 /// How long a root's probe may run before its root is taken as unknown: the lanes collapse to one until it answers.
 const PROBE_DEADLINE: Duration = Duration::from_secs(5);
@@ -378,7 +379,16 @@ impl Lanes {
             None => Catalog::open(&self.shared.catalog_path, PATH_RULES)?,
         };
         let rules = conn.rules();
-        let roots: Vec<RulePath> = conn.roots()?.into_iter().map(|r| r.path).collect();
+        // The requests are taken before the roots are read (section 2): the app adds a root before it asks for its scan, so
+        // every request taken here is for a root the read below includes. A failure before they are routed puts them back.
+        let pending = std::mem::take(&mut self.registry().scans);
+        let roots: Vec<RulePath> = match conn.roots() {
+            Ok(roots) => roots.into_iter().map(|r| r.path).collect(),
+            Err(e) => {
+                self.unroute(pending);
+                return Err(e.into());
+            }
+        };
         let now = Instant::now();
         let turned = std::mem::take(&mut self.registry().turned);
         if !turned.is_empty() {
@@ -426,7 +436,13 @@ impl Lanes {
                 .collect();
             let groups = lanes::plan(&places);
             let before = lane_names(&reg.lanes);
-            let retiring = self.assign_lanes(&mut reg, &groups, &volumes)?;
+            let retiring = match self.assign_lanes(&mut reg, &groups, &volumes) {
+                Ok(retiring) => retiring,
+                Err(e) => {
+                    requeue(&mut reg.scans, pending);
+                    return Err(e);
+                }
+            };
             for lane in &reg.lanes {
                 let place_of =
                     |root: &RulePath| places.iter().find(|(path, _)| path == root).and_then(|(_, place)| place.clone());
@@ -439,7 +455,7 @@ impl Lanes {
             if before != lane_names(&reg.lanes) {
                 self.root.announce();
             }
-            self.route_scans(&mut reg, &rules, &roots);
+            route_scans(&mut reg, &rules, &roots, pending);
             let next = reg.probes.values().filter_map(|probe| probe.due(now)).min();
             (retiring, next.map(|due| due.saturating_duration_since(Instant::now())))
         };
@@ -502,24 +518,9 @@ impl Lanes {
         Ok(retiring)
     }
 
-    /// Gives each queued folder to the lane of its root. A folder under no library root is dropped (it isn't in the library);
-    /// one whose root has no lane yet waits for it.
-    fn route_scans(&self, reg: &mut Registry, rules: &PathRules, roots: &[RulePath]) {
-        let pending = std::mem::take(&mut reg.scans);
-        for path in pending {
-            let Some(root) = roots.iter().find(|root| rules.is_under(&path, root)) else { continue };
-            match reg.lanes.iter().find(|lane| lane.roots.contains(root)) {
-                Some(lane) => {
-                    if !lane.inner.scans().contains(&path) {
-                        lane.inner.scans().push_back(path);
-                    }
-                    // A new folder for a lane: its round stops at the next file, and the folder is walked next.
-                    lane.inner.ctl.request_stop();
-                    lane.service.wake();
-                }
-                None => reg.scans.push_back(path),
-            }
-        }
+    /// Requests taken from the queue and not routed (the round failed before it routed them) go back to its front.
+    fn unroute(&self, pending: VecDeque<RulePath>) {
+        requeue(&mut self.registry().scans, pending);
     }
 
     /// Stops and ends the retired lanes. Their queued and refused scans go back to the coordinator, to be routed to the
@@ -755,6 +756,38 @@ impl Lanes {
     }
 }
 
+/// Gives each folder of `pending` (the requests taken before `roots` were read, section 2) to the lane of its root. A folder
+/// under no library root is dropped (it isn't in the library: it was removed); one whose root has no lane yet waits for it.
+fn route_scans(reg: &mut Registry, rules: &PathRules, roots: &[RulePath], pending: VecDeque<RulePath>) {
+    for path in pending {
+        let Some(root) = roots.iter().find(|root| rules.is_under(&path, root)) else { continue };
+        match reg.lanes.iter().find(|lane| lane.roots.contains(root)) {
+            Some(lane) => {
+                if !lane.inner.scans().contains(&path) {
+                    lane.inner.scans().push_back(path);
+                }
+                // A new folder for a lane: its round stops at the next file, and the folder is walked next.
+                lane.inner.ctl.request_stop();
+                lane.service.wake();
+            }
+            None => {
+                if !reg.scans.contains(&path) {
+                    reg.scans.push_back(path);
+                }
+            }
+        }
+    }
+}
+
+/// Puts `pending` back at the front of `queue`, in its order, skipping a folder asked for again meanwhile.
+fn requeue(queue: &mut VecDeque<RulePath>, pending: VecDeque<RulePath>) {
+    for path in pending.into_iter().rev() {
+        if !queue.contains(&path) {
+            queue.push_front(path);
+        }
+    }
+}
+
 /// The coordinator's thread: a round each time it is woken, or when the next probe is due.
 fn coordinate(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     let mut catalog: Option<Catalog> = None;
@@ -766,11 +799,11 @@ fn coordinate(weak: &Weak<Lanes>, waker: &Waker<'_>) {
         let Some(lanes) = weak.upgrade() else { return };
         next = match lanes.route(&mut catalog) {
             Ok(next) => {
-                lanes.shared.tally.round(COORDINATOR, None);
+                lanes.shared.tally.round(COORDINATOR, RoundEnd::Done);
                 next
             }
             Err(e) => {
-                lanes.shared.tally.round(COORDINATOR, Some(error_text(&e)));
+                lanes.shared.tally.round(COORDINATOR, RoundEnd::Failed(error_text(&e)));
                 Some(PLACE_TTL)
             }
         };
@@ -813,13 +846,9 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
             return;
         }
         let Some(lanes) = weak.upgrade() else { return };
+        // Until it succeeds, tried again at each recheck (section 10, D12); its failure is the kept `CacheNotSwept`.
         if !swept {
-            swept = true;
-            if let Err(e) = lanes.shared.thumbs.sweep_orphans(&lanes.shared.catalog_path) {
-                lanes.shared.notices.post(Notice::FolderNotRemoved {
-                    error: format!("the thumbnails of removed files weren't dropped: {}", error_text(&e)),
-                });
-            }
+            swept = lanes.startup_sweep(&mut catalog);
         }
         match lanes.run_removals(&mut catalog, !adopted) {
             Ok(true) => {
@@ -880,13 +909,44 @@ impl Lanes {
         let total = catalog.removal_files().unwrap_or(0);
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
-        let finished = removals::drive(catalog, &self.shared.thumbs, &self.shared.catalog_path, &mut |files| {
+        let finished = removals::drive(catalog, &self.shared.thumbs, &mut |files| {
             done = done.saturating_add(u64::try_from(files).unwrap_or(u64::MAX));
             self.removal_ctl.set_done(done);
             self.removal_ctl.checkpoint()
         });
         self.shared.changes.publish(Change::Scanned);
-        finished.map(|_| true).map_err(|e| error_text(&e))
+        // The sweep's outcome is said apart: it is not the removal's failure (section 10, D12).
+        let finished = finished.map_err(|e| error_text(&e))?;
+        self.swept(&finished.swept);
+        Ok(true)
+    }
+
+    /// The sweep of the cache's orphans at the removal job's start, on its connection (opened if it has none): what a command
+    /// removed with the app closed. Whether it succeeded; a failure is said, and the sweep is tried again at the recheck.
+    fn startup_sweep(&self, conn: &mut Option<Catalog>) -> bool {
+        let catalog = match conn.take() {
+            Some(c) => c,
+            None => match Catalog::open(&self.shared.catalog_path, PATH_RULES) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.swept(&Err(e.into()));
+                    return false;
+                }
+            },
+        };
+        let outcome = removals::sweep_orphans(&self.shared.thumbs, &catalog);
+        *conn = Some(catalog);
+        self.swept(&outcome);
+        outcome.is_ok()
+    }
+
+    /// A sweep's outcome, told (section 10, D12): a failure is the kept `CacheNotSwept` state, replaced by a repeat; a
+    /// sweep that ran clears it.
+    fn swept(&self, outcome: &Result<usize>) {
+        match outcome {
+            Ok(_) => self.shared.notices.resolve(Trigger::Op(Op::Sweep)),
+            Err(e) => self.shared.notices.post(Notice::CacheNotSwept { error: error_text(&pg_model::error::chain(e)) }),
+        }
     }
 
     /// One marker's hide (section 1, D1): its lanes are parked on the folder's volumes, its files are hidden in batches,

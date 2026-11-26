@@ -1,11 +1,13 @@
 | Kind | Part | Cleared by |
 |---|---|---|
+| `scan-failed` | — | `root-walk`, `root-removal` |
 | `scan-note` | `duplicates` | `root-walk`, `root-removal` |
 | `scan-note` | `reparse` | `root-walk`, `root-removal` |
 | `scan-note` | `ambiguous` | `root-walk`, `root-removal` |
 | `scan-note` | `unpaired` | `root-walk`, `root-removal` |
 | `scan-note` | `volume-id` | `root-walk`, `root-removal` |
 | `round-failed` | — | `next-success(round)` |
+| `round-panicked` | — | `next-success(round)` |
 | `cache-full` | — | `complete-pass(thumbs)` |
 | `prefs-not-saved` | — | `next-save` |
 | `cache-touches-not-written` | — | `touches-recovered` |
@@ -29,3 +31,5 @@
 | `unreadable-files` | `import` | `complete-pass(import)` |
 | `ledger-not-written` | — | `next-success(ledger-write-thumbs)` |
 | `session-not-read` | — | `next-success(session)` |
+| `cache-not-swept` | — | `next-success(sweep)` |
+| `cache-not-read` | — | `next-success(cache-read)` |

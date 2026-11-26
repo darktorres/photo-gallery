@@ -9,8 +9,8 @@ use pg_catalog::Catalog;
 use pg_jobs::failure::Failed;
 use pg_jobs::schedule::{Pass, Step};
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, tidy};
-use pg_model::rules::Path as RulePath;
+use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Op, Trigger, tidy};
+use pg_model::rules::{Path as RulePath, PathRules};
 use pg_scan::ScanError;
 
 use crate::Error;
@@ -19,10 +19,13 @@ use crate::scans;
 use crate::shared::Shared;
 use crate::tuning::TunedPass;
 
-/// A lane's pass context: the lane, and its round's connection.
+/// A lane's pass context: the lane, its round's connection, and whether a pass of the round failed with an error it said
+/// with a notice of its own (the thumbnail cache's states, section 10 D7): the round is then a failed one for the backoff,
+/// and posts no `RoundFailed` for it.
 pub(crate) struct Cx<'a> {
     pub(crate) inner: &'a Inner,
     pub(crate) catalog: &'a mut Catalog,
+    pub(crate) said: &'a mut bool,
 }
 
 /// The notice of a crop job's file failure: its error capped as a notice holds it.
@@ -55,6 +58,27 @@ pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
     shared.imported();
 }
 
+/// The lost leases of one folder's walks in a row at which the loss is said (section 5): one or two are a walk held up,
+/// walked again quietly.
+pub(crate) const LOSSES_SAID: u32 = 3;
+
+/// What the pairing of a walk committed, acted on after the commit: the thumbnails of the rows it replaced and of the fresh
+/// rows it deleted are forgotten (section 10, D14), and the temp files of the queued writes it dropped are deleted. A
+/// failure of either is said as an event (`ScanFailed`, not a walk's).
+pub(crate) fn after_pairing(inner: &Inner, rules: PathRules, path: &RulePath, pairing: &pg_catalog::pair::Pairing) {
+    let stale: Vec<FileId> = pairing.replaced_ids.iter().chain(&pairing.deleted_ids).copied().collect();
+    for (_, e) in scans::forget_replaced(&inner.shared.thumbs, &stale) {
+        inner.notify(Notice::ScanFailed { root: path.clone(), error: error_chain(&e), walk: false });
+    }
+    for (temp, e) in pg_writeback::discard_temps(rules, &pairing.temps) {
+        inner.notify(Notice::ScanFailed {
+            root: path.clone(),
+            error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),
+            walk: false,
+        });
+    }
+}
+
 /// Walks the folders asked for, skipping those no longer in the library. A scan stopped early goes back to the front.
 pub(crate) struct Scans;
 
@@ -62,12 +86,23 @@ impl Pass<Cx<'_>> for Scans {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step, Failed> {
         let shared = &cx.inner.shared;
         let rules = cx.catalog.rules();
-        let library: Vec<RulePath> = cx.catalog.roots().map_err(Error::from)?.into_iter().map(|r| r.path).collect();
         loop {
             let Some(path) = cx.inner.scans().pop_front() else {
                 return Ok(Step::Done);
             };
-            // A folder asked for that is no longer in the library is skipped.
+            #[cfg(test)]
+            shared.hooks.at_pop(&path);
+            // The roots as they are at this pop, not at the pass's start: a folder added while an earlier walk ran is in
+            // them (section 2). Roots are few, so this is one indexed read per walk. A read that fails puts the folder back.
+            let library: Vec<RulePath> = match cx.catalog.roots() {
+                Ok(roots) => roots.into_iter().map(|r| r.path).collect(),
+                Err(e) => {
+                    cx.inner.scans().push_front(path);
+                    return Err(Error::from(e).into());
+                }
+            };
+            // A folder asked for that is no longer in the library is skipped: a removed folder, whose scans the removal
+            // stopped.
             if !library.iter().any(|l| rules.is_under(&path, l)) {
                 continue;
             }
@@ -77,22 +112,16 @@ impl Pass<Cx<'_>> for Scans {
             // What a scan leaves to the runner after the scan's phase has closed: the replaced thumbnails, the temp files, the
             // notices.
             let _after = pg_perf::span("scan.after");
+            // What the pairing's committed batches did is acted on however the walk ended (section 5): a walk that failed
+            // after them carries them in its error.
+            if let Some(pairing) = scanned.as_ref().map_or_else(ScanError::pairing, |s| Some(&s.pairing)) {
+                after_pairing(cx.inner, rules, &path, pairing);
+            }
             match scanned {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.
                     if s.changed > 0 || s.missing > 0 || s.pairing.rebound > 0 || s.pairing.replaced > 0 {
                         cx.inner.scanned();
-                    }
-                    // What the pairing replaced loses its thumbnails and the temp files of its queued writes.
-                    // Both come after the catalog's commit, which the scan made.
-                    for (_, e) in scans::forget_replaced(&shared.thumbs, &s.pairing.replaced_ids) {
-                        cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_chain(&e) });
-                    }
-                    for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
-                        cx.inner.notify(Notice::ScanFailed {
-                            root: path.clone(),
-                            error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),
-                        });
                     }
                     let found = scans::scan_notices(&path, &s);
                     // What the walk did is said whatever folder it walked, and stopped or not: the pairing's binds and
@@ -108,9 +137,13 @@ impl Pass<Cx<'_>> for Scans {
                     // conditions) are replaced by the ones it found. A walk of a folder under it looked at part of the
                     // folder only, so it changes none of them. The folders it couldn't read are the folder ledger's,
                     // which the walk itself recorded and swept.
+                    // A failed walk of it is a condition of the folder too (section 9): the complete walk clears it.
                     if library.contains(&path) {
                         shared.notices.replace(Key::all("scan-note", Some(&path)).to_buf(), found.conditions);
+                        shared.notices.replace(Key::all("scan-failed", Some(&path)).to_buf(), Vec::new());
                     }
+                    // A complete walk ends the run of lost leases.
+                    cx.inner.lease_kept(&path);
                 }
                 // Refused before any walk: the refusal is in the folder ledger (`pg_scan::scan` recorded it, and poked
                 // the inbox), until a walk of the folder can run.
@@ -122,8 +155,23 @@ impl Pass<Cx<'_>> for Scans {
                 // removal marked its files missing and took the walk's lease, so the walk wrote nothing after it.
                 // Nothing failed, and the folder isn't asked for again.
                 Err(ScanError::Removed { .. }) => {}
-                Err(ScanError::Failed(e)) => {
-                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_chain(&e) });
+                // The walk's lease expired while it was held up (section 5): the folder is still in the library (a
+                // removal ends a walk as `Removed`), so it is walked again after the busy retry, from its root. The
+                // first losses say nothing; [`LOSSES_SAID`] in a row say so, kept as a condition of the folder.
+                Err(error @ ScanError::LeaseLost { .. }) => {
+                    if cx.inner.lease_lost(&path) >= LOSSES_SAID {
+                        cx.inner.notify(Notice::ScanFailed {
+                            root: path.clone(),
+                            error: error_chain(&error),
+                            walk: true,
+                        });
+                    }
+                    // Its batches before the loss are in.
+                    cx.inner.scanned();
+                    cx.inner.walk_busy(path);
+                }
+                Err(ScanError::Failed { error, .. }) => {
+                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_chain(&error), walk: true });
                     // Its batches before the error are in.
                     cx.inner.scanned();
                 }
@@ -267,20 +315,22 @@ impl Pass<Cx<'_>> for Thumbs {
         let opts = cx.inner.options(TunedPass::Thumbs);
         let volumes = cx.inner.volume_set();
         let thumbs = &cx.inner.shared.thumbs;
-        let s = match pg_thumbs::run_while(
+        let ran = pg_thumbs::run_while(
             thumbs,
             &cx.inner.shared.catalog_path,
             height,
             &opts,
             &volumes,
             &|| heights.get() == Some(height) && !thumbs.suspended(),
+            &pg_thumbs::new_maker,
             &cx.inner.ctl,
-        ) {
-            Ok(s) => s,
-            // A pass that fails is said, and the round goes on to the duplicates and the borders, which are after it.
-            Err(e) => {
-                cx.inner.notify(Notice::CacheNotStored { error: error_chain(&e) });
-                return Ok(Step::Done);
+        );
+        // What the pass did is reported however it ended (section 10, D6): its ledger outcome, its unreadable files.
+        let (s, error) = match ran {
+            Ok(s) => (s, None),
+            Err(stopped) => {
+                let pg_thumbs::Stopped { error, stats } = *stopped;
+                (stats, Some(error))
             }
         };
         if s.cache_full {
@@ -290,7 +340,34 @@ impl Pass<Cx<'_>> for Thumbs {
         }
         cx.inner.files_read(FilePass::Thumbs, s.unreadable, s.complete);
         cx.inner.ledger_written(s.ledger);
-        Ok(Step::Done)
+        match error {
+            // The cache was read: a failed read's notice no longer holds.
+            None => {
+                cx.inner.shared.notices.resolve(Trigger::Op(Op::CacheRead));
+                Ok(Step::Done)
+            }
+            Some(error) => cache_failure(cx, error),
+        }
+    }
+}
+
+/// A thumbnail or placeholder pass's error, classified (section 10, D7). The cache's store and read failures are said with
+/// their own states (`CacheNotStored`, `CacheNotRead`) and make the round a failed one for the backoff without a
+/// `RoundFailed` (`Cx::said`); the passes after it still run (section 3). Every other error (the catalog, the maker's
+/// start, the pipeline) is the round's.
+fn cache_failure(cx: &mut Cx<'_>, error: pg_thumbs::Error) -> Result<Step, Failed> {
+    match error {
+        pg_thumbs::Error::CacheStore(e) => {
+            cx.inner.notify(Notice::CacheNotStored { error: error_chain(&e) });
+            *cx.said = true;
+            Ok(Step::Done)
+        }
+        pg_thumbs::Error::CacheRead(e) => {
+            cx.inner.notify(Notice::CacheNotRead { error: error_chain(&e) });
+            *cx.said = true;
+            Ok(Step::Done)
+        }
+        other => Err(Failed::new(pg_jobs::failure::Class::Other, other)),
     }
 }
 
@@ -308,14 +385,19 @@ impl Pass<Cx<'_>> for Placeholders {
         // Its failures (the files that don't decode) are the Thumbs ledger's rows, which the pass writes in its batches.
         let volumes = cx.inner.volume_set();
         let thumbs = &cx.inner.shared.thumbs;
-        pg_thumbs::placeholders::run_while(
+        let opts = cx.inner.options(TunedPass::Placeholders);
+        let ran = pg_thumbs::placeholders::run_while(
             cx.catalog,
             thumbs,
-            &cx.inner.options(TunedPass::Placeholders),
+            &opts,
             &volumes,
             &|| !thumbs.suspended(),
+            &pg_thumbs::new_maker,
             &cx.inner.ctl,
-        )?;
-        Ok(Step::Done)
+        );
+        match ran {
+            Ok(_) => Ok(Step::Done),
+            Err(stopped) => cache_failure(cx, stopped.error),
+        }
     }
 }

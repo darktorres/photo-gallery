@@ -45,7 +45,7 @@ pub use error::{Error, Result};
 pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 pub use maintenance::Drift;
 pub use reader::pending_in;
-pub use types::{Effect, Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
+pub use types::{Effect, EntryRow, Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
 
 use std::path::Path;
 
@@ -189,11 +189,24 @@ impl ThumbCache {
                 })
                 .optional()?
                 .flatten())
-        })?;
+        });
+        // A row whose values its columns can't hold is that row's, not the cache's (section 10, D8): a miss, and the file's
+        // entries are forgotten (best effort, as a touch is), so the next thumbs pass makes them again. Any other error is
+        // the cache's.
+        let found = match found {
+            Ok(found) => found,
+            Err(e) if e.is_value() => {
+                let _ = self.forget(file_id);
+                return Ok(None);
+            }
+            Err(e) => return Err(e),
+        };
         let Some((id, h, last_used)) = found else { return Ok(None) };
-        // The schema holds heights in 16..=2048 (a CHECK), so a stored one out of them is a corrupt cache, not a thumbnail.
-        let h = ThumbHeight::new(h)
-            .ok_or_else(|| Error::invalid(format!("the cache holds a {h}-pixel thumbnail, outside its heights")))?;
+        // The schema holds heights in 16..=2048 (a CHECK), so a stored one out of them is a bad row: a miss, as above.
+        let Some(h) = ThumbHeight::new(h) else {
+            let _ = self.forget(file_id);
+            return Ok(None);
+        };
         if last_used < unix_now() - i64::try_from(TOUCH_AGE.as_secs()).unwrap_or(i64::MAX) {
             // Best-effort: a cache closing doesn't fail the read.
             let _ = self.send(Op::Touch(id));
@@ -261,15 +274,6 @@ impl ThumbCache {
         self.call(|reply| Op::ForgetMany { file_ids: file_ids.to_vec(), reply })?
     }
 
-    /// Drops the thumbnails of the files the catalog at `catalog` no longer has (`reader::orphans_in`): what a removal
-    /// left behind, or an entry of a catalog that was rebuilt. Returns how many files were dropped. Waits.
-    pub fn sweep_orphans(&self, catalog: &Path) -> Result<usize> {
-        let Some(store) = &self.store else { return Ok(0) };
-        let orphans = reader::orphans_in(&store.path, catalog)?;
-        self.forget_many(&orphans)?;
-        Ok(orphans.len())
-    }
-
     /// Drop the thumbnail of `file_id` at `height`, for one that doesn't decode, and forget how far that height was
     /// checked (as an eviction does): the next pass at that height looks at every file again, and makes it anew from
     /// the original. Waits.
@@ -309,6 +313,69 @@ impl ThumbCache {
         store
             .readers
             .with(|conn| Ok(conn.query_row("SELECT bytes, count FROM totals", [], |r| Ok((r.get(0)?, r.get(1)?)))?))
+    }
+
+    /// The marks the thumbs pass's work starts from (section 10, D10, step 2), on the cache's own connection: the change
+    /// number every one of `volumes` was checked up to at `height` (none when one has no checkpoint, or there is no
+    /// volume), and the height's evictions. Nothing is read from the catalog.
+    pub fn pending_marks(&self, height: ThumbHeight, volumes: &[i64]) -> Result<(Option<i64>, i64)> {
+        let Some(store) = &self.store else { return Ok((None, 0)) };
+        store.readers.with(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            let evictions: i64 = tx
+                .query_row("SELECT evictions FROM checked WHERE height = ?1", [height.get()], |r| r.get(0))
+                .optional()?
+                .unwrap_or(0);
+            let since = reader::checkpoint_since(&tx, i64::from(height.get()), volumes)?;
+            tx.commit()?;
+            Ok((since, evictions))
+        })
+    }
+
+    /// Runs `f` over the entries at `height`, in file-id order (section 10, D10): `f` pulls them one at a time from the
+    /// stream it is given, on the cache's own connection, so the thumbs pass merges them with the catalog's candidates
+    /// without holding either whole. A row whose values a column can't hold is [`EntryRow::Bad`] (a miss for that file,
+    /// D8); any other error is the stream's, and ends it.
+    pub fn with_entries<R>(
+        &self,
+        height: ThumbHeight,
+        f: impl FnOnce(&mut dyn FnMut() -> Result<Option<EntryRow>>) -> R,
+    ) -> Result<R> {
+        let Some(store) = &self.store else { return Ok(f(&mut || Ok(None))) };
+        store.readers.with(|conn| {
+            let mut stmt =
+                conn.prepare_cached("SELECT file_id, mtime, rotation FROM entries WHERE height = ?1 ORDER BY file_id")?;
+            let mut rows = stmt.query([height.get()])?;
+            let mut next = || -> Result<Option<EntryRow>> {
+                let Some(r) = rows.next()? else { return Ok(None) };
+                let file_id = FileId::new(r.get(0)?);
+                Ok(Some(match (r.get::<_, i64>(1), r.get::<_, i64>(2)) {
+                    (Ok(mtime), Ok(rotation)) => EntryRow::Current { file_id, mtime, rotation },
+                    _ => EntryRow::Bad { file_id },
+                }))
+            };
+            Ok(f(&mut next))
+        })
+    }
+
+    /// Runs `f` over the files the cache has entries of, up to `upto`, in file-id order, each once (section 10, D11): the
+    /// cache's side of the sweep's merge with the catalog's file ids.
+    pub fn with_entry_ids<R>(
+        &self,
+        upto: i64,
+        f: impl FnOnce(&mut dyn FnMut() -> Result<Option<FileId>>) -> R,
+    ) -> Result<R> {
+        let Some(store) = &self.store else { return Ok(f(&mut || Ok(None))) };
+        store.readers.with(|conn| {
+            let mut stmt =
+                conn.prepare_cached("SELECT DISTINCT file_id FROM entries WHERE file_id <= ?1 ORDER BY file_id")?;
+            let mut rows = stmt.query([upto])?;
+            let mut next = || -> Result<Option<FileId>> {
+                let Some(r) = rows.next()? else { return Ok(None) };
+                Ok(Some(FileId::new(r.get(0)?)))
+            };
+            Ok(f(&mut next))
+        })
     }
 
     /// Analyzed files without a current thumbnail at `height`, in on-disk order like the import: those changed
@@ -1310,10 +1377,10 @@ mod tests {
         assert_eq!(ids(&after), vec![file.get()]);
     }
 
-    /// The sweep drops the entries of the files the catalog deleted, and no others: a file deleted from the catalog is
-    /// below its high-water mark (ids are never reissued), so its entries are orphans; the files still there keep theirs.
+    /// The cache's side of the sweep (section 10, D11): the files it has entries of, each once, in id order, up to the
+    /// bound it is given. The merge with the catalog's ids is the library's (`pg_library::removals::sweep_orphans`).
     #[test]
-    fn the_sweep_drops_the_entries_of_deleted_files_and_no_others() {
+    fn the_entry_ids_stream_each_file_once_in_order_up_to_the_bound() {
         let dir = run_folder(SCRATCH, "sweep").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
@@ -1328,11 +1395,23 @@ mod tests {
         };
         let stored = i64::try_from(pass.work.items.len()).unwrap();
         assert_eq!(entries(), stored, "one entry for each file of the pass");
-        rusqlite::Connection::open(&catalog).unwrap().execute("DELETE FROM files WHERE id = ?1", [gone.get()]).unwrap();
-
-        assert_eq!(cache.sweep_orphans(&catalog).unwrap(), 1);
-        assert_eq!(entries(), stored - 1, "only the deleted file's entry went");
-        assert!(reader::orphans_in(&cache_path(&dir), &catalog).unwrap().is_empty());
+        let mut ids: Vec<i64> = pass.work.items.iter().map(|item| item.id.get()).collect();
+        ids.sort_unstable();
+        let streamed = |upto: i64| -> Vec<i64> {
+            cache
+                .with_entry_ids(upto, |next| {
+                    let mut out = Vec::new();
+                    while let Some(id) = next().unwrap() {
+                        out.push(id.get());
+                    }
+                    out
+                })
+                .unwrap()
+        };
+        assert_eq!(streamed(i64::MAX), ids, "every file once, in order");
+        assert_eq!(streamed(gone.get() - 1), ids.iter().copied().filter(|&id| id < gone.get()).collect::<Vec<_>>());
+        cache.forget_many(&[gone]).unwrap();
+        assert_eq!(entries(), stored - 1, "a forgotten file's entry goes");
     }
 
     /// A new thumbnailer (`thumbs_version`) looks at every file again, once: the files that failed under the old one are

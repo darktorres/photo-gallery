@@ -13,29 +13,35 @@ use std::time::{Duration, Instant};
 use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, Listed};
 use pg_render::maker::{MakeError, Maker};
-use pg_thumbcache::{Pending, Thumb, ThumbCache};
+use pg_thumbcache::{Pending, Thumb, ThumbCache, ThumbWork};
 
 use pg_jobs::control::Control;
 use pg_jobs::failure::{Class, Failed as JobFailed, file_failure, keep_file_failure, stored_path};
-use pg_jobs::pipeline::{self, Batch, Options, Read};
+use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FileFailure;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
 use pg_model::size::ThumbHeight;
 
+mod pending;
 pub mod placeholders;
 
-/// What a thumbnail or placeholder pass couldn't do: the catalog or the cache failed, a file couldn't be read (its
-/// read's error), a thumbnail couldn't be made (`render`), or the pass's own list didn't hold the item asked for.
+/// What a thumbnail or placeholder pass couldn't do: the catalog failed, the cache couldn't store or couldn't be read, a
+/// file couldn't be read (its read's error), a thumbnail couldn't be made (`Make`), the maker couldn't be started
+/// (`Render`), the pipeline failed, or the cache said something it can't hold (`Invalid`). The cache's two are told apart
+/// where it is called (section 10, D7): its stores are one round error, its reads another, each with its own notice.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The catalog failed (see `pg_catalog::Error`).
     #[error(transparent)]
     Catalog(#[from] pg_catalog::Error),
-    /// The thumbnail cache failed (see `pg_thumbcache::Error`).
+    /// The thumbnail cache couldn't store what the pass made, or keep its marks (`put_batch`, `checked`, `shrink`).
     #[error(transparent)]
-    Cache(#[from] pg_thumbcache::Error),
+    CacheStore(pg_thumbcache::Error),
+    /// The thumbnail cache couldn't be read (the pending work's marks and entries, its totals, a cached thumbnail).
+    #[error(transparent)]
+    CacheRead(pg_thumbcache::Error),
     /// The maker couldn't make a picture of a file (see `pg_render::MakeError`).
     #[error(transparent)]
     Make(#[from] MakeError),
@@ -53,28 +59,77 @@ pub enum Error {
     },
     /// The pass's pipeline failed (see `pg_jobs::failure::Failed`).
     #[error(transparent)]
-    Pass(#[from] JobFailed),
-    /// An item the pass's list doesn't hold.
+    Pipeline(#[from] JobFailed),
+    /// The cache said something it can't hold (a negative size).
     #[error("{0}")]
     Invalid(&'static str),
 }
 
-/// The result of a thumbnail or placeholder pass.
+/// The result of a thumbnail or placeholder pass's steps.
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<Error> for JobFailed {
-    /// A file whose picture can't be read is retried by the next pass; one that doesn't decode (or the maker panicked on)
-    /// is recorded (`Class::Data`, and the panic's own class from the pipeline). Anything else is an ordinary failure.
-    fn from(error: Error) -> JobFailed {
-        match error {
-            Error::Pass(failed) => failed,
-            Error::Make(MakeError::Unreadable(_)) | Error::Read { .. } => JobFailed::new(Class::Read, error),
-            Error::Make(MakeError::Undecodable(_)) => JobFailed::new(Class::Data, error),
-            Error::Catalog(_) | Error::Cache(_) | Error::Render(_) | Error::Invalid(_) => {
-                JobFailed::new(Class::Other, error)
-            }
-        }
+/// A pass that ended with an error (section 10, D6): the error, and what the pass did before it (its ledger outcome, its
+/// unreadable count, its failures), which its caller reports in every case. Before the pass's setup, the stats are empty.
+pub struct Stopped<S> {
+    /// Why the pass ended.
+    pub error: Error,
+    /// What it did before.
+    pub stats: S,
+}
+
+impl<S> std::fmt::Debug for Stopped<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stopped").field("error", &self.error).finish_non_exhaustive()
     }
+}
+
+impl<S> std::fmt::Display for Stopped<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() { write!(f, "{:#}", self.error) } else { write!(f, "{}", self.error) }
+    }
+}
+
+impl<S> std::error::Error for Stopped<S> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        std::error::Error::source(&self.error)
+    }
+}
+
+impl<S> From<Stopped<S>> for Error {
+    fn from(stopped: Stopped<S>) -> Error {
+        stopped.error
+    }
+}
+
+/// What a thumbnail or placeholder pass returns: its stats, or its error with them ([`Stopped`], boxed: the stats are
+/// large beside a pass's `Ok`).
+pub type Ran<S> = std::result::Result<S, Box<Stopped<S>>>;
+
+/// A pass step's error, with the stats so far: what `?` makes of an error inside a pass.
+pub(crate) fn stopped<S>(stats: S) -> impl FnOnce(Error) -> Box<Stopped<S>> {
+    move |error| Box::new(Stopped { error, stats })
+}
+
+/// A file's thumbnail or placeholder that couldn't be made, as the pipeline's one contract has it (section 10, D4): a
+/// read that failed (the maker's, or the pass's own) is `Read`, tried again by the next pass; a picture that doesn't
+/// decode is `Data`, recorded. Every other error is the pass's, and halts it.
+pub(crate) fn file_failed(error: Error) -> ItemError<Error> {
+    match error {
+        Error::Make(MakeError::Unreadable(_)) | Error::Read { .. } => {
+            ItemError::File(JobFailed::new(Class::Read, error))
+        }
+        Error::Make(MakeError::Undecodable(_)) => ItemError::File(JobFailed::new(Class::Data, error)),
+        other => ItemError::Pass(other),
+    }
+}
+
+/// The maker a worker starts with (section 10, D5): production's makes a new one, its failure the pass's `Render`; a test
+/// can give one that fails.
+pub type MakerSource = dyn Fn() -> Result<Maker> + Sync;
+
+/// Production's maker source: a new [`Maker`], its failure the pass's `Render` error.
+pub fn new_maker() -> Result<Maker> {
+    Maker::new().map_err(Error::Render)
 }
 
 /// The files one batch of a pass takes: the thumbnail pass's and the placeholder pass's (`placeholders`).
@@ -241,12 +296,37 @@ pub fn run(
     thumb: ThumbHeight,
     opts: &Options,
     ctl: &Control,
-) -> Result<ThumbStats> {
-    run_while(cache, catalog_path, thumb, opts, &pg_catalog::VolumeSet::All, &|| true, ctl)
+) -> Ran<ThumbStats> {
+    run_while(cache, catalog_path, thumb, opts, &pg_catalog::VolumeSet::All, &|| true, &new_maker, ctl)
+}
+
+impl ThumbStats {
+    /// A pass's stats before it made anything: `needed` files to make.
+    fn empty(needed: usize) -> ThumbStats {
+        ThumbStats {
+            needed,
+            cache_bytes: 0,
+            made: 0,
+            failed: 0,
+            unreadable: 0,
+            failures: Vec::new(),
+            changed: 0,
+            cache_full: false,
+            stopped: false,
+            complete: false,
+            ledger: LedgerOutcome::Untouched,
+        }
+    }
 }
 
 /// [`run`], which ends after the batch in which `still_wanted` turns false: the files it had not made stay changed (no
-/// `checked` row is written), so the next pass lists them again. The grid's height changing is such a reason.
+/// `checked` row is written), so the next pass lists them again. The grid's height changing is such a reason. Each worker's
+/// maker comes from `maker` (section 10, D5: production passes [`new_maker`]). An error comes back with what the pass did
+/// before it ([`Stopped`], D6), its kind telling the cache's stores and reads from the rest (D7).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the pass's inputs, each its own: the cache, the catalog, the height, ..."
+)]
 pub fn run_while(
     cache: &ThumbCache,
     catalog_path: &Path,
@@ -254,48 +334,47 @@ pub fn run_while(
     opts: &Options,
     volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
+    maker: &MakerSource,
     ctl: &Control,
-) -> Result<ThumbStats> {
+) -> Ran<ThumbStats> {
     // The pass's span in the perf log: the pending query and the setup before its phase, the phase, and the finish after.
     let mut pass = pg_perf::span("pass.thumbs");
     let tx_at = pg_catalog::tx_mark();
     // The maker's steps the workers run for this pass: process-wide tallies, so the pass attaches what they grew by.
     let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::ENCODE];
     let step_marks = steps.map(|step| step.mark());
+    // To read the candidates from, check each file against before its thumbnail is kept, and for the failure ledger.
+    let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)
+        .map_err(Error::from)
+        .map_err(stopped(ThumbStats::empty(0)))?;
     let pending = pg_perf::span("pending.thumbs");
-    let Pending { work, snapshot } = match volumes {
-        pg_catalog::VolumeSet::All => cache.pending(catalog_path, thumb)?,
-        pg_catalog::VolumeSet::Only(volumes) => cache.pending_on(catalog_path, thumb, volumes)?,
-    };
+    // The catalog's candidates and the cache's entries, merged (section 10, D10): each read on its own owner's
+    // connection, so a failure says whose it was.
+    let Pending { work, snapshot } =
+        pending::work(cache, &catalog, thumb, volumes).map_err(stopped(ThumbStats::empty(0)))?;
     drop(pending);
     let items = &work.items;
-    let mut stats = ThumbStats {
-        needed: items.len(),
-        cache_bytes: 0,
-        made: 0,
-        failed: 0,
-        unreadable: 0,
-        failures: Vec::new(),
-        changed: 0,
-        cache_full: false,
-        stopped: false,
-        complete: false,
-        ledger: LedgerOutcome::Untouched,
-    };
+    let mut stats = ThumbStats::empty(items.len());
     if items.is_empty() {
-        cache.checked(&snapshot, None)?;
+        let finished = cache.checked(&snapshot, None).and_then(|()| cache.shrink()).map_err(Error::CacheStore);
         stats.complete = true;
-        cache.shrink()?;
-        return Ok(stats);
+        return finished.map(|()| stats).map_err(stopped(ThumbStats::empty(0)));
     }
-    stats.cache_bytes = u64::try_from(cache.totals()?.0).map_err(|_| Error::Invalid("the cache's size is negative"))?;
-    // To check each file against before its thumbnail is kept, and for the failure ledger.
+    stats.cache_bytes = match cache.totals().map_err(Error::CacheRead) {
+        Ok((bytes, _)) => match u64::try_from(bytes) {
+            Ok(bytes) => bytes,
+            Err(_) => return Err(stopped(stats)(Error::Invalid("the cache's size is negative"))),
+        },
+        Err(error) => return Err(stopped(stats)(error)),
+    };
     let setup = pg_perf::span("thumbs.setup");
-    let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
     let sep = catalog.rules().sep_byte();
     // The files the ledger holds: only those leave it when they are made (a clear of every file made would take the
     // catalog's write lock at every batch).
-    let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Thumbs)?;
+    let known: BTreeSet<FileId> = match catalog.recorded_failures(FilePass::Thumbs) {
+        Ok(known) => known,
+        Err(e) => return Err(stopped(stats)(Error::Catalog(e))),
+    };
     drop(setup);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
@@ -315,26 +394,30 @@ pub fn run_while(
 
     // A batch of results, written by the writer's thread: the thumbnails made from the file as listed are kept, the
     // failures recorded; false once the cache is full.
-    type Made = std::result::Result<Vec<u8>, JobFailed>;
-    let flush = |writing: &mut Writing, batch: &mut Vec<(usize, Made)>| -> Result<bool> {
+    let flush = |writing: &mut Writing, batch: &mut Vec<Done<'_, ThumbWork, Vec<u8>, Error>>| -> Result<bool> {
         let Writing { catalog, thumbs, unwritten, first_failed, tried, stats } = writing;
         let rules = catalog.rules();
+        // The pass's own error, met on an item (section 10, D2): nothing of the batch is kept, and the pass ends with it.
+        if let Some(at) = batch.iter().position(|(_, result)| matches!(result, Err(ItemError::Pass(_))))
+            && let Some((_, Err(ItemError::Pass(e)))) = batch.drain(..).nth(at)
+        {
+            return Err(e);
+        }
         // The made thumbnails' files are checked together, in one read per few hundred (`Catalog::currents`), in the
         // order of the results that are `Ok`: the loop takes one answer for each.
         let checks: Vec<(FileId, Listed)> = batch
             .iter()
-            .filter_map(|(i, result)| {
-                let item = items.get(*i)?;
-                result.is_ok().then_some((
-                    item.id,
-                    Listed { size: item.size, mtime: item.source.mtime, turns: item.source.turns },
-                ))
-            })
+            .filter(|(_, result)| result.is_ok())
+            .map(|(item, _)| (item.id, Listed { size: item.size, mtime: item.source.mtime, turns: item.source.turns }))
             .collect();
         let mut current = catalog.currents(&checks)?.into_iter();
-        for (i, result) in batch.drain(..) {
+        for (item, result) in batch.drain(..) {
             *tried += 1;
-            let item = items.get(i).ok_or(Error::Invalid("a thumbnail result for no work item"))?;
+            let result = match result {
+                Ok(data) => Ok(data),
+                Err(ItemError::File(failed)) => Err(failed),
+                Err(ItemError::Pass(e)) => return Err(e),
+            };
             match result {
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
                 // decides), nor being rewritten by the app (`Catalog::is_current`). Otherwise tried again by the next
@@ -383,7 +466,7 @@ pub fn run_while(
         }
         let n = thumbs.len();
         let made_known: Vec<FileId> = thumbs.iter().map(|t| t.file_id).filter(|id| known.contains(id)).collect();
-        let stored = cache.put_batch(thumbs, Some(thumb))?;
+        let stored = cache.put_batch(thumbs, Some(thumb)).map_err(Error::CacheStore)?;
         spare.lock().unwrap_or_else(PoisonError::into_inner).extend(thumbs.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
@@ -418,9 +501,8 @@ pub fn run_while(
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        || Maker::new().map_err(Error::Render),
-        |maker, i, bytes| {
-            let item = items.get(i).ok_or(Error::Invalid("a thumbnail to make for no work item"))?;
+        maker,
+        |maker, item, bytes| {
             #[cfg(test)]
             tests::fault(item.id);
             let mut out = spare.lock().unwrap_or_else(PoisonError::into_inner).pop().unwrap_or_default();
@@ -440,26 +522,34 @@ pub fn run_while(
                 Ok(()) => Ok(out),
                 Err(e) => {
                     spare.lock().unwrap_or_else(PoisonError::into_inner).push(out);
-                    Err(Error::Make(e))
+                    Err(file_failed(Error::Make(e)))
                 }
             }
         },
         // The failures go to the ledger at least every `LEDGER_EVERY`, so the inbox follows a long pass.
         Batch { size: BATCH, every: Some(LEDGER_EVERY) },
         writing,
-        |writing, batch| flush(writing, batch).map_err(JobFailed::from),
+        flush,
     );
     let Writing { catalog, mut unwritten, mut first_failed, tried, mut stats, .. } = writing;
     // The failures are written whatever ended the pass (an error, a stop, the cache full), before its checkpoint.
     unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
-    ran?;
+    if let Err(halt) = ran {
+        // A setup or pipeline failure is a round error; the pass's own keeps its kind.
+        let error = match halt {
+            Halt::Pass(e) => e,
+            Halt::Pipeline(failed) => Error::Pipeline(failed),
+        };
+        return Err(stopped(stats)(error));
+    }
     drop(phase);
     stats.complete = !stats.cache_full && !stats.stopped && tried == items.len();
     let finish = pg_perf::span("thumbs.finish");
-    if stats.complete {
-        cache.checked(&snapshot, first_failed)?;
+    // The checks after the pipeline are the cache's stores: an error comes back with the stats so far (D6).
+    let checked = if stats.complete { cache.checked(&snapshot, first_failed) } else { Ok(()) };
+    if let Err(e) = checked.and_then(|()| cache.shrink()) {
+        return Err(stopped(stats)(Error::CacheStore(e)));
     }
-    cache.shrink()?;
     drop(finish);
     pass.items(u64::try_from(stats.made).unwrap_or(u64::MAX));
     pass.failed(u64::try_from(stats.failed).unwrap_or(0));
@@ -609,17 +699,33 @@ mod tests {
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let (_dir, catalog_path, _c, cache, _quiet) = imported("thumbs-stop", &refs, 1 << 30);
         let opts = Options::new(Priority::Normal);
-        let stopped =
-            run_while(&cache, &catalog_path, h(64), &opts, &pg_catalog::VolumeSet::All, &|| false, &Control::new())
-                .unwrap();
+        let stopped = run_while(
+            &cache,
+            &catalog_path,
+            h(64),
+            &opts,
+            &pg_catalog::VolumeSet::All,
+            &|| false,
+            &new_maker,
+            &Control::new(),
+        )
+        .unwrap();
         assert!(!stopped.complete, "a stopped pass is not complete");
         assert!(stopped.made > 0 && stopped.made < stopped.needed, "one batch was made: {}", stopped.made);
         let listed = cache.pending(&catalog_path, h(64)).unwrap();
         assert!(!listed.snapshot.since_checked, "no checked row: the pass is not done");
         assert_eq!(listed.work.items.len(), stopped.needed - stopped.made, "the files not made are listed again");
-        let done =
-            run_while(&cache, &catalog_path, h(64), &opts, &pg_catalog::VolumeSet::All, &|| true, &Control::new())
-                .unwrap();
+        let done = run_while(
+            &cache,
+            &catalog_path,
+            h(64),
+            &opts,
+            &pg_catalog::VolumeSet::All,
+            &|| true,
+            &new_maker,
+            &Control::new(),
+        )
+        .unwrap();
         assert!(done.complete);
         let after = cache.pending(&catalog_path, h(64)).unwrap();
         assert!(after.snapshot.since_checked, "the complete pass wrote the checked row");
@@ -715,25 +821,75 @@ mod tests {
     fn a_failure_is_classified_by_its_class() {
         use std::io::{Error as IoError, ErrorKind};
 
+        // A file's failure, as the pass's contract makes it (D4); anything else is the pass's.
+        let file = |e: Error| match file_failed(e) {
+            ItemError::File(failed) => failed,
+            ItemError::Pass(e) => panic!("{e} is the pass's, not the file's"),
+        };
         // A picture that doesn't decode is the file's: recorded, and not tried again until it changes.
-        let undecodable =
-            JobFailed::from(Error::Make(MakeError::Undecodable(pg_render::Error::Invalid("decoding the JPEG"))));
+        let undecodable = file(Error::Make(MakeError::Undecodable(pg_render::Error::Invalid("decoding the JPEG"))));
         assert_eq!((Failed::of(&undecodable), Failed::of(&undecodable).recorded()), (Failed::Undecodable, Some(false)));
-        let unreadable = JobFailed::from(Error::Make(MakeError::Unreadable(ReadFailed::from(IoError::new(
-            ErrorKind::NotFound,
-            "gone",
-        )))));
+        let unreadable =
+            file(Error::Make(MakeError::Unreadable(ReadFailed::from(IoError::new(ErrorKind::NotFound, "gone")))));
         assert_eq!((Failed::of(&unreadable), Failed::of(&unreadable).recorded()), (Failed::Unreadable, None));
         let panicked = JobFailed::panic("boom".into());
         assert_eq!((Failed::of(&panicked), Failed::of(&panicked).recorded()), (Failed::Panicked, Some(false)));
         // The pipeline's read of the file, before any decoder.
-        let read = JobFailed::from(Error::Read {
+        let read = file(Error::Read {
             what: "reading a.jpg".into(),
             source: IoError::new(ErrorKind::UnexpectedEof, "cut short"),
         });
         assert_eq!((Failed::of(&read), Failed::of(&read).recorded()), (Failed::Unreadable, None));
-        let other = JobFailed::other("something else".into());
-        assert_eq!((Failed::of(&other), Failed::of(&other).recorded()), (Failed::Other, None));
+        // No per-file failure is `Other` (D4): a catalog or a cache error is the pass's.
+        assert!(matches!(file_failed(Error::Invalid("x")), ItemError::Pass(_)));
+        assert!(matches!(
+            file_failed(Error::CacheStore(pg_thumbcache::Error::Invalid("refused".into()))),
+            ItemError::Pass(Error::CacheStore(_))
+        ));
+    }
+
+    // A maker that can't start fails the pass with its own error, typed (section 10, D3 and D5): `Render`, a round error,
+    // with the pass's stats beside it.
+    #[test]
+    fn a_maker_that_cant_start_is_the_passes_render_error() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, catalog_path, _c, cache, _quiet) = imported("thumbs-no-maker", &["a.png"], 1 << 30);
+        let failing = || -> Result<Maker> { Err(Error::Render(pg_render::Error::Invalid("no maker here"))) };
+        let opts = Options::new(Priority::Normal);
+        let stopped = run_while(
+            &cache,
+            &catalog_path,
+            h(64),
+            &opts,
+            &pg_catalog::VolumeSet::All,
+            &|| true,
+            &failing,
+            &Control::new(),
+        )
+        .err()
+        .expect("the pass fails");
+        assert!(matches!(stopped.error, Error::Render(_)), "{stopped:?}");
+        assert_eq!(stopped.stats.needed, 1, "the stats come back with the error");
+    }
+
+    // The streamed merge of the catalog's candidates and the cache's entries (section 10, D10) lists what the query over
+    // the attached catalog did, in its order, with the same snapshot: before a pass, and after one (nothing left).
+    #[test]
+    fn the_streamed_merge_lists_what_the_attached_query_did() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-merge", &["a.png", "b.png", "c.png"], 1 << 30);
+        let ids = |p: &Pending| p.work.items.iter().map(|item| item.id).collect::<Vec<_>>();
+        let marks = |p: &Pending| (p.snapshot.seq, p.snapshot.evictions, p.snapshot.since_checked);
+        let same = || {
+            let attached = cache.pending(&catalog_path, h(64)).unwrap();
+            let merged = pending::work(&cache, &c, h(64), &pg_catalog::VolumeSet::All).unwrap();
+            assert_eq!(ids(&merged), ids(&attached));
+            assert_eq!(marks(&merged), marks(&attached));
+            ids(&merged).len()
+        };
+        assert_eq!(same(), 3, "every file is owed before the pass");
+        run(&cache, &catalog_path, h(64), &Options::new(Priority::Normal), &Control::new()).unwrap();
+        assert_eq!(same(), 0, "nothing is owed after it");
     }
 
     #[test]
@@ -835,8 +991,16 @@ mod tests {
         let thumbs = run(&cache, &catalog_path, h(64), &opts, &ctl).unwrap();
         assert_eq!((thumbs.made, thumbs.failed), (1, 1));
         assert_eq!(c.owed_placeholders().unwrap(), 1, "the undecodable file is held by its ledger row");
-        let placed =
-            crate::placeholders::run_while(&mut c, &cache, &opts, &pg_catalog::VolumeSet::All, &|| true, &ctl).unwrap();
+        let placed = crate::placeholders::run_while(
+            &mut c,
+            &cache,
+            &opts,
+            &pg_catalog::VolumeSet::All,
+            &|| true,
+            &new_maker,
+            &ctl,
+        )
+        .unwrap();
         assert_eq!((placed.needed, placed.made, placed.from_cache, placed.failed), (1, 1, 0, 0));
         assert!(placed.complete);
         assert_eq!(c.owed_placeholders().unwrap(), 0);

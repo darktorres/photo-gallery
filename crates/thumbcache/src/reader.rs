@@ -15,33 +15,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::schema::{BUSY_TIMEOUT, CONNECTION_PRAGMAS};
 use crate::types::{Pending, Snapshot, Source, ThumbWork};
 
-/// The files whose thumbnails the cache at `cache` holds and the catalog at `catalog` no longer does (`ThumbCache::
-/// sweep_orphans`). The catalog's id high-water mark (`thumb_high_water`: the ids are never reused) is read first. An
-/// entry at or below it whose file is absent was deleted for good; a file inserted meanwhile has a higher id, and is not
-/// among them. Read on one connection with `query_only`, so no write of the cache waits for it. The catalog is read
-/// through its views only (`thumb_high_water`, `thumb_file_ids`, `thumb_volumes`, `thumb_clock`, `thumb_sources`).
-pub(crate) fn orphans_in(cache: &Path, catalog: &Path) -> Result<Vec<FileId>> {
-    // ATTACH makes an empty file at a path with none, so a missing catalog is an error here, not a new catalog beside
-    // the cache (the sweep's caller logs it).
-    if !catalog.exists() {
-        return Err(crate::error::Error::invalid(format!(
-            "catalog {}: not there, so its orphans are not looked for",
-            catalog.display()
-        )));
-    }
-    let conn = Connection::open(cache)?;
-    conn.busy_timeout(BUSY_TIMEOUT)?;
-    conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY;")?;
-    conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(catalog)?])?;
-    let high: i64 = conn.query_row("SELECT high FROM cat.thumb_high_water", [], |r| r.get(0))?;
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT file_id FROM main.entries WHERE file_id <= ?1 AND file_id NOT IN (SELECT id FROM cat.thumb_file_ids) \
-         ORDER BY file_id",
-    )?;
-    let ids: Vec<i64> = stmt.query_map([high], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-    Ok(ids.into_iter().map(FileId::new).collect())
-}
-
 /// `ThumbCache::pending` on the cache file `cache` (a free function: the bench calls it without a writer), over every
 /// volume of the catalog. See `pending_for`.
 pub fn pending_in(cache: &Path, catalog: &Path, height: ThumbHeight) -> Result<Pending> {
@@ -104,7 +77,7 @@ fn pending_for(cache: &Path, catalog: &Path, height: ThumbHeight, volumes: Optio
 
 /// The change number every one of `volumes` was checked up to at `height`: the least of their checkpoints, or `None`
 /// when one has none (the height is looked at whole), or there are no volumes.
-fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) -> Result<Option<i64>> {
+pub(crate) fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) -> Result<Option<i64>> {
     if volumes.is_empty() {
         return Ok(None);
     }
@@ -124,74 +97,6 @@ fn checkpoint_since(tx: &Connection, height: i64, volumes: &[i64]) -> Result<Opt
 fn catalog_volumes(tx: &Connection) -> Result<Vec<i64>> {
     let mut stmt = tx.prepare(pg_query::volumes_sql!("cat.thumb_volumes"))?;
     Ok(stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
-}
-
-#[cfg(test)]
-mod checkpoint_tests {
-    use super::*;
-
-    fn with_files() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE checkpoints(height INTEGER, volume INTEGER, seq INTEGER, PRIMARY KEY (height, volume));
-             ATTACH DATABASE ':memory:' AS cat;
-             CREATE TABLE cat.files(volume INTEGER, file_ref INTEGER);
-             CREATE INDEX cat.files_volume ON files(volume, file_ref);
-             CREATE VIEW cat.thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
-             INSERT INTO cat.files VALUES (1, 1), (1, 2), (3, 1), (3, 2), (7, 9), (NULL, 4);",
-        )
-        .unwrap();
-        conn
-    }
-
-    #[test]
-    fn the_volumes_are_found_one_step_each_and_a_displaced_row_is_none() {
-        assert_eq!(catalog_volumes(&with_files()).unwrap(), vec![1, 3, 7]);
-    }
-
-    #[test]
-    fn a_height_is_checked_up_to_the_least_of_its_volumes_checkpoints() {
-        let conn = with_files();
-        conn.execute_batch("INSERT INTO checkpoints VALUES (100, 1, 40), (100, 3, 25);").unwrap();
-        assert_eq!(checkpoint_since(&conn, 100, &[1, 3]).unwrap(), Some(25), "the least");
-        assert_eq!(checkpoint_since(&conn, 100, &[1]).unwrap(), Some(40), "one volume: its own");
-        assert_eq!(checkpoint_since(&conn, 100, &[1, 7]).unwrap(), None, "a volume with none is looked at whole");
-        assert_eq!(checkpoint_since(&conn, 100, &[]).unwrap(), None);
-        assert_eq!(checkpoint_since(&conn, 200, &[1]).unwrap(), None, "another height has none");
-    }
-
-    /// The pass since a checkpoint, over a volume filter, still reads the change index: `+f.volume` keeps the planner on
-    /// `files_seq`, where a plain `f.volume IN` would switch it to the volume index and scan every file of the lane. A
-    /// real catalog, so the view is the one the pass reads.
-    #[test]
-    fn the_pass_since_a_checkpoint_with_a_volume_filter_reads_the_change_index() {
-        use pg_model::ids::FolderId;
-        let dir = pg_testkit::run_folder("scratch_thumbcache", "checkpoint-plan").unwrap();
-        let catalog = dir.join("catalog.sqlite");
-        let versions = pg_catalog::Versions::current();
-        let c = pg_catalog::Catalog::prepare(&catalog, versions, pg_model::rules::PathRules::Windows).unwrap();
-        pg_catalog::fixture::state::add_scan(&c, 1, "D:\\p").unwrap();
-        pg_catalog::fixture::state::add_folder(&c, 1, "D:\\p").unwrap();
-        let a = pg_catalog::fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5);
-        pg_catalog::fixture::insert(&c, &[a]).unwrap();
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(&catalog).unwrap()]).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER,
-                                  PRIMARY KEY (file_id, height));",
-        )
-        .unwrap();
-        let plan: Vec<String> = conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true, &[1])))
-            .unwrap()
-            .query_map(params![100, 0], |r| r.get(3))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let plan = plan.join("\n");
-        assert!(plan.contains("USING INDEX files_seq"), "{plan}");
-        assert!(!plan.contains("sqlite_autoindex_files_1"), "the volume index is not the change index: {plan}");
-    }
 }
 
 /// `pending_in`'s query over `volumes`, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2
@@ -330,19 +235,69 @@ fn open_reader(path: &Path) -> Result<Connection> {
 }
 
 #[cfg(test)]
-mod orphan_tests {
-    use super::orphans_in;
-    use pg_testkit::run_folder;
+mod checkpoint_tests {
+    use super::*;
 
-    /// A catalog that is not there is an error, and no catalog is made at its path: the attach would have made an empty
-    /// file that the catalog's own open (and a rename over it) then trips on.
+    fn with_files() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE checkpoints(height INTEGER, volume INTEGER, seq INTEGER, PRIMARY KEY (height, volume));
+             ATTACH DATABASE ':memory:' AS cat;
+             CREATE TABLE cat.files(volume INTEGER, file_ref INTEGER);
+             CREATE INDEX cat.files_volume ON files(volume, file_ref);
+             CREATE VIEW cat.thumb_volumes AS SELECT volume FROM files WHERE volume IS NOT NULL;
+             INSERT INTO cat.files VALUES (1, 1), (1, 2), (3, 1), (3, 2), (7, 9), (NULL, 4);",
+        )
+        .unwrap();
+        conn
+    }
+
     #[test]
-    fn a_missing_catalog_is_an_error_and_no_file_is_made() {
-        let dir = run_folder("scratch_thumbcache", "orphans-missing-catalog").unwrap();
+    fn the_volumes_are_found_one_step_each_and_a_displaced_row_is_none() {
+        assert_eq!(catalog_volumes(&with_files()).unwrap(), vec![1, 3, 7]);
+    }
+
+    #[test]
+    fn a_height_is_checked_up_to_the_least_of_its_volumes_checkpoints() {
+        let conn = with_files();
+        conn.execute_batch("INSERT INTO checkpoints VALUES (100, 1, 40), (100, 3, 25);").unwrap();
+        assert_eq!(checkpoint_since(&conn, 100, &[1, 3]).unwrap(), Some(25), "the least");
+        assert_eq!(checkpoint_since(&conn, 100, &[1]).unwrap(), Some(40), "one volume: its own");
+        assert_eq!(checkpoint_since(&conn, 100, &[1, 7]).unwrap(), None, "a volume with none is looked at whole");
+        assert_eq!(checkpoint_since(&conn, 100, &[]).unwrap(), None);
+        assert_eq!(checkpoint_since(&conn, 200, &[1]).unwrap(), None, "another height has none");
+    }
+
+    /// The pass since a checkpoint, over a volume filter, still reads the change index: `+f.volume` keeps the planner on
+    /// `files_seq`, where a plain `f.volume IN` would switch it to the volume index and scan every file of the lane. A
+    /// real catalog, so the view is the one the pass reads.
+    #[test]
+    fn the_pass_since_a_checkpoint_with_a_volume_filter_reads_the_change_index() {
+        use pg_model::ids::FolderId;
+        let dir = pg_testkit::run_folder("scratch_thumbcache", "checkpoint-plan").unwrap();
         let catalog = dir.join("catalog.sqlite");
-        let cache = dir.join("thumbs.sqlite");
-        assert!(orphans_in(&cache, &catalog).is_err());
-        assert!(!catalog.exists(), "no catalog was made beside the cache");
-        let _ = std::fs::remove_dir_all(&dir);
+        let versions = pg_catalog::Versions::current();
+        let c = pg_catalog::Catalog::prepare(&catalog, versions, pg_model::rules::PathRules::Windows).unwrap();
+        pg_catalog::fixture::state::add_scan(&c, 1, "D:\\p").unwrap();
+        pg_catalog::fixture::state::add_folder(&c, 1, "D:\\p").unwrap();
+        let a = pg_catalog::fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5);
+        pg_catalog::fixture::insert(&c, &[a]).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(&catalog).unwrap()]).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER,
+                                  PRIMARY KEY (file_id, height));",
+        )
+        .unwrap();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true, &[1])))
+            .unwrap()
+            .query_map(params![100, 0], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("USING INDEX files_seq"), "{plan}");
+        assert!(!plan.contains("sqlite_autoindex_files_1"), "the volume index is not the change index: {plan}");
     }
 }

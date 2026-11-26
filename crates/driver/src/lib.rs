@@ -222,7 +222,9 @@ impl Headless {
                 if self.app.library().running().is_none() =>
             {
                 let catalog = self.catalog()?;
-                pg_library::removals::finish(&catalog, self.app.thumbs(), &self.layout.catalog_path(), &mut |_| true)?;
+                // A sweep that failed is not the removal's failure (section 10, D12): the folder is gone, and the next
+                // sweep (the library's at its start) drops the thumbnails this one couldn't.
+                let _finished = pg_library::removals::finish(&catalog, self.app.thumbs(), &mut |_| true)?;
                 if !catalog.removal_markers()?.is_empty() {
                     return Err(Error::RemovalKept { folder });
                 }

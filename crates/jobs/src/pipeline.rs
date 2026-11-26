@@ -31,7 +31,7 @@ use pg_platform::priority::{self, Priority};
 use serde_json::json;
 
 use crate::control::Control;
-use crate::failure::{Class, Failed};
+use crate::failure::{ChangedWhileRead, Class, Failed};
 use crate::gate::ReaderGate;
 use crate::panics;
 use crate::source::{Access, FileSource, OsFiles, ReadSeek};
@@ -797,42 +797,113 @@ pub struct Batch {
     pub every: Option<Duration>,
 }
 
+/// A batched pass's per-item error (section 10, D2): the file's own failure, with its class ([`Failed`]: the pipeline's
+/// read or panic, or one the pass made of the file, `Data` or `Read`), or the pass's own error (`E`), which the pass's
+/// flush returns to halt the pass. Nothing per file is of class `Other` (D4).
+#[derive(Debug)]
+pub enum ItemError<E> {
+    /// The file's failure: recorded or tried again by its class.
+    File(Failed),
+    /// The pass's error, met on this item: the flush halts the pass with it.
+    Pass(E),
+}
+
+/// Why a batched pass ended before its items did (section 10, D1): the pipeline's own failure (a panic in the writer, a
+/// lost item, a worker's setup that panicked), or the pass's own error (its flush's, or its worker setup's).
+#[derive(Debug)]
+pub enum Halt<E> {
+    /// The pipeline failed.
+    Pipeline(Failed),
+    /// The pass's own error.
+    Pass(E),
+}
+
+impl<E> Halt<E> {
+    /// The pass's error, a pipeline failure made one by `From`.
+    pub fn into_pass(self) -> E
+    where
+        E: From<Failed>,
+    {
+        match self {
+            Halt::Pipeline(failed) => E::from(failed),
+            Halt::Pass(e) => e,
+        }
+    }
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for Halt<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Halt::Pipeline(failed) => write!(f, "{failed}"),
+            Halt::Pass(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for Halt<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Halt::Pipeline(failed) => failed.source(),
+            Halt::Pass(e) => e.source(),
+        }
+    }
+}
+
+/// One item's result, as a batched pass's flush gets it: the item itself (no index to look up, D2), and what it came to.
+pub type Done<'a, T, R, E> = (&'a T, Result<R, ItemError<E>>);
+
 /// [`run`] for a pass that writes its results in batches, the skeleton the per-file passes share. Each result is counted
-/// on `ctl` (its bytes, and whether it failed) and kept. A batch that is due ([`Batch`]) goes to a writer thread, which
-/// makes it with `flush` on the writer's state `writer`, while the counting goes on: the counter never waits for a
-/// write. The writer takes a batch only when it is waiting for one; while it is busy the kept results keep growing
+/// on `ctl` (its bytes, and whether it failed) and kept, with its item. A batch that is due ([`Batch`]) goes to a writer
+/// thread, which makes it with `flush` on the writer's state `writer`, while the counting goes on: the counter never waits
+/// for a write. The writer takes a batch only when it is waiting for one; while it is busy the kept results keep growing
 /// (commits coalesce), and the counting waits only when twice the batch size is kept. So at most three batches' worth
 /// of results are held: the writer's, the one kept, and the one at its limit.
 ///
 /// A stop request on `ctl` ends the pass as [`run`] does: the results of the items in flight are counted and kept, and
 /// then written.
 ///
-/// `flush` returns false to stop the pass: the writer then discards what is queued, and the pass ends after the
-/// results counted are written. An error or a panic of `flush` ends the pass, which loses what is queued and kept; so
-/// does an error of the pass itself. The writer's state comes back in any case, with the pass's result: a caller that
+/// The errors are typed (section 10, D1–D3): `process` gives each item's result with an [`ItemError`], `init` and
+/// `flush` the pass's own error `E`. `flush` returns false to stop the pass: the writer then discards what is queued,
+/// and the pass ends after the results counted are written. An error of `flush` ([`Halt::Pass`]) or a panic in it
+/// ([`Halt::Pipeline`]) ends the pass, which loses what is queued and kept; so does an error of `init` (the first one,
+/// [`Halt::Pass`]) or of the pipeline. The writer's state comes back in any case, with the pass's result: a caller that
 /// has more to write (a ledger) writes it from the state.
-pub fn batched<T, S, R, W, I, P>(
-    pass: Pass<'_, T>,
+pub fn batched<'a, T, S, R, W, E>(
+    pass: Pass<'a, T>,
     read: impl Fn(&T, &mut NativePath) -> Read + Sync,
-    init: impl Fn() -> Result<S, I> + Sync,
-    process: impl Fn(&mut S, usize, &[u8]) -> Result<R, P> + Sync,
+    init: impl Fn() -> Result<S, E> + Sync,
+    process: impl Fn(&mut S, &T, &[u8]) -> Result<R, ItemError<E>> + Sync,
     batch: Batch,
     writer: W,
-    flush: impl FnMut(&mut W, &mut Vec<(usize, Result<R, Failed>)>) -> Result<bool, Failed> + Send,
-) -> (W, Result<(), Failed>)
+    flush: impl FnMut(&mut W, &mut Vec<Done<'a, T, R, E>>) -> Result<bool, E> + Send,
+) -> (W, Result<(), Halt<E>>)
 where
     T: Sync,
     R: Send,
     W: Send,
-    I: Into<Failed>,
-    P: Into<Failed>,
+    E: Send,
 {
     let Pass { items, opts, ctl } = pass;
     let size = batch.size.max(1);
+    // The first error of a worker's setup, typed: the pipeline sees a failure, and the pass returns this.
+    let setup_error: Mutex<Option<E>> = Mutex::new(None);
+    let setup_error = &setup_error;
+    let init = move || {
+        init().map_err(|e| {
+            setup_error.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert(e);
+            Failed::other("the pass's worker couldn't be set up".to_string())
+        })
+    };
+    // Each item's own result: never a failure of the pipeline's own (`Ok` around the item's result), but for an index the
+    // list doesn't hold, which no reader hands out.
+    let process = |state: &mut S, i: usize, bytes: &[u8]| -> Result<Result<R, ItemError<E>>, Failed> {
+        let item = items.get(i).ok_or_else(|| Failed::other(format!("no item {i} in the pass")))?;
+        Ok(process(state, item, bytes))
+    };
     // A rendezvous: the sink hands a batch over only to a writer that is waiting for one. The vectors the writer is done
     // with come back on the other channel, to be kept again.
-    let (to_writer, from_sink) = bounded::<Vec<(usize, Result<R, Failed>)>>(0);
-    let (recycled_tx, recycled_rx) = unbounded::<Vec<(usize, Result<R, Failed>)>>();
+    let (to_writer, from_sink) = bounded::<Vec<Done<'a, T, R, E>>>(0);
+    let (recycled_tx, recycled_rx) = unbounded::<Vec<Done<'a, T, R, E>>>();
     // Set when the writer failed or stopped: the pass ends, and nothing more is handed over.
     let failed = AtomicBool::new(false);
     let failed = &failed;
@@ -845,7 +916,7 @@ where
         let writing = s.spawn(move || {
             let mut writer = writer;
             let mut flush = flush;
-            let mut outcome: Result<(), Failed> = Ok(());
+            let mut outcome: Result<(), Halt<E>> = Ok(());
             let mut stopped = false;
             loop {
                 let waiting = Instant::now();
@@ -853,11 +924,15 @@ where
                 timing.write_wait.add(waiting);
                 if !stopped {
                     let flushing = Instant::now();
-                    match panics::guard(AssertUnwindSafe(|| flush(&mut writer, &mut kept))) {
-                        Ok(true) => {}
-                        Ok(false) => stopped = true,
-                        Err(e) => {
-                            outcome = Err(e);
+                    match panics::catch(AssertUnwindSafe(|| flush(&mut writer, &mut kept))) {
+                        Ok(Ok(true)) => {}
+                        Ok(Ok(false)) => stopped = true,
+                        Ok(Err(e)) => {
+                            outcome = Err(Halt::Pass(e));
+                            stopped = true;
+                        }
+                        Err(payload) => {
+                            outcome = Err(Halt::Pipeline(Failed::panic(panics::message(&*payload).to_string())));
                             stopped = true;
                         }
                     }
@@ -873,7 +948,7 @@ where
             (writer, outcome)
         });
 
-        let mut kept: Vec<(usize, Result<R, Failed>)> = Vec::with_capacity(size);
+        let mut kept: Vec<Done<'a, T, R, E>> = Vec::with_capacity(size);
         let mut since = Instant::now();
         let ran = run_timed(
             Pass { items, opts, ctl },
@@ -881,8 +956,11 @@ where
             init,
             process,
             |i, result, len| -> Result<bool, Failed> {
+                let item = items.get(i).ok_or_else(|| Failed::other(format!("a result for no item {i}")))?;
+                // The pipeline's own failure of the item (its read, a panic) is the file's.
+                let result = result.unwrap_or_else(|failed| Err(ItemError::File(failed)));
                 ctl.add(len, result.is_err());
-                kept.push((i, result));
+                kept.push((item, result));
                 if failed.load(Ordering::SeqCst) {
                     return Ok(false);
                 }
@@ -908,10 +986,16 @@ where
             Ok(done) => done,
             Err(panic) => std::panic::resume_unwind(panic),
         };
-        let result = match (ran, outcome) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Ok(()), Err(e)) | (Err(e), Ok(())) => Err(e),
-            (Err(e), Err(w)) => Err(e.context(&format!("and the writer ended with: {w}"))),
+        // A worker's setup that failed with the pass's error is that error; the writer's own comes next.
+        let setup = setup_error.lock().unwrap_or_else(PoisonError::into_inner).take();
+        let result = match (ran, outcome, setup) {
+            (Ok(()), Ok(()), _) => Ok(()),
+            (Err(_), _, Some(e)) => Err(Halt::Pass(e)),
+            (Ok(()), Err(halt), _) | (Err(_), Err(halt @ Halt::Pass(_)), None) => Err(halt),
+            (Err(e), Ok(()), None) => Err(Halt::Pipeline(e)),
+            (Err(e), Err(Halt::Pipeline(w)), None) => {
+                Err(Halt::Pipeline(e.context(&format!("and the writer ended with: {w}"))))
+            }
         };
         (writer, result)
     });
@@ -922,10 +1006,10 @@ where
 /// Hands the kept results to the writer, and keeps the vector the writer returns (or a new one) in their place. A
 /// batch the writer is not waiting for is kept, to grow, unless `wait` (then the sink waits for the writer). Whether the
 /// writer is still there to take it.
-fn hand_over<R>(
-    to_writer: &Sender<Vec<(usize, Result<R, Failed>)>>,
-    recycled: &Receiver<Vec<(usize, Result<R, Failed>)>>,
-    kept: &mut Vec<(usize, Result<R, Failed>)>,
+fn hand_over<X>(
+    to_writer: &Sender<Vec<X>>,
+    recycled: &Receiver<Vec<X>>,
+    kept: &mut Vec<X>,
     size: usize,
     wait: bool,
 ) -> bool {
@@ -966,6 +1050,13 @@ fn hand_over<R>(
 
 /// The error of an item that couldn't be read: a [`Class::Read`] whose text is `read`, then the I/O error.
 fn read_error(e: std::io::Error) -> Failed {
+    // A whole read whose length changed is its own failure, so a pass can tell it apart (`Failed::is_changed`).
+    if e.get_ref().is_some_and(|inner| inner.is::<ChangedWhileRead>()) {
+        if let Some(Ok(changed)) = e.into_inner().map(|inner| inner.downcast::<ChangedWhileRead>()) {
+            return Failed::new(Class::Read, *changed);
+        }
+        return Failed::other("the file changed while it was read".to_string());
+    }
     Failed::new(Class::Read, ReadFailure(e))
 }
 
@@ -1023,13 +1114,23 @@ impl<'p> Reader<'p> {
     }
 
     /// Read the file at `path` into a buffer from the pool, its size reserved in list order. `None` once the pass stops.
+    /// Bytes not as many as the file's length when it was opened are an error ([`ChangedWhileRead`], section 7): the file
+    /// changed while it was read, so nothing is made of them.
     fn whole(&self, path: &NativePath) -> Option<std::io::Result<Lease<'p>>> {
         let mut opened = match self.open(path, Access::Sequential) {
             Ok(opened) => opened,
             Err(e) => return Some(Err(e)),
         };
         let mut lease = self.pool.take(self.i, opened.size)?;
-        Some(self.read_rest(opened.file.as_mut(), &mut lease).map(|()| lease))
+        if let Err(e) = self.read_rest(opened.file.as_mut(), &mut lease) {
+            return Some(Err(e));
+        }
+        if lease.bytes.len() != opened.size {
+            let as_u64 = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
+            let changed = ChangedWhileRead { opened: as_u64(opened.size), read: as_u64(lease.bytes.len()) };
+            return Some(Err(std::io::Error::other(changed)));
+        }
+        Some(Ok(lease))
     }
 
     /// [`Read::Gather`] of the file at `path`: what `gather` makes of it, read from the reader's thread in its turn. Its
@@ -1769,6 +1870,54 @@ mod tests {
         sunk
     }
 
+    /// A source whose file holds `actual` bytes but was `listed` long when it was opened: it changed while it was read.
+    struct Changing {
+        listed: usize,
+        actual: usize,
+    }
+
+    impl FileSource for Changing {
+        fn open(&self, _path: &NativePath, _access: Access) -> std::io::Result<crate::source::Opened> {
+            let file = std::io::Cursor::new(vec![7; self.actual]);
+            Ok(crate::source::Opened { file: Box::new(file), size: self.listed })
+        }
+    }
+
+    /// One item read as `how` from a [`Changing`] source: its result, as the bytes processed or whether its failure is a
+    /// changed read.
+    fn read_changing(listed: usize, actual: usize, how: Read) -> Vec<Result<usize, bool>> {
+        let mut opts = sized(1, 1, 4);
+        opts.source = Arc::new(Changing { listed, actual });
+        let mut outcomes = Vec::new();
+        run(
+            Pass { items: &[0usize], opts: &opts, ctl: &Control::new() },
+            |_, wide| {
+                wide.set(&[&units("x")]);
+                how
+            },
+            || Ok::<(), Failed>(()),
+            |_, _, bytes| Ok::<usize, Failed>(bytes.len()),
+            |_, out, _| {
+                outcomes.push(out.map_err(|e| e.is_changed()));
+                Ok(true)
+            },
+        )
+        .unwrap();
+        outcomes
+    }
+
+    // A whole read whose bytes are not the file's length at its open (it shrank or grew while it was read) is a changed
+    // read, a failure of its own (section 7); one whose length held is read. A gather's bytes are its own length on
+    // purpose, and are not checked.
+    #[test]
+    fn a_whole_read_whose_length_changed_is_a_changed_read() {
+        assert_eq!(read_changing(100, 60, Read::File), vec![Err(true)], "shrank");
+        assert_eq!(read_changing(100, 140, Read::File), vec![Err(true)], "grew");
+        assert_eq!(read_changing(100, 100, Read::File), vec![Ok(100)], "held");
+        let gather = Read::Gather { hint: 10, gather: |_| Ok(Some(vec![1, 2, 3])) };
+        assert_eq!(read_changing(100, 100, gather), vec![Ok(3)], "a gathered header");
+    }
+
     // A fixed count lets every reader through: no more reads are in flight than the readers.
     #[test]
     fn a_fixed_count_reads_no_more_at_once_than_its_readers() {
@@ -1908,6 +2057,59 @@ mod batched_tests {
         Read::Streamed { bytes: 0 }
     }
 
+    /// Each item's result: the item itself.
+    fn itself(_: &mut (), i: &usize, _: &[u8]) -> Result<usize, ItemError<Failed>> {
+        Ok(*i)
+    }
+
+    // A worker's setup that fails with the pass's error halts the pass with that error, typed (D3): not a failure of the
+    // pipeline's own, and not a text to read it back from.
+    #[test]
+    fn a_failed_setup_is_the_passes_own_error() {
+        #[derive(Debug, PartialEq)]
+        struct NoMaker;
+        let items: Vec<usize> = (0..10).collect();
+        let ctl = Control::new();
+        let (_, result) = batched(
+            Pass { items: &items, opts: &options(), ctl: &ctl },
+            no_file,
+            || Err::<(), NoMaker>(NoMaker),
+            |_, i, _| Ok::<usize, ItemError<NoMaker>>(*i),
+            Batch { size: 100, every: None },
+            (),
+            |_, batch| {
+                batch.clear();
+                Ok(true)
+            },
+        );
+        assert!(matches!(result, Err(Halt::Pass(NoMaker))), "{result:?}");
+    }
+
+    // An item's pass error reaches the flush with its item, and the flush halts the pass with it (D2).
+    #[test]
+    fn an_items_pass_error_halts_the_pass_through_the_flush() {
+        let items: Vec<usize> = (0..300).collect();
+        let ctl = Control::new();
+        let (_, result) = batched(
+            Pass { items: &items, opts: &options(), ctl: &ctl },
+            no_file,
+            || Ok::<(), String>(()),
+            |_, i, _| if *i == 7 { Err(ItemError::Pass(format!("item {i}"))) } else { Ok(*i) },
+            Batch { size: 50, every: None },
+            (),
+            |_, batch| {
+                for (item, result) in batch.drain(..) {
+                    if let Err(ItemError::Pass(e)) = result {
+                        assert_eq!(*item, 7, "the error comes with its item");
+                        return Err(e);
+                    }
+                }
+                Ok(true)
+            },
+        );
+        assert!(matches!(&result, Err(Halt::Pass(e)) if e == "item 7"), "{result:?}");
+    }
+
     // Every result reaches the writer, in batches, and the writer's state comes back with the pass's `Ok`.
     #[test]
     fn every_result_is_written_and_the_writer_comes_back() {
@@ -1917,7 +2119,7 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i * 2),
+            |_, i, _| Ok::<_, ItemError<Failed>>(*i * 2),
             Batch { size: 100, every: None },
             Vec::new(),
             |written: &mut Vec<usize>, batch| {
@@ -1941,7 +2143,7 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i),
+            itself,
             Batch { size: 100, every: None },
             (),
             |_, batch| {
@@ -1970,7 +2172,7 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i),
+            itself,
             Batch { size: 100, every: None },
             (),
             |_, batch| {
@@ -1992,14 +2194,14 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i),
+            itself,
             Batch { size: 100, every: None },
             Vec::new(),
             |written: &mut Vec<usize>, batch| {
                 if written.len() >= 100 {
                     return Err(Failed::other("disk full".to_string()));
                 }
-                written.extend(batch.drain(..).map(|(i, _)| i));
+                written.extend(batch.drain(..).map(|(i, _)| *i));
                 Ok(true)
             },
         );
@@ -2016,16 +2218,16 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i),
+            itself,
             Batch { size: 100, every: None },
             (),
-            |_, batch| {
+            |_, batch| -> Result<bool, Failed> {
                 batch.clear();
                 panic!("a write panics");
             },
         );
         let error = result.unwrap_err();
-        assert!(error.is_panic(), "{error}");
+        assert!(matches!(&error, Halt::Pipeline(failed) if failed.is_panic()), "{error}");
     }
 
     // A batch is never held longer than twice the batch size, however slow the writes are.
@@ -2037,7 +2239,7 @@ mod batched_tests {
             Pass { items: &items, opts: &options(), ctl: &ctl },
             no_file,
             || Ok::<(), Failed>(()),
-            |_, i, _| Ok::<_, Failed>(i),
+            itself,
             Batch { size: 50, every: None },
             0usize,
             |largest: &mut usize, batch| {

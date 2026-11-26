@@ -84,6 +84,12 @@ impl Failed {
         self.class == Class::Read
     }
 
+    /// Whether the file changed while it was read whole ([`ChangedWhileRead`], a [`Class::Read`]): its bytes are not the
+    /// file's, so nothing made of them is stored, and the file stays due (section 7).
+    pub fn is_changed(&self) -> bool {
+        self.source.as_deref().is_some_and(|source| source.is::<ChangedWhileRead>())
+    }
+
     /// The same failure with `what` before its text (`what: text`), its class and its source kept.
     pub fn context(self, what: &str) -> Failed {
         Failed { class: self.class, text: format!("{what}: {}", self.text), source: self.source }
@@ -95,6 +101,24 @@ impl Failed {
         Failed::new(Class::Other, Note(text))
     }
 }
+
+/// A file read whole whose bytes were not as many as its length when it was opened: it changed while it was read (a copy
+/// still in progress, a program writing it), so the bytes are part of one version or of two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChangedWhileRead {
+    /// The file's length when it was opened.
+    pub opened: u64,
+    /// The bytes read from it.
+    pub read: u64,
+}
+
+impl std::fmt::Display for ChangedWhileRead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the file changed while it was read ({} bytes when opened, {} read)", self.opened, self.read)
+    }
+}
+
+impl Error for ChangedWhileRead {}
 
 /// A failure's text, as an error of its own (the source of [`Failed::other`]).
 #[derive(Debug)]

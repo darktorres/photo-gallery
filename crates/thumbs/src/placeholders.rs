@@ -12,7 +12,7 @@ use pg_catalog::ledger::Failure as LedgerFailure;
 use pg_catalog::{Catalog, PlaceholderWork, WorkItem};
 use pg_jobs::control::Control;
 use pg_jobs::failure::Failed as JobFailed;
-use pg_jobs::pipeline::{self, Batch, Options, Read};
+use pg_jobs::pipeline::{self, Batch, Done, Halt, ItemError, Options, Read};
 use pg_model::analysis::ThumbHash;
 use pg_model::media::Kind;
 use pg_model::notice::FilePass;
@@ -21,7 +21,7 @@ use pg_model::size::ThumbHeight;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Source, ThumbCache};
 
-use crate::{BATCH, Failed, unix_now};
+use crate::{BATCH, Failed, MakerSource, Ran, file_failed, stopped, unix_now};
 
 /// The height of the cached thumbnail a placeholder is read from when there is one: the nearest the cache has to it
 /// (`ThumbCache::get_nearest_into`), and it is used only if it is at least [`CACHED_MIN_SIDE`] high.
@@ -65,21 +65,17 @@ pub fn run_while(
     opts: &Options,
     volumes: &pg_catalog::VolumeSet,
     still_wanted: &(dyn Fn() -> bool + Sync),
+    maker: &MakerSource,
     ctl: &Control,
-) -> Result<PlaceholderStats> {
+) -> Ran<PlaceholderStats> {
     // The pass's span in the perf log: the pending query before its phase, the phase, and the transaction time it caused.
     let mut pass = pg_perf::span("pass.placeholders");
     let tx_at = pg_catalog::tx_mark();
     // The maker's steps the workers run for this pass (process-wide tallies, as the thumbnails pass attaches them).
     let steps = [&pg_render::maker::DECODE, &pg_render::maker::RESIZE, &pg_render::maker::THUMBHASH];
     let step_marks = steps.map(|step| step.mark());
-    let pending = pg_perf::span("pending.placeholders");
-    let work = catalog.pending_placeholders(volumes)?;
-    drop(pending);
-    let items = &work.items;
-    let sep = catalog.rules().sep_byte();
-    let stats = PlaceholderStats {
-        needed: items.len(),
+    let mut stats = PlaceholderStats {
+        needed: 0,
         files: 0,
         made: 0,
         from_cache: 0,
@@ -88,6 +84,12 @@ pub fn run_while(
         changed: 0,
         complete: true,
     };
+    let pending = pg_perf::span("pending.placeholders");
+    let work = catalog.pending_placeholders(volumes).map_err(Error::from).map_err(stopped(stats))?;
+    drop(pending);
+    let items = &work.items;
+    let sep = catalog.rules().sep_byte();
+    stats.needed = items.len();
     if items.is_empty() {
         return Ok(stats);
     }
@@ -105,40 +107,50 @@ pub fn run_while(
             pg_platform::names::set_file(wide, folder, name);
             Read::File
         },
-        || -> Result<Worker> { Ok(Worker { maker: Maker::new()?, jpeg: Vec::new() }) },
-        |worker, i, bytes| -> Result<(ThumbHash, bool)> {
-            let pw = items.get(i).ok_or(Error::Invalid("a placeholder to make for no file"))?;
+        || -> Result<Worker> { Ok(Worker { maker: maker()?, jpeg: Vec::new() }) },
+        |worker, pw: &PlaceholderWork, bytes| -> std::result::Result<(ThumbHash, bool), ItemError<Error>> {
             let item = &pw.item;
             if item.kind == Kind::Video {
                 // FFmpeg opens the file by its disk path, as the import does.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                let hash = worker.maker.placeholder_of_frame(&disk, pw.poster_ms, item.turns)?;
+                let hash = worker
+                    .maker
+                    .placeholder_of_frame(&disk, pw.poster_ms, item.turns)
+                    .map_err(|e| file_failed(Error::Make(e)))?;
                 return Ok((hash, false));
             }
-            if cached(cache, item, &mut worker.jpeg)? {
-                let hash = worker.maker.placeholder_of_thumbnail(&worker.jpeg)?;
+            // A cache that can't be read is the pass's (`CacheRead`, D7); one row that doesn't read is a miss (D8,
+            // `ThumbCache::get_nearest_into`).
+            if cached(cache, item, &mut worker.jpeg).map_err(ItemError::Pass)? {
+                let hash =
+                    worker.maker.placeholder_of_thumbnail(&worker.jpeg).map_err(|e| file_failed(Error::Make(e)))?;
                 return Ok((hash, true));
             }
             // The reader did not read this file (its thumbnail was cached when it looked, and is not now): read it here.
             let read;
             let whole = if bytes.is_empty() {
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                read = std::fs::read(&disk)
-                    .map_err(|source| Error::Read { what: format!("can't read {}", disk.display()), source })?;
+                read = std::fs::read(&disk).map_err(|source| {
+                    file_failed(Error::Read { what: format!("can't read {}", disk.display()), source })
+                })?;
                 read.as_slice()
             } else {
                 bytes
             };
-            Ok((worker.maker.placeholder(whole, item.turns)?, false))
+            Ok((worker.maker.placeholder(whole, item.turns).map_err(|e| file_failed(Error::Make(e)))?, false))
         },
         Batch { size: BATCH, every: None },
         (catalog, stats),
-        |(catalog, stats), batch| {
-            flush(catalog, batch, items, stats, ctl).map(|()| still_wanted()).map_err(JobFailed::from)
-        },
+        |(catalog, stats), batch| flush(catalog, batch, stats, ctl).map(|()| still_wanted()),
     );
-    result?;
     let (_, mut stats) = state;
+    if let Err(halt) = result {
+        let error = match halt {
+            Halt::Pass(e) => e,
+            Halt::Pipeline(failed) => Error::Pipeline(failed),
+        };
+        return Err(stopped(stats)(error));
+    }
     stats.complete = stats.files == items.len();
     pass.items(u64::try_from(stats.files).unwrap_or(u64::MAX));
     pass.failed(u64::try_from(stats.failed).unwrap_or(0));
@@ -150,11 +162,13 @@ pub fn run_while(
 }
 
 /// Whether the cache holds a thumbnail of `item` as it is, at least [`CACHED_MIN_SIDE`] high, and reads its bytes into
-/// `jpeg` if so. An error reading the cache is an error of the file (the pass tries it again).
+/// `jpeg` if so. A row that doesn't read is a miss (the cache says so, D8); an error reading the cache is the pass's
+/// (`CacheRead`, D7), mapped here.
 fn cached(cache: &ThumbCache, item: &WorkItem, jpeg: &mut Vec<u8>) -> Result<bool> {
     let source = Source { mtime: item.mtime, turns: item.turns };
     let height = ThumbHeight::new(CACHED_HEIGHT).unwrap_or(ThumbHeight::DEFAULT);
-    Ok(cache.get_nearest_into(item.id, height, source, jpeg)?.is_some_and(|h| h.get() >= CACHED_MIN_SIDE))
+    let nearest = cache.get_nearest_into(item.id, height, source, jpeg).map_err(Error::CacheRead)?;
+    Ok(nearest.is_some_and(|h| h.get() >= CACHED_MIN_SIDE))
 }
 
 /// Whether a failure is the file's read that failed (an offline drive, a file in use): tried again by the next pass, and
@@ -169,27 +183,31 @@ fn is_recorded(e: &JobFailed) -> bool {
     matches!(Failed::of(e), Failed::Panicked | Failed::Undecodable)
 }
 
-/// One file of a batch: its index in the pass's list, and what making its placeholder came to (the placeholder, and
-/// whether it was stored new).
-type Made = (usize, std::result::Result<(ThumbHash, bool), JobFailed>);
+/// One file of a batch: the file, and what making its placeholder came to (the placeholder, and whether it was read from
+/// the cache).
+type Made<'a> = Done<'a, PlaceholderWork, (ThumbHash, bool), Error>;
 
 /// Stores a batch: the placeholders made, and the failures recorded in the Thumbs ledger, in one transaction. A file that
-/// changed since it was listed, or is being written, is left as it is (`PlaceholderWriter::store`).
-fn flush(
-    catalog: &mut Catalog,
-    batch: &mut Vec<Made>,
-    items: &[PlaceholderWork],
-    stats: &mut PlaceholderStats,
-    ctl: &Control,
-) -> Result<()> {
+/// changed since it was listed, or is being written, is left as it is (`PlaceholderWriter::store`). The pass's own error,
+/// met on a file, stores nothing of the batch and ends the pass.
+fn flush(catalog: &mut Catalog, batch: &mut Vec<Made<'_>>, stats: &mut PlaceholderStats, ctl: &Control) -> Result<()> {
+    if let Some(at) = batch.iter().position(|(_, result)| matches!(result, Err(ItemError::Pass(_))))
+        && let Some((_, Err(ItemError::Pass(e)))) = batch.drain(..).nth(at)
+    {
+        return Err(e);
+    }
     let tx = catalog.tx()?;
     let mut writer = tx.placeholder_writer()?;
     let mut done = *stats;
     let mut failures = Vec::new();
-    for (i, result) in batch.drain(..) {
+    for (pw, result) in batch.drain(..) {
         done.files += 1;
-        let pw = items.get(i).ok_or(Error::Invalid("a placeholder result for no file"))?;
         let item = &pw.item;
+        let result = match result {
+            Ok(made) => Ok(made),
+            Err(ItemError::File(failed)) => Err(failed),
+            Err(ItemError::Pass(e)) => return Err(e),
+        };
         match result {
             Ok((hash, from_cache)) => {
                 if writer.store(item, &hash)? {

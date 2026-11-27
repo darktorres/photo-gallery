@@ -9,6 +9,7 @@ versions first (tools/check_lint_tools.py).
 
 import argparse
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -31,6 +32,10 @@ STEPS = [
     ["cargo", "clippy", "--manifest-path", "fuzz/Cargo.toml", "--all-targets", "--locked", "--", "-D", "warnings"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/jpeg-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "metadata", "--locked", "--manifest-path", "eval/png-decoders/Cargo.toml", "--format-version", "1"],
+    # The non-Rust lockfiles: uv.lock (the Python environments) and tools/lint's package-lock.json (markdownlint). A stale one
+    # fails here, not at the next install.
+    ["uv", "lock", "--check"],
+    ["npm", "ci", "--dry-run", "--prefix", "tools/lint", "--no-audit", "--no-fund"],
     ["cargo", "doc", "--workspace", "--no-deps", "--document-private-items", "--locked", "--timings"],
     ["cargo", "machete", "crates"],
     ["ruff", "format", "--check", "."],
@@ -42,7 +47,12 @@ DOC_FLAGS = {"RUSTDOCFLAGS": "-D warnings"}
 
 
 def resolved(cmd: list[str]) -> list[str]:
-    """`cmd` with its lint tool's path in place of the name, which must be found."""
+    """`cmd` with its program's path in place of the name, which must be found (npm is npm.cmd on Windows)."""
+    if cmd[0] in ("npm", "uv"):
+        exe = shutil.which(cmd[0])
+        if exe is None:
+            sys.exit(f"{cmd[0]} is not on PATH: it is needed to check its lockfile")
+        return [exe, *cmd[1:]]
     if cmd[0] not in ("ruff", "markdownlint"):
         return cmd
     exe = lint_tool(cmd[0])

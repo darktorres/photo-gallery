@@ -154,8 +154,8 @@ impl Runner {
         Runner::start_built(shared, heights, features, drives, RunnerConfig::default())
     }
 
-    /// The job over `shared`, started: its lanes, its coordinator and its removals thread. The settings are in place before
-    /// the lanes start, so the first round already runs with them.
+    /// The job over `shared`, started: its lanes, its coordinator, its crop thread, and its hide and delete jobs. The settings
+    /// are in place before the lanes start, so the first round already runs with them.
     fn start_built(
         shared: Shared,
         heights: HeightCell,
@@ -224,8 +224,8 @@ impl Runner {
         }
     }
 
-    /// A folder was taken out of the library (`Catalog::begin_removal`): its removal is finished by the removal job now,
-    /// and not only at its next recheck.
+    /// A folder was taken out of the library (`Catalog::begin_removal`): the hide job hides its folder now, and not only at
+    /// its next recheck. The delete job deletes the hidden files after it, on its own thread.
     pub fn wake_removals(&self) {
         self.lanes.wake_removals();
     }

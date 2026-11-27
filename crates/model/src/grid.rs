@@ -18,8 +18,9 @@ pub struct Entry {
     pub id: FileId,
     /// With `turns`, what makes an image URL current.
     pub mtime: i64,
-    /// The file's `files.changed` stamp as the read took it.
-    pub changed: i64,
+    /// The file's `files.turns_queued` counter as the read took it: the quarter turns queued for the file in all
+    /// (`Catalog::queue_rotation`). `pending_turns` is what the read found queued at this count.
+    pub turns_queued: u64,
     /// As analyzed, without `pending_turns`; 0 until the file is imported.
     pub width: u32,
     /// As analyzed, the height, as `width` is.
@@ -44,6 +45,9 @@ pub struct Entry {
     pub borders: Borders,
 }
 
+// The fields come to 60 bytes, padded to 64 for the 8-byte alignment: 24 for `id`, `mtime` and `turns_queued`, 16 for
+// `cut`, 12 for `width`, `height` and `duration_ms`, and 8 for `ext`, `turns`, `pending_turns`, `rating` (an
+// `Option<Rating>`, 2 bytes: `Rating` is a `u8` with no niche), `animated`, `orientation` and `borders`.
 const _: () = assert!(size_of::<Entry>() == 64, "Entry's size, in its doc");
 
 /// Whether a file's borders were looked for, and what came of it.

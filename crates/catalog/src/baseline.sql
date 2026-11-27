@@ -231,8 +231,10 @@ CREATE TABLE "folders"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL,
 
 -- A file: its identity (volume: volumes.id), its folder and merged folder (the composite key makes the database keep
 -- mid equal to its folder's, and a folder's re-key carries to its files: ON UPDATE CASCADE), its exact name, its
--- extension and kind as codes (media::Ext::code, media::Kind::code).
-CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER REFERENCES volumes(id), file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL, mid INTEGER NOT NULL, name BLOB NOT NULL, ext INTEGER NOT NULL, kind INTEGER NOT NULL CHECK (kind IN (0, 1)), size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref), FOREIGN KEY(folder_id, mid) REFERENCES folders(id, mid) ON UPDATE CASCADE);
+-- extension and kind as codes (media::Ext::code, media::Kind::code). turns_queued counts the quarter turns queued for it in
+-- all: `queue_rotation` adds each press's turns in the same transaction that queues them, and no write lowers it. A grid
+-- read takes it with the file's pending turns, so the read says which queued turns it holds.
+CREATE TABLE "files"(id INTEGER PRIMARY KEY AUTOINCREMENT, volume INTEGER REFERENCES volumes(id), file_ref INTEGER, created INTEGER, folder_id INTEGER NOT NULL, mid INTEGER NOT NULL, name BLOB NOT NULL, ext INTEGER NOT NULL, kind INTEGER NOT NULL CHECK (kind IN (0, 1)), size INTEGER NOT NULL, mtime INTEGER NOT NULL, missing INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0, pending INTEGER NOT NULL DEFAULT 1, seq INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0, unpaired INTEGER NOT NULL DEFAULT 0, turns_queued INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref), FOREIGN KEY(folder_id, mid) REFERENCES folders(id, mid) ON UPDATE CASCADE);
 
 -- indexes
 -- The hash indexes hold only the hashed rows: a row with no hash (not hashed yet, a video's pixel hash) is never looked

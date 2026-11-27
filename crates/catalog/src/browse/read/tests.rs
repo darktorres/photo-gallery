@@ -77,7 +77,7 @@ fn the_cut_is_described_as_shown() {
     let mut e = Entry {
         id: FileId::new(1),
         mtime: 0,
-        changed: 0,
+        turns_queued: 0,
         width: 1593,
         height: 736,
         duration_ms: Entry::NO_DURATION,

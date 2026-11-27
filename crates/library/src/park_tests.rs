@@ -601,6 +601,54 @@ fn a_park_on_one_volume_leaves_a_lane_on_another_running() -> Result<()> {
     Ok(())
 }
 
+/// A removal begun while another's delete pass is held hides its files before that pass ends: the hide job does not wait for
+/// the delete job (section 1). Folder `a`'s delete pass is held at its first batch; folder `b` is removed then, and its files
+/// are hidden while `a`'s pass is still held, which keeps `a`'s marker until the pass is let on.
+#[test]
+fn a_removal_begun_during_a_delete_pass_is_hidden_before_that_pass_ends() -> Result<()> {
+    let (dir, catalog_path, a) = folder_with_pictures("hide_during_delete", 5, true)?;
+    let b = add_folder(&dir, &catalog_path, "b")?;
+    let png = picture()?;
+    for i in 0..3 {
+        std::fs::write(dir.join("b").join(format!("{i:05}.png")), &png)?;
+    }
+    scan_into(&catalog_path, &b)?;
+    assert_eq!(Catalog::open(&catalog_path, PATH_RULES)?.files_under(&b)?.len(), 3, "b's pictures are catalogued");
+    // A third folder on the same drive keeps the lane alive through both removals.
+    add_folder(&dir, &catalog_path, "c")?;
+    let hooks = Arc::new(TestHooks::default());
+    let held = Arc::new(Gate::default());
+    {
+        let held = held.clone();
+        let first = AtomicBool::new(true);
+        hooks.on_delete(move || {
+            if first.swap(false, Ordering::SeqCst) {
+                held.enter();
+            }
+        });
+    }
+    let drives = Fake(vec![("a", disk(1)), ("b", disk(1)), ("c", disk(1))]);
+    let (runner, _quiet) = start(&dir, &catalog_path, drives, hooks)?;
+    let _release = Release(held.clone());
+    let (path_a, volumes_a) = begin(&catalog_path, &a)?;
+    runner.park_removal(&path_a, &volumes_a);
+    runner.wake_removals();
+    pg_testkit::wait_until(WAIT, || "a's delete pass is held", || held.entered());
+    let (path_b, volumes_b) = begin(&catalog_path, &b)?;
+    runner.park_removal(&path_b, &volumes_b);
+    runner.wake_removals();
+    pg_testkit::wait_until(
+        WAIT,
+        || "b's files are hidden while a's delete pass is held",
+        || Catalog::open(&catalog_path, PATH_RULES).and_then(|c| c.files_under(&b)).is_ok_and(|ids| ids.is_empty()),
+    );
+    assert_eq!(markers(&catalog_path)?, 2, "a's removal is not finished while its delete pass is held");
+    held.open();
+    pg_testkit::wait_until(WAIT, || "both removals finished", || markers(&catalog_path).is_ok_and(|n| n == 0));
+    assert!(runner.stop(WAIT));
+    Ok(())
+}
+
 /// The park's wait while an import runs: the time from the removal's park to the parked hook, which runs once the lanes'
 /// rounds have ended. A measurement, not a check: `cargo test -p pg-library --lib -- --ignored park_wait --nocapture`.
 #[test]

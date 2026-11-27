@@ -196,6 +196,10 @@ type ParkedHook = Arc<dyn Fn(&pg_model::rules::Path) -> std::result::Result<(), 
 #[cfg(test)]
 type PopHook = Arc<dyn Fn(&pg_model::rules::Path) + Send + Sync>;
 
+/// A hook at each batch the delete job is about to delete (its thumbnails forgotten, its rows still there).
+#[cfg(test)]
+type DeleteHook = Arc<dyn Fn() + Send + Sync>;
+
 #[cfg(test)]
 #[derive(Default)]
 pub(crate) struct TestHooks {
@@ -203,6 +207,7 @@ pub(crate) struct TestHooks {
     hide: Mutex<Option<HideHook>>,
     parked: Mutex<Option<ParkedHook>>,
     pop: Mutex<Option<PopHook>>,
+    delete: Mutex<Option<DeleteHook>>,
 }
 
 #[cfg(test)]
@@ -261,6 +266,19 @@ impl TestHooks {
         let hook = self.hide.lock().unwrap_or_else(PoisonError::into_inner).clone();
         if let Some(hook) = hook {
             hook(path);
+        }
+    }
+
+    /// Runs `hook` before each batch the delete job deletes, in every delete pass from now on.
+    pub(crate) fn on_delete(&self, hook: impl Fn() + Send + Sync + 'static) {
+        *self.delete.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(hook));
+    }
+
+    /// The delete hook, if one is set (called by the delete job before each batch). The hook runs without any lock held.
+    pub(crate) fn at_delete(&self) {
+        let hook = self.delete.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(hook) = hook {
+            hook();
         }
     }
 }

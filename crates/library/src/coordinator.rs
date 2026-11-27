@@ -137,15 +137,22 @@ pub(crate) struct Lanes {
     pub(crate) root: Arc<Control>,
     /// The crop thread's control: a child of the root, shown as a job of its own.
     crop_ctl: Arc<Control>,
-    /// The removals' control: a child of the root too, shown as a job of its own (its progress, and its pause).
+    /// The removals' control: a child of the root too, shown as a job of its own (the delete job's progress, and its pause).
+    /// The hide job waits on it as well: its stop stops both removal jobs.
     pub(crate) removal_ctl: Arc<Control>,
     pub(crate) shared: Arc<Shared>,
     /// Where the roots' drives are asked (the system's, or a test's).
     drives: Arc<dyn Drives + Send + Sync>,
     registry: Mutex<Registry>,
+    /// The removals the hide job has hidden in this run, by park key (`hide_marker`): the delete job deletes these, and no
+    /// other. Cleared when a removal is begun (`park_removal`), so a folder removed again is hidden again.
+    hidden: Mutex<BTreeSet<String>>,
     coordinator: OnceLock<Arc<Service>>,
     cropper: OnceLock<Arc<Service>>,
-    removals: OnceLock<Arc<Service>>,
+    /// The hide job: hides a removal's folder under its park, as soon as the removal is begun.
+    hide: OnceLock<Arc<Service>>,
+    /// The delete job: deletes the files of the removals the hide job has hidden.
+    deletes: OnceLock<Arc<Service>>,
 }
 
 /// How often the removals are looked at without a wake: a removal kept for an unfinished write is tried again then.
@@ -183,11 +190,13 @@ impl Lanes {
             shared,
             drives,
             registry: Mutex::new(Registry::default()),
+            hidden: Mutex::new(BTreeSet::new()),
             coordinator: OnceLock::new(),
             cropper: OnceLock::new(),
-            removals: OnceLock::new(),
+            hide: OnceLock::new(),
+            deletes: OnceLock::new(),
         });
-        // The removals an earlier run left are parked before any lane starts (D5), and released by the removal job.
+        // The removals an earlier run left are parked before any lane starts (D5), and released by the hide job once hidden.
         park_earlier_removals(&lanes.shared);
         let weak = Arc::downgrade(&lanes);
         let coordinator = Service::start("lane coordinator", move |waker| coordinate(&weak, waker))
@@ -198,9 +207,13 @@ impl Lanes {
             .map_err(|e| Error::step("start the crop job", e))?;
         let _ = lanes.cropper.set(Arc::new(cropper));
         let weak = Arc::downgrade(&lanes);
-        let removals = Service::start("removal job", move |waker| remove(&weak, waker))
-            .map_err(|e| Error::step("start the removal job", e))?;
-        let _ = lanes.removals.set(Arc::new(removals));
+        let hide = Service::start("hide job", move |waker| hide_removals(&weak, waker))
+            .map_err(|e| Error::step("start the hide job", e))?;
+        let _ = lanes.hide.set(Arc::new(hide));
+        let weak = Arc::downgrade(&lanes);
+        let deletes = Service::start("delete job", move |waker| delete_removals(&weak, waker))
+            .map_err(|e| Error::step("start the delete job", e))?;
+        let _ = lanes.deletes.set(Arc::new(deletes));
         Ok(lanes)
     }
 
@@ -272,9 +285,16 @@ impl Lanes {
         }
     }
 
-    /// A removal was begun (`Catalog::begin_removal`): the removals thread finishes it, now.
+    /// A removal was begun (`Catalog::begin_removal`): the hide job hides its folder now, and not at its next recheck.
     pub(crate) fn wake_removals(&self) {
-        if let Some(service) = self.removals.get() {
+        if let Some(service) = self.hide.get() {
+            service.wake();
+        }
+    }
+
+    /// A removal's folder was hidden: the delete job deletes the files of the hidden removals now.
+    fn wake_deletes(&self) {
+        if let Some(service) = self.deletes.get() {
             service.wake();
         }
     }
@@ -358,13 +378,14 @@ impl Lanes {
         self.registry().cuts.len()
     }
 
-    /// Stops every thread: the coordinator and the crop thread first (so no lane starts after the lanes are asked), then
-    /// the lanes, each after its round. `false` if one is still running when `timeout` is spent.
+    /// Stops every thread: the coordinator, the crop thread and the removal jobs first (so no lane starts after the lanes are
+    /// asked), then the lanes, each after its round. `false` if one is still running when `timeout` is spent.
     pub(crate) fn stop(&self, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         let mut stopped = true;
         self.root.request_stop();
-        for service in [self.coordinator.get(), self.cropper.get(), self.removals.get()].into_iter().flatten() {
+        let services = [self.coordinator.get(), self.cropper.get(), self.hide.get(), self.deletes.get()];
+        for service in services.into_iter().flatten() {
             service.quit();
             self.root.wake();
             stopped &= service.stop_within(deadline.saturating_duration_since(Instant::now()));
@@ -653,6 +674,8 @@ impl Lanes {
     /// folder's volumes from here (section 1, D1). The rounds running are asked to stop; the removal job waits for them and
     /// takes its own holds before it hides the files.
     pub(crate) fn park_removal(&self, path: &RulePath, volumes: &Volumes) {
+        // The removal is begun now, so its folder is hidden by the hide job again, whatever an earlier removal of it left.
+        self.hidden_set().remove(&park_key(path));
         self.shared.parks.park(&park_key(path), volumes.clone());
         for lane in self.lanes_on(volumes) {
             lane.inner.ctl.request_stop();
@@ -873,18 +896,49 @@ fn crop(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     }
 }
 
-/// The removals thread: woken when a folder is removed, and every [`REMOVAL_RECHECK`] otherwise, it finishes the removals
-/// not finished (`removals::finish`): a removal kept for an unfinished write is tried again, and one a command left (with
-/// the app closed) is finished here.
-fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
+/// The hide job's thread: woken when a folder is removed, and every [`REMOVAL_RECHECK`] otherwise. It hides the folders of the
+/// removals not hidden yet (`hide_markers`), and wakes the delete job as each is hidden. It never waits for a delete pass: a
+/// folder removed while another folder's files are being deleted is hidden at once.
+fn hide_removals(weak: &Weak<Lanes>, waker: &Waker<'_>) {
+    let mut catalog: Option<Catalog> = None;
+    // The failure last told: a failure that repeats at each recheck is told once, until it changes or goes.
+    let mut told: Option<String> = None;
+    // The hidden folders no marker covers (an older build's removals) are given one, once the job has read the markers.
+    let mut adopted = false;
+    // The first pass is at once, not after a recheck: a removal a command left (with the app closed) is hidden at start.
+    let mut first = true;
+    loop {
+        if std::mem::take(&mut first) {
+            if waker.quitting() {
+                return;
+            }
+        } else if waker.wait(Some(REMOVAL_RECHECK)) == Woke::Quit {
+            return;
+        }
+        let Some(lanes) = weak.upgrade() else { return };
+        match lanes.run_hides(&mut catalog, &mut adopted) {
+            Ok(()) => told = None,
+            Err(error) => {
+                if told.as_deref() != Some(error.as_str()) {
+                    lanes.shared.notices.post(Notice::FolderNotRemoved { error: error.clone() });
+                    told = Some(error);
+                }
+            }
+        }
+        drop(lanes);
+    }
+}
+
+/// The delete job's thread: woken when a removal's folder is hidden, and every [`REMOVAL_RECHECK`] otherwise. It deletes the
+/// files of the hidden removals (`delete_hidden`): a removal kept for an unfinished write is tried again at the recheck, and
+/// one a command left (with the app closed) is finished here. The thumbnail cache's startup sweep runs on it too.
+fn delete_removals(weak: &Weak<Lanes>, waker: &Waker<'_>) {
     let mut catalog: Option<Catalog> = None;
     // The failure last told: a failure that repeats at each recheck is told once, until it changes or goes.
     let mut told: Option<String> = None;
     // The thumbnails of the files a command removed (with the app closed) are dropped once, at the first start.
     let mut swept = false;
-    // The hidden folders no marker covers (an older build's removals) are given one, once the thread has run without error.
-    let mut adopted = false;
-    // The first pass is at once, not after a recheck: a removal a command left (with the app closed) is finished at start.
+    // The first pass is at once, not after a recheck: a hidden removal left by an earlier run is deleted at start.
     let mut first = true;
     loop {
         if std::mem::take(&mut first) {
@@ -899,13 +953,8 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
         if !swept {
             swept = lanes.startup_sweep(&mut catalog);
         }
-        match lanes.run_removals(&mut catalog, !adopted) {
-            Ok(true) => {
-                told = None;
-                adopted = true;
-            }
-            // A stop: the markers wait, parked, for the next try.
-            Ok(false) => {}
+        match lanes.run_deletes(&mut catalog) {
+            Ok(()) => told = None,
             Err(error) => {
                 if told.as_deref() != Some(error.as_str()) {
                     lanes.shared.notices.post(Notice::FolderNotRemoved { error: error.clone() });
@@ -918,47 +967,87 @@ fn remove(weak: &Weak<Lanes>, waker: &Waker<'_>) {
 }
 
 impl Lanes {
-    /// Finishes the removals not finished, as one phase of the removal job: its row in the status bar, its progress
-    /// (the files of the removals, as they go), and its pause, which waits between batches. The error text when a
-    /// removal could not be finished.
-    fn run_removals(&self, conn: &mut Option<Catalog>, adopt: bool) -> std::result::Result<bool, String> {
+    /// The removals the hide job has hidden in this run, by park key (`Lanes::hidden`).
+    fn hidden_set(&self) -> MutexGuard<'_, BTreeSet<String>> {
+        self.hidden.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The hide job's pass, on its connection: the removals not hidden yet are hidden (`hide_markers`). The removals an earlier
+    /// run left are unknown until their markers are read, so [`STARTUP_KEY`] holds the lanes until every one is hidden.
+    fn run_hides(&self, conn: &mut Option<Catalog>, adopted: &mut bool) -> std::result::Result<(), String> {
         let catalog = match conn.take() {
             Some(c) => c,
             None => Catalog::open(&self.shared.catalog_path, PATH_RULES)
                 .map_err(|e| error_text(&pg_model::error::chain(&e)))?,
         };
-        let found = if adopt { catalog.adopt_hidden_folders().map(drop) } else { Ok(()) }
-            .and_then(|()| catalog.removal_markers());
-        let result = match found {
-            Ok(markers) if markers.is_empty() => Ok(true),
-            Ok(markers) => self.finish_removals(&catalog, &markers),
-            Err(e) => Err(error_text(&pg_model::error::chain(&e))),
-        };
-        // The removals an earlier run left are no longer unknown once the job has been through all of them.
+        let result = self.hide_markers(&catalog, adopted);
         if matches!(result, Ok(true)) {
             self.shared.parks.release(STARTUP_KEY);
         }
         *conn = Some(catalog);
+        result.map(|_| ())
+    }
+
+    /// The removals not hidden in this run, hidden: each under its park (`hide_marker`), its folder's scans stopped first, and
+    /// the delete job woken as each one is hidden. A hidden removal is recorded in `hidden` and not hidden again, so its park
+    /// is taken and released by its own hide, once per run. `Ok(false)` when a stop came first: the rest waits for the next
+    /// try. The hidden folders no marker covers are given one, once (`adopt_hidden_folders`).
+    fn hide_markers(&self, catalog: &Catalog, adopted: &mut bool) -> std::result::Result<bool, String> {
+        if !*adopted {
+            catalog.adopt_hidden_folders().map_err(|e| error_text(&pg_model::error::chain(&e)))?;
+            *adopted = true;
+        }
+        let markers = catalog.removal_markers().map_err(|e| error_text(&pg_model::error::chain(&e)))?;
+        let pending: Vec<RulePath> = {
+            let hidden = self.hidden_set();
+            markers.into_iter().map(|marker| marker.path).filter(|path| !hidden.contains(&park_key(path))).collect()
+        };
+        for path in &pending {
+            self.stop_scans_under(path);
+        }
+        for path in &pending {
+            if self.removal_ctl.stop_requested() {
+                return Ok(false);
+            }
+            if !self.hide_marker(catalog, path)? {
+                return Ok(false);
+            }
+            self.hidden_set().insert(park_key(path));
+            self.wake_deletes();
+        }
+        Ok(true)
+    }
+
+    /// The delete job's pass, on its connection: the removals the hide job has hidden are deleted (`delete_hidden`).
+    fn run_deletes(&self, conn: &mut Option<Catalog>) -> std::result::Result<(), String> {
+        let catalog = match conn.take() {
+            Some(c) => c,
+            None => Catalog::open(&self.shared.catalog_path, PATH_RULES)
+                .map_err(|e| error_text(&pg_model::error::chain(&e)))?,
+        };
+        let result = self.delete_hidden(&catalog);
+        *conn = Some(catalog);
         result
     }
 
-    /// The markers' removals, finished (section 1). Each marker is hidden under a park of its lanes (`hide_marker`). `false`
-    /// when a stop came first: the markers wait for the next try, parked. Then the files go in batches under the job's
-    /// phase, and the folders' listing is told the tree changed. No lane is parked for the deletes: the hidden files are
-    /// invisible to every pass.
-    fn finish_removals(&self, catalog: &Catalog, markers: &[pg_catalog::Marker]) -> std::result::Result<bool, String> {
-        for marker in markers {
-            self.stop_scans_under(&marker.path);
+    /// The files of the removals the hide job has hidden, deleted, as one phase of the delete job: its row in the status bar,
+    /// its progress (the files of those removals, as they go), and its pause, which waits between batches. A removal not
+    /// hidden yet is left alone: its files are the hide job's until its hide is done. No lane is parked for the deletes: the
+    /// hidden files are invisible to every pass. The error text when a removal could not be finished.
+    fn delete_hidden(&self, catalog: &Catalog) -> std::result::Result<(), String> {
+        let markers = catalog.removal_markers().map_err(|e| error_text(&pg_model::error::chain(&e)))?;
+        let hidden = self.hidden_set().clone();
+        let ready: Vec<RulePath> =
+            markers.into_iter().map(|marker| marker.path).filter(|path| hidden.contains(&park_key(path))).collect();
+        if ready.is_empty() {
+            return Ok(());
         }
-        for marker in markers {
-            if !self.hide_marker(catalog, &marker.path)? {
-                return Ok(false);
-            }
-        }
-        let total = catalog.removal_files().unwrap_or(0);
+        let total = catalog.removal_files_of(&ready).unwrap_or(0);
         let _phase = self.removal_ctl.begin(Phase::Removing, total);
         let mut done = 0u64;
-        let finished = removals::drive(catalog, &self.shared.thumbs, &mut |files| {
+        let finished = removals::drive(catalog, &self.shared.thumbs, &ready, &mut |files| {
+            #[cfg(test)]
+            self.shared.hooks.at_delete();
             done = done.saturating_add(count_u64(files));
             self.removal_ctl.set_done(done);
             self.removal_ctl.checkpoint()
@@ -967,7 +1056,7 @@ impl Lanes {
         // The sweep's outcome is said apart: it is not the removal's failure (section 10, D12).
         let finished = finished.map_err(|e| error_text(&e))?;
         self.swept(&finished.swept);
-        Ok(true)
+        Ok(())
     }
 
     /// The sweep of the cache's orphans at the removal job's start, on its connection (opened if it has none): what a command
@@ -1030,12 +1119,12 @@ fn park_key(path: &RulePath) -> String {
 }
 
 /// The key of the parks the removals an earlier run left have, when their markers can't be read: released when those
-/// removals run to their end.
+/// removals are all hidden.
 const STARTUP_KEY: &str = "startup removals";
 
 /// Parks the volumes of the removals an earlier run left, before any lane starts (section 1, D5): no lane works on a folder
 /// whose files are not hidden yet. A marker whose volumes can't be read parks every lane, under [`STARTUP_KEY`], until the
-/// removals run. No catalog yet means no removal.
+/// removals are hidden. No catalog yet means no removal.
 fn park_earlier_removals(shared: &Shared) {
     let Ok(catalog) = Catalog::open(&shared.catalog_path, PATH_RULES) else { return };
     match catalog.removal_markers() {

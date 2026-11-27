@@ -92,6 +92,65 @@ pub struct Turned {
     pub reshaped: bool,
 }
 
+/// The quarter turns the user has pressed on one file, as the grid counts them until a read of the file's catalog
+/// counter (`Entry::turns_queued`) reaches them. The desktop keeps one for each file with presses in flight or not yet
+/// read. Nothing here is counted by timing: a press counts at once, and a read counts exactly the presses its counter
+/// reaches, so a press is never counted twice and a read never has to be told which presses it holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TurnCount {
+    /// The quarter turns pressed, counted from the catalog's counter when the file was first seen.
+    submitted: u64,
+    /// The catalog's counter in the last read applied.
+    committed: u64,
+    /// The presses whose writes are not resolved yet (committed, or refused).
+    in_flight: usize,
+}
+
+impl TurnCount {
+    /// The count of a file first seen at the catalog's counter `read`, with no press made.
+    pub fn new(read: u64) -> Self {
+        TurnCount { submitted: read, committed: read, in_flight: 0 }
+    }
+
+    /// A press of `turns` quarter turns on the file: counted at once, and in flight until its write is resolved.
+    pub fn press(&mut self, turns: Turns) {
+        self.submitted += u64::from(turns.get());
+        self.in_flight += 1;
+    }
+
+    /// The press's write is committed: the catalog's counter has its turns, and the next read that reaches the counter
+    /// counts them.
+    pub fn written(&mut self) {
+        self.in_flight = self.in_flight.saturating_sub(1);
+    }
+
+    /// The press's write was refused: the catalog's counter did not move, so the press is taken back. The count never
+    /// goes below the counter the last read gave.
+    pub fn refused(&mut self, turns: Turns) {
+        self.submitted = self.submitted.saturating_sub(u64::from(turns.get())).max(self.committed);
+        self.in_flight = self.in_flight.saturating_sub(1);
+    }
+
+    /// An applied read at the catalog's counter `read`: the presses up to it are in the read's pending turns. A read can
+    /// only raise the count, so a read that is older than the last one changes nothing here.
+    pub fn read(&mut self, read: u64) {
+        self.submitted = self.submitted.max(read);
+        self.committed = self.committed.max(read);
+    }
+
+    /// The pending turns an entry shows, for the entry as read at its counter (`Entry::turns_queued`): the pending turns
+    /// the read found, plus the quarter turns pressed after that counter.
+    pub fn pending(&self, read: &Entry) -> Turns {
+        let unread = self.submitted.saturating_sub(read.turns_queued) % 4;
+        read.pending_turns.plus(Turns::new(u8::try_from(unread).unwrap_or_default()))
+    }
+
+    /// Whether the last read counts every press and none is in flight: the count is no longer needed.
+    pub fn settled(&self) -> bool {
+        self.submitted == self.committed && self.in_flight == 0
+    }
+}
+
 /// Whether a list asked for has come in (`Grid::arrive`).
 #[derive(Debug)]
 pub enum Arrival {
@@ -479,7 +538,7 @@ mod tests {
         Entry {
             id: FileId::new(id),
             mtime: 0,
-            changed: 0,
+            turns_queued: 0,
             width: w,
             height: h,
             duration_ms: Entry::NO_DURATION,
@@ -680,6 +739,32 @@ mod tests {
         let fresh = Entry { rating: Rating::new(4), turns: Turns::new(1), ..entry(1, 50, 100) };
         assert_eq!(g.refresh_turned(revision, vec![fresh]), Some(Turned { changed: vec![0], reshaped: false }));
         assert_eq!(g.turned_request(), None);
+    }
+
+    /// A press shows on the entry from the moment it is made, and a read whose counter reaches it counts it once: the
+    /// read's pending turns already hold it. A refused press is taken back, and the count settles.
+    #[test]
+    fn a_press_is_counted_once_by_the_read_that_reaches_it_and_a_refused_one_is_taken_back() {
+        let mut count = TurnCount::new(4);
+        let before = Entry { turns_queued: 4, ..entry(1, 1, 1) };
+        count.press(Turns::new(1));
+        assert_eq!(count.pending(&before), Turns::new(1), "shown while in flight");
+        count.written();
+        assert!(!count.settled(), "committed, but no read counts it yet");
+        assert_eq!(count.pending(&before), Turns::new(1), "a read from before the commit still shows it");
+        // The read after the commit: its counter reaches the press, and its pending turns hold it.
+        count.read(5);
+        let after = Entry { turns_queued: 5, pending_turns: Turns::new(1), ..entry(1, 1, 1) };
+        assert_eq!(count.pending(&after), Turns::new(1), "counted once");
+        assert!(count.settled());
+
+        // A counterclockwise press is three quarter turns; refused, it is taken back to none.
+        let mut count = TurnCount::new(0);
+        count.press(Turns::new(3));
+        assert_eq!(count.pending(&entry(1, 1, 1)), Turns::new(3));
+        count.refused(Turns::new(3));
+        assert_eq!(count.pending(&entry(1, 1, 1)), Turns::NONE);
+        assert!(count.settled());
     }
 
     #[test]

@@ -137,14 +137,34 @@ impl Catalog {
         Ok(hidden)
     }
 
-    /// Steps C and D for every marker, as far as they go. `before_page` is called with each batch's file ids before the
-    /// batch is deleted (the caller forgets their thumbnails there); it returns `false` to stop: the drive then ends with
-    /// [`Driven::stopped`], and the marker stays for the next drive. A marker is dropped without a deletion when a library
-    /// folder that overlaps it is found (an older build added one meanwhile): the rows stay hidden, and that folder's walk
-    /// takes them back.
+    /// Steps C and D for every marker, as far as they go (see [`Catalog::drive_removals_of`]).
     pub fn drive_removals(&self, before_page: &mut dyn FnMut(&[i64]) -> bool) -> Result<Driven> {
+        self.drive_removals_where(&|_: &RulePath| true, before_page)
+    }
+
+    /// Steps C and D for the markers at `folders` only, as far as they go. The library's delete job drives the removals its
+    /// hide job has hidden, and leaves the others to their own drives: a removal whose hide is running has its files still
+    /// visible, and no delete may touch them. `before_page` is called with each batch's file ids before the batch is deleted
+    /// (the caller forgets their thumbnails there); it returns `false` to stop: the drive then ends with [`Driven::stopped`],
+    /// and the marker stays for the next drive. A marker is dropped without a deletion when a library folder that overlaps it
+    /// is found (an older build added one meanwhile): the rows stay hidden, and that folder's walk takes them back.
+    pub fn drive_removals_of(
+        &self,
+        folders: &[RulePath],
+        before_page: &mut dyn FnMut(&[i64]) -> bool,
+    ) -> Result<Driven> {
+        let rules = self.rules;
+        self.drive_removals_where(&|path: &RulePath| folders.iter().any(|folder| rules.same(folder, path)), before_page)
+    }
+
+    /// The drive of the markers `wanted` takes, in their order.
+    fn drive_removals_where(
+        &self,
+        wanted: &dyn Fn(&RulePath) -> bool,
+        before_page: &mut dyn FnMut(&[i64]) -> bool,
+    ) -> Result<Driven> {
         let mut driven = Driven::default();
-        for marker in self.removal_markers()? {
+        for marker in self.removal_markers()?.into_iter().filter(|marker| wanted(&marker.path)) {
             if !drive_one(self, &marker.path, before_page, &mut driven)? {
                 driven.stopped = true;
                 break;
@@ -217,18 +237,20 @@ impl Catalog {
         Ok(markers)
     }
 
-    /// The files under the removals not finished (kept ones included): the total of their progress.
-    pub fn removal_files(&self) -> Result<u64> {
-        let mut folders = Vec::new();
-        for marker in self.removal_markers()? {
-            folders.extend(folder_ids_under(&self.conn, self.rules, &marker.path)?);
+    /// The files under the removals of `folders` (kept ones included): the total of their progress.
+    pub fn removal_files_of(&self, folders: &[RulePath]) -> Result<u64> {
+        let mut ids = Vec::new();
+        for folder in folders {
+            ids.extend(folder_ids_under(&self.conn, self.rules, folder)?);
         }
-        if folders.is_empty() {
+        ids.sort_unstable();
+        ids.dedup();
+        if ids.is_empty() {
             return Ok(0);
         }
         Ok(self.conn.query_row(
             "SELECT count(*) FROM files WHERE folder_id IN rarray(?1)",
-            [Rc::new(values(&folders))],
+            [Rc::new(values(&ids))],
             |r| r.get(0),
         )?)
     }
@@ -732,7 +754,7 @@ mod tests {
         a_deferred_row_is_kept_until_discarded_and_its_temp_is_returned_posix
     );
 
-    /// The removals thread's run, from the start: hide, then drive. A run after a stop or a crash is this again.
+    /// A removal's run, from the start: hide, then drive. A run after a stop or a crash is this again.
     fn resume(c: &Catalog, rules: PathRules) -> Driven {
         c.hide_pages(&p(rules, r"D:\r")).unwrap();
         c.drive_removals(&mut |_| true).unwrap()
@@ -928,6 +950,37 @@ mod tests {
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved,
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_windows,
         a_deferred_row_goes_at_a_later_run_once_its_write_is_resolved_posix
+    );
+
+    /// The delete job drives the removals it is given and no other: the other marker and its rows stay for its own drive,
+    /// whose hide may be running (`drive_removals_of`).
+    fn a_drive_of_some_removals_leaves_the_others(rules: PathRules) {
+        let c = library(rules);
+        // A second root, `D:\x`, with its own folder and file: its removal is the one the other drive must not touch.
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        crate::fixture::state::add_folder(&c, 3, &spelled(rules, r"D:\x")).unwrap();
+        fixture::insert(&c, &[File::new(FileId::new(3), FolderId::new(3), "c.jpg", 10, 100)]).unwrap();
+        let (r, x) = (p(rules, r"D:\r"), p(rules, r"D:\x"));
+        for folder in [&r, &x] {
+            let root = c.root_id(folder).unwrap().unwrap();
+            assert!(matches!(c.begin_removal(root, folder).unwrap(), Begun::Started { .. }));
+        }
+        c.hide_pages(&r).unwrap();
+        c.hide_pages(&x).unwrap();
+        assert_eq!(c.removal_files_of(std::slice::from_ref(&x)).unwrap(), 1);
+        let driven = c.drive_removals_of(std::slice::from_ref(&x), &mut |_| true).unwrap();
+        assert_eq!(driven.files, 1);
+        assert_eq!(rows(&c, "files"), 2, "the other removal's files are not deleted");
+        let left: Vec<RulePath> = c.removal_markers().unwrap().into_iter().map(|m| m.path).collect();
+        assert_eq!(left, std::slice::from_ref(&r), "only x's marker went");
+        assert_eq!(c.drive_removals(&mut |_| true).unwrap().files, 2);
+        assert_eq!((rows(&c, "files"), c.removal_markers().unwrap().len()), (0, 0));
+    }
+
+    under_both_rules!(
+        a_drive_of_some_removals_leaves_the_others,
+        a_drive_of_some_removals_leaves_the_others_windows,
+        a_drive_of_some_removals_leaves_the_others_posix
     );
 
     /// The folders under a path are the range over their `path_key`s, and that is the scan with `is_under` over every

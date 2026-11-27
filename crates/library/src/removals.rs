@@ -1,14 +1,16 @@
 //! Finishing the removals of folders from the library (`Catalog::begin_removal`): the folder's files are hidden, then deleted
 //! from the catalog batch by batch, with their thumbnails, and its folders go; the catalog's free pages are given back and
-//! the thumbnail cache's orphans are dropped. [`finish`] is the one place this runs: the library's removals thread runs it
-//! as a job of its own (with a progress row and a pause), and a command, or the app when the library is not running, runs it
-//! on the caller. Every step is idempotent, so a removal interrupted anywhere is finished by the next call.
+//! the thumbnail cache's orphans are dropped. [`finish`] is the one place this runs: the library's delete job runs [`drive`]
+//! as a job of its own (with a progress row and a pause), after its hide job has hidden each folder; a command, or the app
+//! when the library is not running, runs [`finish`] on the caller. Every step is idempotent, so a removal interrupted
+//! anywhere is finished by the next call.
 
 use std::ops::ControlFlow;
 
 use crate::{Error, Result};
 use pg_catalog::{Catalog, Driven};
 use pg_model::ids::FileId;
+use pg_model::rules::Path as RulePath;
 use pg_thumbcache::ThumbCache;
 
 /// What [`finish`] and [`drive`] did: the removals' deletes, and apart from them the sweep of the cache's orphans
@@ -36,18 +38,26 @@ impl std::ops::Deref for Finished {
 /// first such failure is told as the sweep's (`Finished::swept`) after the rest is done, and the sweep at the end drops
 /// what it can.
 pub fn finish(catalog: &Catalog, thumbs: &ThumbCache, progress: &mut dyn FnMut(usize) -> bool) -> Result<Finished> {
-    for marker in catalog.removal_markers()? {
+    let markers = catalog.removal_markers()?;
+    for marker in &markers {
         catalog.hide_pages(&marker.path)?;
     }
-    drive(catalog, thumbs, progress)
+    let folders: Vec<RulePath> = markers.into_iter().map(|marker| marker.path).collect();
+    drive(catalog, thumbs, &folders, progress)
 }
 
-/// The deletes of [`finish`], once the markers' folders are hidden: their files go batch by batch, each batch's thumbnails
-/// forgotten before it, then the free pages are given back and the orphans dropped. The library's removal job calls this
-/// after it has hidden the folders under its parks (section 1); a caller with no lanes to park uses [`finish`].
-pub fn drive(catalog: &Catalog, thumbs: &ThumbCache, progress: &mut dyn FnMut(usize) -> bool) -> Result<Finished> {
+/// The deletes of [`finish`], for the removals at `folders`, once their folders are hidden: their files go batch by batch,
+/// each batch's thumbnails forgotten before it, then the free pages are given back and the orphans dropped. The library's
+/// delete job calls this for the removals its hide job has hidden under their parks (section 1); a caller with no lanes to
+/// park uses [`finish`].
+pub fn drive(
+    catalog: &Catalog,
+    thumbs: &ThumbCache,
+    folders: &[RulePath],
+    progress: &mut dyn FnMut(usize) -> bool,
+) -> Result<Finished> {
     let mut forget_failed = None;
-    let driven = catalog.drive_removals(&mut |ids| {
+    let driven = catalog.drive_removals_of(folders, &mut |ids| {
         let ids: Vec<FileId> = ids.iter().map(|&id| FileId::new(id)).collect();
         if let Err(e) = thumbs.forget_many(&ids) {
             forget_failed.get_or_insert(e);

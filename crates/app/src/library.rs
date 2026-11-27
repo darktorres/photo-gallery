@@ -710,9 +710,9 @@ impl LibraryService {
     }
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.
-    /// Returns the file's queued turns now, the catalog's total, and the file's `changed` stamp as the write left it
-    /// (`Catalog::queue_rotation`).
-    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<(pg_model::turns::Turns, i64)> {
+    /// Returns the file's queued turns now, the catalog's total, and the file's `turns_queued` counter as the write left
+    /// it: the count of the quarter turns queued for the file, which a grid read carries (`Catalog::queue_rotation`).
+    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<(pg_model::turns::Turns, u64)> {
         let queued = self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
         self.wake_writer();
         Ok(queued)

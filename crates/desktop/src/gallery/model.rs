@@ -137,9 +137,9 @@ impl qobject::GalleryModel {
             Arrival::Ready(entries) => entries,
             Arrival::Stale | Arrival::Held => return,
         };
-        // The presses the list's read counts or not, settled against the entries shown now (`settle_presses`).
+        // The turns pressed on the files the list reads count in it (`settle_turns`), against the entries shown now.
         let displayed: BTreeMap<FileId, Entry> = self.grid.entries().iter().map(|e| (e.id, *e)).collect();
-        let entries = self.settle_presses(entries, |id| displayed.get(&id).copied());
+        let entries = self.as_mut().rust_mut().settle_turns(entries, |id| displayed.get(&id).copied());
         self.as_mut().about_to_load();
         let keep = self.grid.keep();
         let (current, anchor) = (self.file_at(self.current), self.file_at(self.anchor));
@@ -149,8 +149,6 @@ impl qobject::GalleryModel {
             this.forget_details();
             this.grid.swap_entries(entries)
         };
-        // The entries now shown are read: the presses they count are taken off (`retire_presses`).
-        self.as_mut().rust_mut().retire_presses();
         // The list the window shows from now on: what its `ListShown` reports (`Shell::list_shown`).
         super::APPLIED.with(|applied| applied.set(Some(generation)));
         // A list whose read failed (`apply_failed`) is shown as failed; any other list is not.

@@ -103,9 +103,10 @@ impl Catalog {
     /// Turn a file `turns` quarter turns clockwise: queued for the writer, which turns the file itself losslessly where
     /// it can and keeps the turn in the catalog otherwise. Turns add up until written. Returns the file's queued turns
     /// now, the total the catalog holds (what a reader sees as its pending turns), so a caller sets its picture of them
-    /// to this rather than adding `turns` to it; and the file's `changed` stamp as this same transaction left it, which
-    /// the file's grid entry carries (`Entry::changed`).
-    pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<(Turns, i64)> {
+    /// to this rather than adding `turns` to it; and the file's `turns_queued` counter as this same transaction left it
+    /// (`Entry::turns_queued`). The counter adds the quarter turns queued and no write lowers it, so a caller that
+    /// counts its own presses against it counts each press once, whenever it reads.
+    pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<(Turns, u64)> {
         let conn = &self.conn;
         let tx = crate::transaction::write_transaction(conn)?;
         let file_id = file_id.get();
@@ -137,9 +138,15 @@ impl Catalog {
             ),
             [file_id],
         )?;
-        let changed: i64 = tx.query_row("SELECT changed FROM files WHERE id = ?1", [file_id], |r| r.get(0))?;
+        // The counter moves with the queue, in the same transaction: a read that sees the queued turns sees the count.
+        tx.execute(
+            "UPDATE files SET turns_queued = turns_queued + ?2 WHERE id = ?1",
+            params![file_id, i64::from(turns.get())],
+        )?;
+        let turns_queued: u64 =
+            tx.query_row("SELECT turns_queued FROM files WHERE id = ?1", [file_id], |r| r.get(0))?;
         tx.commit()?;
-        Ok((total, changed))
+        Ok((total, turns_queued))
     }
 
     /// The oldest job the writer can try now: an interrupted copy first (its temp is complete), then the oldest change
@@ -466,6 +473,19 @@ mod tests {
         assert_eq!(raw::queued(&c, 1, "rotation"), Some(2));
         c.queue_rotation(FileId::new(1), Turns::new(2)).unwrap();
         assert_eq!(raw::queued(&c, 1, "rotation"), None);
+    }
+
+    /// The counter adds the quarter turns each press queues (a counterclockwise press is three), and the write of them
+    /// leaves it where it is.
+    #[test]
+    fn the_turns_queued_counter_adds_quarter_turns_and_no_write_lowers_it() {
+        let c = library(PathRules::Windows);
+        assert_eq!(c.queue_rotation(FileId::new(1), Turns::new(1)).unwrap(), (Turns::new(1), 1));
+        assert_eq!(c.queue_rotation(FileId::new(1), Turns::new(3)).unwrap(), (Turns::new(0), 4));
+        assert_eq!(c.queue_rotation(FileId::new(1), Turns::new(2)).unwrap(), (Turns::new(2), 6));
+        let job = c.next_write(0).unwrap().unwrap();
+        c.write_done(&job, WriteEffect::KeptInCatalog(Turns::new(2))).unwrap();
+        assert_eq!(c.grid_entry(FileId::new(1)).unwrap().unwrap().turns_queued, 6);
     }
 
     #[test]

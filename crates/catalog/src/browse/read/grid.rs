@@ -24,7 +24,7 @@ macro_rules! entry_columns {
     () => {
         "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
     f.turns, coalesce(w.value, 0), r.rating, coalesce(a.frames, 1), coalesce(a.orientation, 1),
-    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL, f.changed"
+    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL, f.turns_queued"
     };
 }
 
@@ -56,7 +56,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
         id: FileId::new(r.get(0)?),
         mtime: r.get(1)?,
-        changed: r.get(16)?,
+        turns_queued: r.get(16)?,
         width: r.get(2)?,
         height: r.get(3)?,
         duration_ms: match r.get::<_, Option<i64>>(4)? {

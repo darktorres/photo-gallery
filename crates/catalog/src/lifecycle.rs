@@ -578,10 +578,12 @@ pub(crate) fn set_taken_zone(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod key_version_tests {
     use pg_model::ids::{FileId, FolderId};
+    use pg_model::rules::PathRules;
     use pg_platform::native::PATH_RULES;
     use rusqlite::{Connection, params};
 
     use crate::Catalog;
+    use crate::browse::fixtures::spelled;
     use crate::fixture::{File, insert, state};
     use crate::test_support::versions;
     use crate::types::key_version_text;
@@ -709,8 +711,8 @@ mod key_version_tests {
         let dir = pg_testkit::run_folder("scratch_catalog", "large").unwrap();
         let path = dir.join("catalog.sqlite");
         let c = Catalog::prepare(&path, versions(), PATH_RULES).unwrap();
-        state::add_scan(&c, 1, "D:\\p").unwrap();
-        state::add_folder(&c, 1, "D:\\p").unwrap();
+        state::add_scan(&c, 1, &spelled(PATH_RULES, r"D:\p")).unwrap();
+        state::add_folder(&c, 1, &spelled(PATH_RULES, r"D:\p")).unwrap();
         let tx = c.conn.unchecked_transaction().unwrap();
         tx.execute("INSERT OR IGNORE INTO volumes(id, serial) VALUES (1, 1)", []).unwrap();
         {
@@ -749,7 +751,10 @@ mod key_version_tests {
             )
             .unwrap();
         assert_eq!(wrong, 0, "every file is in its folder's merged folder after the recompute");
-        let found = c.file_by_path(&PATH_RULES.parse("D:\\p\\F123456.JPG").unwrap()).unwrap();
+        // The file is `f123456.jpg`. Windows compares names without case (NTFS), so the lookup spells it in capitals there;
+        // POSIX compares the exact bytes, so it spells the name as stored. Each is spelled for the rules in use.
+        let typed = if PATH_RULES == PathRules::Windows { r"D:\p\F123456.JPG" } else { r"D:\p\f123456.jpg" };
+        let found = c.file_by_path(&PATH_RULES.parse(&spelled(PATH_RULES, typed)).unwrap()).unwrap();
         assert!(found.is_some(), "a file is found by its name key, through the rebuilt index");
         let check: String = c.conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
         assert_eq!(check, "ok");

@@ -20,7 +20,8 @@ fn library(prefix: &str, names: &[&str]) -> Result<(PathBuf, PathBuf, PathBuf), 
     let dir = pg_testkit::run_folder_with("pg_driver_tests", prefix, &["home", "images"])?;
     let pixels: Vec<u8> =
         (0..8u32 * 8 * 3).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap_or(0)).collect();
-    let images = dir.join("images");
+    // The folder as the disk spells it: the catalog keys a folder by its real path, so a test looks it up by that.
+    let images = pg_platform::names::real_path(&dir.join("images"))?;
     for name in names {
         std::fs::write(images.join(name), pg_codec::fixtures::png_rgb(8, 8, &pixels)?)?;
     }
@@ -232,7 +233,8 @@ fn a_removed_folder_takes_its_kept_notices_and_the_others_stay() {
     assert_eq!(catalog.inbox_entries(10, false).unwrap().len(), 2);
     drop(catalog);
 
-    assert!(headless.remove_folder(&dir.join("a").to_string_lossy(), WAIT).unwrap());
+    let a = pg_platform::names::real_path(&dir.join("a")).unwrap();
+    assert!(headless.remove_folder(&a.to_string_lossy(), WAIT).unwrap());
     let catalog = Catalog::open(&Layout::in_home(dir.join("home")).catalog_path(), PATH_RULES).unwrap();
     let kept: Vec<Notice> = catalog.inbox_entries(10, false).unwrap().into_iter().map(|entry| entry.notice).collect();
     assert_eq!(kept, [note(&root("b"))]);

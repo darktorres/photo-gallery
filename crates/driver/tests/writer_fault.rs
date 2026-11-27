@@ -19,7 +19,8 @@ const WAIT: Duration = Duration::from_secs(120);
 #[test]
 fn a_writer_that_ends_ends_the_write_run_with_the_changes_still_queued() {
     let dir = pg_testkit::run_folder_with("pg_driver_tests", "writer-ends", &["home", "images"]).unwrap();
-    let images = dir.join("images");
+    // The folder as the disk spells it (the catalog keys a folder by its real path): see `headless::library`.
+    let images = pg_platform::names::real_path(&dir.join("images")).unwrap();
     let home = dir.join("home");
     std::fs::write(images.join("a.png"), pg_codec::fixtures::png_rgb(8, 8, &[0; 192]).unwrap()).unwrap();
 

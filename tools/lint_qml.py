@@ -28,6 +28,8 @@ from pgtools import QT_DIR_HOW, load_env_file, not_set
 
 REPO = Path(__file__).resolve().parent.parent
 QML_SOURCES = REPO / "crates" / "desktop" / "qml"
+SINGLETON_NOT_DECLARED = re.compile(r"^Type (\w+) not declared as singleton in qmldir but using pragma Singleton$")
+MEMBER_NOT_FOUND = re.compile(r'^Member "(\w+)" not found on type "(\w+)"$')
 WARNING = re.compile(r"^(?:Warning|Error): (.+?):(\d+):(\d+): (.*)$")
 
 
@@ -104,9 +106,27 @@ def main() -> int:
         data = json.loads(report.stdout)
     except json.JSONDecodeError:
         sys.exit(f"lint_qml: qmllint printed no JSON report (exit {report.returncode}):\n{report.stderr}")
+    # The plain QML singletons (Theme, Ratings, Wheel: `singleton` lines in the qmldir that build.rs writes) and the
+    # properties each one's file declares.
+    singletons = {}
+    for line in (module / "qmldir").read_text(encoding="utf-8").splitlines():
+        if line.startswith("singleton "):
+            _, name, _, path = line.split()
+            text = (module / path).read_text(encoding="utf-8")
+            singletons[name] = set(re.findall(r"^\s*(?:readonly\s+)?(?:default\s+)?property\s+\S+\s+(\w+)", text, re.MULTILINE))
     for file in data.get("files", []):
         for w in file.get("warnings", []):
-            add_warning(file["filename"], str(w["line"]), str(w["column"]), f"{w['message']} [{w['id']}]")
+            # cxx-qt's plugin.qmltypes describes only the Rust-backed types, so qmllint cannot see the plain QML singletons. It
+            # then warns that a singleton is not declared as one, or that its properties are not found, though the qmldir
+            # declares the singleton and its file declares the property. Only those two warnings, for those cases, are skipped.
+            declared = SINGLETON_NOT_DECLARED.match(w["message"])
+            if declared and declared.group(1) in singletons:
+                continue
+            member = MEMBER_NOT_FOUND.match(w["message"])
+            if member and member.group(1) in singletons.get(member.group(2), ()):
+                continue
+            # Some findings (the import checks) come without a position: they are reported at line 0.
+            add_warning(file["filename"], str(w.get("line", 0)), str(w.get("column", 0)), f"{w['message']} [{w['id']}]")
 
     # qmlcachegen says why it left something to the interpreter (--verbose), and lists what it compiled and what it didn't
     # (--dump-aot-stats, into <output>.aotstats): the verdict, should a reason go unsaid.

@@ -53,4 +53,4 @@ desktop: app client log model perf platform render trace wording
 gallery: desktop platform
 
 # The developer's headless driver over the app's service (not shipped): a leaf, nothing depends on it.
-driver: app catalog library model perf platform writeback
+driver: analysis app catalog codec library model perf platform writeback

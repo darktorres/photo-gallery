@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use pg_perf::{Mark, Tally, Timer};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 
+use crate::error::{Error, Result};
+
 /// The write transactions' time, process-wide, for the perf log: the wait for the write lock (`BEGIN IMMEDIATE`, retries
 /// included), the hold from the begin to the end of the commit (or the rollback), and the commit alone. A pass's span takes
 /// the share it caused as the difference of [`tx_mark`] (see [`attach_tx`]).
@@ -80,6 +82,18 @@ fn keep_waiting() -> bool {
         std::thread::sleep(RETRY_EVERY);
     }
     patient
+}
+
+/// Merges the whole write-ahead log of `conn` into its file and empties the log (`TRUNCATE`). SQLite reports a merge that
+/// a reader's pages kept from finishing as a result row, not an error, so the row is read: a merge that did not finish is
+/// [`Error::WalNotMerged`], and the file is whole regardless (its changes stay in the log).
+pub(crate) fn checkpoint_truncate(conn: &Connection) -> Result<()> {
+    let busy: i64 = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+    if busy != 0 {
+        let path = conn.path().unwrap_or_default().to_string();
+        return Err(Error::WalNotMerged { path });
+    }
+    Ok(())
 }
 
 /// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited

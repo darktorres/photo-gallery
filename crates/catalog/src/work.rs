@@ -11,9 +11,9 @@ use pg_model::turns::Turns;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::core::{Catalog, ReadOnly, Reader, checkpoint_truncate};
+use crate::core::{Catalog, ReadOnly, Reader};
 use crate::error::Result;
-use crate::transaction::write_transaction;
+use crate::transaction::{checkpoint_truncate, write_transaction};
 use crate::types::{FOLDER_PATH, PairingWork, PlaceholderWork, VolumeSet, WorkItem, folder_path, pairing_marks};
 use pg_model::analysis::PLACEHOLDER_VERSION;
 
@@ -733,7 +733,7 @@ impl Catalog {
     pub fn mark_pending(&self, ids: &[FileId]) -> Result<usize> {
         let mut marked = 0;
         // Each batch of `WRITE_BATCH` ids is a write transaction of its own, so the write lock is not held across all.
-        for batch in ids.chunks(crate::WRITE_BATCH) {
+        for batch in ids.chunks(crate::types::WRITE_BATCH) {
             let tx = write_transaction(&self.conn)?;
             {
                 let mut mark = tx.prepare("UPDATE files SET pending = 1 WHERE id = ?1 AND missing = 0")?;

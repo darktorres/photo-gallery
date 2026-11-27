@@ -92,7 +92,7 @@ impl Drop for WriteHolds {
 /// text (as the tests write it) under the catalog's rules.
 pub(crate) fn folder_row(c: &Catalog, path: &str) -> Result<(Vec<u8>, Vec<u8>, i64)> {
     let path = c.rules().parse(path).ok_or_else(|| Error::Invalid(format!("{path:?} is not a test folder path")))?;
-    let mid = crate::writers::merged_folder(&c.conn, &c.rules().folder_key(&path.parts))?;
+    let mid = crate::lifecycle::merged_folder(&c.conn, &c.rules().folder_key(&path.parts))?;
     Ok((c.rules().join(&path), c.rules().path_key(&path), mid))
 }
 

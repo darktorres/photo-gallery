@@ -30,7 +30,7 @@ use crate::types::{
 use pg_model::ledger::FolderFailure;
 
 // The passes' writes: one writer per transaction. The statements are cached on the connection (`prepare_cached`; the
-// connection's cache is sized to hold them all, `core::register`), so a writer made for each batch reuses them rather
+// connection's cache is sized to hold them all, `schema::register`), so a writer made for each batch reuses them rather
 // than preparing them again. A writer borrows its transaction, so it is dropped before the transaction commits.
 
 /// Write a file as a new row: unpaired, pending (it has no analysis, so it is due), and changed at `change`, the batch's
@@ -106,19 +106,6 @@ impl<'tx> Volumes<'tx> {
         };
         self.ids.insert(serial, id);
         Ok(id)
-    }
-}
-
-/// The id of the merged folder whose key is `key` (`mfolders`), made if there is none: a folder's row takes it, and so do
-/// its files (`files.mid`).
-pub(crate) fn merged_folder(tx: &Connection, key: &[u8]) -> Result<i64> {
-    let found: Option<i64> =
-        tx.prepare_cached("SELECT id FROM mfolders WHERE key = ?1")?.query_row([key], |r| r.get(0)).optional()?;
-    match found {
-        Some(id) => Ok(id),
-        None => Ok(tx
-            .prepare_cached("INSERT INTO mfolders(key) VALUES (?1) RETURNING id")?
-            .query_row([key], |r| r.get(0))?),
     }
 }
 
@@ -279,7 +266,7 @@ impl<'tx> ScanWriter<'tx> {
                         (id, mid)
                     }
                     None => {
-                        let mid = merged_folder(self.conn, &self.rules.folder_key(&path.parts))?;
+                        let mid = crate::lifecycle::merged_folder(self.conn, &self.rules.folder_key(&path.parts))?;
                         (self.new_folder.query_row(params![bytes, path_key, mid], |r| r.get(0))?, mid)
                     }
                 };

@@ -11,9 +11,9 @@ use pg_platform::file::beside;
 use rusqlite::Connection;
 
 use crate::convert::{Source, table_columns};
-use crate::core::checkpoint_truncate;
 use crate::error::{Error, Result};
 use crate::schema::{Hooks, SchemaSet, Step, apply_settings, bring_to, version_in};
+use crate::transaction::checkpoint_truncate;
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt};
 
 /// Where the replacement for the catalog at `path` is made before it takes the name ([`rebuild`]).

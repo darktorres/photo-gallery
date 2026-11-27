@@ -10,10 +10,9 @@ use pg_model::media::Ext;
 use pg_model::num::count_u64;
 use pg_model::rules::PathRules;
 
-use crate::core::checkpoint_truncate;
 use crate::error::{Error, Result};
 use crate::progress::FreeSpace;
-use crate::transaction::write_transaction;
+use crate::transaction::{checkpoint_truncate, write_transaction};
 use crate::types::{TAKEN_ZONE_QUERY, Versions, key_version_text, rules_name};
 use std::collections::BTreeMap;
 
@@ -300,7 +299,7 @@ pub(crate) fn recompute_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<(
         if merged_key != stored_merged {
             // The merged folder of the new key, found or made: the folder moves to it, and its files with it (the cascade;
             // written out too, for a connection whose foreign keys are off, where it is the only move).
-            let mid = crate::writers::merged_folder(tx, merged_key)?;
+            let mid = merged_folder(tx, merged_key)?;
             tx.execute("UPDATE folders SET mid = ?1 WHERE id = ?2", rusqlite::params![mid, id])?;
             tx.execute("UPDATE files SET mid = ?1 WHERE folder_id = ?2 AND mid <> ?1", rusqlite::params![mid, id])?;
         }
@@ -309,6 +308,19 @@ pub(crate) fn recompute_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<(
     tx.execute("DELETE FROM mfolders WHERE id NOT IN (SELECT mid FROM folders)", [])?;
     recompute_failure_keys(tx, rules)?;
     Ok(())
+}
+
+/// The id of the merged folder whose key is `key` (`mfolders`), made if there is none: a folder's row takes it, and so do
+/// its files (`files.mid`). The writers take it too (`writers::ScanWriter`).
+pub(crate) fn merged_folder(tx: &Connection, key: &[u8]) -> Result<i64> {
+    let found: Option<i64> =
+        tx.prepare_cached("SELECT id FROM mfolders WHERE key = ?1")?.query_row([key], |r| r.get(0)).optional()?;
+    match found {
+        Some(id) => Ok(id),
+        None => Ok(tx
+            .prepare_cached("INSERT INTO mfolders(key) VALUES (?1) RETURNING id")?
+            .query_row([key], |r| r.get(0))?),
+    }
 }
 
 /// Merge the folder `drop` into `keep`, the same folder: its files are re-pointed to `keep` (and to its merged folder),
@@ -359,7 +371,7 @@ fn recompute_failure_keys(tx: &Transaction<'_>, rules: PathRules) -> Result<()> 
 
 /// Set the catalog's `key_version` mark to this build's, and recompute the keys when it was another ([`recompute_keys`]),
 /// with the name index (`files_mn`): its entries are the name key function's values, which the algorithm changed, so it
-/// is rebuilt from the rows by this build's function (on the connection's registration, `core::register`).
+/// is rebuilt from the rows by this build's function (on the connection's registration, `schema::register`).
 pub(crate) fn set_key_version(conn: &Connection, rules: PathRules) -> Result<()> {
     set_mark(conn, "key_version", &key_version_text(), |tx| {
         recompute_keys(tx, rules)?;

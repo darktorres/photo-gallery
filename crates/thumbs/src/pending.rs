@@ -14,7 +14,7 @@ use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 use pg_thumbcache::{EntryRow, Pending, Snapshot, Source, ThumbCache, ThumbWork};
 
-use crate::{Error, Result};
+use crate::error::{Error, Result};
 
 /// The pending work of a pass at `height` over `volumes`: the candidates that have no current entry, sorted by volume and
 /// place on it (the order the files are read in), with the snapshot its checkpoint is written from. A cache entry whose

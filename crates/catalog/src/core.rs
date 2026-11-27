@@ -24,13 +24,14 @@ use crate::lifecycle::{
     set_borders_version, set_import_version, set_key_version, set_pairing_version, set_taken_zone, set_thumbs_version,
     take_lock, take_shared, try_exclusive, vacuum_if_owed,
 };
+use crate::pair::{Coverage, Pairing, PairingFailed};
 use crate::progress::{FreeSpace, NO_PROGRESS, Phase, Progress};
 use crate::rebuild::{back_up, backup_path, db_file, rebuild};
 use crate::schema::{
     Hooks, SCHEMA, SchemaSet, apply_settings, bring_to, current_expected, current_version, expected_for, mismatch,
-    version_in, version_of,
+    register, version_in, version_of,
 };
-use crate::transaction::{WriteTx, write_transaction};
+use crate::transaction::{WriteTx, checkpoint_truncate, write_transaction};
 use crate::types::{PREPARE_CACHE_KIB, Rebuilt, Versions, key_version_text};
 use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, PairsWriter, PlaceholderWriter, ScanWriter};
 use pg_model::refusal::CatalogRefusal as Refusal;
@@ -119,18 +120,6 @@ impl Catalog {
     pub fn preparing(path: &Path, versions: Versions, rules: PathRules) -> Prepare<'_> {
         Prepare { path, versions, rules, schemas: None, progress: &NO_PROGRESS, free_space: None }
     }
-}
-
-/// Merges the whole write-ahead log of `conn` into its file and empties the log (`TRUNCATE`). SQLite reports a merge that
-/// a reader's pages kept from finishing as a result row, not an error, so the row is read: a merge that did not finish is
-/// [`Error::WalNotMerged`], and the file is whole regardless (its changes stay in the log).
-pub(crate) fn checkpoint_truncate(conn: &Connection) -> Result<()> {
-    let busy: i64 = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
-    if busy != 0 {
-        let path = conn.path().unwrap_or_default().to_string();
-        return Err(Error::WalNotMerged { path });
-    }
-    Ok(())
 }
 
 /// A preparation of a catalog ([`Catalog::preparing`]): the work [`Catalog::prepare`] does, with its options.
@@ -446,21 +435,6 @@ pub(crate) fn upgrade_notice(from: i64, to: i64, copy: &Path) -> String {
     format!("Updating the catalog from version {from} to {to}, one time. The old file is kept at {}.", copy.display())
 }
 
-/// What every connection of a catalog has besides its settings: the SQL functions the queries call (the name key is the
-/// catalog's `rules`'), and `rarray`, which binds a list of ids as one parameter (the pairing pass's writes,
-/// `PairsWriter`).
-pub(crate) fn register(conn: &Connection, rules: PathRules) -> Result<()> {
-    pg_query::register_functions(conn, rules)?;
-    rusqlite::vtab::array::load_module(conn)?;
-    // The scan's writer and the import's statements are prepared once and reused across batches (`prepare_cached`), so
-    // the cache holds all of them with room to spare (rusqlite's default is 16).
-    conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
-    Ok(())
-}
-
-/// The prepared statements a connection keeps for reuse (`prepare_cached`).
-const STATEMENT_CACHE: usize = 64;
-
 /// A read-only connection to the catalog's `file` with a cache of `cache_kib` KiB: a [`Reader`]'s. It has the catalog's
 /// functions (its reads seek and order by the name key), under the catalog's `rules`.
 pub(crate) fn read_only(file: &str, rules: PathRules, cache_kib: u32) -> Result<Connection> {
@@ -639,6 +613,12 @@ impl<'c> ScanLease<'c> {
     /// The check of this lease that each of the walk's write transactions begins with ([`HeldLease::hold`]).
     pub(crate) fn held(&self) -> HeldLease<'_> {
         HeldLease { scan: self.scan, rules: self.catalog.rules, root: &self.root }
+    }
+
+    /// The pairing at the end of the scan of the lease's folder, over what `coverage` says the scan saw: the pass itself
+    /// is in `pair::after_scan`, which is crate-private.
+    pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> std::result::Result<Pairing, Box<PairingFailed>> {
+        crate::pair::after_scan(&self.catalog.conn, self.held(), coverage)
     }
 
     /// Give the lease back now, with the error if it can't be (dropping it gives it back too, but says nothing).

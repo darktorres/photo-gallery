@@ -35,7 +35,6 @@ use pg_model::num::count_u64;
 use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::core::ScanLease;
 use crate::error::{Error, Result};
 use crate::lease::HeldLease;
 use crate::transaction::write_transaction;
@@ -103,17 +102,32 @@ struct Fresh {
     mid: i64,
 }
 
-impl ScanLease<'_> {
-    /// The pairing at the end of the scan of the lease's folder, over what `coverage` says the scan saw. Tier 1 runs on
-    /// any scan that reached this point. Tier 2, the replacements and the clearing run when the walk was complete,
-    /// since they need the tree to have been looked through: they leave out the folders it skipped, whose rows were not
-    /// seen, and pair only the fresh rows this scan saw.
-    ///
-    /// Each batch's transaction holds the lease first ([`ScanLease::renew`]'s check): one that is gone (the folder
-    /// removed from the library, which took it) writes nothing, and the pairing ends with [`crate::Error::RootRemoved`]
-    /// or [`crate::Error::LeaseLost`]. A rebind or a replacement would otherwise bring a removed folder's rows back as
-    /// present. A pairing that fails returns what its committed batches did with its error ([`PairingFailed`]).
-    pub fn pair_after_scan(&self, coverage: Coverage<'_>) -> std::result::Result<Pairing, Box<PairingFailed>> {
+/// The inputs of a scan's pairing: the connection, and the walk's lease (its scan, the folder it walks, the rules). The
+/// pairing takes these rather than a `ScanLease`, so this module does not depend on the catalog's `core`.
+struct PairScan<'a> {
+    conn: &'a Connection,
+    held: HeldLease<'a>,
+}
+
+/// The pairing at the end of the scan of the lease's folder, over what `coverage` says the scan saw (the lease's
+/// `ScanLease::pair_after_scan`). Tier 1 runs on any scan that reached this point. Tier 2, the replacements and the
+/// clearing run when the walk was complete, since they need the tree to have been looked through: they leave out the
+/// folders it skipped, whose rows were not seen, and pair only the fresh rows this scan saw.
+///
+/// Each batch's transaction holds the lease first ([`crate::ScanLease::renew`]'s check): one that is gone (the folder
+/// removed from the library, which took it) writes nothing, and the pairing ends with [`crate::Error::RootRemoved`]
+/// or [`crate::Error::LeaseLost`]. A rebind or a replacement would otherwise bring a removed folder's rows back as
+/// present. A pairing that fails returns what its committed batches did with its error ([`PairingFailed`]).
+pub(crate) fn after_scan(
+    conn: &Connection,
+    held: HeldLease<'_>,
+    coverage: Coverage<'_>,
+) -> std::result::Result<Pairing, Box<PairingFailed>> {
+    PairScan { conn, held }.pair_after_scan(coverage)
+}
+
+impl PairScan<'_> {
+    fn pair_after_scan(&self, coverage: Coverage<'_>) -> std::result::Result<Pairing, Box<PairingFailed>> {
         let mut out = Pairing::default();
         match self.pair_into(coverage, &mut out) {
             Ok(()) => Ok(out),
@@ -121,15 +135,15 @@ impl ScanLease<'_> {
         }
     }
 
-    /// [`ScanLease::pair_after_scan`], into `out`: each batch's counts and ids join it once the batch has committed.
+    /// [`PairScan::pair_after_scan`], into `out`: each batch's counts and ids join it once the batch has committed.
     fn pair_into(&self, coverage: Coverage<'_>, out: &mut Pairing) -> Result<()> {
         // The pass's span in the perf log: its tiers are its children; the transaction time it caused goes on it too.
         let mut pass = pg_perf::span("pair.after_scan");
         let tx_at = crate::transaction::tx_mark();
-        let held = self.held();
-        let rules = self.rules;
-        let conn = &self.conn;
-        let under = under_params(rules, self.root());
+        let held = self.held;
+        let rules = held.rules;
+        let conn = self.conn;
+        let under = under_params(rules, held.root);
         // A row this scan saw was upserted in a folder it listed; one in a skipped folder is left out all the same.
         let skipped = {
             let _setup = pg_perf::span("pair.setup");
@@ -555,7 +569,7 @@ fn all_volumes(tx: &Transaction) -> Result<Vec<i64>> {
 
 /// The fresh rows of the root that this scan saw (the walk's set, unpaired), with an identity and no children: the rows to
 /// pair, the next batch of them, at most [`WRITE_BATCH`] with an id after `after`, by id. A row with children is counted
-/// by [`ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list,
+/// by [`crate::ScanLease::pair_after_scan`] and left alone. A fresh row the scan did not see may be in a folder it did not list,
 /// so it is not paired until a scan sees it.
 ///
 /// Read from the set's unpaired index (`scan_seen_unpaired`): the scan's fresh rows in id order, so a batch is a seek from

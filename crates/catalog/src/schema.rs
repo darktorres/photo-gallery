@@ -169,7 +169,7 @@ pub(crate) fn bring_to(
 ) -> Result<()> {
     // The schema's name index is on a registered function (`files_mn`, the rules' name key): the baseline's creation and a
     // migration's writes of the files need it on the connection, whoever opened it.
-    crate::core::register(conn, rules)?;
+    register(conn, rules)?;
     loop {
         // The version is read outside the transaction first, so a migration that needs foreign keys off has them off
         // before its transaction begins: the pragma does nothing inside one. It is read again inside it, and when it has
@@ -358,6 +358,21 @@ pub(crate) fn mismatch(conn: &Connection, want: &Schema) -> Result<Option<Mismat
     }
     Ok(None)
 }
+
+/// What every connection of a catalog has besides its settings: the SQL functions the queries call (the name key is the
+/// catalog's `rules`'), and `rarray`, which binds a list of ids as one parameter (the pairing pass's writes,
+/// `PairsWriter`).
+pub(crate) fn register(conn: &Connection, rules: PathRules) -> Result<()> {
+    pg_query::register_functions(conn, rules)?;
+    rusqlite::vtab::array::load_module(conn)?;
+    // The scan's writer and the import's statements are prepared once and reused across batches (`prepare_cached`), so
+    // the cache holds all of them with room to spare (rusqlite's default is 16).
+    conn.set_prepared_statement_cache_capacity(STATEMENT_CACHE);
+    Ok(())
+}
+
+/// The prepared statements a connection keeps for reuse (`prepare_cached`).
+const STATEMENT_CACHE: usize = 64;
 
 #[cfg(test)]
 mod tests {

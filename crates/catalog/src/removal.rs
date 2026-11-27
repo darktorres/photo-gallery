@@ -29,9 +29,9 @@ use pg_model::num::count_u64;
 use pg_model::removal::{Begun, Volumes};
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::core::{Catalog, checkpoint_truncate};
+use crate::core::Catalog;
 use crate::error::{Error, Result};
-use crate::transaction::write_transaction;
+use crate::transaction::{checkpoint_truncate, write_transaction};
 use crate::types::{WRITE_BATCH, roots_on, stored_path};
 
 /// What a drive of the removals did: the files deleted, the files kept for an unfinished write, and whether the drive

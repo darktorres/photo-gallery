@@ -33,7 +33,7 @@ pub(crate) fn on_disk(path: &Path) -> Connection {
         .into_iter()
         .find(|&r| rules.as_deref() == Some(crate::types::rules_name(r)))
     {
-        crate::core::register(&conn, rules).unwrap();
+        crate::schema::register(&conn, rules).unwrap();
     }
     conn
 }

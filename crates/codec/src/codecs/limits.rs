@@ -2,7 +2,7 @@
 
 use image::{ColorType, ImageResult, Limits};
 
-use crate::{Error, Result};
+use crate::error::{Error, Result};
 
 /// The most bytes one decoded image may take: `ImageReader`'s default `max_alloc` (512 MiB). The one cap for every
 /// decoded buffer, the decoders' here and the lossless rewrites' (`rewrite`), so a damaged header that declares a

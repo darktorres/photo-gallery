@@ -21,8 +21,9 @@ ffmpeg_sha256 := "1d9823c35c7a7e2f54d1438cf61030d6efabe3278de01c191309d1e828bb74
 # same file) before it runs. The container (docker/Dockerfile) and CI's setup (tools/profiling/ci_setup.py) both use it.
 rustup_init_sha256 := "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55"
 
-# The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
-py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })
+# The Python every recipe runs under: the repository's uv environment (pyproject.toml, uv.lock), synced with its default
+# groups before each run. `uv run --group eval python ...` runs with the GPU groups too. PG_PYTHON overrides it.
+py := env('PG_PYTHON', 'uv run python')
 
 # Qt's kit folder (PG_QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
 # and the tests of the desktop crate need Qt's DLLs. Recipes that link Qt depend on `_qt`, which fails when it is unset.

@@ -69,6 +69,11 @@ jobs:
         with:
           python-version: "3.13.18"
 
+      # Node for markdownlint and the npm steps (the Justfile's node_version, the same as the Linux job).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+
       # The Justfile's pins, for every later step: QT_VERSION, PG_QT_DIR (the kit the recipes and the desktop crate find qmake
       # in, as a developer's .env sets it), the install-action's tool list and the aqtinstall commit (tools/ci/github_files.py).
       - name: Pins (the Justfile's versions, into the environment)
@@ -259,6 +264,11 @@ jobs:
       # The Justfile's pins, for every later step (see the Windows job). The runner's python3 runs it.
       - name: Pins (the Justfile's versions, into the environment)
         run: python3 tools/ci/github_files.py pins
+
+      # Node for markdownlint and the npm steps (the Justfile's node_version, the same as the Windows job).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
 
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup show

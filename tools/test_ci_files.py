@@ -351,6 +351,18 @@ class Consumers(unittest.TestCase):
         # setup-python runs before the pins step, so the workflow holds the literal; this asserts it is the pinned one.
         self.assertIn(f'python-version: "{just_value("python_version")}"', WORKFLOW)
 
+    def test_the_dockerfile_uv_default_is_the_justfile_pin(self):
+        # The image's default UV_VERSION (the launcher passes the Justfile's value; a bare `docker build` uses the default).
+        dockerfile = (REPO / "docker" / "Dockerfile").read_text(encoding="utf-8")
+        match = re.search(r"^ARG UV_VERSION=(\S+)$", dockerfile, re.MULTILINE)
+        if match is None:
+            self.fail("docker/Dockerfile has no default for UV_VERSION")
+        self.assertEqual(match.group(1), just_value("uv_version"))
+
+    def test_the_workflow_node_is_the_justfile_pin(self):
+        # setup-node runs before the lint tools are set up (npm), so the workflow holds the literal too.
+        self.assertIn(f'node-version: "{just_value("node_version")}"', WORKFLOW)
+
     def test_the_static_qt_source_is_the_pinned_version(self):
         text = (REPO / "tools" / "build_static_qt.py").read_text(encoding="utf-8")
         match = re.search(r'^QT_VERSION = "([^"]+)"', text, re.MULTILINE)

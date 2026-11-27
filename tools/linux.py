@@ -49,6 +49,8 @@ PINS = {
     "CARGO_MACHETE_VERSION": "cargo_machete_version",
     "CARGO_MODULES_VERSION": "cargo_modules_version",
     "UV_VERSION": "uv_version",
+    "NODE_VERSION": "node_version",
+    "NODE_LINUX_X64_SHA256": "node_linux_x64_sha256",
     "CARGO_FUZZ_VERSION": "cargo_fuzz_version",
     "SCCACHE_VERSION": "sccache_version",
     "AQTINSTALL_COMMIT": "aqtinstall_commit",

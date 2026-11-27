@@ -5,7 +5,8 @@
 # The base image is pinned by digest (the index: `docker buildx imagetools inspect ubuntu:26.04`), so a rebuild does not
 # change it under the pinned versions. Moving to a newer one is a commit, with its digest.
 # uv's own image, for uv's binary: the base stage copies it. Docker needs the version in a global ARG to name the image.
-ARG UV_VERSION
+# The default is the Justfile's uv_version: a test (tools/test_ci_files.py) fails when the two differ, so a bump changes both.
+ARG UV_VERSION=0.13.10
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS base
@@ -20,6 +21,8 @@ ARG QT_VERSION
 ARG EXIFTOOL_VERSION
 ARG EXIFTOOL_SOURCE_URL
 ARG EXIFTOOL_SOURCE_SHA256
+ARG NODE_VERSION
+ARG NODE_LINUX_X64_SHA256
 
 # Everything the checks use lives outside /root (Ubuntu makes it mode 0700): the checks run as the user `pg`, not as
 # root, because root ignores file permissions and the permission-based tests (testkit's `hold`) skip as root.
@@ -38,15 +41,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LIBCLANG_PATH=/opt/libclang \
     QMAKE=/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
-    PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/opt/exiftool:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/node/bin:/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/opt/exiftool:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The system packages: the list CI installs (apt-packages.txt, which has git, the aqtinstall install below being from a git
-# URL), the mold linker (CI's Linux job links with it), nodejs and npm (markdownlint), and the venv module, its own package
-# on Ubuntu. FFmpeg's headers come from its development packages, which pkg-config finds (crates/video/build.rs).
+# URL), the mold linker (CI's Linux job links with it), the venv module, its own package on Ubuntu, and xz (to unpack Node,
+# below). Node itself comes from nodejs.org, not apt. FFmpeg's headers come from its development packages, which pkg-config
+# finds (crates/video/build.rs).
 COPY docker/apt-packages.txt /opt/pg/apt-packages.txt
 RUN apt-get update \
  && grep -v '^#' /opt/pg/apt-packages.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
-      ca-certificates curl mold nodejs npm python3-venv \
+      ca-certificates curl libatomic1 mold python3-venv xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # ExifTool at the Justfile's pinned release (the source archive, checked by SHA-256; tools/install_exiftool.py), in /opt, which
@@ -73,6 +77,14 @@ COPY --from=uv /uv /usr/local/bin/uv
 # pins. Installed as root into /opt, which every user reads; the tool's binary goes to /usr/local/bin.
 RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "aqtinstall @ git+https://github.com/miurahr/aqtinstall.git@${AQTINSTALL_COMMIT}" \
  && aqt install-qt --outputdir /opt/Qt linux desktop ${QT_VERSION} linux_gcc_64 --modules qtmultimedia
+
+# Node (the Justfile's node_version) from nodejs.org, checked by SHA-256 before it is unpacked: npm, and markdownlint runs on it.
+# Installed as root into /opt/node, which every user reads; its bin is first on PATH.
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+ && echo "${NODE_LINUX_X64_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
+ && tar -xJf /tmp/node.tar.xz -C /opt \
+ && mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node \
+ && rm /tmp/node.tar.xz
 
 # The Python and Markdown lint tools: ruff in the lint group of pyproject.toml (uv.lock holds its hashes), and markdownlint-cli
 # by its lockfile (npm ci). Installed as root, read by every user. The interpreter is uv's, the version .python-version names.

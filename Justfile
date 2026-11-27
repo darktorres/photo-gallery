@@ -109,6 +109,10 @@ cargo_machete_version := "0.10.1"
 just_version := "1.59.0"
 # uv, which runs every recipe's Python (pyproject.toml, uv.lock) and installs the lint group. CI and the image install this release.
 uv_version := "0.13.10"
+# Node, for markdownlint (tools/lint) and the npm steps of CI and the image: the current LTS. The image installs this release
+# from nodejs.org, checked by SHA-256 (the linux-x64 tarball's line in SHASUMS256.txt for this version).
+node_version := "26.13.1"
+node_linux_x64_sha256 := "5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864"
 cargo_fuzz_version := "0.13.2"
 # sccache, the container's compiler cache (RUSTC_WRAPPER in docker/Dockerfile; its cache is the pg-sccache volume).
 sccache_version := "0.20.1"

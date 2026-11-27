@@ -118,7 +118,7 @@ cargo_fuzz_version := "0.13.2"
 sccache_version := "0.20.1"
 # Python for CI's jobs (setup-python, which runs before the pins step, so ci.yml holds the literal; the tools test asserts it
 # is this value). The local tools' Python is the same patch (tools/pgtools.py needs 3.13 or later).
-python_version := "3.13.18"
+python_version := "3.13.17"
 # ExifTool for the container and CI's two jobs (tools/install_exiftool.py), as ExifTool reports it. Pinned, so a new release
 # does not change the metadata tests unasked; it is the reference the ExifTool rewrite's design cites
 # (docs/plans/EXIFTOOL_RUST_REWRITE_DESIGN.md).

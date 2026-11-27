@@ -64,10 +64,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The pinned Python comes first: the pins step and `just setup` and the other recipes run its scripts (the screenshot
-      # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.13.18).
+      # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.13.17), the newest 3.13 that GitHub's Windows runners install.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13.18"
+          python-version: "3.13.17"
 
       # Node for markdownlint and the npm steps (the Justfile's node_version, the same as the Linux job).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

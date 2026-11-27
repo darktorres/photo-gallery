@@ -176,3 +176,13 @@ Found while reading the background job's round (`crates/library/src/runner.rs`).
   match in `crates/` is Qt's `--qwindowgeometry` option in `crates/desktop/src/command_line.rs`). Open decisions: where
   to store the values (the app's settings, or the catalog), how to handle a saved position that is off screen after a
   monitor change, and whether the state is per monitor setup or global.
+
+## Yandex: the number of similar images is hardcoded (added 2026-11-27)
+
+- **Make the similar-image count configurable.** **Open, not started.** The reverse search always reads the same number
+  of similar pages: `DEFAULT_MAX_SIMILAR_PAGES = 5` (`crates/yandex/src/client.rs:25`), passed to `source.similar(...)` at
+  `crates/app/src/yandex.rs:324`. No setting or option changes it. The unit is pages, not images: how many images a page
+  holds comes from Yandex's answer, so the count the user sees depends on that. Open decisions: whether the setting is a
+  page count or an image count (an image count needs the page size, which the code does not read), its default (5 today),
+  a maximum (each page is one more request to Yandex), and where it is stored (the app's preferences, or per run only,
+  as `--find-similar` would take it).

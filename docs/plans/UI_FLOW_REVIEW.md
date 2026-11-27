@@ -184,7 +184,7 @@ Entry: `crates/desktop/qml/Main.qml:142 (onClosing: shell.flush())`
 
 ### UI-012 [low/stale-result] Last file saved at close can be the previous selection — CONFIRMED
 
-- Status: Partial (validated). The controller arms the save on selection. SaveLastFile still reads SHOWN synchronously, and the shutdown order is unchanged.
+- Status: Done (build and tests). Flush drains the GUI thread's posted events (a C++ helper) before the close-time save reads the shown file. Mid-session saves still read without a drain, which is not a close.
 - Needs: Fix. Flush reads the pending selection, not only the shown file, so a selection made just before close is saved. Files: crates/desktop/src/shell.rs, crates/desktop/src/gallery.rs.
 - Verdict: CONFIRMED
 - Note: SaveLastFile reads gallery::shown_file() on the window thread (shell.rs:96). SHOWN is set only by publish_shown from the model's queued closures (gallery.rs:58, model.rs:290, 298), so a selection still in the queue at close is not what is saved. Latent, needs a close inside the queue latency.
@@ -486,7 +486,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:71 onClicked removeRequested -> Main
 
 ### UI-104 [low/stale-result] Grid keeps listing the removed folder's images until the removal job ends — PARTIAL
 
-- Status: Partial (build and tests). Begun::Started now only loads roots; the grid and tree refresh on Scanned, published after hide_pages. No separate tree refresh at Started.
+- Status: Partial (build and tests). The hide stays under the park protocol, so the lanes are parked before the files are hidden. Residual: the hide waits for the removals thread, so a folder's photos can stay until another folder's delete pass finishes.
 - Needs: Fix (checked: confirmed; the stale window ends at hide_pages, not at the final publish). Hide the folder's rows when the removal starts, or skip the reload at Begun::Started. Files: crates/desktop/src/library.rs (290-292), crates/desktop/qml/Main.qml (155), crates/library/src/coordinator.rs (959, 1012).
 - Verdict: PARTIAL
 - Note: The removal's final publish is Scanned (coordinator.rs:847), so the grid refreshes only then. Whether the Begun::Started reload still lists the removed folder's files depends on the listing query, which I did not trace.
@@ -661,7 +661,7 @@ Entry: `crates/desktop/qml/Viewer.qml:277-278 keys TurnForward and TurnBack -> t
 
 ### UI-147 [low/stale-result] A turn can be counted twice if a refresh read lands between the catalog write and turn_queued — CONFIRMED
 
-- Status: Partial (build and tests). The desktop keeps unwritten presses on the model, so a refresh does not drop them. Residual: a second press before the first write is undercounted until the turned files are re-read.
+- Status: Partial (build and tests). Each press has a sequence and the catalog's file stamp; a read counts a press exactly when its stamp is not older than the press. Residual: a read applied between a press's commit and its turn_done counts it twice until turn_done corrects it.
 - Needs: Fix (checked: confirmed; the window is narrow). Key pending turns by revision, or stop counting in turn_queued what the refresh read already includes. Files: crates/desktop/src/gallery/edits.rs, crates/client/src/grid.rs.
 - Verdict: CONFIRMED
 - Note: edits.rs:44 adds the turn to pending_turns from the model thread, and turned_request reads that state. refresh_turned applies only when the revision is unchanged (grid.rs:405-408). The interleaving with turn_queued and whether edit() bumps the revision were not fully traced. Low severity, as the finding says.
@@ -806,7 +806,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 
 ### UI-181 [low/wrong-message] HUD shows untranslated Qt English error text — CONFIRMED
 
-- Status: Partial (build and tests). Player errors show the catalogued playback line. The open and format wording was dropped, because this build's QML compiler cannot compare the player's error enum; restoring it needs a C++ helper.
+- Status: Done (build and tests). A C++ helper maps the player's error to a kind, so the open, format and playback lines are catalogued again.
 - Needs: Fix. Map the backend error to a catalogued string; do not show Qt's English. Files: crates/desktop/qml/MediaView.qml, crates/desktop/qml/Hud.qml, crates/client/locales/en/ui.ftl.
 - Verdict: CONFIRMED
 - Note: MediaView.qml:101 forwards errorString unchanged to playerFailed. Hud.qml:96 wraps it in ui-player-error (ui.ftl:61, "— { $text }"), so the prefix is translated and the body is Qt's English. The string is at qffmpegmediadataholder.cpp:210 ("Could not open source device.").
@@ -1166,7 +1166,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:491 onClicked dismissSelected (-> dism
 
 ### UI-242 [low/unhandled-close] A dismissal is dropped at shutdown if the catalog stays busy past the 5 s drain — CONFIRMED
 
-- Status: Partial (validated). Writes are not persisted before ack, and an abandoned queue insert drops the dismissal past the 5 s drain. Needs your decision.
+- Status: Done (build and tests). Decision taken: user writes go to a journal file that does not depend on the catalog lock. Each is synced before it is acknowledged and replayed at start. A journal append that fails is kept in memory, retried, and reported.
 - Needs: Fix. Durable queue: persist each dismissal before acknowledging it, so the shutdown drain cannot drop it. Files: crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:932-943 handles Abandoned by logging the count of notices and changes that were not written and then breaking. Nothing is shown to the user, and the dismissal is not replayed.
@@ -1192,7 +1192,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:473 onClicked retrySelected (InboxPane
 
 ### UI-245 [low/unhandled-close] A Retry queued at close is dropped without a user-visible trace — CONFIRMED
 
-- Status: Partial (validated). The replayed Retry wakes the job, but the Retry is not persisted before ack and is lost if its queue insert is abandoned.
+- Status: Done (build and tests). The Retry is journaled before it is acknowledged, and a replayed Retry wakes the job whichever of the replay and the library start finishes second.
 - Needs: Fix. Durable queue, as UI-242: a queued Retry is persisted before it is acknowledged. Files: crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:932-943 drops the rest of the queue, including Step Retry with its FnOnce, when the writer is Abandoned. The job is not woken, and only a warning is logged. The Retry variant is at inbox.rs:210.
@@ -1300,7 +1300,7 @@ Entry: `crates/desktop/qml/GridRow.qml:103 Component.onCompleted take and :106 o
 
 ### UI-279 [medium/stuck-error] A transient thumbnail failure leaves the error mark on a readable photo — PARTIAL
 
-- Status: Partial (build and tests). The QML retry is unbounded with a 15 s cap, and Qt re-requests on a device pixel ratio change (read in its source). Not yet checked: that the Rust side does not cache a failure as final.
+- Status: Done (build and tests). The QML retry is unbounded with a 15 s cap, and Qt re-requests on a device pixel ratio change. The Rust side keeps no failure as final, except an encoder failure cached per file state by design (crates/render/src/maker.rs).
 - Needs: Fix (checked: confirmed; an unchanged source is not re-requested after Error, qquickimagebase.cpp:119-123). Stop caching a transient failure as final (providers.rs:107-135), and re-request when the cell's URL is re-bound or the device pixel ratio changes (qquickimagebase.cpp:426-445). Files: crates/desktop/qml/GridCell.qml, crates/desktop/src/providers.rs.
 - Verdict: PARTIAL
 - Note: GridCell.qml:68 binds the source to the thumbnail URL and :89 shows the error mark when thumb.status is Error. providers.rs:122-132 reports any error as failed(). Whether Qt's Image re-requests an unchanged source after an Error was not read in qquickimage.cpp, and that decides the finding.

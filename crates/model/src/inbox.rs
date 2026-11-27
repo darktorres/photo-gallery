@@ -43,8 +43,9 @@ impl InboxEntryId {
     }
 }
 
-/// A user's write to the inbox, as the catalog's queue keeps it until it is written (`Catalog::queue_inbox_write`): a
-/// write the app ends before it is applied is replayed at the next start. Its entries are the ones the window displayed.
+/// A user's write to the inbox, as the app's journal keeps it until it is written (`pg_app`'s inbox journal, a file in the
+/// app's home): one journaled before it is acknowledged, so a write the app ends before it is applied is replayed at the
+/// next start. Its entries are the ones the window displayed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueuedInboxWrite {
     /// Mark these entries read.

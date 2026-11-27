@@ -18,70 +18,47 @@ use crate::worker;
 
 impl qobject::GalleryModel {
     /// Turn a file by quarter turns clockwise (three is counterclockwise), losslessly, in the background: the
-    /// controller's `Turn` command. The item shows the turn at press (`pending_turns`), before the write, which waits on
-    /// the writes' thread for the catalog's write lock; a turn that is not written is taken back off the item.
+    /// controller's `Turn` command. The item shows the press at once (`pending_turns`), before the write, which waits on
+    /// the writes' thread for the catalog's write lock; a press that is not written is taken back off the item.
     pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: Turns) {
         let Some(id) = self.file_at(item) else { return };
         if turns == Turns::NONE {
             return;
         }
+        let seq = self.as_mut().rust_mut().add_press(id, turns);
         self.as_mut().pending_turn(id, turns, true);
-        self.as_mut().unqueued_turn(id, turns, true);
         let model = self.qt_thread();
         worker::run(move || {
-            // Done whatever the write does: a write that panics still takes its turn back off the item.
-            let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_some()
+            // Done whatever the write does: a write that panics still takes its press back off the item (`None`).
+            let queued = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns))
             }))
-            .unwrap_or(false);
-            let _ = model.queue(move |model| model.turn_done(id, turns, written));
+            .ok()
+            .flatten();
+            let _ = model.queue(move |model| model.turn_done(id, turns, seq, queued.map(|(_, stamp)| stamp)));
         });
     }
 
-    /// A turn's write is done. One that was not written is taken back off the item; one that was stays pending until the
-    /// catalog's read shows it written (`refresh_turned`).
-    fn turn_done(mut self: Pin<&mut Self>, id: FileId, turns: Turns, written: bool) {
-        // The writer is done with the press: it is queued in the catalog now (or refused), so a list read from here counts
-        // it.
-        self.as_mut().unqueued_turn(id, turns, false);
-        if written {
-            // The file changed in the catalog: what was read of it before is stale.
-            self.as_mut().rust_mut().forget_details();
-        } else {
+    /// A press's write is done. `queued` is the file's catalog change stamp after the write queued the press, or None
+    /// when it was refused. A refused press is taken back off the item. A queued one stays counted on the item until a
+    /// read shows it (`settle_presses`, `retire_presses`), unless the item was read after the write: then that read
+    /// already holds the press, and it is taken off the count here, so it is not counted twice.
+    fn turn_done(mut self: Pin<&mut Self>, id: FileId, turns: Turns, seq: u64, queued: Option<i64>) {
+        let Some(stamp) = queued else {
+            self.as_mut().rust_mut().take_press(id, seq);
+            self.as_mut().pending_turn(id, turns, false);
+            return;
+        };
+        let read_after = self.shown_entry(id).is_some_and(|shown| shown.changed >= stamp);
+        self.as_mut().rust_mut().press_written(id, seq, stamp);
+        if read_after {
+            self.as_mut().rust_mut().take_press(id, seq);
             self.as_mut().pending_turn(id, turns, false);
         }
-    }
-
-    /// Records a press as not queued in the catalog yet (`add`), or takes one off when the writer is done with it
-    /// (`turn_done`). The record is `unqueued`, what `with_unqueued` puts back on a list that arrives before the queue.
-    fn unqueued_turn(mut self: Pin<&mut Self>, id: FileId, turns: Turns, add: bool) {
-        let mut this = self.as_mut().rust_mut();
-        let before = this.unqueued.get(&id).copied().unwrap_or(Turns::NONE);
-        let after = if add { before.plus(turns) } else { unturned(before, turns) };
-        if after == Turns::NONE {
-            this.unqueued.remove(&id);
-        } else {
-            this.unqueued.insert(id, after);
-        }
-    }
-
-    /// The entries a list read brings, with the presses the catalog does not count yet put back on them. The catalog
-    /// counts a turn as pending once the writer has queued it, so a read made before that has none for the press: it is
-    /// counted again here, until `turn_done` takes it off. An entry the read already has pending turns for is left as
-    /// read, so a press queued before the read is not counted twice (a press queued before the read, and another not yet
-    /// queued, is undercounted until the write lands and the turned files are read again).
-    pub(super) fn with_unqueued(&self, mut entries: Vec<Entry>) -> Vec<Entry> {
-        if self.unqueued.is_empty() {
-            return entries;
-        }
-        for entry in &mut entries {
-            if entry.pending_turns == Turns::NONE
-                && let Some(&turns) = self.unqueued.get(&entry.id)
-            {
-                entry.pending_turns = turns;
-            }
-        }
-        entries
+        // The file changed in the catalog: what was read of it before is stale. The files waiting for a turn are read
+        // again, which counts the press for the ones shown (`turned_read`).
+        self.as_mut().rust_mut().forget_details();
+        self.request_turned();
     }
 
     /// Puts a turn on the file's item as waiting to be written (`add`), or takes one back (a write that failed), and shows
@@ -132,11 +109,13 @@ impl qobject::GalleryModel {
     /// The entries read for the items waiting for a turn (`request_turned`), put in unless an edit or a new list came
     /// since the read was made: then they are read again.
     fn turned_read(mut self: Pin<&mut Self>, revision: u64, fresh: Vec<Entry>) {
-        let fresh = self.with_unqueued(fresh);
+        let fresh = self.settle_presses(fresh, |id| self.shown_entry(id).copied());
         let Some(turned) = self.as_mut().rust_mut().grid.refresh_turned(revision, fresh) else {
             self.request_turned();
             return;
         };
+        // The entries shown are the ones read now: the presses they count are taken off (`retire_presses`).
+        self.as_mut().rust_mut().retire_presses();
         if turned.changed.is_empty() {
             return;
         }

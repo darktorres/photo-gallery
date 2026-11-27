@@ -60,6 +60,8 @@ ui-loupe = [loupe 10×]
 ui-turning = — turning…
 ui-original-unavailable = — original unavailable
 ui-player-error = — { $text }
+ui-player-error-open = Could not open this file
+ui-player-error-format = This file's format is not supported
 ui-player-error-playback = Playback failed
 
 # The library panel

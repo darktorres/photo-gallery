@@ -138,14 +138,6 @@ CREATE TABLE ledger_ack(
     read      INTEGER,
     dismissed_to INTEGER);
 
--- The user's inbox writes (marks, dismissals, Clear all, Retries), queued before they are applied and taken out once
--- written or refused: a write the app ends before it is applied is replayed at the next start. `write` is the write as
--- `pg_model::inbox::QueuedInboxWrite` JSON; `queued` is Unix seconds.
-CREATE TABLE inbox_queue(
-    id      INTEGER PRIMARY KEY,
-    write   TEXT NOT NULL,
-    queued  INTEGER NOT NULL);
-
 CREATE TABLE "session"(
     id        INTEGER PRIMARY KEY CHECK (id = 1),
     folder    BLOB NOT NULL,     -- as views.folder

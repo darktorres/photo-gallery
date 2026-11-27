@@ -106,7 +106,8 @@ fn prefs_effect(command: &Command, prefs: &pg_app::PrefStore) {
         // The borders the user toggled (a start's `--borders` is not saved).
         Command::SaveShowBorders(on) => save_prefs(prefs, |p| p.show_borders = *on),
         // The file the window shows now (none: none is remembered), once the start is over. Read here, on the window's
-        // thread, so a save at shutdown (`flush`) sees the same file the window does.
+        // thread, so a save at shutdown (`flush`, after its drain of the queued selection) sees the same file the window
+        // does.
         // The stamp of the file, not its row id: the stamp names the file in a later run. Nothing is remembered when the
         // catalog can't say what the file is.
         Command::SaveLastFile => {
@@ -291,8 +292,12 @@ impl qobject::Shell {
         controller::with(|c| c.pending()) || !app::get().inbox().idle() || crate::failed_files::loading()
     }
 
-    /// Shutdown: the saves that wait run now; a pause that would only show the list does not.
+    /// Shutdown: the queued commands run first, then the saves that wait run now; a pause that would only show the list
+    /// does not. The selection the user last made is queued to the grid's lane (`Command::Select`), so the queue is
+    /// drained before `Event::Flush` saves the shown file (`SaveLastFile` reads `gallery::shown_file`, which that
+    /// queued command sets).
     pub(crate) fn flush(self: Pin<&mut Self>) {
+        qobject::drain_posted_events();
         self.dispatch(Event::Flush);
     }
 

@@ -1,4 +1,4 @@
-//! The grid's entries as the model holds them: what a list of files shows of each file (`Entry`, 56 bytes), and
+//! The grid's entries as the model holds them: what a list of files shows of each file (`Entry`, 64 bytes), and
 //! what the grid's borders show of it. The catalog reads them; the front ends draw from them.
 
 use crate::detection;
@@ -11,13 +11,15 @@ use crate::turns::Turns;
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
 /// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is
-/// 10.6 MB and quick to build.
+/// 12.2 MB and quick to build.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Entry {
     /// The file's id in the catalog.
     pub id: FileId,
     /// With `turns`, what makes an image URL current.
     pub mtime: i64,
+    /// The file's `files.changed` stamp as the read took it.
+    pub changed: i64,
     /// As analyzed, without `pending_turns`; 0 until the file is imported.
     pub width: u32,
     /// As analyzed, the height, as `width` is.
@@ -42,7 +44,7 @@ pub struct Entry {
     pub borders: Borders,
 }
 
-const _: () = assert!(size_of::<Entry>() == 56, "Entry's size, in its doc");
+const _: () = assert!(size_of::<Entry>() == 64, "Entry's size, in its doc");
 
 /// Whether a file's borders were looked for, and what came of it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

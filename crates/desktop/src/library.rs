@@ -309,11 +309,17 @@ impl qobject::Library {
             return;
         };
         match app::get().library().remove_folder(id, &path) {
-            // Gone from the list at once. A started removal's files stay listed until the job hides them: the job's
-            // `Change::Scanned` (published after `hide_pages`, coordinator.rs) is what reads the grid and the tree again
-            // (`scanned`, which QML answers with `reloadAll`), so the grid is not read here. A pending removal keeps its
-            // previous refresh.
-            Ok(Begun::Started { .. }) => self.as_mut().load_roots(),
+            // Gone from the list at once. The grid and the tree stop showing the folder's files when the removal job hides
+            // them: its `Change::Scanned` is answered by the pump, which reads the grid and the tree again (`scanned`, which
+            // QML answers with `reloadAll`). Without a running job there is no pump to hear it, so the window reads them
+            // here: the removal then ran to its end at the start (`LibraryService::remove_folder`). A pending removal keeps
+            // its previous refresh.
+            Ok(Begun::Started { .. }) => {
+                self.as_mut().load_roots();
+                if running().is_none() {
+                    self.scanned();
+                }
+            }
             Ok(Begun::Pending(_)) => {
                 self.as_mut().load_roots();
                 self.scanned();

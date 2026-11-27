@@ -71,6 +71,22 @@ pub struct Runner {
     pub(crate) lanes: Arc<Lanes>,
 }
 
+/// Wakes a job from any thread ([`Runner::waker`]). It holds the lanes weakly, so a handle does not keep a stopped job
+/// alive, and a wake after the job has stopped does nothing.
+#[derive(Clone)]
+pub struct JobWaker {
+    lanes: std::sync::Weak<Lanes>,
+}
+
+impl JobWaker {
+    /// Starts a round on every lane, as [`Runner::wake`] does.
+    pub fn wake(&self) {
+        if let Some(lanes) = self.lanes.upgrade() {
+            lanes.wake_all(true);
+        }
+    }
+}
+
 impl Runner {
     /// Start the job. It makes a lane for each drive the library's folders are on, as the drives are found out; each lane
     /// begins by importing whatever is pending on its drive, and makes the thumbnails still missing at the height `heights`
@@ -218,6 +234,11 @@ impl Runner {
     /// and the running ones stop at their next file.
     pub fn wake(&self) {
         self.lanes.wake_all(true);
+    }
+
+    /// A handle that wakes the job from any thread, as [`Runner::wake`] does, for as long as the job runs.
+    pub fn waker(&self) -> JobWaker {
+        JobWaker { lanes: Arc::downgrade(&self.lanes) }
     }
 
     /// Files were turned in place: only the lanes of their volumes start again, so the other drives' rounds are not

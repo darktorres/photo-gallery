@@ -52,6 +52,18 @@ Item {
             player.play();
     }
 
+    // The words for a player's error, by its kind (AnimationPlayer.playerErrorKind, from C++): 0 none, 1 the file couldn't
+    // be opened, 2 its format isn't supported, 3 any other playback failure. Never the backend's English text.
+    function failureText(kind: int): string {
+        if (kind === 0)
+            return "";
+        if (kind === 1)
+            return words.text("ui-player-error-open");
+        if (kind === 2)
+            return words.text("ui-player-error-format");
+        return words.text("ui-player-error-playback");
+    }
+
     // The video's file, played as a device (src/video_source.rs): it is opened when the video is shown and stopped when
     // it isn't. The player's own source is only what the device sets.
     function openVideo() {
@@ -103,9 +115,9 @@ Item {
             if (media.playsVideo)
                 play();
         }
-        // The window words a failure as its own line, never the backend's English text (errorString is only checked for
-        // being empty). The enum itself is not compared: this build's QML compiler cannot compile that.
-        onErrorChanged: media.playerFailed(player.errorString === "" ? "" : words.text("ui-player-error-playback"))
+        // The window words a failure by its kind (open, format, or playback), never the backend's English text. The kind is
+        // read from C++ (the enum itself is not compared in QML: this build's QML compiler cannot compile that).
+        onErrorChanged: media.playerFailed(media.failureText(animPlayer.playerErrorKind(player)))
     }
 
     VideoSource {

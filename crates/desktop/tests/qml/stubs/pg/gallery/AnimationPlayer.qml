@@ -9,4 +9,8 @@ QtObject {
     property string playerError: ""
     function setSink(sink) {
     }
+    // The kind of the player's error, 0 for none (the stub has no player to ask).
+    function playerErrorKind(player: var): int {
+        return 0;
+    }
 }

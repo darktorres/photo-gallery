@@ -22,7 +22,7 @@ use crate::config::Config;
 use crate::edit::Edit;
 use crate::error::{Error, Result};
 use crate::images::Images;
-use crate::inbox::Inbox;
+use crate::inbox::{Inbox, JOURNAL_FILE};
 use crate::library::LibraryService;
 use crate::makers::Makers;
 use crate::prefs::PrefStore;
@@ -94,7 +94,9 @@ impl App {
         let catalog_id = keeper.catalog_id()?;
         let rebuilt = keeper.rebuilt().cloned();
         let catalogs = Arc::new(Catalogs::new(catalog_path.clone(), keeper));
-        let inbox = Inbox::start(catalog_path.clone())?;
+        // The journal of the user's inbox writes is in the home, beside the preferences: it does not depend on the catalog,
+        // which may be locked or on a drive that is not connected.
+        let inbox = Inbox::start(catalog_path.clone(), config.layout.home().join(JOURNAL_FILE))?;
         if let Some(r) = rebuilt {
             inbox.post(r.notice());
         }

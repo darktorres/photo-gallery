@@ -75,6 +75,19 @@ impl qobject::AnimationPlayer {
         self.restart();
     }
 
+    /// The kind of `player`'s error (`qobject::player_error_kind`, cpp/player_error.cpp), as the viewer words it.
+    ///
+    /// # Safety
+    /// `player` is a live `QMediaPlayer` or null (from QML: the viewer's `MediaPlayer`).
+    #[expect(
+        unsafe_code,
+        reason = "FFI: the Qt media player the QML hands over, read on the window's thread while it is alive"
+    )]
+    pub(crate) unsafe fn player_error_kind_of(&self, player: *mut qobject::QMediaPlayer) -> i32 {
+        // SAFETY: the caller passes a live player or null (see above).
+        unsafe { qobject::player_error_kind(player) }
+    }
+
     /// The player reported a failure for `file_id` (`Watched::failed`): what it says is the player's error.
     fn animation_failed(mut self: Pin<&mut Self>, file_id: i64, text: &str) {
         if file_id == self.file_id {

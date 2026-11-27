@@ -7,7 +7,6 @@
 //! operations are on [`LibraryService`]: they work on the catalog whether or not the job has started.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -16,7 +15,7 @@ use pg_jobs::NoticeSink;
 use pg_jobs::events::Bus;
 use pg_library::folders::AddError;
 use pg_library::mask::PassMask;
-use pg_library::runner::{Runner, RunnerConfig};
+use pg_library::runner::{JobWaker, Runner, RunnerConfig};
 use pg_library::shared::{FeatureCell, Generation, HeightCell};
 use pg_model::features::Features;
 use pg_model::ids::{FileId, RootId};
@@ -32,6 +31,7 @@ use pg_writeback::{WriteStatus, Writer};
 
 use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
+use crate::retry_wake::RetryWake;
 
 /// How long a stop waits for the job's file (or batch) in progress. A file that takes longer to read is left to end
 /// with the process, and its last changes are merged at the next open.
@@ -287,6 +287,11 @@ impl Library {
         self.runner.wake();
     }
 
+    /// A handle that wakes the job from any thread, for as long as it runs.
+    pub fn job_waker(&self) -> JobWaker {
+        self.runner.waker()
+    }
+
     /// Save cropped copies of these files' borders into `folder`, first thing in the background job.
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
         self.runner.save_crops(ids, folder);
@@ -382,7 +387,7 @@ pub struct LibraryService {
     cell: OnceLock<Library>,
     /// Set by the inbox when it replayed a queued Retry at the app's start: the job is woken once it starts, for the
     /// files the Retry marked.
-    retries_replayed: Arc<AtomicBool>,
+    retry_wake: Arc<RetryWake>,
 }
 
 impl LibraryService {
@@ -391,7 +396,7 @@ impl LibraryService {
         catalogs: Arc<Catalogs>,
         thumbs: Arc<ThumbCache>,
         inbox: Arc<dyn NoticeSink>,
-        retries_replayed: Arc<AtomicBool>,
+        retry_wake: Arc<RetryWake>,
         features: Features,
         start: StartConfig,
     ) -> LibraryService {
@@ -404,7 +409,7 @@ impl LibraryService {
             features: FeatureCell::new(features),
             start: Mutex::new(start),
             cell: OnceLock::new(),
-            retries_replayed,
+            retry_wake,
         }
     }
 
@@ -459,10 +464,9 @@ impl LibraryService {
                 .inbox
                 .post(Notice::RescanFailed { error: pg_model::notice::error_text(&pg_model::error::chain(&e)) }),
         }
-        // A queued Retry the inbox replayed at the app's start has marked its files; the job is woken for them.
-        if self.retries_replayed.swap(false, Ordering::SeqCst) {
-            library.wake_job();
-        }
+        // A queued Retry the inbox replayed has marked its files: the job is woken for them, now or as soon as the replay
+        // finishes (`RetryWake` takes whichever comes second).
+        self.retry_wake.start(library.job_waker());
         self.retry_leftovers();
         Ok(self.cell.get_or_init(|| library))
     }
@@ -601,16 +605,18 @@ impl LibraryService {
 
     /// Remove a folder from the library for good, by its id (from [`LibraryService::roots`]): its files, their analyses,
     /// ratings and thumbnails, and its folders. `expected` is the folder the caller showed (`RulePath`, as the roots have
-    /// it). The folder leaves the library at once (`Catalog::begin_removal`), and a scan of it in progress stops; its files
-    /// are then finished by the library's removal job, or here when the library is not running. Returns what the catalog
-    /// found: [`Begun::Changed`] when the id names another folder now (nothing was changed).
+    /// it). The folder leaves the library at once (`Catalog::begin_removal`), and a scan of it in progress stops. Then the
+    /// library's removal job parks the folder's lanes, hides its files and publishes `Change::Scanned` (the grid and the
+    /// tree read again), and deletes them; when the library is not running, all of that runs here. Returns what the
+    /// catalog found: [`Begun::Changed`] when the id names another folder now (nothing was changed).
     pub fn remove_folder(&self, id: RootId, expected: &RulePath) -> Result<Begun> {
         let begun = self.catalogs.with_catalog(|c| c.begin_removal(id, expected))?;
         if let Begun::Started { path, volumes } = &begun {
             match self.running() {
                 Some(library) => {
                     // The lanes that read the folder are parked before the removal's files are hidden: from now on no lane
-                    // works on them (section 1, D1). The removal job takes its own holds when it hides them.
+                    // works on them (section 1, D1). The removal job takes its own holds, hides the files, and publishes
+                    // `Change::Scanned` then: that is when the grid and the tree stop showing them.
                     library.park_removal(path, volumes);
                     library.stop_scans_under(path);
                     library.wake_removals();
@@ -704,11 +710,12 @@ impl LibraryService {
     }
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.
-    /// Returns the file's queued turns now, the catalog's total (`Catalog::queue_rotation`).
-    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<pg_model::turns::Turns> {
-        let total = self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
+    /// Returns the file's queued turns now, the catalog's total, and the file's `changed` stamp as the write left it
+    /// (`Catalog::queue_rotation`).
+    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<(pg_model::turns::Turns, i64)> {
+        let queued = self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
         self.wake_writer();
-        Ok(total)
+        Ok(queued)
     }
 
     /// Stop the library; an error when the job was still running after its wait.

@@ -10,6 +10,11 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
+        include!("pg-desktop/cpp/posted_events.h");
+        /// Runs the GUI thread's posted events now (cpp/posted_events.cpp), the grid's queued commands among them. Call on
+        /// the GUI thread.
+        #[namespace = "pg"]
+        fn drain_posted_events();
     }
 
     extern "RustQt" {
@@ -204,7 +209,8 @@ pub mod qobject {
         #[qinvokable]
         fn pending(self: &Shell) -> bool;
 
-        /// Shutdown: the pending saves run now (the session and the row height are kept).
+        /// Shutdown: the queued commands run first (the selection the user made is in the grid's queue), then the pending
+        /// saves run now (the session and the row height are kept).
         #[qinvokable]
         fn flush(self: Pin<&mut Shell>);
 

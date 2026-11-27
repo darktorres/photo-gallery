@@ -48,7 +48,7 @@
 
 use rusqlite::{Connection, params};
 
-use pg_model::inbox::{InboxCounts as Counts, InboxEntry as Entry, InboxEntryId as EntryId, QueuedInboxWrite};
+use pg_model::inbox::{InboxCounts as Counts, InboxEntry as Entry, InboxEntryId as EntryId};
 use pg_model::notice::{Key, Level, Lifecycle, Notice, Part, Trigger, resolves};
 use pg_model::num::count_u64;
 use pg_model::rules::PathRules;
@@ -347,39 +347,6 @@ impl Catalog {
         )?;
         tx.commit()?;
         Ok(count_u64(n))
-    }
-
-    /// Queue a user's inbox `write` at `now`, before it is applied: its queue id. It leaves the queue with
-    /// [`Catalog::unqueue_inbox_write`] once it is written or refused; one the app ends before then is replayed at the
-    /// next start ([`Catalog::queued_inbox_writes`]).
-    pub fn queue_inbox_write(&self, write: &QueuedInboxWrite, now: i64) -> Result<i64> {
-        let data = serde_json::to_string(write).map_err(Error::bare)?;
-        let tx = write_transaction(&self.conn)?;
-        tx.execute("INSERT INTO inbox_queue(write, queued) VALUES (?1, ?2)", params![data, now])?;
-        let id = tx.last_insert_rowid();
-        tx.commit()?;
-        Ok(id)
-    }
-
-    /// Take the queued write `id` out of the queue. Whether it was there.
-    pub fn unqueue_inbox_write(&self, id: i64) -> Result<bool> {
-        let tx = write_transaction(&self.conn)?;
-        let gone = tx.execute("DELETE FROM inbox_queue WHERE id = ?1", [id])? > 0;
-        tx.commit()?;
-        Ok(gone)
-    }
-
-    /// The queued writes, oldest first, each with its queue id.
-    pub fn queued_inbox_writes(&self) -> Result<Vec<(i64, QueuedInboxWrite)>> {
-        let mut stmt = self.conn.prepare_cached("SELECT id, write FROM inbox_queue ORDER BY id")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (id, data) = row?;
-            let write: QueuedInboxWrite = serde_json::from_str(&data).map_err(Error::bare)?;
-            out.push((id, write));
-        }
-        Ok(out)
     }
 }
 

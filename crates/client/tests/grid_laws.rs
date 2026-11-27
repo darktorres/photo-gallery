@@ -13,6 +13,7 @@ fn entry(id: i64, w: u32, h: u32, ext: Ext) -> Entry {
     Entry {
         id: FileId::new(id),
         mtime: 0,
+        changed: 0,
         width: w,
         height: h,
         duration_ms: Entry::NO_DURATION,

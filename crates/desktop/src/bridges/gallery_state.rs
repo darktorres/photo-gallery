@@ -79,10 +79,26 @@ pub struct GalleryRust {
     /// The border marks written off the window's thread and not yet shown, per file: the marks the writes still to be
     /// made set, in the order they were asked for (`set_border_marked`).
     pub(crate) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
-    /// The turns pressed on a file that the window's writer has not queued yet (`turn_done` takes them off). The catalog
-    /// counts a turn as pending only once it is queued, so a list read before that has none: a list that arrives carries
-    /// these (`with_unqueued`). Only the presses in flight are here, so it does not grow with the library.
-    pub(crate) unqueued: BTreeMap<FileId, Turns>,
+    /// The turns pressed on a file whose press no read has counted yet, per file, oldest first (`Press`). A press is
+    /// counted by a read made after its write queued it: from then on the read's pending turns hold it. It is taken off
+    /// when a shown entry was read at or after its write (`retire_presses`), or when its write is refused
+    /// (`take_press`). So the map holds only the presses in flight or not yet read, and does not grow with the library.
+    pub(crate) presses: BTreeMap<FileId, VecDeque<Press>>,
+    /// The number the next press takes (`add_press`): a press is told apart from the others on its file by it.
+    pub(crate) next_press: u64,
+}
+
+/// A turn pressed on a file, from the press to the read that counts it (`GalleryRust::presses`).
+pub(crate) struct Press {
+    /// The press's number on the model thread (`GalleryRust::add_press`); its write's result is matched to it.
+    pub(crate) seq: u64,
+    /// The quarter turns pressed.
+    pub(crate) turns: Turns,
+    /// The file's catalog change stamp right after the write queued the press (`queue_rotation`), once it is queued;
+    /// None before. A read counts the press exactly when its entry's `changed` reaches this stamp: the catalog stamps
+    /// every change to a file with a number that grows in commit order, so a read sees the press if and only if its
+    /// `changed` is at least the press's stamp.
+    pub(crate) stamp: Option<i64>,
 }
 
 impl Default for GalleryRust {
@@ -125,7 +141,8 @@ impl Default for GalleryRust {
             details_delivery: None,
             details_pending: Cell::new(None),
             mark_writes: BTreeMap::new(),
-            unqueued: BTreeMap::new(),
+            presses: BTreeMap::new(),
+            next_press: 0,
         }
     }
 }
@@ -211,6 +228,93 @@ impl GalleryRust {
         };
         if empty {
             self.mark_writes.remove(&file);
+        }
+    }
+
+    /// The entry the grid shows for `file`, as it stands (before a list or a refresh is put in).
+    pub(crate) fn shown_entry(&self, file: FileId) -> Option<&Entry> {
+        self.grid.position_of(file).and_then(|at| self.grid.item(at))
+    }
+
+    /// A press on `file` is asked for: its write is queued after the presses before it (`turn_done` settles it). Returns
+    /// its number.
+    pub(crate) fn add_press(&mut self, file: FileId, turns: Turns) -> u64 {
+        let seq = self.next_press;
+        self.next_press = self.next_press.wrapping_add(1);
+        self.presses.entry(file).or_default().push_back(Press { seq, turns, stamp: None });
+        seq
+    }
+
+    /// The press `seq` on `file` is written: `stamp` is the file's catalog change stamp after the write queued it.
+    pub(crate) fn press_written(&mut self, file: FileId, seq: u64, stamp: i64) {
+        if let Some(press) = self.presses.get_mut(&file).and_then(|queue| queue.iter_mut().find(|p| p.seq == seq)) {
+            press.stamp = Some(stamp);
+        }
+    }
+
+    /// The press `seq` on `file` is not in the catalog (its write was refused): it is taken off the map.
+    pub(crate) fn take_press(&mut self, file: FileId, seq: u64) {
+        let empty = match self.presses.get_mut(&file) {
+            Some(queue) => {
+                queue.retain(|p| p.seq != seq);
+                queue.is_empty()
+            }
+            None => false,
+        };
+        if empty {
+            self.presses.remove(&file);
+        }
+    }
+
+    /// The entries a read brings, with their pending turns made to hold the presses the read does not count. A press
+    /// whose stamp the entry's `changed` reaches is in the read's pending turns already, so it is not added. Any other
+    /// press is added: one written after the read (its stamp is later), or one whose write is not made yet (no stamp).
+    /// The last kind is added even when the read came after its write, which `turn_done` corrects once the write is
+    /// made known (the press is then taken off the count, as the entry shown was read after the write).
+    ///
+    /// An entry older than the one `shown` gives for its file (its `changed` below the shown one's: a read asked for
+    /// earlier that came in later) is replaced by the one shown. That holds for every file, not only those with presses:
+    /// a press taken off the count (`retire_presses`) is no longer there to put back what an older read lacks.
+    pub(crate) fn settle_presses(&self, entries: Vec<Entry>, shown: impl Fn(FileId) -> Option<Entry>) -> Vec<Entry> {
+        entries
+            .into_iter()
+            .map(|mut entry| {
+                if let Some(prior) = shown(entry.id)
+                    && prior.changed > entry.changed
+                {
+                    return prior;
+                }
+                if let Some(queue) = self.presses.get(&entry.id) {
+                    entry.pending_turns = queue
+                        .iter()
+                        .filter(|p| p.stamp.is_none_or(|stamp| stamp > entry.changed))
+                        .fold(entry.pending_turns, |turns, p| turns.plus(p.turns));
+                }
+                entry
+            })
+            .collect()
+    }
+
+    /// Takes off the presses the entries shown count: a press whose stamp the shown entry's `changed` reaches is in that
+    /// entry's pending turns, and every later read counts it too. Only what is shown is looked at, so a read that was not
+    /// put in retires nothing.
+    pub(crate) fn retire_presses(&mut self) {
+        if self.presses.is_empty() {
+            return;
+        }
+        let shown: Vec<(FileId, i64)> =
+            self.presses.keys().filter_map(|&file| self.shown_entry(file).map(|e| (file, e.changed))).collect();
+        for (file, changed) in shown {
+            let empty = match self.presses.get_mut(&file) {
+                Some(queue) => {
+                    queue.retain(|p| p.stamp.is_none_or(|stamp| stamp > changed));
+                    queue.is_empty()
+                }
+                None => false,
+            };
+            if empty {
+                self.presses.remove(&file);
+            }
         }
     }
 }

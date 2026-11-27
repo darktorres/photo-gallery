@@ -126,6 +126,8 @@ fn main() -> Result<(), String> {
     .cpp_file("cpp/frame_sink.cpp")
     .cpp_file("cpp/gpu_device.cpp")
     .cpp_file("cpp/gui_app.cpp")
+    .cpp_file("cpp/player_error.cpp")
+    .cpp_file("cpp/posted_events.cpp")
     .cpp_file("cpp/providers.cpp")
     .cpp_file("cpp/screenshot.cpp")
     .cpp_file("cpp/video_source.cpp")

@@ -665,6 +665,24 @@ mod tests {
         a_removal_begun_and_not_hidden_keeps_its_rows_until_the_next_run_posix
     );
 
+    /// A refused start changes nothing: a folder that is not the one the caller showed keeps its files visible, and the
+    /// rows, the roots and the markers stay as they were.
+    fn a_refused_start_hides_nothing(rules: PathRules) {
+        let c = library(rules);
+        let root = c.root_id(&p(rules, r"D:\r")).unwrap().unwrap();
+        assert!(matches!(c.begin_removal(root, &p(rules, r"D:\other")).unwrap(), Begun::Changed));
+        let visible: i64 = c.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0)).unwrap();
+        assert_eq!(visible, 2);
+        assert!(c.removal_markers().unwrap().is_empty());
+        assert!(c.root_id(&p(rules, r"D:\r")).unwrap().is_some());
+    }
+
+    under_both_rules!(
+        a_refused_start_hides_nothing,
+        a_refused_start_hides_nothing_windows,
+        a_refused_start_hides_nothing_posix
+    );
+
     /// While a removal is pending its folder can't be added again (the rows would be the removed ones, still going).
     fn add_is_refused_over_a_pending_removal(rules: PathRules) {
         let c = library(rules);

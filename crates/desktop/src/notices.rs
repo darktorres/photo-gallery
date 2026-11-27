@@ -85,7 +85,7 @@ use crate::bridges::notices_bridge::qobject;
 use crate::rows::qt_int;
 
 use core::pin::Pin;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -95,7 +95,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::{FailedItems, InboxEvent, InboxListing};
 use pg_model::inbox::{InboxEntry, InboxEntryId};
-use pg_model::notice::{Action, LedgerKind, Notice};
+use pg_model::notice::{Action, LedgerKind, Level, Notice};
 use pg_model::rules::PathRules;
 use pg_wording::Message;
 
@@ -108,6 +108,9 @@ thread_local! {
     /// latest listing's; while it is open, the one it opened with (a ledger that appears meanwhile keeps its first).
     /// Its list and its Copy say what was new then, whatever marking it read does meanwhile.
     static SEEN_AT_OPEN: RefCell<BTreeMap<LedgerKind, i64>> = const { RefCell::new(BTreeMap::new()) };
+    /// The number of the latest copy asked for (kept notice or ledger). A ledger's copy writes the clipboard only if no
+    /// copy was asked for after it: its read can finish after a later copy. Read and written on the Qt thread.
+    static COPY_SEQ: Cell<u64> = const { Cell::new(0) };
 }
 
 /// `kind`'s mark as the user last saw it, if it was listed (`None`: the acknowledgement as it is now).
@@ -438,6 +441,11 @@ impl qobject::Notices {
             // The marks the inbox opens with stay while it is open (opening marks it read: what was new stays so).
             if !open {
                 keep_seen(&self.rows, true);
+                // A warning raised while the inbox was open is in its list, and read by it: the toast it left behind
+                // is dismissed too, rather than outliving the panel.
+                if Level::from_code(self.toast_level) >= Level::Warning {
+                    self.as_mut().dismiss_toast();
+                }
             }
             app::get().inbox().set_viewing(open);
         }
@@ -589,6 +597,11 @@ impl qobject::Notices {
         let Some(entry) = usize::try_from(row).ok().and_then(|row| self.rows.get(row)) else { return };
         let rules = pg_platform::native::PATH_RULES;
         let notice = entry.notice.clone();
+        // This copy is the latest asked for: a ledger copy still reading does not write the clipboard after it.
+        let seq = COPY_SEQ.with(|seq| {
+            seq.set(seq.get() + 1);
+            seq.get()
+        });
         let Some(kind) = ledger_kind(entry.id) else {
             crate::bridges::clipboard::ffi::copy_text(&QString::from(&copy_words(&notice, rules, None)));
             return;
@@ -596,15 +609,27 @@ impl qobject::Notices {
         let notices = self.qt_thread();
         app::session().copy_details(kind, COPIED_FILES, seen_at_open(kind), move |read| {
             let items = match read {
-                Ok(failed) => Some(failed.items),
+                Ok(failed) => Ok(failed.items),
                 Err(e) => {
                     pg_log::warn("inbox", &format!("the failed files to copy couldn't be read: {e:#}"));
-                    None
+                    Err(app::error_text(&e))
                 }
             };
-            let words = copy_words(&notice, rules, items.as_ref());
-            // On the Qt thread, which the clipboard is; fails only when the window is gone.
-            let _ = notices.queue(move |_| crate::bridges::clipboard::ffi::copy_text(&QString::from(&words)));
+            // On the Qt thread, which the clipboard and the inbox's notices are; fails only when the window is gone.
+            let _ = notices.queue(move |_| {
+                let items = match items {
+                    Ok(items) => Some(items),
+                    Err(error) => {
+                        // The copy holds the headline alone: the user is told why it is not the whole entry.
+                        app::post(Notice::ListingFailed { error });
+                        None
+                    }
+                };
+                if COPY_SEQ.with(Cell::get) == seq {
+                    let words = copy_words(&notice, rules, items.as_ref());
+                    crate::bridges::clipboard::ffi::copy_text(&QString::from(&words));
+                }
+            });
         });
     }
 

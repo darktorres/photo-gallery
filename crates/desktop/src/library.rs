@@ -82,13 +82,16 @@ fn path_words(e: &pg_platform::names::NormalizeError) -> String {
 }
 
 impl qobject::Library {
-    /// The library's folders, as the catalog has them. When they can't be read, none is listed and the inbox says why.
+    /// The library's folders, as the catalog has them. When they can't be read, the inbox says why and the list stays as
+    /// it was: a read that failed is not taken for an empty library (the grid's "no folders" text, the panel's "no folders
+    /// yet", and the row numbers a removal is asked by all follow the list).
     fn load_roots(mut self: Pin<&mut Self>) {
         let roots = match app::get().library().roots() {
             Ok(roots) => roots,
             Err(e) => {
                 app::post(Notice::FoldersUnreadable { error: app::error_text(&e) });
-                Vec::new()
+                self.as_mut().load_removals();
+                return;
             }
         };
         let texts: QStringList =
@@ -100,13 +103,13 @@ impl qobject::Library {
     }
 
     /// The removals not finished, listed under the folders: each with its state (kept for an unfinished write, or still
-    /// removing).
+    /// removing). When they can't be read, the inbox says why and the list stays as it was.
     fn load_removals(mut self: Pin<&mut Self>) {
         let pending = match app::get().library().pending_removals() {
             Ok(pending) => pending,
             Err(e) => {
                 app::post(Notice::FoldersUnreadable { error: app::error_text(&e) });
-                Vec::new()
+                return;
             }
         };
         let folders = |kept: bool| -> QStringList {
@@ -139,9 +142,11 @@ impl qobject::Library {
         let Some(path) = pending.into_iter().map(|(path, _)| path).find(|p| rules.display(p) == folder) else {
             return;
         };
-        match library.discard_removal(&path) {
-            Ok(_) => self.as_mut().load_roots(),
-            Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
+        // The list is read again either way: a discard can fail after the catalog has dropped the removal.
+        let result = library.discard_removal(&path);
+        self.as_mut().load_roots();
+        if let Err(e) = result {
+            app::post(Notice::FolderNotRemoved { error: app::error_text(&e) });
         }
     }
 
@@ -291,7 +296,11 @@ impl qobject::Library {
                 self.as_mut().load_roots();
                 app::post(Notice::FolderNotRemoved { error: pg_wording::render(&Message::FolderListChanged) });
             }
-            Err(e) => app::post(Notice::FolderNotRemoved { error: app::error_text(&e) }),
+            // A failure can come after the removal was begun (the catalog's marker is set): the list is read again.
+            Err(e) => {
+                self.as_mut().load_roots();
+                app::post(Notice::FolderNotRemoved { error: app::error_text(&e) });
+            }
         }
     }
 

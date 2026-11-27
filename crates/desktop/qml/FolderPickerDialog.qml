@@ -31,6 +31,18 @@ ModalOverlay {
         overlay.cancelled();
     }
 
+    // A click on a folder starts this timer: a click within the double-click time is the second half of a double click
+    // on the folder that was opened, and does not open the folder the new listing shows under the pointer.
+    Timer {
+        id: openSettle
+        interval: Application.styleHints.mouseDoubleClickInterval
+    }
+    // The listing is replaced when a folder is opened, which destroys the row that had the keys: they go to the list.
+    onNamesChanged: {
+        if (overlay.open)
+            folderList.forceActiveFocus();
+    }
+
     Pane {
         anchors.centerIn: parent
         width: 560
@@ -65,6 +77,7 @@ ModalOverlay {
                 }
             }
             WheelListView {
+                id: folderList
                 objectName: "folders"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -81,7 +94,12 @@ ModalOverlay {
                         objectName: "open"
                         Layout.fillWidth: true
                         text: folderRow.modelData
-                        onClicked: overlay.openRow(folderRow.index)
+                        onClicked: {
+                            if (!openSettle.running) {
+                                openSettle.restart();
+                                overlay.openRow(folderRow.index);
+                            }
+                        }
                     }
                     Button {
                         objectName: "choose"

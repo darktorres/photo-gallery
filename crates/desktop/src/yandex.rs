@@ -137,6 +137,8 @@ impl qobject::YandexSearch {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
                 pg_log::warn("yandex", &format!("file {}: {err:#}", file.get()));
+                // The results on the panel are another photo's: they go, so the error is not read as theirs.
+                self.as_mut().show(Results::default());
                 self.as_mut()
                     .set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
             }
@@ -152,10 +154,12 @@ impl qobject::YandexSearch {
     /// Start a search for the photo at `path`. The app refuses one already running; the status line keeps showing that
     /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
-        self.as_mut().ensure_pump();
+        if let Err(e) = self.as_mut().ensure_pump() {
+            return self.not_started("search", &e);
+        }
         match search().start(path, RESULT_ROW_HEIGHT) {
             Ok(true) => {}
-            Ok(false) => return,
+            Ok(false) => return self.refused("search"),
             Err(e) => return self.not_started("search", &e),
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
@@ -165,10 +169,11 @@ impl qobject::YandexSearch {
     }
 
     /// Start the thread that polls on each change of the search (once, unless it couldn't start). It subscribes before
-    /// any search or save starts, so none of their changes is missed.
-    fn ensure_pump(mut self: Pin<&mut Self>) {
+    /// any search or save starts, so none of their changes is missed. Without it no result would be shown, so a search
+    /// or a save is not started then: the error is returned, and the next one tries again.
+    fn ensure_pump(mut self: Pin<&mut Self>) -> std::io::Result<()> {
         if self.pump {
-            return;
+            return Ok(());
         }
         self.as_mut().rust_mut().pump = true;
         let changes = search().subscribe();
@@ -193,7 +198,9 @@ impl qobject::YandexSearch {
         if let Err(e) = pump {
             pg_log::warn("yandex", &format!("the change pump didn't start: {e:#}"));
             self.as_mut().rust_mut().pump = false;
+            return Err(e);
         }
+        Ok(())
     }
 
     /// Show these results, none picked. The counts and the layout are set inside the reset, so that no row is ever
@@ -509,16 +516,26 @@ impl qobject::YandexSearch {
             return;
         }
         let files = hits.len();
-        self.as_mut().ensure_pump();
+        if let Err(e) = self.as_mut().ensure_pump() {
+            return self.not_started("save", &e);
+        }
         // The app refuses a search or a save already running (the status line keeps showing its progress), and
         // remembers the folder when it saves.
         match search().save(hits, folder) {
             Ok(true) => {}
-            Ok(false) => return,
+            Ok(false) => return self.refused("save"),
             Err(e) => return self.not_started("save", &e),
         }
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&status_text(&YandexStatus::Working(Phase::Saving { files }))));
+    }
+
+    /// A search or a save (`what`) the app refused because another is running: the status line says so, so the request
+    /// is not taken for the running one's (the panel keeps the results it shows, which may be that search's).
+    fn refused(mut self: Pin<&mut Self>, what: &str) {
+        pg_log::warn("yandex", &format!("the {what} was refused: a search or a save is still running"));
+        let error = "a search or a save is still running".to_string();
+        self.as_mut().set_status(QString::from(&render(&Message::YandexNotStarted { error })));
     }
 
     /// A search or a save (`what`) whose thread the system refused: the log says why, and so does the status line.

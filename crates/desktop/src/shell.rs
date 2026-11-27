@@ -14,6 +14,7 @@ use crate::bridges::shell_state::ShellRust;
 use crate::bridges::shell_bridge::qobject;
 
 use core::pin::Pin;
+use std::cell::Cell;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
@@ -40,6 +41,9 @@ impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets
     /// the size and the scale when it is made).
     fn default() -> ShellRust {
+        // A window made again (live reload) starts with its viewer closed. The window that had it open is gone without
+        // saying so, and the controller's flag would keep the grid's keys off.
+        controller::update(Event::Panel(panels::Event::SetViewerOpen(false)));
         let listing = controller::listing();
         let size = controller::with(|c| *c.grid_size());
         let panels = controller::with(|c| c.panels().clone());
@@ -57,6 +61,13 @@ impl Default for ShellRust {
             dev_mode: panels.dev_mode(),
         }
     }
+}
+
+thread_local! {
+    /// How many listing changes the window has dispatched (`Shell::dispatch`, on the Qt thread). A Reveal is asked for
+    /// with the count as it is; when its folder is delivered, a count that has moved on means the user chose a listing
+    /// since (a folder, a view, the failed imports), which replaces the Reveal, so it is dropped.
+    static LISTING_SEQ: Cell<u64> = const { Cell::new(0) };
 }
 
 /// A size value the window sent that is not a valid one: logged and dropped, never applied.
@@ -108,10 +119,15 @@ fn views_outcome<T, E: std::fmt::Display>(op: ViewOp, result: Result<T, E>) -> O
     app::observe(Op::Views(op), result, |e| Notice::ViewsFailed { op, error: app::error_text(e) })
 }
 
-/// The names of the saved views, sorted (`saved_views`).
+/// The names of the saved views, sorted (`saved_views`); None when they can't be listed (the failure is posted).
+fn view_names_read() -> Option<QStringList> {
+    let views = views_outcome(ViewOp::List, app::get().views().all())?;
+    Some(views.iter().map(|v| QString::from(&v.name)).collect())
+}
+
+/// The names of the saved views (`saved_views`), none when they can't be listed.
 fn view_names() -> QStringList {
-    let views = views_outcome(ViewOp::List, app::get().views().all()).unwrap_or_default();
-    views.iter().map(|v| QString::from(&v.name)).collect()
+    view_names_read().unwrap_or_default()
 }
 
 impl qobject::Shell {
@@ -382,19 +398,27 @@ impl qobject::Shell {
         crate::rows::to_row(Some(choice_index(controller::listing().sort.key)))
     }
 
-    pub(crate) fn save_view(mut self: Pin<&mut Self>, name: &QString) {
+    pub(crate) fn save_view(self: Pin<&mut Self>, name: &QString) {
         let name = name.to_string().trim().to_string();
         if name.is_empty() {
             return;
         }
         let view = SavedView { name, listing: controller::listing() };
         views_outcome(ViewOp::Save, app::get().views().save(&view));
-        self.as_mut().set_saved_views(view_names());
+        self.refresh_saved_views();
     }
 
-    pub(crate) fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
+    pub(crate) fn delete_view(self: Pin<&mut Self>, name: &QString) {
         views_outcome(ViewOp::Delete, app::get().views().delete(&name.to_string()));
-        self.as_mut().set_saved_views(view_names());
+        self.refresh_saved_views();
+    }
+
+    /// The Views menu's names are read again after a change. A read that fails keeps the names the menu had: the views
+    /// are still in the catalog, and the failure is what the inbox says.
+    fn refresh_saved_views(mut self: Pin<&mut Self>) {
+        if let Some(names) = view_names_read() {
+            self.as_mut().set_saved_views(names);
+        }
     }
 
     /// Show the file `file_id` in its folder, nothing filtered (an inbox entry's Reveal). Its folder is read off the
@@ -405,14 +429,19 @@ impl qobject::Shell {
         // The bridge's number becomes a file's id here, once: everything after it is typed. Not a file id: nothing to show.
         let Some(file) = file_id_of(file_id) else { return };
         let shell = self.qt_thread();
+        let listing = LISTING_SEQ.with(Cell::get);
         app::session().reveal_folder(file, move |folder| {
             // Fails only when the window is gone: nothing left to reveal in.
-            let _ = shell.queue(move |shell| shell.revealed(file, folder));
+            let _ = shell.queue(move |shell| shell.revealed(file, folder, listing));
         });
     }
 
-    /// A Reveal's folder, delivered on the Qt thread: listed, or a toast when the file is no longer in the library.
-    fn revealed(mut self: Pin<&mut Self>, file: FileId, folder: pg_app::Result<Option<RulePath>>) {
+    /// A Reveal's folder, delivered on the Qt thread: listed, or a toast when the file is no longer in the library. A
+    /// Reveal the user has replaced with a listing since it was asked for (`listing`, see `LISTING_SEQ`) is dropped.
+    fn revealed(mut self: Pin<&mut Self>, file: FileId, folder: pg_app::Result<Option<RulePath>>, listing: u64) {
+        if listing != LISTING_SEQ.with(Cell::get) {
+            return;
+        }
         match folder {
             Ok(Some(folder)) => {
                 let folder = pg_platform::native::PATH_RULES.merge(&folder);
@@ -420,7 +449,11 @@ impl qobject::Shell {
                 self.later(|shell| shell.reveal_shown());
             }
             Ok(None) => app::post(Notice::FileNoLongerInLibrary),
-            Err(e) => pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e:#}")),
+            // The folder couldn't be read: the user is told, as a failed listing is (the window doesn't move).
+            Err(e) => {
+                pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e:#}"));
+                app::post(Notice::ListingFailed { error: app::error_text(&e) });
+            }
         }
     }
 
@@ -460,6 +493,9 @@ impl qobject::Shell {
     /// Report `event` to the controller, then carry out what it gives: the mirrored properties follow the listing, the
     /// one timer is set to the next pause, and each command runs in order.
     fn dispatch(mut self: Pin<&mut Self>, event: Event) {
+        if matches!(event, Event::Listing(_)) {
+            LISTING_SEQ.with(|seq| seq.set(seq.get() + 1));
+        }
         let commands = controller::update(event);
         self.as_mut().mirror();
         self.as_mut().rearm();
@@ -582,7 +618,7 @@ impl qobject::Shell {
             Command::ToggleBorderMark(item) => {
                 let item = qt_int(item);
                 gallery::post(move |model| {
-                    let marked = !model.border_marked(item);
+                    let marked = !model.border_mark_target(item);
                     model.set_border_marked(item, marked);
                 });
             }

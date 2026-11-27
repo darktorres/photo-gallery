@@ -578,6 +578,9 @@ pub enum Notice {
         /// A row an older build wrote holds one failure as `first_error` (or null): that reads as the list of one.
         #[serde(default, alias = "first_error", deserialize_with = "failures_or_one")]
         failures: Vec<FileFailure>,
+        /// How many were not reached: the pass was stopped (the app quit) before them. Zero for a pass that ran to the end.
+        #[serde(default)]
+        unfinished: u64,
     },
     /// A crop job that failed before it could save anything.
     CropFailed {
@@ -597,6 +600,10 @@ pub enum Notice {
         failed: u64,
         /// The first failures, each with its file.
         failures: Vec<FileFailure>,
+        /// How many originals were not reached: the cut was stopped (the app quit) before them. Zero for a cut that ran to the
+        /// end.
+        #[serde(default)]
+        unfinished: u64,
     },
     /// A cut that failed before it could change anything.
     CutFailed {
@@ -1606,7 +1613,14 @@ impl Notice {
             Notice::RoundFailed { error: error() },
             Notice::RoundPanicked { message: "index out of bounds".into() },
             Notice::CacheFull { height: crate::size::ThumbHeight::DEFAULT, made: 40 },
-            Notice::Cropped { folder: r"D:\Crops".into(), saved: 5, skipped: 1, failed: 1, failures: vec![failure] },
+            Notice::Cropped {
+                folder: r"D:\Crops".into(),
+                saved: 5,
+                skipped: 1,
+                failed: 1,
+                failures: vec![failure],
+                unfinished: 2,
+            },
             Notice::CropFailed { error: error() },
             Notice::CatalogRebuilt {
                 kept: r"D:\Gallery\catalog.sqlite.bad".into(),
@@ -1676,6 +1690,7 @@ impl Notice {
                     error: "may be incomplete".into(),
                     panicked: false,
                 }],
+                unfinished: 3,
             },
             Notice::CutFailed { error: error() },
             Notice::FolderRemovalUnfinished {
@@ -1941,10 +1956,12 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert!(!failures[0].panicked);
         let none = r#"{"kind":"cropped","folder":"D:\\Crops","saved":1,"skipped":0,"failed":0,"first_error":null}"#;
-        let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(none).unwrap() else {
+        let Notice::Cropped { failures, unfinished, .. } = serde_json::from_str::<Notice>(none).unwrap() else {
             panic!("not a crop");
         };
         assert!(failures.is_empty());
+        // A row from before the stop was recorded reads as a pass that was not stopped.
+        assert_eq!(unfinished, 0);
         let list = r#"{"kind":"cropped","folder":"D:\\Crops","saved":0,"skipped":0,"failed":2,
             "failures":[{"path":{"anchor":"D:","parts":["Photos","a.jpg"]},"error":"bad"},{"path":{"anchor":"D:","parts":["Photos","b.jpg"]},"error":"worse","panicked":true}]}"#;
         let Notice::Cropped { failures, .. } = serde_json::from_str::<Notice>(list).unwrap() else {

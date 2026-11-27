@@ -607,8 +607,14 @@ mod tests {
 
     #[test]
     fn the_crop_notice_says_what_failed() {
-        let cropped =
-            |failed, failures| Notice::Cropped { folder: "D:/out".into(), saved: 2, skipped: 1, failed, failures };
+        let cropped = |failed, failures| Notice::Cropped {
+            folder: "D:/out".into(),
+            saved: 2,
+            skipped: 1,
+            failed,
+            failures,
+            unfinished: 0,
+        };
         let out = iso("D:/out");
         assert_eq!(worded(&cropped(0, Vec::new())).1, format!("2 saved in {out}; 1 had nothing to crop; none failed"));
         let first = pg_model::notice::FileFailure {
@@ -619,6 +625,23 @@ mod tests {
         assert_eq!(
             worded(&cropped(1, vec![first])).1,
             format!("2 saved in {out}; 1 had nothing to crop; 1 failed, the first: {}: disk full", iso(r"D:\a.jpg"))
+        );
+    }
+
+    #[test]
+    fn a_stopped_crop_says_how_many_were_not_reached() {
+        let stopped = Notice::Cropped {
+            folder: "D:/out".into(),
+            saved: 2,
+            skipped: 1,
+            failed: 0,
+            failures: Vec::new(),
+            unfinished: 4,
+        };
+        let out = iso("D:/out");
+        assert_eq!(
+            worded(&stopped).1,
+            format!("2 saved in {out}; 1 had nothing to crop; none failed; 4 not reached: the pass was stopped first")
         );
     }
 

@@ -74,9 +74,13 @@ impl qobject::Filters {
     /// The user changed the query: the listing takes it (its policy, `listing::dispatch`), then the bar shows it and
     /// `edited` asks for the list after its pause. The session is saved when that list is shown, not per key.
     fn edit(mut self: Pin<&mut Self>, change: impl FnOnce(&mut Query)) {
-        let mut query = controller::listing().query;
+        let before = controller::listing().query;
+        let mut query = before.clone();
         change(&mut query);
-        self.as_mut().set_query(query);
+        // A change that leaves the query as it was (a bound typed to the value it had) asks for nothing: no new list.
+        if query != before {
+            self.as_mut().set_query(query);
+        }
     }
 
     fn set_query(mut self: Pin<&mut Self>, query: Query) {
@@ -129,11 +133,24 @@ impl qobject::Filters {
         QString::from(&text.unwrap_or_default())
     }
 
+    /// A bound typed as text: an empty field is no bound; text that doesn't parse (mid-typing, "5x") keeps the bound it
+    /// had, so the list is not widened by it (the field shows the text in red, `bound_valid`).
     pub(crate) fn set_bound(self: Pin<&mut Self>, field: i32, end: i32, text: &QString) {
         let text = text.to_string();
+        let empty = text.trim().is_empty();
         match (row_of(field).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
-            (Some(Field::Range(f)), Some(e)) => self.edit(|q| q.set_number(f, e.number(), parse_number(&text))),
-            (Some(Field::Day(f)), Some(e)) => self.edit(|q| q.set_day(f, e.day(), Day::parse(&text))),
+            (Some(Field::Range(f)), Some(e)) => {
+                let value = parse_number(&text);
+                if empty || value.is_some() {
+                    self.edit(|q| q.set_number(f, e.number(), value));
+                }
+            }
+            (Some(Field::Day(f)), Some(e)) => {
+                let value = Day::parse(&text);
+                if empty || value.is_some() {
+                    self.edit(|q| q.set_day(f, e.day(), value));
+                }
+            }
             _ => {}
         }
     }
@@ -143,6 +160,8 @@ impl qobject::Filters {
     }
 
     pub(crate) fn clear(mut self: Pin<&mut Self>) {
+        // A count in flight is for the query being cleared: it is not taken for the cleared one.
+        self.as_mut().rust_mut().generation += 1;
         controller::query_changed(Query::default());
         self.as_mut().sync();
         self.as_mut().loaded();
@@ -177,10 +196,12 @@ impl qobject::Filters {
         let filters = self.qt_thread();
         let shown = pg_platform::native::PATH_RULES.display_merged(&listing.folder);
         crate::app::session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
-            let facets = crate::app::observe(pg_model::notice::Op::Facets, facets, |e| {
+            // A count that couldn't be read is not shown as one: the bar keeps the counts it has (the inbox says why).
+            let Some(facets) = crate::app::observe(pg_model::notice::Op::Facets, facets, |e| {
                 pg_model::notice::Notice::FacetsFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
-            })
-            .unwrap_or_default();
+            }) else {
+                return;
+            };
             // Fails only when the filter bar is gone (the window closing).
             let _ = filters.queue(move |filters| filters.apply_facets(generation, facets));
         });

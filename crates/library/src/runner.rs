@@ -794,7 +794,8 @@ mod tests {
             || sink.posted().iter().any(|n| matches!(n, Notice::BordersCut { .. })),
         );
         let posted = sink.posted();
-        let told = Notice::BordersCut { saved: 0, skipped: 1, unsupported: 0, failed: 0, failures: Vec::new() };
+        let told =
+            Notice::BordersCut { saved: 0, skipped: 1, unsupported: 0, failed: 0, failures: Vec::new(), unfinished: 0 };
         assert!(posted.contains(&told), "{posted:?}");
         assert!(runner.stop(Duration::from_secs(30)));
     }

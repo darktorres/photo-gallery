@@ -106,6 +106,8 @@ impl qobject::LogModel {
             });
             if let Err(e) = reader {
                 reader_didnt_start(&e);
+                // Not started: the next open asks again.
+                self.as_mut().rust_mut().started = false;
             }
             return;
         }
@@ -136,6 +138,8 @@ impl qobject::LogModel {
         });
         if let Err(e) = reader {
             reader_didnt_start(&e);
+            // Not started: the next open asks again (`start` returns at once while `started` is set).
+            self.as_mut().rust_mut().started = false;
         }
     }
 

@@ -238,6 +238,9 @@ msg-notice-cropped-title = Cropped copies saved
 msg-notice-cropped-body = { $saved } saved in { $folder }; { $skipped } had nothing to crop; { $failed ->
     [0] none failed
    *[other] { $failed } failed, the first: { $path }: { $error }
+}{ $unfinished ->
+    [0] {""}
+   *[other] ; { $unfinished } not reached: the pass was stopped first
 }
 msg-notice-crop-failed-title = Saving cropped copies failed
 msg-notice-crop-failed-body = { $error }
@@ -248,6 +251,9 @@ msg-notice-borders-cut-body = { $saved } cut in place; { $skipped } had nothing 
 } { $failed ->
     [0] none failed
    *[other] { $failed } failed, the first: { $path }: { $error }
+}{ $unfinished ->
+    [0] {""}
+   *[other] ; { $unfinished } not reached: the pass was stopped first
 }
 msg-notice-cut-failed-title = Cutting the borders failed
 msg-notice-cut-failed-body = { $error }

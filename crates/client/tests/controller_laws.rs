@@ -270,14 +270,34 @@ fn an_applied_view_is_remembered_once_the_start_is_over() {
     assert!(!out.iter().any(|c| matches!(c, Command::SaveSession(_))), "{out:?}");
 }
 
-/// A session save waiting at the close is made, with the last file's. Only once the start is over: before it, the
-/// listing is the start's, and nothing is saved.
+/// A selection's save waiting at the close is made: the last file, and the listing only when the user changed it (the
+/// start's own listing is not the session's). Only once the start is over: before it, nothing is saved.
 #[test]
-fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
+fn a_pending_selection_save_is_made_at_the_close_with_the_last_file() {
     let mut c = started(listing(""));
     c.update(1, Event::CurrentChanged(Some(3)));
     let flushed = c.update(2, Event::Flush);
-    assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
+    assert_eq!(saves_and_lists(&flushed), (0, 1, 0), "{flushed:?}");
+    let mut c = started(listing(""));
+    c.update(1, Event::Listing(Box::new(listing_event::Event::OpenFolder(folder("beta")))));
+    c.update(2, Event::CurrentChanged(Some(3)));
+    let flushed = c.update(3, Event::Flush);
+    assert_eq!(saves_and_lists(&flushed).0, 1, "{flushed:?}");
+}
+
+/// A selection made before the start is over is remembered once it is: its save was held back, and the start makes it
+/// (the last file only, as the start's listing is not the user's).
+#[test]
+fn a_selection_made_before_the_start_is_over_is_remembered_when_it_is() {
+    let mut c = controller(listing(""));
+    c.update(0, Event::CurrentChanged(Some(3)));
+    c.update(1500, Event::Timeout);
+    let out = c.update(1500, Event::TreeLoaded { folder_known: true });
+    assert!(out.is_empty(), "the tree alone does not finish the start: {out:?}");
+    c.update(1501, Event::ListShown { count: 10, generation: None });
+    let out = c.update(1502, Event::ListPositioned);
+    assert_eq!(saves_and_lists(&out), (0, 1, 0), "{out:?}");
+    assert!(out.contains(&Command::Started), "{out:?}");
 }
 
 /// A query typed within its pause of the close is saved with the session, and no list is shown for a closing window.

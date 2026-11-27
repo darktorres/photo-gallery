@@ -311,6 +311,8 @@ ModalOverlay {
                     Layout.preferredHeight: 180
                     clip: true
                     model: panel.failedFiles
+                    // While the list can't be read, its rows are the previous read's: they are not shown under the error.
+                    visible: panel.failedError.length === 0
                     activeFocusOnTab: false
                     ScrollBar.vertical: ScrollBar {}
                     // The scans' folders, under the library folder that holds each (a file has none).
@@ -374,7 +376,7 @@ ModalOverlay {
                     }
                 }
                 Label {
-                    visible: panel.failedTotal > files.count && !panel.failedLoading
+                    visible: panel.failedTotal > files.count && !panel.failedLoading && panel.failedError.length === 0
                     // The scans' folders, or a pass's files.
                     text: panel.selectedPass === panel.scanFoldersCode ? words.phrase("ui-inbox-more-folders", 0, words.count(panel.failedTotal), words.count(files.count)) : words.phrase("ui-inbox-more", 0, words.count(panel.failedTotal), words.count(files.count))
                     textFormat: Text.PlainText
@@ -382,15 +384,19 @@ ModalOverlay {
                 }
             }
             RowLayout {
+                // The action buttons are taken by Tab, not by a click: a click on one (which then hides or disables it) would
+                // leave the keys with no receiver, where the list has them when the panel opens.
                 Button {
                     objectName: "inboxRetry"
                     visible: panel.selectedCanRetry
+                    focusPolicy: Qt.TabFocus
                     text: words.text("ui-inbox-retry")
                     onClicked: panel.retrySelected()
                 }
                 Button {
                     objectName: "inboxShowFiles"
                     visible: panel.selectedCanShowFiles
+                    focusPolicy: Qt.TabFocus
                     text: words.text("ui-inbox-show-files")
                     onClicked: panel.showFilesRequested()
                 }
@@ -398,12 +404,14 @@ ModalOverlay {
                     objectName: "inboxCopy"
                     text: words.text("ui-inbox-copy")
                     enabled: panel.selected >= 0
+                    focusPolicy: Qt.TabFocus
                     onClicked: panel.copyRequested(panel.selected)
                 }
                 Button {
                     objectName: "inboxDismiss"
                     text: words.text("ui-inbox-dismiss")
                     enabled: panel.selected >= 0
+                    focusPolicy: Qt.TabFocus
                     onClicked: panel.dismissSelected()
                 }
                 Item {
@@ -413,6 +421,7 @@ ModalOverlay {
                     objectName: "inboxClear"
                     text: words.text("ui-inbox-clear")
                     enabled: list.count > 0
+                    focusPolicy: Qt.TabFocus
                     onClicked: {
                         panel.unselectRequested();
                         panel.clearRequested();

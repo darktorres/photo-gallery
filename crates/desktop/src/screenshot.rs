@@ -9,7 +9,8 @@ use crate::screenshot_bridge::ffi;
 
 use core::pin::Pin;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt_lib::QQmlApplicationEngine;
 
@@ -24,6 +25,24 @@ pub(crate) fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     ffi::save_screenshot_later(engine, millis(wait));
 }
 
+/// Whether `screenshot_taken` has run: the window settled (or its wait ran out) and the picture was handed over.
+static TAKEN: AtomicBool = AtomicBool::new(false);
+
+/// The run's status once the window has ended (`lib.rs`). A screenshot that was asked for and never taken, because the
+/// window closed before it settled, is said on the console and fails the run: nothing was saved, and the status must not
+/// say it was.
+#[expect(
+    clippy::print_stderr,
+    reason = "a screenshot run is a test run: its failures go to the console that started it"
+)]
+pub(crate) fn finish(status: i32) -> i32 {
+    if command_line::path("screenshot").is_some() && !TAKEN.load(Ordering::SeqCst) {
+        eprintln!("screenshot: the window closed before it settled; no image was saved");
+        return 1;
+    }
+    status
+}
+
 /// The window has settled, or the wait ran out (on the GUI thread, from cpp/screenshot.cpp): write the image and its
 /// log at the path the command line gave. `png` is empty when there is no window or the window couldn't be encoded;
 /// `has_window` tells the two apart. The app quits after this.
@@ -32,6 +51,7 @@ pub(crate) fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     reason = "a screenshot run is a test run: its failures go to the console that started it"
 )]
 pub(crate) fn screenshot_taken(png: &[u8], settled: bool, has_window: bool, report: &str) {
+    TAKEN.store(true, Ordering::SeqCst);
     let Some(path) = command_line::path("screenshot") else { return };
     if !settled {
         eprintln!("screenshot: the window did not settle: {report}");
@@ -41,18 +61,24 @@ pub(crate) fn screenshot_taken(png: &[u8], settled: bool, has_window: bool, repo
     }
 }
 
-/// Writes the settle log (`report` and a newline) beside `path`, then the image there. The log goes first, so it is
-/// there even when the image can't be written. With no image, the error says why: there was no window, or the window
-/// couldn't be encoded as a PNG.
+/// Writes the settle log (`report` and a newline) beside `path`, then the image there. Both are tried: a log that can't
+/// be written does not keep the image from being saved, and the error then names the log file, not the image. With no
+/// image, the error says why: there was no window, or the window couldn't be encoded as a PNG.
 fn write_taken(path: &Path, png: &[u8], has_window: bool, report: &str) -> io::Result<()> {
     let mut log = path.as_os_str().to_owned();
     log.push(".settle.txt");
-    std::fs::write(log, format!("{report}\n"))?;
-    if png.is_empty() {
+    let log = PathBuf::from(log);
+    let logged = std::fs::write(&log, format!("{report}\n"));
+    let imaged = if png.is_empty() {
         let reason = if has_window { "the window can't be encoded as a PNG" } else { "there is no window to save" };
-        return Err(io::Error::other(reason));
+        Err(io::Error::other(reason))
+    } else {
+        std::fs::write(path, png)
+    };
+    match logged {
+        Err(e) => Err(io::Error::new(e.kind(), format!("the settle log {} couldn't be written: {e}", log.display()))),
+        Ok(()) => imaged,
     }
-    std::fs::write(path, png)
 }
 
 /// Seconds as whole milliseconds; the conversion saturates at an int's range (NaN is 0).

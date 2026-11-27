@@ -277,6 +277,11 @@ pub struct Controller {
     /// The file a reveal waits to select, and the generation of the list it waits for: only that list's `ListShown`
     /// selects it, and a newer list's drops it (the user went elsewhere).
     reveal: Option<(FileId, u64)>,
+    /// Whether the listing is the session's to save: the user changed it, or a view applied at the start is the session.
+    /// Until then a selection's save writes the last file alone, so the start's own options never become the session's.
+    session_listing: bool,
+    /// A selection's save came due before the start was over (and was held back): it is made when the start is over.
+    selection_pending: bool,
     /// The start the controller was made from: the recording's `Init`, which replays it.
     initial: Start,
 }
@@ -294,6 +299,8 @@ impl Controller {
             grid_width: None,
             generation: 0,
             reveal: None,
+            session_listing: start.apply_view,
+            selection_pending: false,
             initial: start,
         }
     }
@@ -399,7 +406,13 @@ impl Controller {
             Event::SetBorderMark { item, marked } => vec![Command::SetBorderMark { item, marked }],
             Event::FolderSpelled(folder) => {
                 self.listing.folder = folder;
-                vec![Command::SaveSession(self.listing.clone())]
+                // Remembered only once the start is over, and with the session's listing: until then the listing is the
+                // start's, and a spelling the tree gives at the start is not a save (`fire`).
+                if self.started() && self.session_listing {
+                    vec![Command::SaveSession(self.listing.clone())]
+                } else {
+                    Vec::new()
+                }
             }
             Event::Reveal { file, folder } => {
                 let out = self.listing_event(listing::Event::Reveal(folder));
@@ -441,18 +454,35 @@ impl Controller {
         let mut out = Vec::new();
         for command in self.start.update(event) {
             match command {
-                start::Command::OpenAll => out.extend(self.listing_event(listing::Event::OpenAll)),
+                start::Command::OpenAll => out.extend(self.start_listing(listing::Event::OpenAll)),
                 start::Command::RestoreSelection(file) => out.push(Command::RestoreSelection(file)),
                 start::Command::Started => {
                     // A view applied at the start is what the session is from now on: remembered once, here.
                     if self.initial.apply_view {
                         out.push(Command::SaveSession(self.listing.clone()));
                     }
+                    // A selection held back before the start was over is remembered now.
+                    if core::mem::take(&mut self.selection_pending) {
+                        out.push(Command::SaveLastFile);
+                    }
                     out.push(Command::Started);
                 }
             }
         }
         out
+    }
+
+    /// The listing change the start makes (its fallback to all folders): listed, and not saved, since a start's own
+    /// listing is not the user's to remember.
+    fn start_listing(&mut self, event: listing::Event) -> Vec<Command> {
+        let commands = listing::update(&mut self.listing, event);
+        commands
+            .into_iter()
+            .filter_map(|c| match c {
+                listing::Command::OpenList => Some(self.open_list(false)),
+                listing::Command::SaveSession => None,
+            })
+            .collect()
     }
 
     fn input_update(&mut self, event: input::Event) -> Vec<Command> {
@@ -582,8 +612,14 @@ impl Controller {
     fn listing_event(&mut self, event: listing::Event) -> Vec<Command> {
         let query_only = matches!(event, listing::Event::QueryChanged(_));
         let commands = listing::update(&mut self.listing, event);
+        // A change made is the session's to save from now on (`fire`).
+        self.session_listing |= !commands.is_empty();
         if query_only {
             return Vec::new();
+        }
+        // The list that is opened now shows the listing as it is: a query's pause still waiting would open the same one.
+        if commands.contains(&listing::Command::OpenList) {
+            self.deadlines.cancel(Timer::ApplyQuery);
         }
         commands
             .into_iter()
@@ -625,12 +661,16 @@ impl Controller {
             match timer {
                 Timer::ApplyQuery => out.extend(self.listing_now()),
                 // Saved only once the start is over: until then the listing is the start's (its options, the remembered
-                // file's selection), not the user's, and a save would make a start option the session's.
+                // file's selection), not the user's, and a save would make a start option the session's. Once it is, the
+                // listing is saved only when it is the session's (`session_listing`), and the last file always.
                 Timer::SaveSession if self.start.is_started() => {
-                    out.push(Command::SaveSession(self.listing.clone()));
+                    if self.session_listing {
+                        out.push(Command::SaveSession(self.listing.clone()));
+                    }
                     out.push(Command::SaveLastFile);
                 }
-                Timer::SaveSession => {}
+                // Held back, and made when the start is over (`start`).
+                Timer::SaveSession => self.selection_pending = true,
                 Timer::Layout => out.extend(self.relayout(self.grid_size.row_height())),
                 Timer::Size => {
                     for change in self.grid_size.settled() {

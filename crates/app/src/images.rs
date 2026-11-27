@@ -139,28 +139,34 @@ impl Images {
     fn undecodable(&self, file_id: FileId, src: &FileSource, e: MakeError, kept: Option<ThumbHeight>) -> Found {
         let error = made_error(e);
         if let Error::Undecodable(text) = &error {
-            let key = failure_key(file_id, src);
-            let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
-            if !recent.iter().any(|r| r.key == key) {
-                if recent.len() >= RECENT_FAILURES {
-                    recent.pop_front();
-                }
-                recent.push_back(Recent { key, text: text.clone() });
-                drop(recent);
-                pg_log::warn("thumbs", &format!("file {}: {text}", file_id.get()));
-                let state = &src.state;
-                self.inbox.thumb_failed(Failure {
-                    file_id,
-                    mtime: state.mtime,
-                    size: state.size,
-                    turns: state.turns,
-                    error: text.clone(),
-                    // Tried again once the file changes, as the Thumbs pass records an undecodable file.
-                    retry: false,
-                });
-            }
+            self.record_failure(file_id, src, text);
         }
         Found::Unavailable(error, kept)
+    }
+
+    /// A decode of the file as `src` has it that failed with `text`: recorded once while it is recent (the warning and the
+    /// thumbnails' failure ledger), so the same file is not decoded again to fail the same way.
+    fn record_failure(&self, file_id: FileId, src: &FileSource, text: &str) {
+        let key = failure_key(file_id, src);
+        let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+        if !recent.iter().any(|r| r.key == key) {
+            if recent.len() >= RECENT_FAILURES {
+                recent.pop_front();
+            }
+            recent.push_back(Recent { key, text: text.to_string() });
+            drop(recent);
+            pg_log::warn("thumbs", &format!("file {}: {text}", file_id.get()));
+            let state = &src.state;
+            self.inbox.thumb_failed(Failure {
+                file_id,
+                mtime: state.mtime,
+                size: state.size,
+                turns: state.turns,
+                error: text.to_string(),
+                // Tried again once the file changes, as the Thumbs pass records an undecodable file.
+                retry: false,
+            });
+        }
     }
 
     /// The error a thumbnail of the file as `src` has is, if it failed to decode lately as it is now.
@@ -315,12 +321,18 @@ impl Images {
     /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as the
     /// viewer asks for it.
     pub fn full_image(&self, file_id: FileId, view: View) -> Result<Rgba> {
-        let decoded = self.consistent(file_id, |src| self.decode(file_id, src, view));
-        // A decode that doesn't read is logged here, once per request: a viewer's request is the user's, and the front
-        // end shows nothing for it.
-        if let Err(Error::Undecodable(text)) = &decoded {
-            pg_log::warn("viewer", &format!("file {}: {text}", file_id.get()));
-        }
+        let decoded = self.consistent(file_id, |src| {
+            // A file that failed to decode as it is now fails the same way: it is not decoded again for every request (the
+            // throttled zoom requests of an undecodable still).
+            if let Some(text) = self.recent_failure(file_id, src) {
+                return Err(Error::Undecodable(text));
+            }
+            self.decode(file_id, src, view).inspect_err(|e| {
+                if let Error::Undecodable(text) = e {
+                    self.record_failure(file_id, src, text);
+                }
+            })
+        });
         let (_, (img, fresh)) = decoded?;
         // Kept once it is known to be of the file as the catalog has it.
         if let Some(fresh) = fresh {

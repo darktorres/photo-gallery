@@ -173,7 +173,7 @@ ApplicationWindow {
     Connections {
         target: folderModel
         function onTreePlaced(row: int, reveal: bool) {
-            tree.currentIndex = row;
+            win.highlightTree(row);
             if (reveal)
                 tree.positionViewAtIndex(row, ListView.Contain);
         }
@@ -195,6 +195,8 @@ ApplicationWindow {
         id: addPicker
         onDone: library.addPicked()
         onOpenInApp: addDialog.open = true
+        // The picker's failure (the folder dialog, or a folder it cannot list) is said on the window, as the save picker does.
+        onFailed: (purpose, message) => featurePopup.show(message)
     }
     FolderPickerDialog {
         id: addDialog
@@ -207,11 +209,17 @@ ApplicationWindow {
         onChooseHere: addPicker.chooseHere()
         onCancelled: addPicker.cancel()
         onVisibleChanged: shell.setPanelShown(PanelKind.FolderPicker, visible)
+        onHidden: win.refocus()
     }
     FolderPicker {
         id: cropPicker
-        onDone: galleryModel.saveCroppedCopiesPicked()
+        // Nothing was queued (no listed file has borders found any more): said here, as the filter bar's button says it.
+        onDone: {
+            if (galleryModel.saveCroppedCopiesPicked() === 0)
+                featurePopup.show(words.text("ui-nothing-to-crop"));
+        }
         onOpenInApp: cropDialog.open = true
+        onFailed: (purpose, message) => featurePopup.show(message)
     }
     FolderPickerDialog {
         id: cropDialog
@@ -224,6 +232,7 @@ ApplicationWindow {
         onChooseHere: cropPicker.chooseHere()
         onCancelled: cropPicker.cancel()
         onVisibleChanged: shell.setPanelShown(PanelKind.FolderPicker, visible)
+        onHidden: win.refocus()
     }
 
     // Where the filter bar's "Save cropped copies" puts them: the folder is asked for, then they are made.
@@ -241,7 +250,11 @@ ApplicationWindow {
     // shell: PanelKind has no kind of its own, and any modal dialog counts the same for the shortcuts.
     CutBordersDialog {
         id: cutDialog
-        onConfirmed: galleryModel.cutBordersConfirmed()
+        onConfirmed: {
+            // Nothing left to cut (the listed files changed since the count was asked): said, not silently dropped.
+            if (galleryModel.cutBordersConfirmed() === 0)
+                featurePopup.show(words.text("ui-nothing-to-crop"));
+        }
         onClosed: win.refocus()
         onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
@@ -256,7 +269,11 @@ ApplicationWindow {
 
     RemoveFolderDialog {
         id: removeDialog
-        onConfirmed: library.removeFolder(removeDialog.row)
+        // The row must still be the folder the dialog named: the roots can be read again while it is open.
+        onConfirmed: {
+            if (library.folderAt(removeDialog.row) === removeDialog.folder)
+                library.removeFolder(removeDialog.row);
+        }
         onClosed: win.refocus()
         onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
@@ -301,8 +318,9 @@ ApplicationWindow {
         }
         loadPending = false;
         shell.listShown(galleryModel.count);
-        // Where the view goes is the model's (placeRequested).
-        galleryModel.placeList(index);
+        // Where the view goes is the model's (placeRequested). Not while the scroll bar is dragged: the drag holds the view.
+        if (!grid.dragging)
+            galleryModel.placeList(index);
         grid.settling = false;
         shell.listPositioned();
     }
@@ -318,10 +336,16 @@ ApplicationWindow {
         shell.treeLoaded(folderModel.listedKnown());
     }
 
+    // The tree's highlight for the listed folder: its row, or none (-1) when the tree doesn't have it. Not row 0: that is
+    // All folders, which would say the grid lists every folder.
+    function highlightTree(row: int) {
+        tree.currentIndex = row >= 0 ? row : -1;
+    }
+
     // The subfolders were switched: for the empty folder that moves the listing between "All" (with them) and "Drive
     // roots" (without), so the tree's current row follows the listing (currentRowOf).
     function followListedRow() {
-        tree.currentIndex = folderModel.currentRowOf(folderModel.revealListing(false));
+        win.highlightTree(folderModel.currentRowOf(folderModel.revealListing(false)));
     }
 
     // The list the controller asked for is loading (the shell announces it: listingChanged). The facets and the sort box
@@ -333,12 +357,14 @@ ApplicationWindow {
 
     // A saved view's listing is the shell's (it has announced it); the filter bar shows its query, the tree its folder.
     function applyView(name: string) {
-        if (!shell.applyView(name))
+        if (!shell.applyView(name)) {
+            grid.takeFocus();
             return;
+        }
         filterBar.reloadQuery();
         // The applied view's folder is shown in the tree (its parents expanded), when the tree has it.
         const row = folderModel.revealListing(true);
-        tree.currentIndex = Math.max(row, 0);
+        win.highlightTree(row);
         if (row >= 0)
             tree.positionViewAtIndex(row, ListView.Contain);
         grid.takeFocus();
@@ -440,9 +466,13 @@ ApplicationWindow {
             win.inboxOpen = false;
     }
 
-    // Back to where the keys were before a panel: the viewer when it is open, else the grid.
+    // Back to where the keys were before a panel or dialog: the library panel while it is open (it is over the rest), else
+    // the viewer when it is open, else the grid.
     function refocus() {
-        if (viewerItem.visible)
+        const library = libraryLoader.item as LibraryPanel;
+        if (win.libraryOpen && library)
+            library.focus = true;
+        else if (viewerItem.visible)
             viewerItem.forceActiveFocus();
         else
             grid.takeFocus();
@@ -456,18 +486,37 @@ ApplicationWindow {
     TestHooks {
         id: testHooks
         viewer: viewerItem
-        onBorderMarkToggled: i => shell.toggleBorderMark(i)
+        onBorderMarkToggled: i => {
+            if (win.bordersOn)
+                shell.toggleBorderMark(i);
+            else
+                featurePopup.show(words.text("ui-borders-disabled"));
+        }
         // The user's B, as the test hook asks for it: the toggle, so the controller saves it as the user's key does.
-        onBordersRequested: if (!win.showBorders)
-            shell.toggleBorders()
+        // Refused as the user's B is while border detection is off (the popup says why).
+        onBordersRequested: {
+            if (win.bordersOn)
+                shell.toggleBorders();
+            else
+                featurePopup.show(words.text("ui-borders-disabled"));
+        }
         onViewsMenuRequested: topBar.openViewsMenu()
         onLibraryPanelRequested: {
             win.libraryOpen = true;
         }
         onSaveViewDialogRequested: win.askSaveView()
         onAddFolderRequested: addPicker.chooseCommandLine(0)
-        onSaveCropsRequested: cropPicker.chooseCommandLine(1)
-        onViewerShowRequested: index => viewerItem.show(index)
+        onSaveCropsRequested: {
+            if (win.bordersOn)
+                cropPicker.chooseCommandLine(1);
+            else
+                featurePopup.show(words.text("ui-borders-disabled"));
+        }
+        // An index past the list has no item: the viewer would open on nothing.
+        onViewerShowRequested: index => {
+            if (index >= 0 && index < galleryModel.count)
+                viewerItem.show(index);
+        }
         onViewerPlayRequested: viewerItem.togglePlay()
         onViewerSetZoomRequested: (z, px, py) => viewerItem.setZoom(z, px, py)
         onViewerTurnRequested: turns => viewerItem.turn(turns)
@@ -498,11 +547,16 @@ ApplicationWindow {
             rowHeight: win.rowHeight
             minRowHeight: shell.minRowHeight
             maxRowHeight: shell.maxRowHeight
-            onFiltersToggled: shell.toggleFilters()
+            onFiltersToggled: {
+                shell.toggleFilters();
+                grid.takeFocus();
+            }
             onRecursiveToggled: on => {
                 shell.setRecursive(on);
                 win.followListedRow();
+                grid.takeFocus();
             }
+            // The sort box keeps its own focus (TopBar: TabFocus), so stepping it by keys does not leave it.
             onSortActivated: i => {
                 // The last sort is by border depth: with border detection off it is not applied, and the box shows the
                 // sort that is in force again.
@@ -511,8 +565,10 @@ ApplicationWindow {
                     topBar.sortIndex = shell.sortIndex();
                     return;
                 }
+                // The sort in force picked again: nothing changes (a new pick would reset the direction to its default).
+                if (i === shell.sortIndex())
+                    return;
                 shell.sortBy(i);
-                grid.takeFocus();
             }
             onDescendingToggled: {
                 shell.toggleDescending();
@@ -557,10 +613,15 @@ ApplicationWindow {
             onEdited: shell.queryEdited()
             croppable: galleryModel.croppable
             bordersOn: win.bordersOn
+            duplicatesOn: appSettings.detectDuplicates
+            busy: library.busy
+            onDuplicatesBlocked: featurePopup.show(words.text("ui-duplicates-disabled"))
             onBordersBlocked: featurePopup.show(words.text("ui-borders-disabled"))
             onNothingToCrop: featurePopup.show(words.text("ui-nothing-to-crop"))
             onSaveCropsRequested: win.askSaveCrops()
             onCutBordersRequested: win.askCutBorders()
+            // A control that keeps keyboard focus after a click hands it back to the grid (its keys go there).
+            onFocusGridRequested: grid.takeFocus()
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: topBar.bottom
@@ -608,7 +669,8 @@ ApplicationWindow {
                 gap: win.gap
                 current: win.current
                 showBorders: win.showBorders && win.bordersOn
-                noFolders: library.roots.length === 0
+                // Only once the library has started: before that the roots are not read, and the text would say there are none.
+                noFolders: win.ready && library.roots.length === 0
                 filtering: filterBar.active > 0
                 importing: library.busy
                 onKeyPressed: e => e.accepted = shell.keyPressed(e.key, e.modifiers)
@@ -629,7 +691,8 @@ ApplicationWindow {
             fullUrl: galleryModel.viewedFullUrl
             index: galleryModel.viewing
             count: galleryModel.count
-            showBorders: win.showBorders
+            // Drawn only while border detection is on, as the grid draws them (the Library panel's choice).
+            showBorders: win.showBorders && win.bordersOn
             settings: appSettings
             onMoved: i => galleryModel.viewing = i
             onStepRequested: d => stepTo(shell.viewerStep(index, d))
@@ -684,6 +747,8 @@ ApplicationWindow {
                     }
                     onHidden: grid.takeFocus()
                     onVisibleChanged: shell.setPanelShown(PanelKind.Library, visible)
+                    // Made already open: no visibleChanged comes, so the shell is told here.
+                    Component.onCompleted: shell.setPanelShown(PanelKind.Library, visible)
                     onAddRequested: addPicker.pick(PickerPurpose.AddFolder)
                     onRemoveRequested: row => win.askRemoveFolder(row)
                     onDiscardRequested: folder => win.askDiscardRemoval(folder)
@@ -693,9 +758,12 @@ ApplicationWindow {
                     }
                     onDetectBordersToggled: on => {
                         appSettings.detectBorders = on;
-                        // Off: the listing drops what borders give, as it would have had them never been used.
-                        if (!on)
+                        // Off: the listing drops what borders give, as it would have had them never been used, and the
+                        // filter bar shows the query the listing now has.
+                        if (!on) {
                             shell.bordersTurnedOff();
+                            filterBar.reloadQuery();
+                        }
                     }
                     onDetectDuplicatesToggled: on => {
                         appSettings.detectDuplicates = on;
@@ -806,6 +874,7 @@ ApplicationWindow {
                 LogPanel {
                     open: win.logOpen
                     records: logModel
+                    recordsReady: logModel.ready
                     selected: logModel.selectedRow
                     selectedSeq: logModel.selectedSeq
                     selectedText: logModel.selectedText
@@ -814,6 +883,7 @@ ApplicationWindow {
                     onDismissed: win.logOpen = false
                     onHidden: win.refocus()
                     onVisibleChanged: shell.setPanelShown(PanelKind.Log, visible)
+                    Component.onCompleted: shell.setPanelShown(PanelKind.Log, visible)
                 }
             }
         }
@@ -842,12 +912,19 @@ ApplicationWindow {
                     // The pass's ledger entry, once the inbox lists it (its bit of `passes`): this follows it appearing.
                     expandRow: win.inboxExpandPass >= 0 && (inboxModel.passes & (1 << win.inboxExpandPass)) !== 0 ? inboxModel.rowOfKey(inboxModel.passKey(win.inboxExpandPass)) : -1
                     onCopyRequested: row => inboxModel.copy(row)
-                    onDismissRequested: row => inboxModel.dismiss(row)
+                    // A dismissal spends the request to expand a ledger: the entry must not come back expanded with its details.
+                    onDismissRequested: row => {
+                        win.inboxExpandPass = -1;
+                        inboxModel.dismiss(row);
+                    }
                     onRetryRequested: row => inboxModel.retry(row)
                     onSelectRequested: row => inboxModel.select(row)
                     onUnselectRequested: inboxModel.unselect()
                     onDetailsOpenRequested: open => inboxModel.setDetailsOpen(open)
-                    onDismissSelectedRequested: inboxModel.dismissSelected()
+                    onDismissSelectedRequested: {
+                        win.inboxExpandPass = -1;
+                        inboxModel.dismissSelected();
+                    }
                     onRetrySelectedRequested: inboxModel.retrySelected()
                     // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer
                     // has toasts. The folder is read off the window's thread: the window follows when it is listed
@@ -858,10 +935,15 @@ ApplicationWindow {
                         shell.showFailedImports();
                         win.showAsked();
                     }
-                    onClearRequested: inboxModel.dismissAll()
+                    onClearRequested: {
+                        win.inboxExpandPass = -1;
+                        inboxModel.dismissAll();
+                    }
                     onDismissed: win.inboxOpen = false
                     onHidden: win.refocus()
                     onVisibleChanged: shell.setPanelShown(PanelKind.Inbox, visible)
+                    // Made already open (the first open of the session): no visibleChanged comes, so the shell is told here.
+                    Component.onCompleted: shell.setPanelShown(PanelKind.Inbox, visible)
                 }
             }
         }

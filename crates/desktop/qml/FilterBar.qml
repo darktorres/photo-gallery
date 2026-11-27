@@ -36,6 +36,14 @@ Pane {
     signal nothingToCrop
     // The user asking to cut the borders off the listed originals (the window asks first: CutBordersDialog).
     signal cutBordersRequested
+    // Duplicate detection is on: the duplicates choices that need it act only then, and are refused (duplicatesBlocked) while
+    // it is off, as the review choices are while borders are.
+    property bool duplicatesOn: true
+    signal duplicatesBlocked
+    // A cut is under way (the library is busy): the cut button is off until it is done.
+    property bool busy: false
+    // The keys go back to the grid: a control that the query changed under (a chip, Clear) hands them over.
+    signal focusGridRequested
 
     // The bar opened or closed (the window reports it). The model counts the choices while the bar is open.
     function setBarOpen(open: bool) {
@@ -66,6 +74,9 @@ Pane {
     // Shown once: the controls are made then (the window starts with the bar closed), and kept.
     property bool opened: false
     onVisibleChanged: if (visible)
+        opened = true
+    // Made already visible (the start's --filters): no visibleChanged comes, so the controls are asked for here.
+    Component.onCompleted: if (visible)
         opened = true
 
     Filters {
@@ -190,7 +201,10 @@ Pane {
                         model: typeChoices
                         delegate: Chip {
                             text: label + " · " + words.count(count)
-                            onClicked: filters.toggle(Filters.Types, key)
+                            onClicked: {
+                                filters.toggle(Filters.Types, key);
+                                bar.focusGridRequested();
+                            }
                         }
                     }
                 }
@@ -207,7 +221,10 @@ Pane {
                             text: Ratings.symbol(index) + (index === 0 ? " " + words.text("ui-unrated") : "")
                             // ☆ and its words (unrated) in the symbol font; the other ratings are emoji alone.
                             font.family: index === 0 ? Theme.symbolFamily : Theme.emojiFamily
-                            onClicked: filters.toggle(Filters.Ratings, key)
+                            onClicked: {
+                                filters.toggle(Filters.Ratings, key);
+                                bar.focusGridRequested();
+                            }
                         }
                     }
                 }
@@ -221,7 +238,10 @@ Pane {
                         model: extChoices
                         delegate: Chip {
                             text: label + " · " + words.count(count)
-                            onClicked: filters.toggle(Filters.Exts, key)
+                            onClicked: {
+                                filters.toggle(Filters.Exts, key);
+                                bar.focusGridRequested();
+                            }
                         }
                     }
                 }
@@ -235,7 +255,10 @@ Pane {
                         model: shapeChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle(Filters.Shapes, key)
+                            onClicked: {
+                                filters.toggle(Filters.Shapes, key);
+                                bar.focusGridRequested();
+                            }
                         }
                     }
                 }
@@ -315,7 +338,19 @@ Pane {
                     ComboBox {
                         model: bar.duplicateChoices
                         currentIndex: filters.duplicatesIndex
-                        onActivated: i => filters.chooseDuplicates(i)
+                        // Tabbed to, not clicked to: a pick leaves the focus where it was, and the arrow keys keep the
+                        // box's own steps (not the grid's moves).
+                        focusPolicy: Qt.TabFocus
+                        // "Any" needs no duplicates; the others are refused while detection is off (the box shows the
+                        // choice in force again).
+                        onActivated: i => {
+                            if (i === 0 || bar.duplicatesOn) {
+                                filters.chooseDuplicates(i);
+                            } else {
+                                bar.duplicatesBlocked();
+                                currentIndex = filters.duplicatesIndex;
+                            }
+                        }
                         font.pixelSize: 12
                         Layout.preferredWidth: 140
                     }
@@ -340,7 +375,13 @@ Pane {
                         model: borderChoices
                         delegate: Chip {
                             text: label + " · " + words.count(count)
-                            onClicked: bar.bordersOn ? filters.toggle(Filters.Borders, key) : bar.bordersBlocked()
+                            onClicked: {
+                            if (bar.bordersOn)
+                                filters.toggle(Filters.Borders, key);
+                            else
+                                bar.bordersBlocked();
+                            bar.focusGridRequested();
+                        }
                         }
                     }
                     Caption {
@@ -350,6 +391,8 @@ Pane {
                         id: reviewBox
                         model: bar.reviewChoices
                         currentIndex: filters.borderMarkedIndex
+                        // Tabbed to, not clicked to (as the duplicates box): the arrow keys step the box, not the grid.
+                        focusPolicy: Qt.TabFocus
                         onActivated: i => {
                             // Index 0 is "any", which needs no borders. Any other choice is refused while they are off:
                             // the box shows the review in force again (refreshChoices keeps it in step with the query).
@@ -381,6 +424,8 @@ Pane {
                     Button {
                         text: words.text("ui-cut-originals")
                         font.pixelSize: 12
+                        // Off while a job runs: a second cut would queue the same originals again.
+                        enabled: !bar.busy
                         onClicked: {
                             if (!bar.bordersOn)
                                 bar.bordersBlocked();
@@ -424,7 +469,14 @@ Pane {
                         text: words.text("ui-clear")
                         enabled: filters.active > 0
                         font.pixelSize: 12
-                        onClicked: filters.clear()
+                        // Clearing turns this button off, which takes the focus it has: the keys go back to the grid.
+                        onClicked: {
+                            filters.clear();
+                            bar.focusGridRequested();
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: words.text("ui-clear-filters-tooltip")
                     }
                 }
             }

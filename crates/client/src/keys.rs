@@ -144,11 +144,12 @@ pub fn grid(key: Key, mods: Mods, has_current: bool) -> Option<GridKey> {
         Key::Home => GridKey::First,
         Key::End => GridKey::Last,
         Key::Enter | Key::Space if has_current => GridKey::Open,
-        Key::Digit(n) if n <= 5 && has_current => GridKey::Rate(n),
-        Key::Letter('R') if has_current => GridKey::Turn { forward: mods.shift },
+        // The plain letters and digits are not Ctrl's: a Ctrl chord (Ctrl+R, Ctrl+N, Ctrl+digit) does nothing here.
+        Key::Digit(n) if n <= 5 && has_current && !mods.ctrl => GridKey::Rate(n),
+        Key::Letter('R') if has_current && !mods.ctrl => GridKey::Turn { forward: mods.shift },
         Key::Letter('F') if !mods.ctrl => GridKey::Filters,
-        Key::Letter('B') => GridKey::Borders,
-        Key::Letter('N') if has_current => GridKey::MarkBorder,
+        Key::Letter('B') if !mods.ctrl => GridKey::Borders,
+        Key::Letter('N') if has_current && !mods.ctrl => GridKey::MarkBorder,
         _ => return None,
     })
 }
@@ -161,17 +162,18 @@ pub fn viewer(key: Key, mods: Mods, shown: Shown) -> Option<Viewer> {
         Key::Right | Key::Space => Viewer::Step { forward: true },
         Key::Up => Viewer::Rate(4),
         Key::Down => Viewer::Rate(1),
-        Key::Digit(n) if n <= 5 => Viewer::Rate(n),
-        Key::Letter('R') => Viewer::Turn { forward: mods.shift },
-        Key::Letter('Z') => Viewer::RealSize,
+        // As in the grid, the plain letters and digits are not Ctrl's: a Ctrl chord does nothing for them.
+        Key::Digit(n) if n <= 5 && !mods.ctrl => Viewer::Rate(n),
+        Key::Letter('R') if !mods.ctrl => Viewer::Turn { forward: mods.shift },
+        Key::Letter('Z') if !mods.ctrl => Viewer::RealSize,
         Key::Plus => Viewer::ZoomIn,
         Key::Minus => Viewer::ZoomOut,
-        Key::Letter('L') => Viewer::Loupe,
-        Key::Letter('B') => Viewer::Borders,
-        Key::Letter('N') if shown.has_borders => Viewer::MarkBorder,
-        Key::Letter('H') => Viewer::Hide,
-        Key::Letter('K') if !shown.still => Viewer::PlayPause,
-        Key::Letter('M') if shown.video => Viewer::Mute,
+        Key::Letter('L') if !mods.ctrl => Viewer::Loupe,
+        Key::Letter('B') if !mods.ctrl => Viewer::Borders,
+        Key::Letter('N') if shown.has_borders && !mods.ctrl => Viewer::MarkBorder,
+        Key::Letter('H') if !mods.ctrl => Viewer::Hide,
+        Key::Letter('K') if !shown.still && !mods.ctrl => Viewer::PlayPause,
+        Key::Letter('M') if shown.video && !mods.ctrl => Viewer::Mute,
         _ => return None,
     })
 }
@@ -392,6 +394,16 @@ mod tests {
         assert_eq!(grid(Key::Digit(3), NONE, false), None);
         assert_eq!(grid(Key::Digit(3), NONE, true), Some(GridKey::Rate(3)));
         assert_eq!(grid(Key::Letter('N'), NONE, false), None);
+    }
+
+    #[test]
+    fn a_ctrl_chord_is_not_the_plain_letter_or_digit() {
+        let bordered = Shown { has_borders: true, ..STILL };
+        for key in [Key::Letter('R'), Key::Letter('N'), Key::Letter('B'), Key::Digit(3)] {
+            assert_eq!(grid(key, CTRL, true), None, "{key:?} in the grid");
+            assert_eq!(viewer(key, CTRL, bordered), None, "{key:?} in the viewer");
+        }
+        assert_eq!(grid(Key::Letter('F'), CTRL, true), None);
     }
 
     #[test]

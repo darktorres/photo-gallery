@@ -508,7 +508,17 @@ impl Lanes {
             let lane = match best.and_then(|(index, _)| old.get_mut(index).and_then(Option::take)) {
                 Some(lane) => lane,
                 None => match self.spawn_lane(reg) {
-                    Ok(lane) => lane,
+                    Ok(lane) => {
+                        // A pause the lanes this group takes over from held is the user's: the new lane keeps it.
+                        let paused = old.iter().flatten().any(|previous| {
+                            let shares = group.iter().any(|root| previous.roots.contains(root));
+                            shares && previous.inner.ctl.is_own_paused()
+                        });
+                        if paused {
+                            lane.inner.ctl.set_paused(true);
+                        }
+                        lane
+                    }
                     Err(e) => {
                         failure = Some(e);
                         break;
@@ -667,7 +677,8 @@ impl Lanes {
         let opts = Options::new(Priority::BelowNormal);
         let done = match job {
             Job::Save(ids, folder) => match pg_crop::save(&catalog, &ids, &folder, &opts, &self.crop_ctl) {
-                Ok(s) if !s.remaining.is_empty() => Done::Stopped(Job::Save(s.remaining, folder)),
+                // A stop tells what was saved (or skipped, or failed) by then, and how many were not reached: the rest is queued
+                // again, and the notice says so.
                 Ok(s) => {
                     self.shared.notices.post(Notice::Cropped {
                         folder: folder.display().to_string(),
@@ -675,8 +686,9 @@ impl Lanes {
                         skipped: count_u64(s.skipped),
                         failed: count_u64(s.failed),
                         failures: s.failures.into_iter().map(cap_error).collect(),
+                        unfinished: count_u64(s.remaining.len()),
                     });
-                    Done::Finished
+                    if s.remaining.is_empty() { Done::Finished } else { Done::Stopped(Job::Save(s.remaining, folder)) }
                 }
                 Err(e) => {
                     self.shared.notices.post(Notice::CropFailed { error: error_text(&e) });
@@ -695,18 +707,17 @@ impl Lanes {
                 Ok(s) => {
                     // The cut's files are forgotten and analyzed again, whether or not the cut is done.
                     cut_done(&self.shared, &s.cut);
-                    if s.remaining.is_empty() {
-                        self.shared.notices.post(Notice::BordersCut {
-                            saved: count_u64(s.saved),
-                            skipped: count_u64(s.skipped),
-                            unsupported: count_u64(s.unsupported),
-                            failed: count_u64(s.failed),
-                            failures: s.failures.into_iter().map(cap_error).collect(),
-                        });
-                        Done::Finished
-                    } else {
-                        Done::Stopped(Job::Cut(s.remaining))
-                    }
+                    // A stop tells the originals it cut (or skipped, or failed) by then, and how many were not reached: the rest is
+                    // queued again, and the notice says so.
+                    self.shared.notices.post(Notice::BordersCut {
+                        saved: count_u64(s.saved),
+                        skipped: count_u64(s.skipped),
+                        unsupported: count_u64(s.unsupported),
+                        failed: count_u64(s.failed),
+                        failures: s.failures.into_iter().map(cap_error).collect(),
+                        unfinished: count_u64(s.remaining.len()),
+                    });
+                    if s.remaining.is_empty() { Done::Finished } else { Done::Stopped(Job::Cut(s.remaining)) }
                 }
                 Err(e) => {
                     self.shared.notices.post(Notice::CutFailed { error: error_text(&e) });

@@ -490,14 +490,32 @@ impl LibraryService {
     /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder
     /// and whether it was new; a folder already in the library is rescanned.
     pub fn add_folder(&self, path: &std::path::Path) -> Result<(RulePath, bool)> {
-        let (root, added) =
+        let add = || -> Result<(RulePath, bool)> {
             self.catalogs.with_catalog(|c| Ok(pg_library::folders::add_folder(c, path)))?.map_err(|e| match e {
                 AddError::Refused { folder, reason } => Error::FolderRefused { folder, reason },
                 AddError::Path(e) => Error::FolderPath(e),
                 AddError::Catalog(e) => Error::Catalog(e),
-            })?;
-        if let Some(library) = self.running() {
-            library.scan(vec![root.clone()]);
+            })
+        };
+        let (root, added) = match add() {
+            // A removal kept for its unfinished writes refuses the add. With the library not running nothing else finishes
+            // it, so the removals are finished here, and the add is tried again.
+            Err(Error::FolderRefused { .. }) if self.running().is_none() => {
+                self.finish_removals_here()?;
+                add()?
+            }
+            result => result?,
+        };
+        match self.running() {
+            Some(library) => {
+                library.scan(vec![root.clone()]);
+            }
+            // The folder is in the library, but nothing scans it: the inbox says so, at the add.
+            None => {
+                self.inbox.post(Notice::LibraryUnavailable {
+                    error: "the folder was added, but the library isn't running, so it wasn't scanned".to_string(),
+                });
+            }
         }
         Ok((root, added))
     }
@@ -519,16 +537,33 @@ impl LibraryService {
                     library.wake_removals();
                 }
                 None => {
-                    let finished = self.catalogs.with_catalog(|c| {
-                        pg_library::removals::finish(c, &self.thumbs, &mut |_| true).map_err(|e| {
-                            pg_catalog::Error::Step { what: pg_model::error::chain(&e), source: Box::new(e) }
-                        })
-                    })?;
-                    self.swept(&finished.swept);
+                    // The removal is committed, so the folder has left the library whatever the finish comes to: a failure
+                    // is said, and the caller still reads the list as it is now.
+                    if let Err(e) = self.finish_removals_here() {
+                        let error = pg_model::notice::error_text(&pg_model::error::chain(&e));
+                        self.inbox.post(Notice::FolderNotRemoved { error });
+                    }
                 }
             }
         }
         Ok(begun)
+    }
+
+    /// Finishes the removals not finished, on the caller, for when the library is not running to do it. Nothing is done
+    /// when no removal is pending.
+    fn finish_removals_here(&self) -> Result<()> {
+        let finished = self.catalogs.with_catalog(|c| {
+            if c.removal_markers()?.is_empty() {
+                return Ok(None);
+            }
+            pg_library::removals::finish(c, &self.thumbs, &mut |_| true)
+                .map(Some)
+                .map_err(|e| pg_catalog::Error::Step { what: pg_model::error::chain(&e), source: Box::new(e) })
+        })?;
+        if let Some(finished) = finished {
+            self.swept(&finished.swept);
+        }
+        Ok(())
     }
 
     /// The folders whose removal is not finished, with the rows each keeps for an unfinished write (`Catalog::removal_markers`).
@@ -572,14 +607,18 @@ impl LibraryService {
         }
     }
 
-    /// Scan every library folder again (new, changed, moved and deleted files).
+    /// Scan every library folder again (new, changed, moved and deleted files). An error when the library is not running,
+    /// since nothing is scanned then: the caller says so.
     pub fn rescan(&self) -> Result<()> {
         let roots: Vec<RulePath> =
             self.catalogs.with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect()))?;
-        if let Some(library) = self.running() {
-            library.scan(roots);
+        match self.running() {
+            Some(library) => {
+                library.scan(roots);
+                Ok(())
+            }
+            None => Err(Error::Failed("the library isn't running, so no folder was scanned".to_string())),
         }
-        Ok(())
     }
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.

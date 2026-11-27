@@ -23,8 +23,12 @@ impl qobject::GalleryModel {
         (0..self.count).contains(&item)
     }
 
-    /// The neighbour of the selection `dx` columns and `dy` rows away; the first item when none is selected.
+    /// The neighbour of the selection `dx` columns and `dy` rows away; the first item when none is selected, whichever
+    /// way the arrow goes (a step from the first item would skip it).
     pub(crate) fn neighbor_of_selection(&self, dx: i32, dy: i32) -> i32 {
-        self.neighbor(self.current.max(0), dx, dy)
+        if self.current < 0 {
+            return 0;
+        }
+        self.neighbor(self.current, dx, dy)
     }
 }

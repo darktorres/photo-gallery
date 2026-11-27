@@ -282,6 +282,13 @@ Rectangle {
         const action = keymap.viewerAction(e.key, e.modifiers, kind, hasBorders);
         if (action < 0)
             return;
+        // A held key repeats: the steps and the zoom repeat; every other action acts once per press (a repeat would
+        // rate, turn or toggle again and again).
+        if (e.isAutoRepeat && action !== Viewer.ViewerAction.StepBack && action !== Viewer.ViewerAction.StepForward
+                && action !== Viewer.ViewerAction.ZoomIn && action !== Viewer.ViewerAction.ZoomOut) {
+            e.accepted = true;
+            return;
+        }
         const arg = keymap.viewerArg(e.key, e.modifiers, kind, hasBorders);
         switch (action) {
         case Viewer.ViewerAction.Close:
@@ -313,7 +320,9 @@ Rectangle {
             setZoom(zoom / 1.25, width / 2, height / 2);
             break;
         case Viewer.ViewerAction.Loupe:
-            loupe = !loupe;
+            // The loupe shows on stills only (a video or an animation has none): the key does nothing for the others.
+            if (still)
+                loupe = !loupe;
             break;
         case Viewer.ViewerAction.Borders:
             bordersToggled();
@@ -566,6 +575,17 @@ Rectangle {
                     }
                     function onViewReset() {
                         layers.dropRegion();
+                    }
+                    // A tap just before closing must not flip the overlays after the viewer is hidden.
+                    function onVisibleChanged() {
+                        if (!viewer.visible)
+                            zenTimer.stop();
+                    }
+                    // The file changed under the same item: the zoomed part is the old file's pixels, so it is dropped
+                    // and rendered again from the new one.
+                    function onKeyChanged() {
+                        layers.dropRegion();
+                        layers.restartRegion();
                     }
                 }
             }

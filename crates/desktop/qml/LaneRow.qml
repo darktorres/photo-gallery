@@ -81,6 +81,14 @@ RowLayout {
             enabled: laneRow.failedLinked
             onTapped: laneRow.failedRequested(laneRow.failedPass)
         }
+        // The link by the keyboard too: Tab reaches it while it is a link, and Enter or Space opens the ledger.
+        activeFocusOnTab: laneRow.failedLinked
+        Keys.onPressed: event => {
+            if (laneRow.failedLinked && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                laneRow.failedRequested(laneRow.failedPass);
+                event.accepted = true;
+            }
+        }
     }
     Item {
         id: barCell

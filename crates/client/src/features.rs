@@ -23,12 +23,12 @@ pub fn uses_borders(listing: &Listing) -> bool {
 }
 
 /// The listing without what border detection gives: its border facets and review are dropped, and a sort by border depth
-/// falls back to the name order (its direction stays).
+/// falls back to the name sort the sort box gives, which reads A to Z (its direction is not the depth's descending one).
 pub fn without_borders(mut listing: Listing) -> Listing {
     listing.query.borders.clear();
     listing.query.border_marked = None;
     if matches!(listing.sort.key, SortKey::Borders) {
-        listing.sort.key = SortKey::Name;
+        listing.sort = Sort { key: SortKey::Name, descending: false };
     }
     listing
 }
@@ -49,7 +49,7 @@ mod tests {
         let gone = without_borders(by_depth);
         assert!(!uses_borders(&gone));
         assert!(matches!(gone.sort.key, SortKey::Name));
-        assert!(gone.sort.descending, "the direction is kept");
+        assert!(!gone.sort.descending, "the name sort reads A to Z, as the sort box gives it");
     }
 
     #[test]

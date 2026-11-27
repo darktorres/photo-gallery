@@ -32,24 +32,36 @@ Rectangle {
     radius: height / 2
     color: Theme.scrimBacking
 
+    // A second click on the same star within the double-click time is the second half of a double click: it is not a second
+    // rating (the viewer has moved on to the next picture by then).
+    property int lastStar: -1
+    Timer {
+        id: starGuard
+        interval: Application.styleHints.mouseDoubleClickInterval
+    }
+
     RowLayout {
         id: barRow
         anchors.centerIn: parent
         spacing: 4
+        // The buttons take the keyboard by Tab only, not by a click: a click must not leave the focus on a button, where
+        // Space would press it (on the next picture) instead of the viewer stepping.
         ToolButton {
             text: "≈"
             visible: bar.still
             font.pixelSize: 22
+            focusPolicy: Qt.TabFocus
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-find-similar-tooltip")
             onClicked: bar.findSimilarRequested()
         }
-        // Borders found: marked as not a border while checked.
+        // Borders found: marked as not a border while checked. The checked state is the query's, not the button's own: a
+        // refused or failed mark leaves the button as the photo is.
         ToolButton {
             text: "▭"
             visible: bar.hasBorders
-            checkable: true
             checked: bar.borderMarked
+            focusPolicy: Qt.TabFocus
             font.family: Theme.symbolFamily
             font.pixelSize: 22
             font.strikeout: bar.borderMarked
@@ -61,6 +73,7 @@ Rectangle {
             text: "⟲"
             font.family: Theme.symbolFamily
             font.pixelSize: 22
+            focusPolicy: Qt.TabFocus
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-left")
             onClicked: bar.turnRequested(-1)
@@ -74,6 +87,7 @@ Rectangle {
                 // ☆ (no rating) is a symbol; the other ratings are emoji.
                 font.family: index === 0 ? Theme.symbolFamily : Theme.emojiFamily
                 font.pixelSize: 22
+                focusPolicy: Qt.TabFocus
                 ToolTip.visible: hovered
                 ToolTip.text: words.phrase("ui-stars", index, ("" + (index)), "")
                 background: Rectangle {
@@ -82,13 +96,20 @@ Rectangle {
                     border.color: "#ffd24a"
                     border.width: bar.rating === star.index ? 2 : 0
                 }
-                onClicked: bar.rateRequested(star.index)
+                onClicked: {
+                    if (starGuard.running && bar.lastStar === star.index)
+                        return;
+                    starGuard.restart();
+                    bar.lastStar = star.index;
+                    bar.rateRequested(star.index);
+                }
             }
         }
         ToolButton {
             text: "⟳"
             font.family: Theme.symbolFamily
             font.pixelSize: 22
+            focusPolicy: Qt.TabFocus
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-turn-right")
             onClicked: bar.turnRequested(1)

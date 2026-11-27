@@ -26,7 +26,9 @@ pub(crate) fn start() -> std::io::Result<()> {
     let (queue, writes) = mpsc::channel::<Write>();
     let thread = std::thread::Builder::new().name("window writes".into()).spawn(move || {
         for write in writes {
-            write();
+            // A write that panics is the panic hook's to report (the log, and its box). The writes queued behind it are
+            // still carried out: a panic that unwound this thread would drop them with the queue.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(write));
         }
     })?;
     let worker = Worker { queue: Mutex::new(Some(queue)), thread: Mutex::new(Some(thread)) };

@@ -419,6 +419,10 @@ impl Inner {
                     continue;
                 }
                 catalog.drop_gone_write(&job)?;
+                // A dropped turn is told as a turn, so the grid clears its pending mark (the file is not turned).
+                if job.kind() == WriteKind::Rotation {
+                    self.changes.publish(Change::Turned);
+                }
                 if !removing {
                     // A lost edit is a fact, told once as an event (with the others this drain dropped), not a condition.
                     dropped.count = dropped.count.saturating_add(1);

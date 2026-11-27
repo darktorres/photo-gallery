@@ -137,7 +137,13 @@ impl qobject::GalleryModel {
         self.as_mut().rust_mut().queue_mark(e.id, marked);
         let model = self.qt_thread();
         worker::run(move || {
-            let written = edit_outcome(EditOp::MarkBorder, crate::app::get().edit().set_border_mark(e.id, marked));
+            // Done whatever the write does: a write that panics still lets go of its queued mark, so the item does not
+            // keep a target that was never written.
+            let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                edit_outcome(EditOp::MarkBorder, crate::app::get().edit().set_border_mark(e.id, marked))
+            }))
+            .ok()
+            .flatten();
             let _ = model.queue(move |model| model.border_mark_done(e.id, marked, written.is_some()));
         });
     }

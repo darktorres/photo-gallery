@@ -157,7 +157,9 @@ impl qobject::FailedFiles {
             }
             Err(e) => {
                 pg_log::warn("inbox", &format!("the ledger's list couldn't be read: {e:#}"));
-                // The error alone: InboxPanel words it (`ui-inbox-unreadable`).
+                // The error alone: the rows of an earlier read are not shown beneath it, as if they were current.
+                // InboxPanel words it (`ui-inbox-unreadable`).
+                self.as_mut().put(Vec::new(), 0);
                 self.put_error(QString::from(&app::error_text(&e)));
             }
         }

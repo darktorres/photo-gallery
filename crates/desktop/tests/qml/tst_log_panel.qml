@@ -65,6 +65,7 @@ TestCase {
             height: tc.height
             open: true
             records: logRecords
+            recordsReady: true
             selected: -1
             selectedSeq: -1
             selectedText: ""

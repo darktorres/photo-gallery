@@ -95,20 +95,28 @@ Item {
             font.pixelSize: 11
         }
     }
-    MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: mouse => {
-            if (mouse.modifiers & Qt.ShiftModifier)
+    // A click acts once the double-click time has passed without a second click: a double click (which opens the preview)
+    // must not also pick or range-pick on its first click, and its modifiers may differ from the second's.
+    Timer {
+        id: clickSettle
+        property bool shift: false
+        interval: Application.styleHints.mouseDoubleClickInterval
+        onTriggered: {
+            if (clickSettle.shift)
                 tile.rangeTo(tile.index);
             else
                 tile.toggled(tile.index);
         }
-        // The double-click's first click has toggled the pick already (MouseArea sends no click for the second):
-        // toggled back, so looking at a result doesn't change what is picked.
+    }
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: mouse => {
+            clickSettle.shift = (mouse.modifiers & Qt.ShiftModifier) !== 0;
+            clickSettle.restart();
+        }
         onDoubleClicked: mouse => {
-            if (!(mouse.modifiers & Qt.ShiftModifier))
-                tile.toggled(tile.index);
+            clickSettle.stop();
             tile.previewRequested(tile.index);
         }
     }

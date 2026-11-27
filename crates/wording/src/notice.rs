@@ -104,19 +104,22 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("height", height.to_string());
             a.set("made", made.to_string());
         }
-        Notice::BordersCut { saved, skipped, unsupported, failed, failures } => {
+        Notice::BordersCut { saved, skipped, unsupported, failed, failures, unfinished } => {
             a.set("saved", saved.to_string());
             a.set("skipped", skipped.to_string());
             a.set("unsupported", unsupported.to_string());
             a.set("failed", pg_model::num::size(*failed));
+            // A number too: the entry says "not reached" only when there are some.
+            a.set("unfinished", pg_model::num::size(*unfinished));
             first_failure(a, rules, failures);
         }
-        Notice::Cropped { folder, saved, skipped, failed, failures } => {
+        Notice::Cropped { folder, saved, skipped, failed, failures, unfinished } => {
             a.set("folder", isolated(folder));
             a.set("saved", saved.to_string());
             a.set("skipped", skipped.to_string());
             // A number: the entry says "none failed" for 0.
             a.set("failed", pg_model::num::size(*failed));
+            a.set("unfinished", pg_model::num::size(*unfinished));
             first_failure(a, rules, failures);
         }
         Notice::CatalogRebuilt { kept, why, carried } => {
@@ -310,6 +313,7 @@ mod tests {
             skipped: 0,
             failed: 0,
             failures: Vec::new(),
+            unfinished: 0,
         });
         assert_eq!(text(&a, "folder"), isolate(r"D:\out"));
         assert_eq!(text(&a, "path"), "", "no first failure: nothing to isolate");

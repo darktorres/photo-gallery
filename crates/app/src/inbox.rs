@@ -866,8 +866,8 @@ impl Writer {
         if let Err(e) = store.prune(now()) {
             pg_log::warn("inbox", &format!("the inbox couldn't be pruned: {e:#}"));
         }
-        self.refresh(store, false);
-        self.version = store.version().ok();
+        // A read that failed leaves no version behind, so the next poll reads the inbox again.
+        self.version = if self.refresh(store, false) { store.version().ok() } else { None };
         loop {
             let batch = self.next_batch();
             if !self.handle(store, batch) {
@@ -908,8 +908,8 @@ impl Writer {
         // Read outside a transaction: it moves only when another connection has committed.
         let version = store.version().ok();
         if drained.changed || drained.force || reported || viewed || version != self.version {
-            self.version = version;
-            self.refresh(store, true);
+            // Recorded once the read has gone through: a failed read leaves none, and the next poll reads again.
+            self.version = if self.refresh(store, true) { version } else { None };
         }
         self.done(batch.last);
         true
@@ -1022,14 +1022,14 @@ impl Writer {
     }
 
     /// Read the inbox and publish what it lists; with `toast`, each entry that is news is toasted (the toast rule, in
-    /// the module's header).
-    fn refresh(&mut self, store: &impl Store, toast: bool) {
+    /// the module's header). False when the read failed: nothing is published then.
+    fn refresh(&mut self, store: &impl Store, toast: bool) -> bool {
         let read = store.marks().and_then(|marks| Ok((marks, store.entries(self.viewing)?)));
         let (marks, entries) = match read {
             Ok(read) => read,
             Err(e) => {
                 pg_log::warn("inbox", &format!("the inbox couldn't be read: {e:#}"));
-                return;
+                return false;
             }
         };
         for entry in &entries {
@@ -1055,7 +1055,8 @@ impl Writer {
                 news.insert(entry);
             }
         }
-        let unread = count_u64(marks.iter().filter(|m| !m.read).count());
+        // The bell counts what the window can list and mark (the first `LISTED`, as the entries are); the rest are unlisted.
+        let unread = count_u64(marks.iter().take(LISTED).filter(|m| !m.read).count());
         self.seen = marks.into_iter().map(|m| (m.id.entry(), m)).collect();
         match store.thumb_failures() {
             Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
@@ -1064,7 +1065,9 @@ impl Writer {
         let listing = Arc::new(InboxListing { entries, unread });
         *self.listing.lock().unwrap_or_else(PoisonError::into_inner) = listing.clone();
         if toast {
-            for entry in listing.entries.iter().filter(|e| news.contains(&e.id.entry())) {
+            // The listing is newest first, and the window shows the last toast of a batch: the toasts go oldest first, so the
+            // newest of a batch is the one shown.
+            for entry in listing.entries.iter().rev().filter(|e| news.contains(&e.id.entry())) {
                 self.toasted.insert(entry.id.entry(), now);
                 // A ledger's entry is never posted: it is logged when it is news.
                 if let EntryId::Ledger { .. } = entry.id {
@@ -1079,6 +1082,7 @@ impl Writer {
             }
         }
         self.events.publish(InboxEvent::Changed(listing));
+        true
     }
 }
 

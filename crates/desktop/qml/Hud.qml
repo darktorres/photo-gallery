@@ -108,7 +108,8 @@ Item {
         }
         InfoText {
             elide: Text.ElideRight
-            text: (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+            // Real size is a still's mode: a video or an animation does not take it, so the line does not say it.
+            text: (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.still && hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
         }
         // The parts keep to the left.
         Item {

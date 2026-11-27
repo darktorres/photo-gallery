@@ -38,6 +38,8 @@ Dialog {
     footer: DialogButtonBox {
         Button {
             text: words.text("ui-save")
+            // A view needs a name: with none the dialog stays open. (Spaces alone are not checked here.)
+            enabled: viewName.text.length > 0
             DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
         }
         Button {
@@ -69,7 +71,11 @@ Dialog {
             }
             placeholderText: words.text("ui-view-name")
             Layout.preferredWidth: 400
-            onAccepted: dialog.accept()
+            // Enter saves only with a name, as the Save button does.
+            onAccepted: {
+                if (viewName.text.length > 0)
+                    dialog.accept();
+            }
         }
     }
 }

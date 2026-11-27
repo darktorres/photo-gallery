@@ -230,13 +230,24 @@ fn a_removed_folder_takes_its_kept_notices_and_the_others_stay() {
     let catalog = Catalog::open(&Layout::in_home(dir.join("home")).catalog_path(), PATH_RULES).unwrap();
     catalog.post_notice(&note(&root("a")), 0).unwrap();
     catalog.post_notice(&note(&root("b")), 0).unwrap();
-    assert_eq!(catalog.inbox_entries(10, false).unwrap().len(), 2);
+    // The two adds came before the run, so the library was not running: each posted a "not scanned" notice. This test is
+    // about the scan notes, so only those are counted.
+    let scan_notes = |entries: Vec<pg_model::inbox::InboxEntry>| -> Vec<Notice> {
+        entries.into_iter().map(|entry| entry.notice).filter(|n| matches!(n, Notice::ScanNote { .. })).collect()
+    };
+    assert_eq!(scan_notes(catalog.inbox_entries(10, false).unwrap()).len(), 2);
     drop(catalog);
 
     let a = pg_platform::names::real_path(&dir.join("a")).unwrap();
     assert!(headless.remove_folder(&a.to_string_lossy(), WAIT).unwrap());
     let catalog = Catalog::open(&Layout::in_home(dir.join("home")).catalog_path(), PATH_RULES).unwrap();
-    let kept: Vec<Notice> = catalog.inbox_entries(10, false).unwrap().into_iter().map(|entry| entry.notice).collect();
+    let kept: Vec<Notice> = catalog
+        .inbox_entries(10, false)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.notice)
+        .filter(|n| matches!(n, Notice::ScanNote { .. }))
+        .collect();
     assert_eq!(kept, [note(&root("b"))]);
     let _ = std::fs::remove_dir_all(&dir);
 }

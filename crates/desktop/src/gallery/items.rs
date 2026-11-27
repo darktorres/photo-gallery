@@ -129,6 +129,12 @@ impl qobject::GalleryModel {
         self.entry(item).is_some_and(|e| e.borders == Borders::Marked)
     }
 
+    /// The mark a toggle of the item starts from: the mark it will have once the writes queued for it are made, so a
+    /// second toggle before the first write lands undoes the first (`mark_target`).
+    pub(crate) fn border_mark_target(&self, item: i32) -> bool {
+        self.entry(item).is_some_and(|e| self.mark_target(e.id, e.borders))
+    }
+
     /// Where the border detector's first rejected candidate at `edge` of the image as shown would have cut, as a
     /// fraction of the image from that edge; -1 for none.
     pub(super) fn border_rejected(&self, item: i32, edge: Edge) -> f64 {

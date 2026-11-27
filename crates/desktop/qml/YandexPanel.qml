@@ -82,6 +82,8 @@ Rectangle {
         Button {
             text: header.picked === header.count ? words.text("ui-select-none") : words.text("ui-select-all")
             flat: true
+            // Not while a search or a save runs: the save works on its snapshot, so a change now would not reach it.
+            enabled: !yandex.busy
             onClicked: yandex.setPicked(header.first, header.count, header.picked !== header.count)
         }
     }

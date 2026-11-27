@@ -87,8 +87,6 @@ pub fn run(args: &[OsString]) -> i32 {
     }
     // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario).
     pg_wording::set_pseudo(command_line::hooks().pseudo);
-    // Meanwhile the catalog opens, Qt starts and the QML loads.
-    let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
     let mut gpu: cxx::UniquePtr<gpu_device_bridge::ffi::GpuDevice>;
     // The data folders, from the environment: no folder to keep the data in is an error the window can show, since it
@@ -103,6 +101,9 @@ pub fn run(args: &[OsString]) -> i32 {
         &format!("{} {}, data folder {}", pg_perf::PROGRAM, env!("CARGO_PKG_VERSION"), config.layout.home().display()),
     );
     panic_log::install(config.layout.log().to_path_buf());
+    // Meanwhile the catalog opens, Qt starts and the QML loads. Started once the panic hook is in (a panic on this thread
+    // is logged, and a recovered one is not shown).
+    let gpu_thread = gpu_device::make_in_background();
     if let Some(failure) = perf_log_failure {
         pg_log::warn("perf", &failure);
     }
@@ -166,7 +167,7 @@ pub fn run(args: &[OsString]) -> i32 {
         // Made here instead when its thread couldn't be made, or ended without one.
         gpu = gpu_thread
             .ok()
-            .and_then(|thread| thread.join().ok())
+            .and_then(|thread| thread.join().ok().flatten())
             .unwrap_or_else(gpu_device_bridge::ffi::make_gpu_device);
         gpu_device_bridge::ffi::choose_video_decoding(&gpu);
         #[cfg(debug_assertions)]
@@ -178,7 +179,7 @@ pub fn run(args: &[OsString]) -> i32 {
         unsafe { gpu_device_bridge::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
         screenshot::schedule(engine);
     }
-    let status = app.as_mut().map_or(1, |app| app.exec());
+    let status = screenshot::finish(app.as_mut().map_or(1, |app| app.exec()));
     // The window's writes come first: the session and the preferences its close saves are written, then the background
     // work stops (the reader, then the library). Then the engine ends the image providers, and Qt joins their thread
     // pools as they end: the connections those threads hold close with them, before the app closes its own

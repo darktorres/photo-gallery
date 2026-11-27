@@ -138,8 +138,9 @@ pub(crate) fn start_state(
     }
 }
 
-/// Whether a start left out something it was given because border detection is off: an option's border query or sort, or
-/// a saved view that uses borders (`start_state` keeps the view out). The window says so once the start is over.
+/// Whether a start left out something it was given because border detection is off: an option's border query or sort, a
+/// saved view that uses borders (`start_state` keeps the view out), or `--borders` asking for the borders shown (they
+/// stay hidden). The window says so once the start is over.
 pub(crate) fn start_refused(prefs: &Prefs, options: &command_line::StartOptions, applied: Option<&SavedView>) -> bool {
     if prefs.features().borders {
         return false;
@@ -147,7 +148,8 @@ pub(crate) fn start_refused(prefs: &Prefs, options: &command_line::StartOptions,
     let by_query = options.query.as_ref().is_some_and(|q| pg_client::features::uses_borders_in(q, &Sort::default()));
     let by_sort = options.sort.as_ref().is_some_and(|s| pg_client::features::uses_borders_in(&Query::default(), s));
     let by_view = applied.is_some_and(|view| pg_client::features::uses_borders(&view.listing));
-    by_query || by_sort || by_view
+    let by_borders = options.show_borders == Some(true);
+    by_query || by_sort || by_view || by_borders
 }
 
 /// Report `event` at the current time, and return the commands it gives, in order. The caller carries them out after

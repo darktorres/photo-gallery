@@ -96,10 +96,12 @@ impl qobject::GalleryModel {
         self.as_mut().set_loading(true);
         let pg_model::view::Listing { folder, recursive, sort, query } = listing;
         let model = self.qt_thread();
+        // The folder's name leads the failure, unless the folder has none (all folders): then the error stands alone.
         let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
+        let label = if shown.is_empty() { String::new() } else { format!("{shown}: ") };
         crate::app::session().grid(folder, recursive, query, sort, move |entries| {
             let entries = crate::app::observe(pg_model::notice::Op::Listing, entries, |e| {
-                pg_model::notice::Notice::ListingFailed { error: crate::app::error_text(&format!("{shown}: {e:#}")) }
+                pg_model::notice::Notice::ListingFailed { error: crate::app::error_text(&format!("{label}{e:#}")) }
             })
             .unwrap_or_default();
             // Fails only when the model is gone (the window closing): nothing left to show it in.

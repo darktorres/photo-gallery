@@ -59,29 +59,33 @@ ModalOverlay {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            WheelListView {
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                model: panel.roots
-                ScrollBar.vertical: ScrollBar {}
-                delegate: RowLayout {
-                    id: rootRow
-                    required property string modelData
-                    required property int index
-                    width: ListView.view.width
-                    Label {
-                        text: rootRow.modelData
-                        textFormat: Text.PlainText
-                        elide: Text.ElideMiddle
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        text: words.text("ui-remove")
-                        flat: true
-                        onClicked: panel.removeRequested(rootRow.index)
+                WheelListView {
+                    anchors.fill: parent
+                    clip: true
+                    model: panel.roots
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: RowLayout {
+                        id: rootRow
+                        required property string modelData
+                        required property int index
+                        width: ListView.view.width
+                        Label {
+                            text: rootRow.modelData
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
+                            Layout.fillWidth: true
+                        }
+                        Button {
+                            text: words.text("ui-remove")
+                            flat: true
+                            onClicked: panel.removeRequested(rootRow.index)
+                        }
                     }
                 }
+                // Beside the list, not in it: a child of the list is placed in its content, which is not centred.
                 Label {
                     anchors.centerIn: parent
                     visible: !panel.hasRoots

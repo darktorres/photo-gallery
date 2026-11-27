@@ -44,6 +44,11 @@ impl Deadlines {
         self.due.push((timer, now_ms + timer.delay_ms()));
     }
 
+    /// Stop `timer`'s pause, if it is armed: the change it waited for has been made already.
+    pub fn cancel(&mut self, timer: Timer) {
+        self.due.retain(|(t, _)| *t != timer);
+    }
+
     /// Whether any pause is running (the screenshot waits for none).
     pub fn pending(&self) -> bool {
         !self.due.is_empty()

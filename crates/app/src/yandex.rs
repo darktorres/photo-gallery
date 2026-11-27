@@ -449,6 +449,11 @@ impl Search {
             s.status = Some(YandexStatus::Working(Phase::Starting));
         }
         self.changes.publish(());
+        // The last search's results leave the screen as this one starts: their fetchers stop now, not when this search ends.
+        let last = self.pictures.write().unwrap_or_else(PoisonError::into_inner).take();
+        if let Some(last) = last {
+            last.stop();
+        }
         let shared = self.shared.clone();
         let changes = self.changes.clone();
         let slot = self.pictures.clone();

@@ -52,8 +52,16 @@ WheelListView {
                 text: node.expandable ? (node.expanded ? "▾" : "▸") : ""
                 font.family: Theme.symbolFamily
                 Layout.preferredWidth: 12
+                // The arrow over the row: a press here expands or collapses, and the row does not list the folder. A double
+                // tap is the double click, which the row answers (onDoubleClicked): one toggle for it, not two.
+                HoverHandler {
+                    id: arrowHover
+                }
                 TapHandler {
-                    onTapped: tree.toggleRequested(node.index)
+                    onTapped: {
+                        if (tapCount === 1)
+                            tree.toggleRequested(node.index);
+                    }
                 }
             }
             Label {
@@ -77,10 +85,16 @@ WheelListView {
                 font.pixelSize: 11
             }
         }
+        // The arrow's own press is answered by the arrow (above): the row only takes presses on its name.
         onClicked: {
+            if (arrowHover.hovered)
+                return;
             tree.currentIndex = node.index;
             tree.folderOpened(node.index);
         }
-        onDoubleClicked: tree.toggleRequested(node.index)
+        onDoubleClicked: {
+            if (!arrowHover.hovered)
+                tree.toggleRequested(node.index);
+        }
     }
 }

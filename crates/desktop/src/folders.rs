@@ -177,19 +177,27 @@ impl qobject::FolderModel {
         };
         let model = self.qt_thread();
         crate::app::session().tree(move |tree| {
+            // None when the read failed (the inbox says why): `apply` keeps the tree it had.
             let tree = crate::app::observe(pg_model::notice::Op::Tree, tree, |e| {
                 pg_model::notice::Notice::TreeFailed { error: crate::app::error_text(&format!("{e:#}")) }
-            })
-            .unwrap_or_else(|| FolderTree::empty(pg_platform::native::PATH_RULES));
+            });
             // Fails only when the model is gone (the window closing).
             let _ = model.queue(move |model| model.apply(generation, tree));
         });
     }
 
-    fn apply(mut self: Pin<&mut Self>, generation: u64, tree: FolderTree) {
+    /// The tree read is applied. A read that failed after a tree was shown keeps that tree: a scan's reload must not move
+    /// the listed folder out of the tree (the start's gate and the saved session follow it). At the start, when no tree
+    /// was shown yet, a failed read is an empty tree, as it was.
+    fn apply(mut self: Pin<&mut Self>, generation: u64, tree: Option<FolderTree>) {
         if generation != self.generation {
             return;
         }
+        let tree = match tree {
+            Some(tree) => tree,
+            None if self.shown => return,
+            None => FolderTree::empty(pg_platform::native::PATH_RULES),
+        };
         self.as_mut().begin_reset_model();
         with_mut(|shown| shown.replace(tree));
         self.as_mut().end_reset_model();

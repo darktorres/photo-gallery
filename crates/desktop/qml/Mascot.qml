@@ -25,6 +25,8 @@ Image {
     horizontalAlignment: Image.AlignHCenter
     verticalAlignment: Image.AlignBottom
     asynchronous: true
+    // The picture shown stays until the next one has decoded, so a click does not blank the area for the decode.
+    retainWhileLoading: true
     smooth: true
     mipmap: true
     source: "qrc:/qt/qml/pg/gallery/resources/mascots/" + (number < 10 ? "0" + number : "" + number) + ".png"

@@ -6,6 +6,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls.Fusion
 import pg.gallery
 
 Item {
@@ -76,6 +77,13 @@ Item {
         retainWhileLoading: true
         smooth: layers.viewport.zoomed
         visible: layers.still || !layers.videoStarted
+    }
+    // Until the fitted picture is rendered the area is not blank: a still that is being rendered shows a busy mark. A
+    // failed render shows the Hud's text instead.
+    BusyIndicator {
+        anchors.centerIn: parent
+        running: layers.showing && layers.still && layers.fitStatus !== Image.Ready && layers.fitStatus !== Image.Error
+        visible: running
     }
 
     // Between fit and 1:1: the visible part, rendered by Rust at the zoom (Lanczos3) as the view moves. It is placed by

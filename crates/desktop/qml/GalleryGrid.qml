@@ -37,12 +37,18 @@ Item {
     // The list's width changed: the rows are laid out again.
     signal gridResized(real width)
 
-    // The first item of the topmost visible row, to keep the view anchored across relayouts.
+    // The first item of the topmost visible row, to keep the view anchored across relayouts. A probe in the gap between
+    // two rows finds no row, so the probe moves down past the gap.
     function topItem(): int {
-        const row = grid.indexAt(10, grid.contentY + 1);
+        let row = grid.indexAt(10, grid.contentY + 1);
+        if (row < 0)
+            row = grid.indexAt(10, grid.contentY + 1 + grid.spacing);
         const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null;
         return del ? del.firstItem : -1;
     }
+
+    // The scroll bar is being dragged: the view follows the drag, not the list's placement.
+    readonly property bool dragging: gridBar.pressed
 
     // Bumped when a row's waiting, place or pooling changes: the rows read the row above again (waitsForAbove), as they
     // would not do on the row above's own change alone.
@@ -85,9 +91,14 @@ Item {
         onCountChanged: root.pendingRevision++
         Keys.onPressed: e => root.keyPressed(e)
 
+        // Ctrl+wheel: a notch (120 units of angleDelta) is one step of 1.1, a finer wheel a part of one. A wheel with no
+        // vertical turn (a sideways scroll) changes nothing.
         WheelHandler {
             acceptedModifiers: Qt.ControlModifier
-            onWheel: ev => root.sizeStepped(ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1)
+            onWheel: ev => {
+                if (ev.angleDelta.y !== 0)
+                    root.sizeStepped(Math.pow(1.1, ev.angleDelta.y / 120));
+            }
         }
 
         delegate: GridRow {

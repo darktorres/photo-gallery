@@ -172,39 +172,25 @@ pub fn save_with(
     // The phase ends when this is dropped, however the pass leaves.
     let phase = ctl.begin(Phase::Crop, u64::try_from(jobs.len()).unwrap_or(u64::MAX));
     let mut done = vec![false; jobs.len()];
-    let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
         pipeline::Pass { items: &jobs, opts, ctl },
         |job, native| {
             set_path(native, paths.get(job.source.path));
             Read::File
         },
-        || Ok::<(), Error>(()),
-        |_, i, bytes| {
+        || Ok::<CopyWorker, Error>(CopyWorker { exiftool: None, program: program.to_os_string() }),
+        |worker: &mut CopyWorker, i, bytes| {
             let job = jobs.get(i).ok_or_else(|| Error::Invalid("an item outside the pass".into()))?;
-            write_copy(job, &paths, bytes)
+            write_copy(job, &paths, bytes, worker)
         },
         |i, result, len| {
             let (Some(job), Some(job_done)) = (jobs.get(i), done.get_mut(i)) else {
                 return Err(Failed::from(Error::Invalid("an item outside the pass".into())));
             };
             *job_done = true;
-            // TIFF and compressed BMP come out without their metadata.
-            let result = result.map_err(Error::Pass).and_then(|written| match written {
-                Written::Skipped => Ok(false),
-                Written::Saved { metadata: true } => Ok(true),
-                Written::Saved { metadata: false } => {
-                    // ExifTool reads and writes by the disk paths too, so a folder whose name ends in a dot is the
-                    // one it reaches.
-                    let (source, out) = (disk_path_of(paths.get(job.source.path)), disk_path_of(paths.get(job.out)));
-                    if let Err(e) = tag_copy(&mut exiftool, program, &source, &out) {
-                        // The copy was published before it had its tags: a failure leaves no untagged copy at the
-                        // output, since the job reports a failure and the output is not what it asked for.
-                        let _ = std::fs::remove_file(&out);
-                        return Err(e);
-                    }
-                    Ok(true)
-                }
+            let result = result.map_err(Error::Pass).map(|written| match written {
+                Written::Skipped => false,
+                Written::Saved => true,
             });
             ctl.add(len, result.is_err());
             match result {
@@ -227,11 +213,16 @@ pub fn save_with(
 }
 
 enum Written {
-    Saved {
-        metadata: bool,
-    },
+    Saved,
     /// Changed since its borders were found.
     Skipped,
+}
+
+/// What a worker of `save` keeps from one copy to the next: its ExifTool, started for the first copy that needs its tags
+/// copied over, and the program that starts it.
+struct CopyWorker {
+    exiftool: Option<ExifTool>,
+    program: OsString,
 }
 
 /// What `cut` did: the counts for the report, the files whose originals changed (the caller forgets their thumbnails),
@@ -248,7 +239,7 @@ pub struct CutStats {
     pub failed: usize,
     /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all.
     pub failures: Vec<FileFailure>,
-    /// The files whose originals were rewritten.
+    /// The files whose originals were rewritten, or may have been part-written (a failed write): their thumbnails are forgotten.
     pub cut: Vec<FileId>,
     /// What a stop left to do (queue it again).
     pub remaining: Vec<FileId>,
@@ -344,6 +335,11 @@ pub fn cut_with(
                 return Err(Failed::from(Error::Invalid("an item outside the pass".into())));
             };
             *job_done = true;
+            // A failed write may have part-written the original (an incomplete replace, which the message names): its
+            // thumbnail is forgotten too, as the cut's files are.
+            if result.is_err() {
+                stats.cut.push(job.id);
+            }
             let result = result.map_err(Error::Pass).and_then(|written| match written {
                 CutWritten::Saved { after } => {
                     // The original is cut whatever the catalog says after this, so its thumbnails are forgotten either way.
@@ -456,7 +452,6 @@ fn tags_temp_beside(path: &Path) -> Option<PathBuf> {
     Some(path.with_file_name(name))
 }
 
-/// Write `job`'s copy of the file read as `bytes`, through a temporary beside its output.
 /// Whether the file at `path` is still the source the pass listed: its size and mtime are the listed ones, and the bytes
 /// read are that size. A file changed since it was listed is left as it is.
 fn still_listed(path: &Path, source: &CropSource, read_len: usize) -> Result<bool> {
@@ -465,7 +460,10 @@ fn still_listed(path: &Path, source: &CropSource, read_len: usize) -> Result<boo
     Ok(now == (source.size, source.mtime) && usize::try_from(source.size).ok() == Some(read_len))
 }
 
-fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8]) -> Result<Written> {
+/// Write `job`'s copy of the file read as `bytes`, through a temporary beside its output. A copy whose bytes come out
+/// without their metadata (TIFF, compressed BMP) is tagged before it is published, so a failed tag copy leaves whatever an
+/// earlier save left at the output.
+fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], worker: &mut CopyWorker) -> Result<Written> {
     let s = &job.source;
     let (source, out) = (paths.get(s.path), paths.get(job.out));
     // Each by its disk path, which reaches it exactly: a folder whose name ends in a dot or a space is the one read and
@@ -478,10 +476,23 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8]) -> Result<Written> {
     if let Some(dir) = out_path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| io(format!("creating {}", shown(dir)), e))?;
     }
+    let bytes = if cropped.metadata {
+        cropped.bytes
+    } else {
+        // ExifTool takes the format from the file's extension, so the tagging temporary keeps the output's name.
+        let tagged = tags_temp_beside(&out_path).ok_or_else(|| Error::Invalid("a file without a name".into()))?;
+        let guard = TempFile::new(&tagged);
+        std::fs::write(&tagged, &cropped.bytes).map_err(|e| io(format!("writing {}", shown(&out_path)), e))?;
+        // ExifTool reads and writes by the disk paths too, so a folder whose name ends in a dot is the one it reaches.
+        tag_copy(&mut worker.exiftool, &worker.program, &source_path, &tagged)?;
+        let tagged_bytes = std::fs::read(&tagged).map_err(|e| io(format!("reading {}", shown(&tagged)), e))?;
+        drop(guard);
+        tagged_bytes
+    };
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
     let temp_path = temp_beside(&out_path, ".pg-crop").ok_or_else(|| Error::Invalid("a file without a name".into()))?;
-    publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
-    Ok(Written::Saved { metadata: cropped.metadata })
+    publish(&temp_path, &out_path, &bytes, &source_path)?;
+    Ok(Written::Saved)
 }
 
 /// Give the published copy at `out` the tags of `source` that the crop left out (ExifTool), and its modification time.

@@ -56,6 +56,9 @@ Rectangle {
             text: transport.playing ? "⏸️" : "▶"
             font.family: transport.playing ? Theme.emojiFamily : Theme.symbolFamily
             font.pixelSize: 18
+            // Not in the focus chain: the transport hides (zen, a still picture), and a control that keeps the focus then
+            // takes the arrow keys and Space from the viewer. K plays and pauses from the keys.
+            focusPolicy: Qt.NoFocus
             onClicked: transport.playRequested()
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-play-pause")
@@ -71,6 +74,8 @@ Rectangle {
             from: 0
             to: Math.max(1, transport.duration)
             enabled: transport.seekable
+            // See the play button: the arrow keys step the viewer, not this slider.
+            focusPolicy: Qt.NoFocus
             onMoved: transport.seekRequested(value)
             // Follows the playback except while dragged.
             Binding on value {
@@ -84,9 +89,11 @@ Rectangle {
             color: "#cccccc"
         }
         ToolButton {
-            text: transport.muted || transport.volume === 0 ? "🔇" : "🔊"
+            // Muted, or silent at zero volume: the mute flag decides the icon, so a mute at zero volume shows.
+            text: transport.muted ? "🔇" : transport.volume === 0 ? "🔈" : "🔊"
             font.family: Theme.emojiFamily
             font.pixelSize: 16
+            focusPolicy: Qt.NoFocus
             onClicked: transport.muteRequested()
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-mute")
@@ -95,6 +102,7 @@ Rectangle {
             from: 0
             to: 1
             value: transport.volume
+            focusPolicy: Qt.NoFocus
             onMoved: transport.volumeRequested(value)
             Layout.preferredWidth: 100
         }

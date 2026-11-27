@@ -98,6 +98,9 @@ ToolBar {
         ComboBox {
             id: sortBox
             model: bar.sortNames
+            // Taken by Tab, not by a click: a pick with the mouse leaves the focus where it was, and the arrow keys step
+            // the box as they should (the keys go to it once it is tabbed to).
+            focusPolicy: Qt.TabFocus
             // Name reads A→Z; the others start with the largest, newest or longest.
             onActivated: i => bar.sortActivated(i)
             Layout.preferredWidth: 160
@@ -132,6 +135,10 @@ ToolBar {
             from: bar.minRowHeight
             to: bar.maxRowHeight
             value: bar.rowHeight
+            // One pixel per arrow key (the default 0.1 changes the row height only after about six presses).
+            stepSize: 1
+            // Taken by Tab, not by a click: dragging it leaves the grid's focus (and Ctrl+plus/minus) where it was.
+            focusPolicy: Qt.TabFocus
             onMoved: bar.sizeChosen(value)
             Layout.preferredWidth: 220
         }

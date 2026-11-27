@@ -22,6 +22,8 @@ ModalOverlay {
     }
     // The records (Main's LogModel).
     required property var records
+    // Whether the records have been read (the log model's `ready`).
+    required property bool recordsReady
     // The row clicked: the log model holds the selection (by its number), and the window gives the panel what it shows:
     // its row (-1: none), its number, and its message and detail, shown below the list.
     required property int selected
@@ -33,6 +35,12 @@ ModalOverlay {
     // The user scrolled (a drag, a flick, the wheel, the scroll bar): following again only at the end.
     function scrolled() {
         following = list.atYEnd;
+    }
+
+    // Opened again: the view is at the newest record and follows it, as when it was first opened.
+    onOpenChanged: if (panel.open) {
+        following = true;
+        list.positionViewAtEnd();
     }
 
     // A key that moves the current row (the list's own keyboard navigation) is the user scrolling, as a wheel or a scroll
@@ -100,11 +108,29 @@ ModalOverlay {
                     positionViewAtEnd()
                 onMovementEnded: panel.scrolled()
                 onWheelScrolled: panel.scrolled()
-                // The keys that move the current row (read a turn later, see `keyPressed`).
-                Keys.onPressed: event => panel.keyPressed(event.key)
+                // A wheel up, or a grab of the scroll bar, is the user going away from the end at once: the view stops
+                // following before the scroll (which takes a moment) ends, so a record that comes meanwhile does not snap it back.
+                WheelHandler {
+                    onWheel: ev => {
+                        if (ev.angleDelta.y > 0)
+                            panel.following = false;
+                    }
+                }
+                // The keys that move the current row (read a turn later, see `keyPressed`). Enter and Space select the row.
+                Keys.onPressed: event => {
+                    panel.keyPressed(event.key);
+                    if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) && list.currentIndex >= 0) {
+                        panel.select(list.currentIndex);
+                        event.accepted = true;
+                    }
+                }
                 ScrollBar.vertical: ScrollBar {
-                    onPressedChanged: if (!pressed)
-                        panel.scrolled()
+                    onPressedChanged: {
+                        if (pressed)
+                            panel.following = false;
+                        else
+                            panel.scrolled();
+                    }
                 }
                 delegate: Rectangle {
                     id: row
@@ -116,9 +142,11 @@ ModalOverlay {
                     required property string detail
                     required property real seq
                     readonly property bool chosen: row.seq === panel.selectedSeq
+                    // The keyboard's row (the list's current row) is shown too, not only the clicked one.
+                    readonly property bool current: row.ListView.isCurrentItem
                     width: list.width
                     height: 22
-                    color: row.chosen ? Theme.chosenRow : (row.index % 2 ? "#242424" : "transparent")
+                    color: row.chosen ? Theme.chosenRow : (row.current ? "#3a3a3a" : (row.index % 2 ? "#242424" : "transparent"))
                     Accessible.role: Accessible.ListItem
                     Accessible.name: row.message
                     Accessible.selected: row.chosen
@@ -157,9 +185,10 @@ ModalOverlay {
                         onTapped: panel.select(row.index)
                     }
                 }
+                // Said only once the records have been read: until then the list is empty but not empty of records.
                 Label {
                     anchors.centerIn: parent
-                    visible: list.count === 0
+                    visible: list.count === 0 && panel.recordsReady
                     text: words.text("ui-log-empty")
                     color: Theme.hintText
                 }

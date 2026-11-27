@@ -29,6 +29,10 @@ unsafe impl Send for ffi::GpuDevice {}
 /// [`ffi::make_gpu_device`] on its own thread, while the catalog opens and the QML loads: join the handle before
 /// the window is shown and before Qt Multimedia is first used (the viewer's media Loader, Viewer.qml). An error when
 /// the thread can't be made: the caller then makes the device itself.
-pub(crate) fn make_in_background() -> std::io::Result<std::thread::JoinHandle<cxx::UniquePtr<ffi::GpuDevice>>> {
-    std::thread::Builder::new().name("gpu device".into()).spawn(ffi::make_gpu_device)
+pub(crate) fn make_in_background() -> std::io::Result<std::thread::JoinHandle<Option<cxx::UniquePtr<ffi::GpuDevice>>>> {
+    // A panic here is recovered by the caller (it makes the device itself, `None`), so it is logged, not shown in a box
+    // the startup would wait for.
+    std::thread::Builder::new()
+        .name("gpu device".into())
+        .spawn(|| crate::panic_log::recovered(ffi::make_gpu_device).ok())
 }

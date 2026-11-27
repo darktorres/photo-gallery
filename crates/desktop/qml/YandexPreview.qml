@@ -46,7 +46,10 @@ Rectangle {
         id: keymap
     }
 
+    // Only an index that is a result opens: after a failed or empty search there is none, so the preview stays closed.
     function open(i: int) {
+        if (i < 0 || i >= preview.total)
+            return;
         preview.item = i;
         preview.actual = false;
         wheelSteps.reset();
@@ -86,6 +89,11 @@ Rectangle {
         const action = keymap.panelAction(e.key);
         if (action < 0)
             return;
+        // A held key repeats the steps; the pick and the rest act once per press (a held Space would flip the pick).
+        if (e.isAutoRepeat && action !== YandexPanel.PanelAction.StepBack && action !== YandexPanel.PanelAction.StepForward) {
+            e.accepted = true;
+            return;
+        }
         switch (action) {
         case YandexPanel.PanelAction.Close:
             preview.close();

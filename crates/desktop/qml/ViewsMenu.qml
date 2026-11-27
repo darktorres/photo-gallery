@@ -59,7 +59,11 @@ Button {
                 delegate: MenuItem {
                     required property string modelData
                     text: modelData
-                    onTriggered: views.viewDeleteRequested(modelData)
+                    // The delete removes this item while it is triggered, which can stop the menu closing by itself: it is closed here.
+                    onTriggered: {
+                        views.viewDeleteRequested(modelData);
+                        viewsMenu.dismiss();
+                    }
                 }
                 onObjectAdded: (i, o) => deleteMenu.insertItem(i, o as MenuItem)
                 onObjectRemoved: (i, o) => deleteMenu.removeItem(o as MenuItem)

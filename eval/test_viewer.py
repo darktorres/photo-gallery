@@ -1,5 +1,5 @@
 """viewer.py's marks file: reads and writes share one lock, and a failed save or read is an HTTP answer, not a dropped
-connection. Stdlib unittest (eval/requirements.txt is a frozen freeze, so pytest isn't a dependency):
+connection. Stdlib unittest (the eval group of pyproject.toml has no pytest, so it isn't a dependency):
 
     python -m unittest discover -s eval -p 'test_*.py'
 

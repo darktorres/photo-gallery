@@ -42,15 +42,13 @@ REPO = Path(__file__).resolve().parent.parent
 CHECKS = "pg-dev"
 TOOLS = "pg-tools"
 EVAL = "pg-eval"
-# The eval image's Python packages, at the versions eval/requirements.txt pins (the Windows eval venv's), so each version is
-# written once: numpy, FAISS and USearch for the ANN worker, Pillow for the JPEG encoder comparison.
-EVAL_PACKAGES = ("numpy", "faiss-cpu", "usearch", "pillow")
 # The Justfile's variable behind each build argument of docker/Dockerfile.
 PINS = {
     "JUST_VERSION": "just_version",
     "CARGO_DENY_VERSION": "cargo_deny_version",
     "CARGO_MACHETE_VERSION": "cargo_machete_version",
     "CARGO_MODULES_VERSION": "cargo_modules_version",
+    "UV_VERSION": "uv_version",
     "CARGO_FUZZ_VERSION": "cargo_fuzz_version",
     "SCCACHE_VERSION": "sccache_version",
     "AQTINSTALL_COMMIT": "aqtinstall_commit",
@@ -76,19 +74,6 @@ def gungraun_version():
     return match.group(1)
 
 
-def eval_packages():
-    """The pins of EVAL_PACKAGES in eval/requirements.txt (`name==version`), space-separated."""
-    pins = {}
-    for line in (REPO / "eval" / "requirements.txt").read_text(encoding="utf-8").splitlines():
-        name, sep, version = line.strip().partition("==")
-        if sep:
-            pins[name.lower()] = f"{name}=={version}"
-    missing = [name for name in EVAL_PACKAGES if name not in pins]
-    if missing:
-        fail(f"eval/requirements.txt pins no {', '.join(missing)}")
-    return " ".join(pins[name] for name in EVAL_PACKAGES)
-
-
 def build_args():
     args = []
     for arg, variable in PINS.items():
@@ -97,8 +82,6 @@ def build_args():
         *args,
         "--build-arg",
         f"GUNGRAUN_VERSION={gungraun_version()}",
-        "--build-arg",
-        f"EVAL_PACKAGES={eval_packages()}",
     ]
 
 

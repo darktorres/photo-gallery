@@ -84,6 +84,7 @@ def pin_values() -> list[tuple[str, str]]:
                     ("cargo-deny", "cargo_deny_version"),
                     ("cargo-machete", "cargo_machete_version"),
                     ("cargo-modules", "cargo_modules_version"),
+                    ("uv", "uv_version"),
                 )
             ),
         ),

@@ -14,7 +14,6 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from ci.eval_pins import PACKAGES, REQUIREMENTS, pin
 from ci.github_files import env_line, path_line, pin_values
 from install_exiftool import install
 from pgtools import REPO, function_body, just_value
@@ -26,6 +25,7 @@ PINNED = {
     "cargo_deny_version": just_value("cargo_deny_version"),
     "cargo_machete_version": just_value("cargo_machete_version"),
     "cargo_modules_version": just_value("cargo_modules_version"),
+    "uv_version": just_value("uv_version"),
     "aqtinstall_commit": just_value("aqtinstall_commit"),
     "exiftool_version": just_value("exiftool_version"),
     "exiftool_source_sha256": just_value("exiftool_source_sha256"),
@@ -57,6 +57,18 @@ class PathLine(unittest.TestCase):
         self.assertEqual(path_line(absolute, Path("/work/repo")), absolute + "\n")
 
 
+# The Pillow and numpy pins, written in the eval and tools groups of pyproject.toml (which the eval tests and the shots run
+# on): the two must agree.
+PACKAGES = ("pillow", "numpy")
+EVAL_GROUP = "\n".join(tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["dependency-groups"]["eval"])
+
+
+def pin(text: str, package: str) -> str | None:
+    """The `<package>==<version>` line of a requirements file, or None when it has none."""
+    match = re.search(rf"^{re.escape(package)}==\S+", text, re.IGNORECASE | re.MULTILINE)
+    return match.group(0) if match else None
+
+
 class EvalPins(unittest.TestCase):
     def test_finds_each_pin_among_the_other_lines(self):
         text = "torch==2.8.0\nnumpy==2.5.5\npillow==13.0.0\n"
@@ -72,16 +84,15 @@ class EvalPins(unittest.TestCase):
     def test_the_name_is_case_blind(self):
         self.assertEqual(pin("Pillow==13.0.0\n", "pillow"), "Pillow==13.0.0")
 
-    def test_the_eval_requirements_pin_every_package_ci_installs(self):
-        text = REQUIREMENTS.read_text(encoding="utf-8")
+    def test_the_eval_group_pins_every_package_the_eval_tests_import(self):
         for package in PACKAGES:
-            self.assertIsNotNone(pin(text, package), package)
+            self.assertIsNotNone(pin(EVAL_GROUP, package), package)
 
-    def test_the_shots_requirements_agree_with_the_eval_pins(self):
-        eval_text = REQUIREMENTS.read_text(encoding="utf-8")
-        shots = (REPO / "tools" / "shots" / "requirements.txt").read_text(encoding="utf-8")
+    def test_the_project_tools_group_agrees_with_the_eval_group(self):
+        group = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["dependency-groups"]["tools"]
+        text = "\n".join(group)
         for package in PACKAGES:
-            self.assertEqual(pin(shots, package), pin(eval_text, package), package)
+            self.assertEqual(pin(text, package), pin(EVAL_GROUP, package), package)
 
 
 class JustValue(unittest.TestCase):
@@ -163,7 +174,8 @@ class Pins(unittest.TestCase):
         self.assertEqual(
             values["TAIKI_TOOLS"],
             f"just@{PINNED['just_version']},cargo-deny@{PINNED['cargo_deny_version']},"
-            f"cargo-machete@{PINNED['cargo_machete_version']},cargo-modules@{PINNED['cargo_modules_version']}",
+            f"cargo-machete@{PINNED['cargo_machete_version']},cargo-modules@{PINNED['cargo_modules_version']},"
+            f"uv@{PINNED['uv_version']}",
         )
 
 

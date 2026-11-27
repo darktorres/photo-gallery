@@ -4,7 +4,7 @@ Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/nvjpeg.py [-
 
 torchvision's decode_jpeg has no backend option and decodes Huffman on the CPU, so this calls the nvJPEG DLL that
 ships with torchvision directly (ctypes; declarations from nvjpeg.h 13.2). That DLL is torchvision's, not the
-nvidia-nvjpeg wheel that requirements.txt pins (13.3.2.43, for the nvImageCodec venv), so the two versions can differ.
+nvidia-nvjpeg wheel that the jpeg-decoders group pins (13.3.2.43, for the nvImageCodec venv), so the two versions can differ.
 Device memory and streams come from torch.
 
 - batched API (nvjpegDecodeBatched): GPU_HYBRID only decodes Huffman on the GPU for batches over 50 baseline

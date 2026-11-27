@@ -821,7 +821,7 @@ Why: The rebuild moves the catalog aside (rebuild.rs:87-88) then renames the rep
 Rejected: in-process quiesce (many handles, no gain over exit); runtime layout change; letting prepare create an empty catalog when a .replaced file exists.
 
 **Q: Schema and rollback neutrality of the cutover.**
-Decision: The cutover makes no change to the catalog's schema. Server-only state (request ledger, device and login records, event log, last job report per request) lives in <home>/server.db under its own version. The per-item mutation version is a separate later step with its own migration and gate.
+Decision: The cutover makes no change to the catalog's schema. Server-only state (request ledger, device and login records, event log, last job report per request) lives in `<home>/server.db` under its own version. The per-item mutation version is a separate later step with its own migration and gate.
 Why: A catalog with a newer schema is refused by an older build (core.rs:75-80); any cutover-time migration makes the pre-cutover binary unable to open the catalog, removing the binary rollback. The desktop grid has no version field (model grid.rs:16-45).
 Rejected: per-item version migration in the cutover release; login or device tables in the catalog.
 

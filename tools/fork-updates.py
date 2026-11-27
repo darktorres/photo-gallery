@@ -78,7 +78,7 @@ def newest_release(crate: str) -> str:
             raise NotPublishedError(crate) from error
         raise
     if not isinstance(newest, str):
-        raise ValueError(f"crates.io gives no stable version for {crate}: {newest!r}")
+        raise TypeError(f"crates.io gives no stable version for {crate}: {newest!r}")
     version_key(newest)
     return newest
 

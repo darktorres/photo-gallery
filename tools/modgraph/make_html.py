@@ -258,6 +258,7 @@ render("crates");
 </html>
 """
 
+
 def main() -> None:
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "target" / "modgraph"
     graph_json = out_dir / "graph.json"
@@ -285,7 +286,9 @@ def main() -> None:
         short = p["name"].removeprefix("pg-")
         crate_nodes.append({"id": p["name"], "label": short, "lines": crate_lines.get(short, 0)})
         crate_edges.extend(
-            {"from": p["name"], "to": d["name"], "weight": 1} for d in p["dependencies"] if d["name"] in names and d["kind"] is None
+            {"from": p["name"], "to": d["name"], "weight": 1}
+            for d in p["dependencies"]
+            if d["name"] in names and d["kind"] is None
         )
 
     views = {"crates": {"nodes": crate_nodes, "edges": crate_edges, "cycles": []}}

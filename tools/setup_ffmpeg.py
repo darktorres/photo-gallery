@@ -86,11 +86,13 @@ def main() -> None:
 
     dest = (REPO / args.destination).resolve()
     # A folder that is replaced is removed whole: a non-empty folder is replaced only when it is an FFmpeg build's.
-    if dest.exists() and not (dest / HEADER).is_file() and not (dest / PIN_FILE).is_file():
-        if not dest.is_dir() or any(dest.iterdir()):
-            sys.exit(
-                f"refusing to replace {dest}: it is not an FFmpeg build (no {HEADER} and no {PIN_FILE}); name another folder"
-            )
+    if (
+        dest.exists()
+        and not (dest / HEADER).is_file()
+        and not (dest / PIN_FILE).is_file()
+        and (not dest.is_dir() or any(dest.iterdir()))
+    ):
+        sys.exit(f"refusing to replace {dest}: it is not an FFmpeg build (no {HEADER} and no {PIN_FILE}); name another folder")
     wanted = args.sha256.lower()
     if is_installed(dest, wanted):
         print(f"FFmpeg is already in {dest} at this pin: nothing to do.")

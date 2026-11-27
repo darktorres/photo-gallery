@@ -487,7 +487,7 @@ def prepare_verify(base: Base) -> None:
         ids, sims = metrics.rescore(x, runs[0]["ids"])
         miss = metrics.missed(t, ids, sims, best["kprime"])
         # all of them: the report scales the verified sample up
-        save_atomic(OUT / f"misses_{fam}.npy", lambda f: np.save(f, miss))
+        save_atomic(OUT / f"misses_{fam}.npy", lambda f, miss=miss: np.save(f, miss))
         for key in rng.choice(miss, min(len(miss), VERIFY_MISSES), replace=False):
             chosen.setdefault(int(key), []).append(f"miss:{fam}")
         print(f"{fam}: {len(miss)} required pairs missed at its 0.999 setting", flush=True)

@@ -4,7 +4,6 @@ pinned commit, with the folder's patch (patches/<folder name>.patch) applied. Th
 win-build.cmd, is removed (tools/README.md).
 """
 
-import os
 import shutil
 import stat
 import subprocess
@@ -65,7 +64,7 @@ def remove_tree(folder: Path) -> None:
     """Removes `folder` and what is in it, if there is one; git's read-only object files are made writable first."""
 
     def writable(func, path, _exc) -> None:
-        os.chmod(path, stat.S_IWRITE)
+        Path(path).chmod(stat.S_IWRITE)
         func(path)
 
     if folder.exists():

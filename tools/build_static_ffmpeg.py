@@ -57,8 +57,10 @@ CONFIGURE_FLAGS = [
     # The containers of the player's scope (mp4, m4v, mov, 3gp: mov; webm, mkv: matroska; avi; wmv: asf; mpg, mpeg: mpeg),
     # with the video and audio codecs they carry. Every audio codec the player mixes down (AAC, AC-3, E-AC-3, Opus) is here.
     "--enable-demuxer=mov,matroska,avi,asf,mpeg,mpegts,image2",
-    "--enable-decoder=h264,hevc,vp9,vp8,mpeg4,mjpeg,mpeg1video,mpeg2video,wmv1,wmv2,wmv3,vc1,"
-    "aac,ac3,eac3,opus,vorbis,mp3float,flac",
+    (
+        "--enable-decoder=h264,hevc,vp9,vp8,mpeg4,mjpeg,mpeg1video,mpeg2video,wmv1,wmv2,wmv3,vc1,"
+        "aac,ac3,eac3,opus,vorbis,mp3float,flac"
+    ),
     "--enable-parser=h264,hevc,vp9,vp8,mpeg4video,mjpeg,mpegvideo,vc1,mpegaudio,aac,ac3,opus,vorbis",
     "--enable-swscale", "--enable-swresample",
     "--enable-d3d11va", "--enable-dxva2",

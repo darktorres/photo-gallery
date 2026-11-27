@@ -1,5 +1,7 @@
 # Profiling ledger: what is still open
 
+<!-- markdownlint-disable-file MD060 -->
+
 What the profiling reference ([PROFILING.md](../reference/PROFILING.md)) does not yet answer, and the leads measured
 but not acted on. It was checked on 2026-11-14 by reading the code at HEAD `51a9657`. Nothing was built or run for it.
 Items marked *read* were found by reading the code and have not been reproduced.

@@ -32,6 +32,16 @@ from verify_common import EXPECTED
 
 RUNS_ROOT = WORK_DIR.parent
 MAX_BODY = 8 << 20  # the largest POST body: a bulk save of one group's pairs is far below it
+
+
+def content_length(value: str) -> int:
+    """The request's Content-Length, checked before the body is read (which would otherwise wait for that many bytes)."""
+    length = int(value)
+    if not 0 <= length <= MAX_BODY:
+        raise ValueError(f"Content-Length must be between 0 and {MAX_BODY} bytes")
+    return length
+
+
 THUMB_DIR = CACHE_DIR / "viewer_thumbs"
 PAGE = Path(__file__).with_name("viewer.html")
 PAIR_FILES = {
@@ -326,9 +336,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(b"bad request: expected application/json", "text/plain", status=400)
             return
         try:
-            length = int(self.headers.get("Content-Length", "-1"))
-            if not 0 <= length <= MAX_BODY:  # checked before the read, which would otherwise wait for that many bytes
-                raise ValueError(f"Content-Length must be between 0 and {MAX_BODY} bytes")
+            length = content_length(self.headers.get("Content-Length", "-1"))
             body = json.loads(self.rfile.read(length))
             if url.path == "/api/marks":
                 self.reply_json(set_mark(body["run"], body["a"], body["b"], body.get("mark")))

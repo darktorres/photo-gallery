@@ -1,7 +1,7 @@
 """nvImageCodec (NVIDIA's codec library over nvJPEG): one image at a time per backend, and
 batches, each with the pixels copied to host memory; CPU time per image; output against libjpeg-turbo.
 
-Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt; bin/python on
+Run with its own venv (`just jpeg-env` syncs the jpeg-decoders group of pyproject.toml into it; bin/python on
 Linux), not the shared eval venv:
     $PG_JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/nvimgcodec_bench.py \
         --ref-dir DIR FILE...

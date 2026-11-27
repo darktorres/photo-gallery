@@ -117,6 +117,8 @@ PAIR_SETS = {
     # files.txt), written to verify_<--list>_<model>.csv; e.g. the ANN bake-off's samples (eval/ann).
     "listed": ("verify", ()),
 }
+
+
 def decide(m: dict, params: Params) -> str:
     """match / unrelated from a pair's measurements (see the module docstring)."""
     if m.get("decision") == "error":

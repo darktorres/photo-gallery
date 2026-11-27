@@ -401,7 +401,7 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 ## nvImageCodec and debesheedas
 
 - **nvImageCodec 0.10.0.9** (`nvimgcodec_bench.py`; this run had 2.8–4.1 cores of other load, so read it as rough;
-  0.10.0.9 is the version the numbers were measured with, and `eval/jpeg-decoders/requirements.txt` pins it, with
+  0.10.0.9 is the version the numbers were measured with, and the `jpeg-decoders` group of `pyproject.toml` pins it, with
   nvJPEG 13.3.2.43 beside it; the 13.2.3 DLL of the `nvjpeg.py` and `gpu.py` figures is a different library):
   - **One image per call** costs about what nvJPEG does with its default backend: 3.4–7.6 ms on the Pinterest files,
     20–53 ms on camera files. The CPU time equalled the wall time in the spinning run; with blocking sync
@@ -721,16 +721,20 @@ otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full
   - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with CUDA
     13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
   - Linux, in the container: `just linux-eval eval/jpeg-decoders/harness_linux.py compare ir time throughput`.
-  - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
+  - nvImageCodec, in its own venv (`just jpeg-env`, the `jpeg-decoders` group, which pins
     nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
     `nvimgcodec_bench.py --ref-dir DIR FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`.
     debesheedas: `debesheedas.py --exe DECODER.exe --ref-dir DIR FILE...`.
 
 ## Not run
 
-- **The venv-eval nvJPEG DLL.** Installing `nvidia-nvimgcodec` replaced the shared `nvjpeg64_13.dll` in `venv-eval`
-  (the GPU runs above used the DLL torchvision ships, 13.2.3). Pinning it back to 13.2.3 and checking the `gpu.py` and
-  `nvjpeg.py` figures again is left to the user, not done.
+- **Two nvJPEG copies.** torchvision ships its own `nvjpeg64_13.dll` (file version 6.14.11.1323), and the nvidia-nvjpeg
+  wheel ships another (6.14.11.1332). They are different files and do not overwrite each other. In one process, torchvision
+  still decodes on the GPU with its own copy after the wheel is installed, and nvImageCodec loads the wheel's copy beside it.
+  An earlier note said the install "replaced" the shared DLL; that was wrong. The `gpu.py` and `nvjpeg.py` figures used the
+  torchvision copy, so the nvImageCodec bench stays in its own environment (`just jpeg-env`) to keep that environment unchanged.
+  The GPU_ONLY backend returns no image on this RTX 2060 for any input tried, including a batch with restart markers; the
+  hardware backend cannot be created. Only HYBRID_CPU_GPU and CPU_ONLY decode here.
 - **Pillow `draft()` column.** The 2026-11-14 `gpu.py` rerun covers the two odd-sided files only. The other rows of the
   Pillow `draft()` table predate the draft-rounding fix.
 - **The import-order check** (the `gpu.py` import order fixed for C-46) is not recorded as a run.

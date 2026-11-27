@@ -174,9 +174,7 @@ def _quantize_int8(src: Path, calib: Path, dst: Path, method: str = "entropy", e
     options = json.dumps({"calibration_method": method, "nodes_to_exclude": list(exclude) or None})
     env = {**os.environ, "PATH": str(Path(torch.__file__).parent / "lib") + os.pathsep + os.environ["PATH"]}
     try:
-        subprocess.run(
-            [str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(out), options], check=True, env=env
-        )
+        subprocess.run([str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(out), options], check=True, env=env)
     finally:
         work.unlink(missing_ok=True)
     out.replace(dst)

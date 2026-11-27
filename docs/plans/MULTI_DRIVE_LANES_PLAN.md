@@ -1,5 +1,7 @@
 # Process library folders on different physical drives in parallel (lane per drive)
 
+<!-- markdownlint-disable-file MD060 -->
+
 > **Note (plan phases A2 and B3).** The `gallery` command line is removed, and with it `--serial`; phase B3 removed the
 > `serial_drives` setting and the `serial` parameter of `lanes::plan` and `assign`, and phase B4 refuses opaque disks on
 > Windows (`docs/reference/STORAGE.md`). The per-drive groups the CLI had are gone; the app's lanes are the only lanes. The `gallery <pass>` names below are

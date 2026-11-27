@@ -1,5 +1,7 @@
 # Codebase review validation
 
+<!-- markdownlint-disable-file MD060 -->
+
 Validated 2026-11-20. The codebase review recovered 1,451 findings (RV-0001 to RV-1451). Each one was checked against the code it cites, and each got one verdict: CONFIRMED, PARTIAL or REFUTED. This page records the verdicts, and the reason for every partial or refuted one.
 
 The checks ran against the working tree at HEAD `3f9ae1b0`, which had uncommitted changes (the catalog classify work and others). A verdict can reflect those edits.

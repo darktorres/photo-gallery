@@ -16,7 +16,6 @@ which passes the pins as arguments) and by CI's two jobs (their pins step writes
 import argparse
 import hashlib
 import io
-import os
 import shutil
 import subprocess
 import sys
@@ -78,7 +77,7 @@ def install(url: str, sha256: str, version: str, prefix: Path) -> None:
             if (prefix / modules).exists():
                 shutil.rmtree(prefix / modules)
             shutil.move(str(stage / modules), str(prefix / modules))
-            os.replace(staged, prefix / program_name)
+            Path(staged).replace(prefix / program_name)
         finally:
             shutil.rmtree(stage, ignore_errors=True)
     print(f"ExifTool {reported} installed in {prefix}")

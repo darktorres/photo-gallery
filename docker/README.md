@@ -21,8 +21,8 @@ From the repository root, through the Justfile:
 `tools/linux.py` is what those recipes run. It builds an image when it is missing, passes the versions in, and mounts
 the repository. The images are built with the versions the Justfile pins (`just_version`,
 `cargo_deny_version`, `cargo_machete_version`, `cargo_modules_version`, `cargo_fuzz_version`, `sccache_version`,
-`qt_version`, `aqtinstall_commit`, `exiftool_version`, `exiftool_source_url`, `exiftool_source_sha256`) and the gungraun
-version in `Cargo.lock`, so each version is written once. (ruff is pinned in `tools/lint`.) Build the image by hand
+`qt_version`, `aqtinstall_commit`, `exiftool_version`, `exiftool_source_url`, `exiftool_source_sha256`, `uv_version`) and the
+gungraun version in `Cargo.lock`, so each version is written once. (ruff is pinned in the `lint` group of `pyproject.toml`.) Build the image by hand
 only through `linux-build`: without the build arguments the Dockerfile fails on purpose.
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs. The compiled

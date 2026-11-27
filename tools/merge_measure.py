@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_png:
         qualities.append(None)  # None means PNG (lossless): the pieces are not re-encoded
     if importlib.util.find_spec("PIL") is None:
-        print("Pillow is needed to read images: pip install pillow", file=sys.stderr)
+        print("Pillow is needed to read images: `uv sync` installs it (the tools group)", file=sys.stderr)
         return 2
     totals = {"correct": 0, "wrong": 0, "refused": 0}
     for path in args.images:

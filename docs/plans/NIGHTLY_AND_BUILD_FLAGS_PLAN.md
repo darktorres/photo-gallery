@@ -1,5 +1,7 @@
 # Plan: nightly features, build flags and stable performance levers
 
+<!-- markdownlint-disable-file MD060 -->
+
 ## Status
 
 Status as of 2026-11-14.

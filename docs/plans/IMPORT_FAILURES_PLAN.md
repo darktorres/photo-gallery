@@ -1,5 +1,7 @@
 # Plan: import-failure persistence (item 5)
 
+<!-- markdownlint-disable-file MD060 -->
+
 ## Status
 
 Items 1 to 4 are done and tested by hand, so their sections are removed from this file. Their commits are on `main`:

@@ -265,7 +265,10 @@ def summarize(path: Path) -> None:
                 total += fl(r, "in_bytes")
             else:
                 total += jt
-        print(f"    {q:>4} {statistics.median(ds):>+14.2f} {statistics.median(rs):>17.3f} {kept:>6} {total:>14,.0f} {100 * (total / base_total - 1):>+8.1f}%")
+        delta = 100 * (total / base_total - 1)
+        print(
+            f"    {q:>4} {statistics.median(ds):>+14.2f} {statistics.median(rs):>17.3f} {kept:>6} {total:>14,.0f} {delta:>+8.1f}%"
+        )
 
 
 def main() -> None:

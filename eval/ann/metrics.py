@@ -12,8 +12,6 @@ one labelled group), test (the rest). Bands are by the pair's exact cosine.
 from dataclasses import dataclass
 
 import numpy as np
-import torch
-from scipy.stats import beta
 
 from ann.data import EDITS, FLOOR, TIE, Base, K, pair_half, pair_keys
 
@@ -88,6 +86,8 @@ def truth(base: Base, sub: np.ndarray, gt: dict) -> Truth:
 
 def rescore(x: np.ndarray, cand: np.ndarray, chunk: int = 4096) -> tuple[np.ndarray, np.ndarray]:
     """Each row's candidates (local ids, -1 = none) sorted by exact cosine: (ids, sims), invalid ones at -inf."""
+    import torch  # the GPU eval stack; the scoring helpers above and the bench tests need only numpy
+
     xt = torch.from_numpy(x).cuda()
     out_i = np.empty(cand.shape, dtype=np.int64)
     out_s = np.empty(cand.shape, dtype=np.float32)
@@ -173,6 +173,8 @@ def missed(t: Truth, ids: np.ndarray, sims: np.ndarray, kprime: int) -> np.ndarr
 
 
 def clopper_pearson(successes: int, trials: int, conf: float = 0.95) -> tuple[float, float]:
+    from scipy.stats import beta  # scipy is in the eval stack, not in the numpy-only test environment
+
     a = (1 - conf) / 2
     lo = beta.ppf(a, successes, trials - successes + 1) if successes > 0 else 0.0
     hi = beta.ppf(1 - a, successes + 1, trials - successes) if successes < trials else 1.0

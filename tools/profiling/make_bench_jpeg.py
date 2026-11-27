@@ -8,7 +8,7 @@ a natural photo: most of the energy in low frequencies, so the decoder and the t
 seed and the contrast are fixed, so the file is the same on every run. Regenerating it changes the per-file baseline
 (docs/perf/baseline.json): re-measure after any change here.
 
-Needs numpy and Pillow, at the versions tools/shots/requirements.txt pins (the venv `just shots` makes from that file).
+Needs numpy and Pillow, at the versions the `tools` group of pyproject.toml pins (the repository's uv environment).
 """
 
 import argparse

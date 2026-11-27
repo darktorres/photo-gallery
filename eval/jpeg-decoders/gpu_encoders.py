@@ -69,7 +69,7 @@ def main():
                 )
                 tmp.replace(out)
         p = nv_params(75)
-        secs, _ = timed_s(lambda: enc.encode(img, "jpeg", params=p))
+        secs, _ = timed_s(lambda img=img, p=p: enc.encode(img, "jpeg", params=p))
         nvms = secs * 1e3 / mp
         r = subprocess.run(
             [a.gpujpeg, "-v", "-n", "20", "-e", "-q", "75", "--subsampled=4:4:4", "-i", str(ppm), str(W / "speed-gpujpeg.jpg")],

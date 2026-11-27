@@ -1,5 +1,7 @@
 # Notifications ledger: what is still open
 
+<!-- markdownlint-disable-file MD060 -->
+
 The notifications plan was implemented at `e634c83`. This ledger lists what is still not done or incomplete.
 
 It was first checked on 2026-11-14 at HEAD `472eaf5`, then validated row by row by four independent reviews. It was

@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
@@ -99,16 +100,17 @@ LINT_DIR = REPO / "tools" / "lint"
 
 
 def lint_pins() -> dict[str, str]:
-    """The versions CI installs, from the lockfiles: ruff (requirements.txt) and markdownlint-cli (package-lock.json)."""
+    """The versions CI installs: ruff (the `lint` group of pyproject.toml) and markdownlint-cli (package-lock.json)."""
     pins = {}
-    for line in (LINT_DIR / "requirements.txt").read_text(encoding="utf-8").splitlines():
-        match = re.match(r"^ruff==(\S+)", line)
+    group = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["dependency-groups"]["lint"]
+    for requirement in group:
+        match = re.match(r"^ruff==(\S+)$", requirement)
         if match:
             pins["ruff"] = match.group(1)
     lock = json.loads((LINT_DIR / "package-lock.json").read_text(encoding="utf-8"))
     pins["markdownlint"] = lock["packages"]["node_modules/markdownlint-cli"]["version"]
     if "ruff" not in pins:
-        sys.exit("pgtools: tools/lint/requirements.txt pins no ruff version")
+        sys.exit("pgtools: the lint group of pyproject.toml pins no ruff version")
     return pins
 
 

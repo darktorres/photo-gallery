@@ -20,12 +20,14 @@ os.environ["PG_CACHE_DIR"] = str(_ROOT / "cache")
 
 import numpy as np  # noqa: E402 (after the environment above)
 
-import bench_ann  # noqa: E402 (after the environment above)
-import bench_hdd  # noqa: E402 (after the environment above)
-
-# common.py keeps the folders this module set. Drop it from the import cache, so a test module that imports it next
-# (test_viewer, which sets its own folders) gets a fresh one. The benches above keep the module they were given.
-sys.modules.pop("common", None)
+try:
+    import bench_ann
+    import bench_hdd
+finally:
+    # common.py keeps the folders this module set. Drop it from the import cache, so a test module that imports it next
+    # (test_viewer, which sets its own folders) gets a fresh one, even when an import above fails. The benches keep the
+    # module they were given.
+    sys.modules.pop("common", None)
 
 ORDERS = ["path", "mft", "lcn", "random", "path_qd8", "lcn_qd8"]
 

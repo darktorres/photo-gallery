@@ -2,18 +2,27 @@
 #   - the actions in .github/workflows: the commit each one is pinned to, and the tag named in its comment;
 #   - the crates.io crates of each Cargo workspace: the app (the root), and the three outside it (eval/jpeg-decoders,
 #     eval/png-decoders and fuzz, each with its own Cargo.lock);
-#   - the Python packages in tools/shots/requirements.txt, and the lint tools in tools/lint (ruff, with its hashes, and
-#     markdownlint-cli, with its lockfile).
+#   - the Python packages in pyproject.toml's groups (uv.lock), and the lint tools: ruff in its lint group, and
+#     markdownlint-cli in tools/lint (with its lockfile).
 # Minor and patch updates of a workspace come as one pull request. Not covered: the git-sourced forks in the root
 # Cargo.toml's [patch] (fork-updates.yml reports them), the Qt, FFmpeg, ExifTool and tool pins in the Justfile (read by
-# CI's pins step), and the two pip requirements files of eval/ (eval/requirements.txt and eval/jpeg-decoders/requirements.txt,
-# with exact pins). The Cargo workspaces under eval/ are listed above.
+# CI's pins step). The Python packages are the groups of pyproject.toml, locked in uv.lock (the uv entry below). The Cargo
+# workspaces under eval/ are listed above.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: cargo
     directory: /

@@ -1,5 +1,7 @@
 # Web client: technical decisions and spike results
 
+<!-- markdownlint-disable-file MD060 -->
+
 Recorded decisions for the open points that need no owner input (the B list), with the spike results (C list) that
 checked the premises they rest on. Checked on 2026-11-14 against this repo and the local toolchain. Where a decision
 supersedes text in `WEB_CLIENT.md`, `WEB_CLIENT_DESIGN.md` or `WEB_CLIENT_RECONCILED.md`, the text names it. The owner

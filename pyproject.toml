@@ -13,6 +13,11 @@ package = false
 default-groups = ["tools", "lint"]
 # The lock covers the platforms the scripts run on: Windows (this machine) and Linux (the container and CI).
 environments = ["sys_platform == 'win32'", "sys_platform == 'linux'"]
+# The eval stack and the ModelOpt quantization pin onnxruntime-gpu differently (1.31.1 for eval, 1.22.0 for ModelOpt 0.48.0
+# on Windows), so they are locked as separate resolutions. Each is installed into its own environment.
+conflicts = [
+    [{ group = "eval" }, { group = "quant" }],
+]
 
 # The PyTorch CUDA wheels and the NVIDIA TensorRT wheels come from their own indexes. Each is `explicit`, so only the
 # packages assigned to it below are looked up there; everything else resolves from PyPI.
@@ -39,11 +44,24 @@ tools = [
     "numpy==2.5.5",
     "pillow==13.0.0",
 ]
-# The lint's Python tool, at CI's pin (tools/lint/requirements.txt, with hashes in uv.lock).
+# The lint's Python tools, at CI's pins (uv.lock holds their hashes).
 lint = [
+    "pyflakes==4.1.0",
     "ruff==0.17.5",
 ]
-# The JPEG decoder harness (eval/jpeg-decoders/requirements.txt).
+# The eval image's Python packages (docker/Dockerfile, the eval stage): the ANN worker's numpy, FAISS and USearch, and Pillow
+# for the JPEG encoder comparison. The same pins as the eval group, which is the Windows GPU stack.
+eval-linux = [
+    "faiss-cpu==1.15.1",
+    "numpy==2.5.5",
+    "pillow==13.0.0",
+    "usearch==2.26.6",
+]
+# The ONNX quantization of eval/accel.py (NVIDIA ModelOpt, int8 Q/DQ). Its own environment: see `conflicts` above.
+quant = [
+    "nvidia-modelopt[onnx]==0.48.0",
+]
+# The JPEG decoder harness (nvImageCodec and its nvJPEG wheel): its own environment, `just jpeg-env`.
 jpeg-decoders = [
     "numpy==2.5.5",
     "nvidia-libnvcomp-cu13==6.0.0.12",
@@ -53,7 +71,7 @@ jpeg-decoders = [
     "nvidia-nvtiff-cu13==0.9.0.86",
     "pillow==13.0.0",
 ]
-# The GPU eval stack (eval/requirements.txt): torch, TensorRT, and the rest of the model and image libraries.
+# The GPU eval stack: torch, TensorRT, and the rest of the model and image libraries. Its environment: `just eval-env`.
 eval = [
     "annotated-doc==0.0.5",
     "anyio==4.15.1",

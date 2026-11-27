@@ -4,6 +4,10 @@
 # benches and the fuzzer on top of it; `eval` adds the eval's Linux parts (eval/ann's CPU worker, the JPEG comparisons).
 # The base image is pinned by digest (the index: `docker buildx imagetools inspect ubuntu:26.04`), so a rebuild does not
 # change it under the pinned versions. Moving to a newer one is a commit, with its digest.
+# uv's own image, for uv's binary: the base stage copies it. Docker needs the version in a global ARG to name the image.
+ARG UV_VERSION
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS base
 
 ARG JUST_VERSION
@@ -23,6 +27,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     PG_REQUIRE_TOOLS=1 \
+    UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+    UV_PROJECT_ENVIRONMENT=/opt/pg-venv \
     QT_QPA_PLATFORM=offscreen \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
     CARGO_HOME=/home/pg/.cargo \
@@ -58,21 +64,27 @@ RUN useradd --uid 1001 --create-home --shell /bin/bash pg
 # Git reads the repository from the bind mount, which belongs to the host user. System scope, so every user gets it.
 RUN git config --system --add safe.directory '*'
 
-# Qt (the Justfile's qt_version) for Linux, with qtmultimedia, from the aqtinstall commit that CI's Windows job also pins. Installed as root
-# into /opt, which every user reads.
-RUN python3 -m venv /opt/aqt \
- && /opt/aqt/bin/pip install --quiet "git+https://github.com/miurahr/aqtinstall.git@${AQTINSTALL_COMMIT}" \
- && /opt/aqt/bin/aqt install-qt --outputdir /opt/Qt linux desktop ${QT_VERSION} linux_gcc_64 --modules qtmultimedia
+# uv, pinned in the Justfile (uv_version): it runs every recipe's Python (`uv run`, from the repository's pyproject.toml and
+# uv.lock), installs the lint group, and installs the Qt installer below. Copied from uv's own image, so nothing is installed
+# with pip to get it.
+COPY --from=uv /uv /usr/local/bin/uv
 
-# The Python and Markdown lint tools, pinned in tools/lint: ruff by the hashes of its files (requirements.txt), and
-# markdownlint-cli by its lockfile (npm ci). Installed as root, read by every user.
-COPY tools/lint/requirements.txt tools/lint/package.json tools/lint/package-lock.json /opt/lint-src/
-RUN python3 -m venv /opt/lint \
- && /opt/lint/bin/pip install --quiet --require-hashes -r /opt/lint-src/requirements.txt \
+# Qt (the Justfile's qt_version) for Linux, with qtmultimedia: aqtinstall as a uv tool, from the commit that CI's Windows job also
+# pins. Installed as root into /opt, which every user reads; the tool's binary goes to /usr/local/bin.
+RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "aqtinstall @ git+https://github.com/miurahr/aqtinstall.git@${AQTINSTALL_COMMIT}" \
+ && aqt install-qt --outputdir /opt/Qt linux desktop ${QT_VERSION} linux_gcc_64 --modules qtmultimedia
+
+# The Python and Markdown lint tools: ruff in the lint group of pyproject.toml (uv.lock holds its hashes), and markdownlint-cli
+# by its lockfile (npm ci). Installed as root, read by every user. The interpreter is uv's, the version .python-version names.
+COPY pyproject.toml uv.lock .python-version /opt/lint-src/
+COPY tools/lint/package.json tools/lint/package-lock.json /opt/lint-src/
+RUN uv python install "$(cat /opt/lint-src/.python-version)" \
+ && cd /opt/lint-src \
+ && UV_PROJECT_ENVIRONMENT=/opt/lint uv sync --frozen --only-group lint \
  && npm ci --prefix /opt/lint-src --no-audit --no-fund
 
 # The directories the volumes are mounted on, owned by `pg`: a new named volume starts with its directory's owner.
-RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registry /home/pg/.cargo/git /bench /sccache
+RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registry /home/pg/.cargo/git /bench /sccache /opt/pg-venv
 
 # The toolchain file, and the rustup step that installs what it names (the pinned nightly, its components and target).
 COPY rust-toolchain.toml /opt/pg/rust-toolchain.toml
@@ -133,20 +145,17 @@ RUN RUSTC_WRAPPER= cargo install gungraun-runner --version ${GUNGRAUN_VERSION} \
  && RUSTC_WRAPPER= cargo install --locked cargo-fuzz --version ${CARGO_FUZZ_VERSION}
 
 # The eval's Linux parts: the packages the
-# JPEG builds and runs need (apt-packages-eval.txt), and a venv with the Python packages the scripts import, at the versions
-# eval/requirements.txt pins (EVAL_PACKAGES, passed by the launcher). /eval is the pg-eval volume's mount point.
+# JPEG builds and runs need (apt-packages-eval.txt), and a venv with the Python packages the scripts import: the eval-linux
+# group of pyproject.toml, synced from uv.lock. /eval is the pg-eval volume's mount point.
 FROM tools AS eval
-
-ARG EVAL_PACKAGES
 
 USER root
 COPY docker/apt-packages-eval.txt /opt/pg/apt-packages-eval.txt
 RUN apt-get update \
  && grep -v '^#' /opt/pg/apt-packages-eval.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
-RUN test -n "${EVAL_PACKAGES}" \
- && python3 -m venv /opt/eval \
- && /opt/eval/bin/pip install --quiet ${EVAL_PACKAGES} \
+RUN cd /opt/lint-src \
+ && UV_PROJECT_ENVIRONMENT=/opt/eval uv sync --frozen --only-group eval-linux \
  && install -d -o pg -g pg /eval
 
 USER pg

@@ -14,8 +14,8 @@ scripts load `.env` themselves; a variable already set in the environment wins o
 - Data: `$PG_ROOT\datasets\pinterest` (a copy of the source folder)
 - Outputs: `$PG_ROOT\eval` (embeddings, results, CSVs)
 - Model and pip caches: `$PG_ROOT\cache` (keep it on a disk with room)
-- Environment: `$PG_ROOT\venv-eval` (CUDA PyTorch; the global Python has CPU-only torch). Its packages are pinned in
-  `eval/requirements.txt`: `python -m pip install -r eval/requirements.txt` into a fresh venv on Python 3.12.
+- Environment: `$PG_ROOT\venv-eval` (CUDA PyTorch; the global Python has CPU-only torch). Its packages are the `eval` group
+  of `pyproject.toml`, locked in `uv.lock`: `just eval-env` syncs them into that folder.
 
 Each of these can be overridden by its own variable: `PG_DATA_ROOT`, `PG_WORK_DIR`, `PG_CACHE_DIR`, `PG_TOOLS_DIR`,
 `PG_QUANT_PYTHON`, `PG_TRT10_DIR` (see `.env.example`).
@@ -82,9 +82,9 @@ int8 graph with `PG_WORK_DIR` on the subset, so the calibration images come from
 this venv:
 
 - Only to rebuild the int8 graph (for the comparison runs; the built graph and engine stay in the cache):
-  `$PG_ROOT\venv-quant` (its python is `PG_QUANT_PYTHON`) with NVIDIA ModelOpt (`python -m venv` it, then
-  `pip install "nvidia-modelopt[onnx]"`). It pins older onnx / onnxruntime versions, hence its own venv. Removed after
-  the int8 evaluation.
+  `$PG_ROOT\venv-quant` (its python is `PG_QUANT_PYTHON`): `just quant-env` syncs the `quant` group of `pyproject.toml`
+  (NVIDIA ModelOpt 0.48.0). ModelOpt pins onnxruntime-gpu 1.22.0 on Windows, which the eval group's 1.31.1 cannot share,
+  hence its own environment. Removed after the int8 evaluation.
 - `$PG_ROOT\tools\tensorrt-10.16.1.11-cu13` (`PG_TRT10_DIR`): TensorRT 10 DLLs (the `tensorrt-cu13-libs` wheel from
   pypi.nvidia.com, unpacked) for ONNX Runtime's TensorRT provider, which is built against TensorRT 10.
 - The venv is on CUDA 13 (torch 2.15 cu134, onnxruntime-gpu 1.31.1, `tensorrt-cu13`), which needs NVIDIA

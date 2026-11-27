@@ -136,8 +136,7 @@ def main() -> None:
         "msvc_toolset": MSVC_TOOLSET,
         "configure": cmake_args[:-1],
         "libraries": [
-            {"path": lib.relative_to(prefix).as_posix(), "bytes": lib.stat().st_size, "sha256": sha256(lib)}
-            for lib in libraries
+            {"path": lib.relative_to(prefix).as_posix(), "bytes": lib.stat().st_size, "sha256": sha256(lib)} for lib in libraries
         ],
     }
     (work / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

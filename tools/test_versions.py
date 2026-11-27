@@ -47,11 +47,7 @@ class VersionRegistry(unittest.TestCase):
         self.registry = registry_names(REGISTRY_FILE.read_text(encoding="utf-8"))
         self.files = {path: path.read_text(encoding="utf-8", errors="replace") for path in sources()}
         # The owners' reads are looked for in production code only, as the boundary rules read it.
-        self.owners = {
-            path: code_only(text)
-            for path, text in boundaries.production_files().items()
-            if path != REGISTRY_FILE
-        }
+        self.owners = {path: code_only(text) for path, text in boundaries.production_files().items() if path != REGISTRY_FILE}
 
     def test_the_scan_finds_a_version_constant_and_skips_the_rest(self):
         self.assertEqual(version_constants("pub const IMPORT_VERSION: i64 = 3;"), ["IMPORT_VERSION"])

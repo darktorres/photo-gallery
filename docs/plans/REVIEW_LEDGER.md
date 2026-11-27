@@ -1,5 +1,7 @@
 # Review ledger: the 2026-11-08 review of the plan work
 
+<!-- markdownlint-disable-file MD060 -->
+
 A ledger of the findings from the review of commits `b700665..HEAD` against the plan
 (`C:\Users\Torres\.claude\plans\lets-fix-all-the-woolly-allen.md`) and the findings in `docs/CODE_REVIEW.md` (deleted in
 2cfe50c). The review was read-only: nothing it lists had been fixed when it was written.

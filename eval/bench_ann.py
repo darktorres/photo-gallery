@@ -18,6 +18,7 @@ import gc
 import json
 import os
 import time
+from itertools import pairwise
 
 import numpy as np
 
@@ -201,7 +202,7 @@ def score_search(found: np.ndarray, exact: dict, partners: np.ndarray, cos: np.n
     ex = exact["ids"]
     recall = np.mean([len(set(found[i]) & set(ex[i])) / K for i in range(len(ex))])
     hit = np.array([partners[i] in set(found[i]) for i in range(len(ex))])
-    bands = {f"{a:.1f}-{b:.1f}": float(hit[(cos >= a) & (cos < b)].mean()) for a, b in zip(BANDS[:-1], BANDS[1:])}
+    bands = {f"{a:.1f}-{b:.1f}": float(hit[(cos >= a) & (cos < b)].mean()) for a, b in pairwise(BANDS)}
     return {"recall_at_10": float(recall), "partners_found": float(hit[cos >= FLOOR].mean()), "bands": bands}
 
 

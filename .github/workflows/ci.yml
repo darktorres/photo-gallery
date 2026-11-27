@@ -205,9 +205,6 @@ jobs:
 
       - name: Eval tools tests (stdlib unittest; the viewer imports Pillow, the bench tests import numpy)
         run: |
-          # The Pillow and numpy pins are read from eval/requirements.txt, the one place they are written. The rest of that
-          # file is the GPU venv (torch, TensorRT, two extra indexes), which CI does not install.
-          python tools/ci/eval_pins.py install
           just test-eval
 
       - name: Screenshot comparison against the newest committed reference
@@ -221,9 +218,9 @@ jobs:
         run: |
           # The comparison uses the newest reference in this commit's history (tools/compare_shots.py). The checkout is
           # shallow, which holds only the merge commit, so the history is fetched first. A pull request's merge commit
-          # includes main, so main's reference is found. --python: the Python 3.12 that setup-python put on PATH.
+          # includes main, so main's reference is found. `just shots` runs under the repository's uv environment.
           if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --unshallow --quiet; fi
-          just shots --python python
+          just shots
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
@@ -388,13 +385,5 @@ jobs:
       - name: Python tools tests (stdlib unittest, tools/test_*.py)
         run: just test-tools
 
-      # The same pinned Python as the Windows job, for the eval tests' packages (the pins are read from eval/requirements.txt).
-      - name: Python for the eval tests (the pinned version)
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12.10"
-
       - name: Eval tools tests (stdlib unittest; the viewer imports Pillow, the bench tests import numpy)
-        run: |
-          python3 tools/ci/eval_pins.py install
-          just test-eval
+        run: just test-eval

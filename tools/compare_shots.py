@@ -34,14 +34,14 @@ when the window has settled (cpp/screenshot.cpp: ready, no image loading, no one
 for 300 ms). --wait is the most to wait for that; a run that reaches it is reported UNSETTLED and not compared. Each run's
 settle log is <png>.settle.txt, with what the check saw.
 
-The script re-runs itself under target/shots/venv (Pillow and numpy, from tools/shots/requirements.txt), so the global
-Python is not changed. The Python that makes the venv is --python, else PG_PYTHON from the environment (or .env), else
-python on Windows and python3 elsewhere (the Justfile's default). The Qt kit is PG_QT_DIR (from the environment or .env);
-the FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
+The script runs under the repository's uv environment (`just shots` runs it with `uv run`; Pillow and numpy are the `tools`
+group of pyproject.toml), so the global Python is not changed. The Qt kit is PG_QT_DIR (from the environment or .env); the
+FFmpeg folder is FFMPEG_DIR, else .deps/ffmpeg.
 """
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -52,16 +52,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from pgtools import QT_DIR_HOW, REPO, WINDOWS, default_python, load_env_file, not_set, run, sha256
+from pgtools import QT_DIR_HOW, REPO, WINDOWS, load_env_file, not_set, run, sha256
 
 HERE = Path(__file__).resolve().parent
 SHOTS = REPO / "target" / "shots"
 LIBRARY = SHOTS / "library"
 PRISTINE = SHOTS / "library-pristine"
-VENV = SHOTS / "venv"
-VENV_PYTHON = VENV / ("Scripts" if WINDOWS else "bin") / ("python.exe" if WINDOWS else "python")
 FIXTURE_PY = HERE / "shots" / "fixture.py"
-REQUIREMENTS = HERE / "shots" / "requirements.txt"
 REF_ROOT = HERE / "shots" / "reference"
 # The broken template's library folder: the committed files under tools/shots/broken, copied to a fixed place (not the
 # repo's, which is a worktree's when recording), since the expanded inbox shows the file's path.
@@ -276,7 +273,7 @@ def manifest_fixtures(manifest: dict) -> dict[str, str]:
 
 
 def fixture_step(*args: str) -> None:
-    result = subprocess.run([str(VENV_PYTHON), str(FIXTURE_PY), *args], check=False)
+    result = subprocess.run([sys.executable, str(FIXTURE_PY), *args], check=False)
     if result.returncode != 0:
         sys.exit(f"fixture.py {args[0]} failed ({result.returncode})")
 
@@ -635,19 +632,11 @@ def scenarios_matching(names: list[str]) -> tuple[dict[str, Scenario], dict[str,
     return scenarios, pseudo
 
 
-def bootstrap(python: str) -> None:
-    """Makes target/shots/venv if it is missing, installs the fixture's packages, and runs this script under it."""
-    if not VENV_PYTHON.exists() and subprocess.run([python, "-m", "venv", str(VENV)], check=False).returncode != 0:
-        sys.exit(f"venv failed (is {python} Python 3.12?)")
-    pip = [str(VENV_PYTHON), "-m", "pip", "install", "--quiet", "-r", str(REQUIREMENTS)]
-    if subprocess.run(pip, check=False).returncode != 0:
-        sys.exit("pip install failed")
-    child = subprocess.run(
-        [str(VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
-        env={**os.environ, "PG_SHOTS_CHILD": "1"},
-        check=False,
-    )
-    sys.exit(child.returncode)
+def require_packages() -> None:
+    """Fails with the fix when the fixture's packages (Pillow and numpy, the `tools` group) are not importable here."""
+    for module in ("numpy", "PIL"):
+        if importlib.util.find_spec(module) is None:
+            sys.exit(f"{module} is not installed: run `just shots`, which runs this script under the repository's uv environment")
 
 
 def main() -> None:
@@ -660,7 +649,6 @@ def main() -> None:
     parser.add_argument("--wait", type=float, default=10.0, help="the most to wait for a settled window, in seconds")
     parser.add_argument("--only", default="", help="comma-separated scenario names to run")
     parser.add_argument("--expect", default="", help="comma-separated scenarios declared to differ: reported, not failures")
-    parser.add_argument("--python", default="", help="the venv's Python (default PG_PYTHON, else python3, python on Windows)")
     args = parser.parse_args()
     if args.record and args.self:
         sys.exit("--record and --self do not go together")
@@ -684,8 +672,7 @@ def main() -> None:
     os.environ["PATH"] = os.pathsep.join([*path, os.environ.get("PATH", "")])
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-    if os.environ.get("PG_SHOTS_CHILD") != "1":
-        bootstrap(args.python or os.environ.get("PG_PYTHON") or default_python())  # exits: the rest runs under the venv's Python
+    require_packages()
 
     scenarios, pseudo = scenarios_matching([name for name in args.only.split(",") if name])
     expect = [name for name in args.expect.split(",") if name]

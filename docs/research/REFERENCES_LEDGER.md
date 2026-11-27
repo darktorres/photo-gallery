@@ -1,5 +1,7 @@
 # References ledger
 
+<!-- markdownlint-disable-file MD060 -->
+
 Reference links saved for this repository. Recorded 2026-11-11; each row has a finding from a fetch on that date. The
 list is the user's; the grouping is ours. The last section, "Papers kept as excerpts", covers the files in `papers/`;
 it was recorded 2026-11-13 from the PDFs and the saved article those excerpts were taken from.

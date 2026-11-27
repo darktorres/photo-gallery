@@ -97,7 +97,7 @@ fmt:
     ruff format .
     {{ py }} tools/format_qml.py
 
-# The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);
+# The lint tools' versions. ruff is pinned in the lint group of pyproject.toml (uv.lock), markdownlint in tools/lint (its lockfile);
 # cargo-deny, cargo-machete and cargo-modules are pinned here, and CI's install step names the same three.
 cargo_deny_version := "0.21.0"
 cargo_machete_version := "0.10.1"
@@ -107,6 +107,8 @@ cargo_machete_version := "0.10.1"
 # installed. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).
 # qt_version is the Qt kit for the Linux container and for CI's Windows job (PG_QT_DIR is derived from it).
 just_version := "1.59.0"
+# uv, which runs every recipe's Python (pyproject.toml, uv.lock) and installs the lint group. CI and the image install this release.
+uv_version := "0.11.7"
 cargo_fuzz_version := "0.13.2"
 # sccache, the container's compiler cache (RUSTC_WRAPPER in docker/Dockerfile; its cache is the pg-sccache volume).
 sccache_version := "0.20.1"
@@ -130,7 +132,7 @@ qt_version := "6.12.0"
 # The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
 aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
 
-# ruff goes in `.venv` and markdownlint in `tools/lint/node_modules` (both git-ignored), so other projects on this machine
+# ruff goes in `.venv` (uv sync, the lint group) and markdownlint in `tools/lint/node_modules` (both git-ignored), so other projects on this machine
 # keep their own versions. Run it once, and again after a pin changes.
 
 # Installs ruff and markdownlint at their pinned versions, inside the repository (tools/check_lint_tools.py --install).
@@ -147,7 +149,7 @@ _qt:
 # included, so a `just` other than CI's is caught the first time a recipe runs).
 [private]
 _lint-tools:
-    {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }} --just {{ just_version }} --cargo-modules {{ cargo_modules_version }}
+    {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }} --just {{ just_version }} --cargo-modules {{ cargo_modules_version }} --uv {{ uv_version }}
 
 # Every check: formatting, clippy, the crate boundaries (tools/boundaries.py: the crate layers, acyclic dev
 # edges, re-exports, platform code), the Python, the Markdown and the QML (tools/lint.py, every OS). cargo-machete reads
@@ -194,6 +196,24 @@ modgraph-report: _qt
 # that are expected to differ; `--self` runs the working tree against itself; `--only a,b` runs some scenarios.
 shots *args: _qt
     {{ py }} tools/compare_shots.py {{ args }}
+
+# The GPU environments of the eval scripts, each synced from uv.lock into the folder its scripts read (eval/README.md,
+# eval/accel.py, eval/jpeg-decoders). Windows only, as the GPU stack is. PG_ROOT comes from .env; PG_JPEG_EVAL defaults to
+# PG_ROOT\tools\jpeg-eval (eval/jpeg-decoders/win_env.py).
+pg_root := env('PG_ROOT', '')
+jpeg_eval := env('PG_JPEG_EVAL', pg_root / 'tools' / 'jpeg-eval')
+
+[windows]
+eval-env:
+    set "UV_PROJECT_ENVIRONMENT={{ pg_root }}/venv-eval" && uv sync --frozen --only-group eval
+
+[windows]
+quant-env:
+    set "UV_PROJECT_ENVIRONMENT={{ pg_root }}/venv-quant" && uv sync --frozen --only-group quant
+
+[windows]
+jpeg-env:
+    set "UV_PROJECT_ENVIRONMENT={{ jpeg_eval }}/venv" && uv sync --frozen --only-group jpeg-decoders
 
 # The QML tests: Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
 # components staged as the pg.gallery module (tools/qmltest.py). The stubs stand in for the Rust types, so the tests

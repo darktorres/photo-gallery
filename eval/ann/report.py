@@ -68,7 +68,7 @@ def true_duplicate_recall(base: Base) -> dict:
     # the point total (so the total and the recall are withheld) and nothing to the lower bound, which stays valid.
     total = total_lo = 0.0
     unsampled = 0
-    for ki, b in sorted(set(zip(kind.tolist(), band.tolist()))):
+    for ki, b in sorted(set(zip(kind.tolist(), band.tolist(), strict=True))):
         count = int(((kind == ki) & (band == b)).sum())
         v = strata.get((metrics.KINDS[ki], b))
         if not v:

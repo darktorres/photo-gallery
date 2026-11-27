@@ -1,5 +1,7 @@
 # Review ledger: the crate refactor
 
+<!-- markdownlint-disable-file MD060 -->
+
 Open findings from the review of the crate refactor's code. Each row gives the code, the problem and the next step.
 
 - **Code reviewed:** the workspace at `40cceb4`, and the Rust crates at `c552170` (2026-11-04). Findings on `crates/app/src/yandex.rs`, `crates/desktop/src/yandex.rs` and `crates/desktop/qml/YandexPanel.qml` may change, since those files had uncommitted changes then.

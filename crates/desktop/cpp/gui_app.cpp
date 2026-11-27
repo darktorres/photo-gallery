@@ -46,7 +46,8 @@ QString requested_platform(int argc, char** argv) {
 // QT_QPA_FONTDIR, or else from <Qt>/lib/fonts, which a Windows Qt install doesn't have: the text would draw as empty
 // boxes. So when the platform is offscreen and no font folder is given, the Windows fonts folder is used. It is set here
 // because Qt reads it when the application's font database is made, and only the C runtime's environment is read by Qt.
-void use_windows_fonts_for_offscreen(int argc, char** argv) {
+// The arguments are read only on Windows, where the body below is compiled in.
+void use_windows_fonts_for_offscreen([[maybe_unused]] int argc, [[maybe_unused]] char** argv) {
 #ifdef Q_OS_WIN
     if (requested_platform(argc, argv) != "offscreen" || qEnvironmentVariableIsSet("QT_QPA_FONTDIR"))
         return;

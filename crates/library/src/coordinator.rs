@@ -563,9 +563,8 @@ impl Lanes {
         }
         let weak = Arc::downgrade(self);
         let ending = retiring.clone();
-        let spawned = std::thread::Builder::new()
-            .name("lane retire".into())
-            .spawn(move || finish_retired(&weak, ending));
+        let spawned =
+            std::thread::Builder::new().name("lane retire".into()).spawn(move || finish_retired(&weak, ending));
         // No thread to end them on: they are ended here, which waits as the coordinator's own round would.
         if spawned.is_err() {
             finish_retired(&Arc::downgrade(self), retiring);

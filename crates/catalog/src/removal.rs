@@ -155,11 +155,7 @@ impl Catalog {
 
     /// [`Catalog::drive_removals`] for the one marker at `path`: the other removals are left as they are, and their
     /// markers stay for their own drives.
-    pub(crate) fn drive_removal(
-        &self,
-        path: &RulePath,
-        before_page: &mut dyn FnMut(&[i64]) -> bool,
-    ) -> Result<Driven> {
+    pub(crate) fn drive_removal(&self, path: &RulePath, before_page: &mut dyn FnMut(&[i64]) -> bool) -> Result<Driven> {
         let mut driven = Driven::default();
         for marker in self.removal_markers()?.into_iter().filter(|m| self.rules.same(&m.path, path)) {
             if !drive_one(self, &marker.path, before_page, &mut driven)? {

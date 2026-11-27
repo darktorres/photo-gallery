@@ -175,14 +175,25 @@ impl Maker {
 
     /// [`Maker::make`], with the size of the full image, upright as `turns` and its orientation make it (width, height),
     /// as the decode read it from the file.
-    pub fn make_sized(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<(Vec<u8>, (u32, u32)), MakeError> {
+    pub fn make_sized(
+        &mut self,
+        bytes: &[u8],
+        height: usize,
+        turns: Turns,
+    ) -> Result<(Vec<u8>, (u32, u32)), MakeError> {
         let mut out = Vec::new();
         let result = self.then_trim(|maker| maker.make_image(bytes, height, turns, &mut out));
         result.map(|size| (out, size)).map_err(MakeError::Undecodable)
     }
 
     /// The thumbnail of `bytes` into `out`; returns the full image's upright size (width, height).
-    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> crate::Result<(u32, u32)> {
+    fn make_image(
+        &mut self,
+        bytes: &[u8],
+        height: usize,
+        turns: Turns,
+        out: &mut Vec<u8>,
+    ) -> crate::Result<(u32, u32)> {
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         // The decode is left as stored: the thumbnail's scale comes before its turn, so the turn touches the thumbnail
         // and not the decoded image, which is several times its size.

@@ -802,11 +802,8 @@ mod tests {
     #[test]
     fn a_clear_with_nothing_stored_reads_the_kind_index() {
         let c = catalog(PathRules::Posix);
-        let plan = raw::query_plan(
-            &c,
-            KEYS_IN_SCOPE,
-            params!["scan-note", Option::<i64>::None, Option::<String>::None],
-        );
+        let plan =
+            raw::query_plan(&c, KEYS_IN_SCOPE, params!["scan-note", Option::<i64>::None, Option::<String>::None]);
         assert!(plan.contains("notices_kind_root"), "{plan}");
         let changes = c.conn.total_changes();
         assert!(!c.clear_notices(&Key::all("edit-failed", None)).unwrap());

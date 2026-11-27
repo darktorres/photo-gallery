@@ -90,7 +90,9 @@ pub(crate) fn take_for_delete(path: &Path) -> io::Result<Option<HeldLock>> {
     match open_for_delete(path, false) {
         Ok(lock) => Ok(Some(lock)),
         // Another open of the file holds it (a sharing violation), or it is being deleted (access denied): not ours.
-        Err(err) if matches!(err.raw_os_error(), Some(windows::ERROR_SHARING_VIOLATION | windows::ERROR_ACCESS_DENIED)) => {
+        Err(err)
+            if matches!(err.raw_os_error(), Some(windows::ERROR_SHARING_VIOLATION | windows::ERROR_ACCESS_DENIED)) =>
+        {
             Ok(None)
         }
         Err(err) => Err(err),

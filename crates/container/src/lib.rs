@@ -335,7 +335,8 @@ pub fn png_import_bytes<R: Read + Seek>(file: &mut R) -> io::Result<Option<Vec<u
     };
     let mut out = head.get(..idat_at).unwrap_or_default().to_vec();
     png_zero_idat(&mut out);
-    let Some(first_end) = png_chunk_end(idat_at, idat_len).filter(|&end| end.saturating_add(PNG_FRAMING) <= size) else {
+    let Some(first_end) = png_chunk_end(idat_at, idat_len).filter(|&end| end.saturating_add(PNG_FRAMING) <= size)
+    else {
         return Ok(None);
     };
     // The second chunk's header gives the grid: in the head, read on its own when it is before the tail, or in the tail.

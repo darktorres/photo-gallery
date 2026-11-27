@@ -218,7 +218,8 @@ mod tests {
     #[test]
     fn a_file_name_stays_in_the_session_folder() {
         assert!(is_session_file_name("one.png"));
-        let escapes = ["", "..", "../x.png", "sub/x.png", "sub\\x.png", "C:x.png", "C:\\x.png", "\\\\server\\x.png", "/x.png"];
+        let escapes =
+            ["", "..", "../x.png", "sub/x.png", "sub\\x.png", "C:x.png", "C:\\x.png", "\\\\server\\x.png", "/x.png"];
         for name in escapes {
             assert!(!is_session_file_name(name), "{name:?} would leave the session folder");
         }

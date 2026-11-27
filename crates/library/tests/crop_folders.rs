@@ -24,7 +24,6 @@ fn jpeg(pixel: [u8; 3]) -> Result<Vec<u8>> {
     pg_codec::fixtures::encode(320, 240, &rgb, pg_codec::fixtures::Encoding::Jpeg).map_err(Into::into)
 }
 
-
 /// A library at `dir\images`, with two folders: `Acme Inc.` (its name ends in a dot) and its sibling `Acme Inc`, each
 /// with an `a.jpg`. Scanned, imported and with the borders found. Returns the catalog, the dotted folder's file and the
 /// sibling's.

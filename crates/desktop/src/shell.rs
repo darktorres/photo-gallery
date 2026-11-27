@@ -593,8 +593,8 @@ impl qobject::Shell {
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
                 worker::run(move || {
-                    app::observe(Op::Session, save_session(app::get().views(), &listing), |e| Notice::SessionNotSaved {
-                        error: app::error_text(e),
+                    app::observe(Op::Session, save_session(app::get().views(), &listing), |e| {
+                        Notice::SessionNotSaved { error: app::error_text(e) }
                     });
                 });
             }

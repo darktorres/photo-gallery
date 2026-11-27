@@ -112,9 +112,11 @@ fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
 }
 
 fn wait_for_queue(c: &Catalog) {
-    pg_testkit::wait_until(Duration::from_secs(60), || "writes still queued", || {
-        state::writes_still_tried(c).unwrap() == 0
-    });
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "writes still queued",
+        || state::writes_still_tried(c).unwrap() == 0,
+    );
 }
 
 #[test]
@@ -966,9 +968,11 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         Writer::start(catalog_path.clone(), thumbs.clone(), Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
 
-    pg_testkit::wait_until(Duration::from_secs(60), || "the finished copy is still queued", || {
-        state::writes_queued(&c, id).unwrap() == 0
-    });
+    pg_testkit::wait_until(
+        Duration::from_secs(60),
+        || "the finished copy is still queued",
+        || state::writes_queued(&c, id).unwrap() == 0,
+    );
     let rotation = state::analysis_rotation(&c, id).unwrap();
     assert_eq!(rotation, Turns::NONE, "the turn is in the file, so the analysis no longer shows it pending");
     quiet.check();

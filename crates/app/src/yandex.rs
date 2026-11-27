@@ -29,8 +29,8 @@ use crate::makers::Makers;
 use crate::prefs::PrefStore;
 
 pub mod images;
-pub use images::{Fetch, Measured};
 use images::{Check, Fetched, Images};
+pub use images::{Fetch, Measured};
 pub mod source;
 pub use source::{Source, SourceError};
 pub mod replay;

@@ -288,9 +288,7 @@ pub fn write_row_of(c: &Catalog, id: FileId, kind: &str) -> Result<WriteRow> {
 fn write_row_on(c: &Catalog, sql: &str, params: impl rusqlite::Params) -> Result<WriteRow> {
     let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) =
         c.conn.query_row(sql, params, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-    let temp = temp
-        .map(|bytes| crate::types::stored_path(c.rules(), &bytes))
-        .transpose()?;
+    let temp = temp.map(|bytes| crate::types::stored_path(c.rules(), &bytes)).transpose()?;
     Ok(WriteRow { attempts, temp, error })
 }
 

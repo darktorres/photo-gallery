@@ -15,8 +15,8 @@ use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::analysis::{
-    Analysis, DECODE_MIN_LONG, DECODE_MIN_SHORT, FileHash, ImageFacts, ImageHashes, Media, PDQ_SIDE, PixelHashes, Taken,
-    VideoFacts,
+    Analysis, DECODE_MIN_LONG, DECODE_MIN_SHORT, FileHash, ImageFacts, ImageHashes, Media, PDQ_SIDE, PixelHashes,
+    Taken, VideoFacts,
 };
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;

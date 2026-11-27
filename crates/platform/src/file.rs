@@ -332,7 +332,9 @@ pub fn move_aside(path: &Path, parts: &[&str], mark: &str) -> io::Result<PathBuf
     let base = (0..=u32::MAX)
         .map(|n| if n == 0 { mark.to_string() } else { format!("{mark}.{n}") })
         .find(|base| parts.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::AlreadyExists, format!("no free name beside {}", path.display())))?;
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::AlreadyExists, format!("no free name beside {}", path.display()))
+        })?;
     let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
     for part in parts {
         let from = beside(path, part);

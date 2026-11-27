@@ -1577,10 +1577,7 @@ mod tests {
         type Dir = usize;
 
         fn open(&mut self, path: &[Unit]) -> io::Result<usize> {
-            self.tree
-                .iter()
-                .position(|(p, _, _)| p == path)
-                .ok_or_else(unopenable)
+            self.tree.iter().position(|(p, _, _)| p == path).ok_or_else(unopenable)
         }
 
         fn device(&self, _dir: &usize) -> Option<u64> {

@@ -55,12 +55,7 @@ impl Layout {
     /// The layout of a home folder with everything under it, as the defaults give; for tests and scratch runs.
     pub fn in_home(home: impl Into<PathBuf>) -> Layout {
         let home = home.into();
-        Layout {
-            catalog_dir: home.join(CATALOG_DIR),
-            prefs: home.join(PREFS_FILE),
-            log: home.join(LOG_FILE),
-            home,
-        }
+        Layout { catalog_dir: home.join(CATALOG_DIR), prefs: home.join(PREFS_FILE), log: home.join(LOG_FILE), home }
     }
 
     /// The folder the rest is under (the app shows it at startup).

@@ -200,7 +200,10 @@ fn tag(path: &Path, value: &str) -> Result<()> {
 
 /// The ImageDescription ExifTool reads from `path`.
 fn description(path: &Path) -> Result<String> {
-    let out = std::process::Command::new(pg_platform::env::exiftool_program()).args(["-s3", "-ImageDescription"]).arg(path).output()?;
+    let out = std::process::Command::new(pg_platform::env::exiftool_program())
+        .args(["-s3", "-ImageDescription"])
+        .arg(path)
+        .output()?;
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 

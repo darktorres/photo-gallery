@@ -553,11 +553,16 @@ mod tests {
     fn sizes_go_to_the_rows_of_their_results() {
         let hit = |id: u64| Hit { id, url: String::new(), size: None, label: pg_app::yandex::Label::OtherSize };
         let items = [hit(10), hit(20), hit(30)];
-        let sized = [Measured { id: 30, size: (810, 1080) }, Measured { id: 99, size: (1, 1) }, Measured {
-            id: 10,
-            size: (4, 3),
-        }];
-        assert_eq!(sized_rows(&items, &sized), [(0, (4, 3)), (2, (810, 1080))], "in row order; an unknown id is no row");
+        let sized = [
+            Measured { id: 30, size: (810, 1080) },
+            Measured { id: 99, size: (1, 1) },
+            Measured { id: 10, size: (4, 3) },
+        ];
+        assert_eq!(
+            sized_rows(&items, &sized),
+            [(0, (4, 3)), (2, (810, 1080))],
+            "in row order; an unknown id is no row"
+        );
         assert!(sized_rows(&items, &[]).is_empty());
         // Until its file is in, a result is square and shows no size; then it has its file's.
         assert_eq!((hit_aspect(&items[0]), hit_size(&items[0])), (1.0, (0, 0)));

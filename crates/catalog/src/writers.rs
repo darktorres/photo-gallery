@@ -965,7 +965,14 @@ pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[
     let rows: Vec<serde_json::Value> = failures
         .iter()
         .map(|f| {
-            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.turns.get(), kept_error(&f.error), i64::from(f.retry)])
+            serde_json::json!([
+                f.file_id.get(),
+                f.mtime,
+                f.size,
+                f.turns.get(),
+                kept_error(&f.error),
+                i64::from(f.retry)
+            ])
         })
         .collect();
     let rows = serde_json::to_string(&rows).map_err(Error::bare)?;

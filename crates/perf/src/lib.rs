@@ -728,7 +728,10 @@ mod tests {
         assert_eq!(measured["fields"]["join_ms"], 4.0);
         let (dur, self_ms) = (outer["dur_ms"].as_f64().unwrap_or(0.0), outer["self_ms"].as_f64().unwrap_or(0.0));
         let measured_ms = measured["dur_ms"].as_f64().unwrap_or(0.0);
-        assert!((self_ms + measured_ms - dur).abs() < 1e-6, "self {self_ms} and the measured {measured_ms} make up {dur}");
+        assert!(
+            (self_ms + measured_ms - dur).abs() < 1e-6,
+            "self {self_ms} and the measured {measured_ms} make up {dur}"
+        );
     }
 
     #[test]

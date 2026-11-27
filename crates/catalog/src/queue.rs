@@ -349,9 +349,7 @@ impl Catalog {
     /// part-written, so it is never given up. The number of rows reset.
     pub fn retry_write_copies(&self) -> Result<u64> {
         let conn = &self.conn;
-        Ok(count_u64(
-            conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?,
-        ))
+        Ok(count_u64(conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?))
     }
 }
 

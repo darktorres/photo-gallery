@@ -17,7 +17,6 @@ fn letterboxed_tiff() -> pg_codec::Result<Vec<u8>> {
     pg_codec::fixtures::encode(320, 240, &pg_testkit::letterboxed_rgb(320, 240, 40), pg_codec::fixtures::Encoding::Tiff)
 }
 
-
 #[test]
 fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() -> Result<()> {
     let dir = pg_testkit::run_folder_with("scratch_library", "crop-tags", &["images"]).unwrap();

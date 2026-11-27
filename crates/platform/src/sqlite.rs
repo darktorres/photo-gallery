@@ -122,9 +122,8 @@ mod windows {
             Some(_) => remove_link(&link)?,
             // Only an empty folder is removed (`remove_dir` refuses one that holds anything, which is then an error).
             None if link.symlink_metadata().is_ok() => {
-                std::fs::remove_dir(&link).map_err(|e| {
-                    io::Error::new(e.kind(), format!("{}: is not an alias ({e})", link.display()))
-                })?;
+                std::fs::remove_dir(&link)
+                    .map_err(|e| io::Error::new(e.kind(), format!("{}: is not an alias ({e})", link.display())))?;
             }
             None => {}
         }

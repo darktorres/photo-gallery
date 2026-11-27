@@ -146,7 +146,8 @@ pub fn run_folder_on_system_temp(prefix: &str) -> io::Result<PathBuf> {
 /// The error for a folder that can't be made or claimed: it names the folder. When `PG_TEST_DIR` is set, the folder is
 /// under it, and the error says how to choose another.
 fn in_folder(base: &Path, err: io::Error) -> io::Error {
-    let hint = if crate::env::read(crate::env::Var::TestDir).is_some() { ": PG_TEST_DIR names another folder" } else { "" };
+    let hint =
+        if crate::env::read(crate::env::Var::TestDir).is_some() { ": PG_TEST_DIR names another folder" } else { "" };
     io::Error::new(err.kind(), format!("the test folder {} ({err}){hint}", base.display()))
 }
 

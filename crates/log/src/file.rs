@@ -303,12 +303,8 @@ mod tests {
         for i in 0..2 {
             file.append(&line(i)).unwrap();
         }
-        let other = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(false)
-            .open(beside(&path, LOCK_SUFFIX))
-            .unwrap();
+        let other =
+            OpenOptions::new().create(true).write(true).truncate(false).open(beside(&path, LOCK_SUFFIX)).unwrap();
         other.try_lock().unwrap();
         file.append(&line(2)).unwrap();
         assert!(!older(&path, 1).exists(), "skipped while held");

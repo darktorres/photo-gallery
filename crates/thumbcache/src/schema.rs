@@ -182,10 +182,9 @@ fn layout_version_text(version: i64) -> String {
 /// The account of a file whose thumbnail pixels are of another output version than this build's, or of none recorded.
 fn output_version_text(output: Option<i64>) -> String {
     match output {
-        Some(output) => format!(
-            "thumbnail output version {output}, this build's is {}",
-            pg_model::versions::THUMB_OUTPUT_VERSION
-        ),
+        Some(output) => {
+            format!("thumbnail output version {output}, this build's is {}", pg_model::versions::THUMB_OUTPUT_VERSION)
+        }
         None => "no thumbnail output version (made before it was recorded)".to_string(),
     }
 }

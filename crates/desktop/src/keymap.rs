@@ -91,6 +91,7 @@ fn panel_code(action: Panel) -> i32 {
             }
         }
         Panel::Pick => 3,
+        Panel::OneToOne => 4,
     }
 }
 
@@ -110,6 +111,7 @@ fn viewer_code(action: Viewer) -> (i32, i32) {
         Viewer::Hide => (12, 0),
         Viewer::PlayPause => (13, 0),
         Viewer::Mute => (14, 0),
+        Viewer::FindSimilar => (15, 0),
     }
 }
 
@@ -148,8 +150,8 @@ impl qobject::KeyMap {
         viewer_of(key, modifiers, kind, has_borders).1
     }
 
-    pub(crate) fn grid_hint(&self) -> QString {
-        QString::from(&pg_wording::hint(&keys::grid_hint()))
+    pub(crate) fn grid_hint(&self, detection: bool) -> QString {
+        QString::from(&pg_wording::hint(&keys::grid_hint(detection)))
     }
 
     pub(crate) fn panel_action(&self, key: i32) -> i32 {
@@ -196,6 +198,7 @@ mod tests {
             ("Hide", Viewer::Hide),
             ("PlayPause", Viewer::PlayPause),
             ("Mute", Viewer::Mute),
+            ("FindSimilar", Viewer::FindSimilar),
         ];
         let names = qml_enum(include_str!("../qml/Viewer.qml"), "ViewerAction");
         assert_eq!(names, expected.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>());
@@ -211,6 +214,7 @@ mod tests {
             ("StepBack", Panel::Step { forward: false }),
             ("StepForward", Panel::Step { forward: true }),
             ("Pick", Panel::Pick),
+            ("OneToOne", Panel::OneToOne),
         ];
         // YandexPanel.qml declares the enum; YandexPreview.qml uses it as `YandexPanel.PanelAction`.
         let source = include_str!("../qml/YandexPanel.qml");

@@ -17,6 +17,9 @@ pub enum SourceError {
     /// A recorded session (`replay`) that can't answer: why.
     #[error("recorded Yandex session: {0}")]
     Recorded(String),
+    /// The app is closing: a result file is not waited for, and none is fetched any more.
+    #[error("the app is closing")]
+    Closed,
 }
 
 impl From<SourceError> for RequestError {
@@ -26,6 +29,8 @@ impl From<SourceError> for RequestError {
             SourceError::Yandex(e) => e.into(),
             SourceError::Undecodable(reason) => RequestError::Undecodable(reason.to_string()),
             SourceError::Recorded(error) => RequestError::Recorded(error),
+            // A transfer cut short by the close: the transport's failure, as the request was ended.
+            SourceError::Closed => RequestError::Transport("the app is closing".to_string()),
         }
     }
 }

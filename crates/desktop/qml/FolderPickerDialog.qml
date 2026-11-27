@@ -17,6 +17,10 @@ ModalOverlay {
     // The folders listed (display names, in order) and the folder they are in (display text).
     property var names: null
     property string here: ""
+    // A folder the dialog could not list (Up, or a folder opened): the owner binds this to its picker's listError, which
+    // the picker says why and clears when a listing is shown, so the dialog shows it in itself, where the owner's status
+    // line is under the dialog's dimmed scrim.
+    property string failure: ""
 
     // The choices: the owner passes each on to its picker.
     signal goUp
@@ -75,6 +79,15 @@ ModalOverlay {
                     elide: Text.ElideMiddle
                     Layout.fillWidth: true
                 }
+            }
+            Label {
+                objectName: "failure"
+                Layout.fillWidth: true
+                visible: overlay.failure !== ""
+                text: overlay.failure
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                color: Theme.invalidText
             }
             WheelListView {
                 id: folderList

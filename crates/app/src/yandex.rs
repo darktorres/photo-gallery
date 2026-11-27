@@ -19,12 +19,14 @@ use std::time::{Duration, Instant};
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
+use pg_model::notice::Notice;
 use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 use pg_platform::names::{disk_path, rule_path_of, shown};
 use pg_platform::native::PATH_RULES;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
+use crate::inbox::Inbox;
 use crate::makers::Makers;
 use crate::prefs::PrefStore;
 
@@ -103,14 +105,16 @@ pub struct Yandex {
     factory: Factory,
     prefs: Arc<PrefStore>,
     makers: Arc<Makers>,
+    /// Where a save that the close cut short reports what it left unwritten.
+    inbox: Arc<Inbox>,
 }
 
-/// How long [`Yandex::stop`] waits for a search, a save and the fetchers to end. A request to Yandex can't be cut short,
-/// so a slow one is left to end with the process.
+/// How long [`Yandex::stop`] waits for a search or a save to end. A search request to Yandex can't be cut short, so a slow
+/// one is left to end with the process; a download is cut short between its reads (`Images::stop`), so a save ends soon.
 const STOP_WAIT: Duration = Duration::from_secs(2);
 
 impl Yandex {
-    pub(crate) fn new(source: &YandexSource, prefs: Arc<PrefStore>, makers: Arc<Makers>) -> Yandex {
+    pub(crate) fn new(source: &YandexSource, prefs: Arc<PrefStore>, makers: Arc<Makers>, inbox: Arc<Inbox>) -> Yandex {
         let factory = match source {
             YandexSource::Live => client(),
             YandexSource::Replay(dir) => {
@@ -121,7 +125,7 @@ impl Yandex {
                 replay(dir)
             }
         };
-        Yandex { search: Search::default(), factory, prefs, makers }
+        Yandex { search: Search::default(), factory, prefs, makers, inbox }
     }
 
     /// Start a search for the photo at `photo`, a local path, its results' grid pictures `grid_height` high (the panel's
@@ -150,7 +154,7 @@ impl Yandex {
 
     /// See [`Search::save`].
     pub fn save(&self, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
-        self.search.save(&self.prefs, hits, folder)
+        self.search.save(&self.prefs, self.inbox.clone(), hits, folder)
     }
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
@@ -227,6 +231,9 @@ pub struct Poll {
     /// The results whose files came in since the last poll, once, with the sizes they decode to: what the grid shows of
     /// them, and lays them out by.
     pub sized: Vec<Measured>,
+    /// How many results the search on screen returned, all of them (0 with no search on screen): the count a dropped
+    /// result is reported against.
+    pub total: usize,
 }
 
 /// What the background threads share with [`Search::poll`].
@@ -350,7 +357,7 @@ fn number(found: &mut Found, generation: u64) {
 
 /// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<label>)` so it sorts
 /// next to the photo ([`write_new`]). An other size's label is the size the file decodes to.
-fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
+fn save_one(images: &Arc<Images>, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let kept = images
         .get(hit.id, &hit.url)
         .map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
@@ -377,27 +384,34 @@ fn save_refused(hits: &[Hit], folder: &Path, error: SourceError) -> Saved {
     Saved { folder: shown(folder), written: 0, failed, first_error: Some(SaveFailure::Client(error.into())) }
 }
 
-/// Writes every hit into `folder`, one at a time, from the search's images.
+/// Writes every hit into `folder`, one at a time, from the search's images. Once the service is closed, the hits not yet
+/// written are not, and the count of them comes back with the outcome (`unfinished`): the close is not a failure, and the
+/// caller reports it. A file cut short by the close is one of those.
 fn save_all(
     hits: &[Hit],
     stem: &OsStr,
     folder: &Path,
-    images: &Images,
+    images: &Arc<Images>,
     shared: &Mutex<Shared>,
     changes: &Bus<()>,
-) -> Saved {
+) -> (Saved, u64) {
     let mut saved = Saved { folder: shown(folder), written: 0, failed: 0, first_error: None };
+    let left_after = |i: usize| u64::try_from(hits.len() - i).unwrap_or(u64::MAX);
     for (i, hit) in hits.iter().enumerate() {
+        if lock(shared).closed {
+            return (saved, left_after(i));
+        }
         set_status(shared, changes, YandexStatus::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
         match save_one(images, hit, stem, folder) {
             Ok(()) => saved.written += 1,
+            Err(_) if lock(shared).closed => return (saved, left_after(i)),
             Err(failure) => {
                 saved.failed += 1;
                 saved.first_error.get_or_insert(failure);
             }
         }
     }
-    saved
+    (saved, 0)
 }
 
 impl Search {
@@ -511,7 +525,8 @@ impl Search {
         let pictures = self.pictures();
         let dead = pictures.as_ref().map(|pictures| pictures.take_dead()).unwrap_or_default();
         let sized = pictures.as_ref().map(|pictures| pictures.take_sized()).unwrap_or_default();
-        Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead, sized }
+        let total = pictures.as_ref().map_or(0, |pictures| pictures.count());
+        Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead, sized, total }
     }
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
@@ -521,18 +536,17 @@ impl Search {
             .get_known(id)
     }
 
-    /// No search or save starts from now on, and the fetchers take no more results. Waits up to `wait` for the running
-    /// search or save and the fetchers to end; false when one still ran after it.
+    /// No search or save starts from now on, the fetchers take no more results, and a save stops before its next file.
+    /// Waits up to `wait` for the running search or save to end; false when one still ran after it. The fetchers are not
+    /// waited for: a download in flight is cut short at its next read, and nothing waiting for it is held up (`Images::stop`).
     pub fn stop(&self, wait: Duration) -> bool {
         lock(&self.shared).closed = true;
-        let pictures = self.pictures();
-        if let Some(pictures) = &pictures {
+        if let Some(pictures) = self.pictures() {
             pictures.stop();
         }
         let deadline = Instant::now() + wait;
         loop {
-            let ended = !lock(&self.shared).busy && pictures.as_ref().is_none_or(|p| p.idle());
-            if ended {
+            if !lock(&self.shared).busy {
                 return true;
             }
             if Instant::now() >= deadline {
@@ -557,8 +571,9 @@ impl Search {
     /// Save the picked `hits` into `folder`, one file each, named after the photo, from the files the search kept. The
     /// folder is remembered in the preferences for the next save, whether or not every save works. False when nothing
     /// is picked, a search or a save is running, or the search has stopped (nothing changes); an error when its thread couldn't start (nothing
-    /// is written, and nothing stays busy). The save's outcome comes from [`Search::poll`].
-    pub fn save(&self, prefs: &PrefStore, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
+    /// is written, and nothing stays busy). The save's outcome comes from [`Search::poll`]. A save the close cut short
+    /// records what it left unwritten in `inbox` (`Notice::YandexSaveUnfinished`).
+    pub fn save(&self, prefs: &PrefStore, inbox: Arc<Inbox>, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
         if hits.is_empty() {
             return Ok(false);
         }
@@ -589,15 +604,26 @@ impl Search {
                 let _ = folder_save.write();
             }
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
-            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
+            let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
                 Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),
-                None => save_refused(
-                    &hits,
-                    &folder,
-                    YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NoSearchOnScreen).into(),
+                None => (
+                    save_refused(
+                        &hits,
+                        &folder,
+                        YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NoSearchOnScreen).into(),
+                    ),
+                    0,
                 ),
-            })) {
-                Ok(saved) => YandexStatus::Saved(saved),
+            }));
+            let status = match outcome {
+                Ok((saved, unfinished)) => {
+                    // Recorded before `busy` is cleared, so the close (which waits for the save) lands it in the inbox.
+                    if unfinished > 0 {
+                        let written = u64::try_from(saved.written).unwrap_or(u64::MAX);
+                        inbox.post(Notice::YandexSaveUnfinished { written, unfinished });
+                    }
+                    YandexStatus::Saved(saved)
+                }
                 Err(_) => YandexStatus::Panicked,
             };
             let mut s = lock(&shared);

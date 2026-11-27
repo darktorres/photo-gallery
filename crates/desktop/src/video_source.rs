@@ -40,7 +40,8 @@ impl qobject::VideoSource {
             Ok(path) => video_player::play_path(player, &path),
             Err(err) => {
                 pg_log::warn("video", &format!("file {}: {err:#}", file.get()));
-                player.clear();
+                // The player says it can't play it, as it does for a file it can't open (the HUD shows that).
+                video_player::play_missing(player);
             }
         }
     }

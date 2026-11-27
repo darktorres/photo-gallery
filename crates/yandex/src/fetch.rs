@@ -2,6 +2,7 @@
 //! their bytes.
 
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pg_model::format::Format;
 
@@ -32,8 +33,10 @@ impl Fetcher {
 
     /// Fetches a result image. A response whose type says it is not an image (an error page, a video) is an error
     /// before its body is read ([`plausibly_image`]); the bytes of one that may be decide what it is (`Format::sniff`).
-    /// Its bounds are a transfer's (`transfer_timeouts`): a large file on a slow link takes minutes.
-    pub fn download(&self, url: &str) -> Result<Download, YandexError> {
+    /// Its bounds are a transfer's (`transfer_timeouts`): a large file on a slow link takes minutes. `cancel` is checked
+    /// before each read of the body, so a download is cut short once it is set (the app sets it at close); the request
+    /// itself (the headers) is not cut short. A cut download is a transport error.
+    pub fn download(&self, url: &str, cancel: &AtomicBool) -> Result<Download, YandexError> {
         let resp = transfer_timeouts(self.agent.get(url).header("User-Agent", USER_AGENT))
             .call()
             .map_err(|e| YandexError::Transport(e.to_string()))?;
@@ -44,12 +47,21 @@ impl Fetcher {
         if !plausibly_image(content_type) {
             return Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NotAnImage));
         }
+        let mut body = resp.into_body().into_reader().take(MAX_DOWNLOAD_BYTES + 1);
         let mut bytes = Vec::new();
-        resp.into_body()
-            .into_reader()
-            .take(MAX_DOWNLOAD_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| YandexError::Transport(e.to_string()))?;
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(YandexError::Transport("the download was cut short at close".to_string()));
+            }
+            let n = body.read(&mut chunk).map_err(|e| YandexError::Transport(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            let read =
+                chunk.get(..n).ok_or_else(|| YandexError::Transport("a read longer than its buffer".to_string()))?;
+            bytes.extend_from_slice(read);
+        }
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_DOWNLOAD_BYTES {
             return Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::TooLarge));
         }

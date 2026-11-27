@@ -130,6 +130,8 @@ pub enum Viewer {
     PlayPause,
     /// M: mute a video.
     Mute,
+    /// S: search for pictures similar to the shown still image (the viewer's find-similar button's key).
+    FindSimilar,
 }
 
 /// The grid's action for a key, given whether an item is selected (the keys that act on it need one).
@@ -174,6 +176,7 @@ pub fn viewer(key: Key, mods: Mods, shown: Shown) -> Option<Viewer> {
         Key::Letter('H') if !mods.ctrl => Viewer::Hide,
         Key::Letter('K') if !shown.still && !mods.ctrl => Viewer::PlayPause,
         Key::Letter('M') if shown.video && !mods.ctrl => Viewer::Mute,
+        Key::Letter('S') if shown.still && !mods.ctrl => Viewer::FindSimilar,
         _ => return None,
     })
 }
@@ -217,6 +220,8 @@ pub enum Panel {
     },
     /// Space picks the shown result.
     Pick,
+    /// Z: the shown picture at 1:1, the real size the viewer's Z gives too (the preview's 1:1 button's key).
+    OneToOne,
 }
 
 /// The panels' action for a key (which panel has the focus decides what it does).
@@ -226,6 +231,7 @@ pub fn panel(key: Key) -> Option<Panel> {
         Key::Left => Panel::Step { forward: false },
         Key::Right => Panel::Step { forward: true },
         Key::Space => Panel::Pick,
+        Key::Letter('Z') => Panel::OneToOne,
         _ => return None,
     })
 }
@@ -276,8 +282,8 @@ pub enum Hint {
     TurnBack,
     /// Turn on (forward).
     TurnOn,
-    /// Zoom with the wheel.
-    WheelZoom,
+    /// Zoom: a pinch, or `+` and `-` (the wheel steps the pictures, it does not zoom).
+    Zoom,
     /// Show at 1:1.
     OneToOne,
     /// The real size.
@@ -309,7 +315,7 @@ impl Hint {
         Hint::DownOne,
         Hint::TurnBack,
         Hint::TurnOn,
-        Hint::WheelZoom,
+        Hint::Zoom,
         Hint::OneToOne,
         Hint::RealSize,
         Hint::Loupe,
@@ -336,7 +342,7 @@ impl Hint {
             Hint::DownOne => "ui-hint-down-one",
             Hint::TurnBack => "ui-hint-turn-back",
             Hint::TurnOn => "ui-hint-turn-on",
-            Hint::WheelZoom => "ui-hint-wheel-zoom",
+            Hint::Zoom => "ui-hint-zoom",
             Hint::OneToOne => "ui-hint-one-to-one",
             Hint::RealSize => "ui-hint-real-size",
             Hint::Loupe => "ui-hint-loupe",
@@ -346,10 +352,16 @@ impl Hint {
     }
 }
 
-/// The labels of the grid's hint line (shown when nothing is selected).
-pub fn grid_hint() -> Vec<Hint> {
+/// The labels of the grid's hint line (shown when nothing is selected). The border keys (B, N) are named only while border
+/// detection is on (`detection`): with it off they open the "Border detection is off" popup, which is no key to advertise.
+pub fn grid_hint(detection: bool) -> Vec<Hint> {
     use Hint::*;
-    vec![Select, View, Rate, Turn, Arrows, Filters, Borders, NotBorder, Resize]
+    let mut parts = vec![Select, View, Rate, Turn, Arrows, Filters];
+    if detection {
+        parts.extend([Borders, NotBorder]);
+    }
+    parts.push(Resize);
+    parts
 }
 
 /// The labels of the viewer's hint line for what it shows.
@@ -363,7 +375,7 @@ pub fn viewer_hint(media: Media, shown: Shown) -> Vec<Hint> {
     }
     parts.extend([Rate, UpFour, DownOne, TurnBack, TurnOn]);
     if media == Media::Still {
-        parts.extend([WheelZoom, OneToOne, RealSize, Loupe, Borders]);
+        parts.extend([Zoom, OneToOne, RealSize, Loupe, Borders]);
         if shown.has_borders {
             parts.push(NotBorder);
         }
@@ -436,6 +448,9 @@ mod tests {
         assert_eq!(viewer(Key::Letter('N'), NONE, STILL), None);
         let bordered = Shown { has_borders: true, ..STILL };
         assert_eq!(viewer(Key::Letter('N'), NONE, bordered), Some(Viewer::MarkBorder));
+        // Find similar is the still image's: the mouse's button for it has a key too.
+        assert_eq!(viewer(Key::Letter('S'), NONE, STILL), Some(Viewer::FindSimilar));
+        assert_eq!(viewer(Key::Letter('S'), NONE, video), None);
     }
 
     #[test]
@@ -449,7 +464,9 @@ mod tests {
     #[test]
     fn the_grid_hint_names_every_key_it_handles() {
         use Hint::*;
-        assert_eq!(grid_hint(), [Select, View, Rate, Turn, Arrows, Filters, Borders, NotBorder, Resize]);
+        assert_eq!(grid_hint(true), [Select, View, Rate, Turn, Arrows, Filters, Borders, NotBorder, Resize]);
+        // With detection off, B and N do nothing to advertise.
+        assert_eq!(grid_hint(false), [Select, View, Rate, Turn, Arrows, Filters, Resize]);
     }
 
     #[test]
@@ -464,6 +481,7 @@ mod tests {
         assert_eq!(panel(Key::Escape), Some(Panel::Close));
         assert_eq!(panel(Key::Left), Some(Panel::Step { forward: false }));
         assert_eq!(panel(Key::Space), Some(Panel::Pick));
+        assert_eq!(panel(Key::Letter('Z')), Some(Panel::OneToOne));
         assert_eq!(panel(Key::Letter('R')), None);
     }
 
@@ -472,7 +490,7 @@ mod tests {
         use Hint::*;
         assert_eq!(
             viewer_hint(Media::Still, STILL),
-            [Step, Rate, UpFour, DownOne, TurnBack, TurnOn, WheelZoom, OneToOne, RealSize, Loupe, Borders, Hide, Close]
+            [Step, Rate, UpFour, DownOne, TurnBack, TurnOn, Zoom, OneToOne, RealSize, Loupe, Borders, Hide, Close]
         );
         let bordered = Shown { has_borders: true, ..STILL };
         assert!(viewer_hint(Media::Still, bordered).windows(2).any(|w| w == [NotBorder, Hide]));
@@ -484,5 +502,13 @@ mod tests {
             viewer_hint(Media::Animated, STILL),
             [Step, Play, Rate, UpFour, DownOne, TurnBack, TurnOn, Hide, Close]
         );
+    }
+
+    #[test]
+    fn the_zoom_hint_names_the_keys_that_zoom() {
+        // The hint's zoom is the keys' (a pinch zooms too): the wheel is the pictures' step, not a zoom.
+        assert_eq!(viewer(Key::Plus, NONE, STILL), Some(Viewer::ZoomIn));
+        assert_eq!(viewer(Key::Minus, NONE, STILL), Some(Viewer::ZoomOut));
+        assert!(viewer_hint(Media::Still, STILL).contains(&Hint::Zoom));
     }
 }

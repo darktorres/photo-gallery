@@ -7,11 +7,15 @@
 
 #include "live_reload.h"
 
+#include <memory>
+
 #include <QtCore/QDir>
 #include <QtCore/QFileSystemWatcher>
 #include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
 #include <QtQml/QQmlAbstractUrlInterceptor>
+#include <QtQml/QQmlEngine>
+#include <QtQml/QQmlError>
 #include <QtQuick/QQuickWindow>
 
 namespace pg {
@@ -46,6 +50,60 @@ void quit_on_close(QObject* root) {
 // The folder on disk, ending in '/'.
 QString source_folder(const QString& source_dir) { return QDir(source_dir).absolutePath() + u'/'; }
 
+// The window shown when the QML does not load (a syntax or binding error, saved in the middle of an edit): the error,
+// and a Quit, so the app is not left running with no window. The words are the window's (Words); the error text is the
+// engine's. The file watcher is still on, so a fixed file loads the window again as usual (reload_on_change).
+const char kLoadFailureQml[] = R"(
+import QtQuick
+import QtQuick.Controls.Fusion
+import QtQuick.Layouts
+import QtQuick.Window
+import pg.gallery
+
+Window {
+    id: failure
+    // The engine's errors, as text.
+    property string detail: ""
+    visible: true
+    width: 560
+    height: 360
+
+    Words {
+        id: words
+    }
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 16
+        spacing: 12
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: words.text("ui-dev-reload-failed")
+        }
+        TextArea {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            readOnly: true
+            wrapMode: TextEdit.Wrap
+            textFormat: TextEdit.PlainText
+            text: failure.detail
+        }
+        Button {
+            Layout.alignment: Qt.AlignRight
+            text: words.text("ui-quit")
+            onClicked: Qt.quit()
+        }
+    }
+}
+)";
+
+void show_load_failure(QQmlApplicationEngine& engine, const QString& errors) {
+    qWarning("the QML did not load: the window says so, with a Quit");
+    engine.loadData(QByteArray(kLoadFailureQml));
+    for (QObject* root : engine.rootObjects()) root->setProperty("detail", errors);
+}
+
 }  // namespace
 
 void read_qml_from_source(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir) {
@@ -54,8 +112,21 @@ void read_qml_from_source(QQmlApplicationEngine& engine, const QUrl& main, const
                                                    source_folder(source_dir)));
 
     QGuiApplication::setQuitOnLastWindowClosed(false);
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &engine, [](QObject* root, const QUrl&) {
-        if (root) quit_on_close(root);
+    // The errors of the load in progress: the engine reports them before it reports that the load failed.
+    auto errors = std::make_shared<QString>();
+    QObject::connect(&engine, &QQmlEngine::warnings, &engine, [errors](const QList<QQmlError>& list) {
+        for (const QQmlError& error : list) *errors += error.toString() + u'\n';
+    });
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &engine, [&engine, errors](QObject* root, const QUrl&) {
+        if (root) {
+            errors->clear();
+            quit_on_close(root);
+            return;
+        }
+        // A failed load: the window that says so is made once this load has returned (not from inside it).
+        const QString text = *errors;
+        errors->clear();
+        QTimer::singleShot(0, &engine, [&engine, text] { show_load_failure(engine, text); });
     });
 }
 
@@ -98,6 +169,13 @@ void reload_on_change(QQmlApplicationEngine& engine, const QUrl& main, const QSt
         engine.clearComponentCache();
         engine.setInitialProperties(geometry);
         engine.load(main);
+        // The old window's panels are not open in this one, and nothing closes them for the controller: its core is told
+        // the window was reloaded, so it brings its mirror of the open panels in line (Shell.windowReloaded). A failed
+        // load has no core (the window that says so has none).
+        for (QObject* root : engine.rootObjects()) {
+            if (QObject* core = root->property("shellCore").value<QObject*>())
+                QMetaObject::invokeMethod(core, "windowReloaded");
+        }
         // The window is declared hidden: it opens maximized, or where the old one was, when shown.
         if (maximized) {
             for (QObject* root : engine.rootObjects()) {

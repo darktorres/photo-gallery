@@ -7,6 +7,8 @@ ListModel {
     property int passes: 0
     property string toast: ""
     property int toastLevel: 0
+    // A copy's text is being read for the clipboard.
+    property bool copying: false
 
     function start() {
     }

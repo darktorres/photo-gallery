@@ -5,6 +5,8 @@ import QtQuick
 QtObject {
     property int fileId: 0
     property bool playing: false
+    // Why the animation could not be read or decoded ("" when none): its change is the window's playerError.
+    property string playerError: ""
     function setSink(sink) {
     }
 }

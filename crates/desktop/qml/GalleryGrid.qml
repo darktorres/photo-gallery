@@ -119,13 +119,15 @@ Item {
         }
     }
 
+    // The empty-list message, or the error when the list could not be read: a failed read keeps the rows it had (the
+    // notice says why), and an empty list that failed is not an empty folder.
     Label {
         textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: root.gallery.count === 0 && !root.gallery.loading
-        text: root.noFolders ? words.text("ui-no-folders") : root.filtering ? words.text("ui-nothing-matches") : root.importing ? words.text("ui-nothing-importing") : words.text("ui-no-images")
+        text: root.gallery.listingFailed ? words.text("ui-listing-failed") : root.noFolders ? words.text("ui-no-folders") : root.filtering ? words.text("ui-nothing-matches") : root.importing ? words.text("ui-nothing-importing") : words.text("ui-no-images")
         horizontalAlignment: Text.AlignHCenter
-        color: "#888888"
+        color: root.gallery.listingFailed ? Theme.invalidText : "#888888"
     }
 
     // The grid's scrollbar, in its own lane to the right of the grid. It is a standalone bar, not the view's
@@ -162,7 +164,9 @@ Item {
         width: readout.implicitWidth + 16
         height: readout.implicitHeight + 8
         x: parent.width - width - 24
-        y: Math.max(0, Math.min(parent.height - height, gridBar.y + gridBar.position * gridBar.height - height / 2))
+        // Centred on the handle as it is drawn (visualPosition, visualSize: the bar's minimum length included); the number
+        // below is the logical position's.
+        y: Math.max(0, Math.min(parent.height - height, gridBar.y + (gridBar.visualPosition + gridBar.visualSize / 2) * gridBar.height - height / 2))
         radius: 4
         color: "#2a2a2a"
         border.color: "#555555"

@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use pg_model::format::Format;
 use pg_yandex::{
@@ -108,7 +109,7 @@ impl Source for Replay {
 
 /// The recorded result files stand in for the fetcher's downloads.
 impl Fetch for Replay {
-    fn fetch(&self, url: &str) -> Result<Download, SourceError> {
+    fn fetch(&self, url: &str, _cancel: &AtomicBool) -> Result<Download, SourceError> {
         let bytes = self
             .recording
             .downloads
@@ -205,7 +206,8 @@ mod tests {
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
         let hits: Vec<Hit> = found.other.into_iter().chain(found.similar.into_iter().take(1)).collect();
-        let saved: Saved = save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &pictures, &shared, &changes);
+        let (saved, _unfinished): (Saved, u64) =
+            save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &pictures, &shared, &changes);
         assert_eq!((saved.written, saved.failed), (2, 0));
         let written = std::fs::read(folder.join("IMG_1234 (yandex similar 1).png")).unwrap();
         assert_eq!(written, b"\x89PNG\r\n\x1a\nresult one");

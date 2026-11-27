@@ -19,7 +19,7 @@ use pg_model::turns::Turns;
 use crate::core::Catalog;
 use crate::current::{CURRENT_BATCH, CURRENT_ROWS, IS_CURRENT, query_current};
 use crate::error::Result;
-use crate::types::{CatalogCounts, CropSource, Listed, WriteTarget, stored_path, under_params};
+use crate::types::{CatalogCounts, CropGap, CropSource, Listed, WriteTarget, stored_path, under_params};
 
 impl Catalog {
     /// Whether the file is still as it was listed, with no write of the app's into it in progress: only then is what
@@ -235,6 +235,24 @@ impl Catalog {
                 })
             })
             .optional()?)
+    }
+
+    /// Why file `file_id` has no crop source ([`Catalog::crop_source`] gives none): whether it is missing, or its row no
+    /// longer matches the analysis its borders were found on. A file with nothing to crop is neither.
+    pub fn crop_gap(&self, file_id: FileId) -> Result<CropGap> {
+        let row: Option<(bool, bool)> = self
+            .conn
+            .query_row(
+                "SELECT f.missing <> 0, a.file_id IS NOT NULL AND (a.size <> f.size OR a.mtime <> f.mtime)
+                 FROM files f LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
+                [file_id.get()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(match row {
+            Some((missing, changed)) => CropGap { missing, changed },
+            None => CropGap { missing: true, changed: false },
+        })
     }
 
     /// The counts, each a query over the catalog's tables. SQLite picks an index where one covers a query (the indexes

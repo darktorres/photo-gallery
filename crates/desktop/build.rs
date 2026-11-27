@@ -58,6 +58,7 @@ fn main() -> Result<(), String> {
                 "qml/GridCell.qml",
                 "qml/LibraryPanel.qml",
                 "qml/SaveViewDialog.qml",
+                "qml/DeleteViewDialog.qml",
                 "qml/CutBordersDialog.qml",
                 "qml/RemoveFolderDialog.qml",
                 "qml/DiscardRemovalDialog.qml",

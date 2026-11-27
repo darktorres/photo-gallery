@@ -120,66 +120,84 @@ private:
     std::shared_ptr<Link> m_link;
 };
 
-class Provider;
+// What a provider's pump and the provider share: the requests not yet started, and whether the provider is closing. A pump
+// holds it, so a pump that runs after its provider is gone touches only this.
+struct Queue {
+    QMutex mutex;
+    // The requests not yet started, oldest first.
+    std::vector<std::unique_ptr<Job>> waiting;
+    // Set when the provider closes: no request starts from then on (UI-213).
+    bool closing = false;
+};
+
+// The newest job that has not started, or none: when they have all started, or the provider is closing.
+std::unique_ptr<Job> take_newest(Queue& queue) {
+    QMutexLocker lock(&queue.mutex);
+    if (queue.closing || queue.waiting.empty()) return nullptr;
+    std::unique_ptr<Job> job = std::move(queue.waiting.back());
+    queue.waiting.pop_back();
+    return job;
+}
 
 // One is queued on the pool for each request. When it runs, it takes the newest job that has not started yet, so the
 // jobs start newest first. The pool orders these runnables all alike, so it needs no priority number, and none can wrap.
 class Pump : public QRunnable {
 public:
-    explicit Pump(Provider* provider) : m_provider(provider) {}
-    void run() override;
+    explicit Pump(std::shared_ptr<Queue> queue) : m_queue(std::move(queue)) {}
+    void run() override {
+        if (std::unique_ptr<Job> job = take_newest(*m_queue)) job->run();
+    }
 
 private:
-    Provider* m_provider;
+    std::shared_ptr<Queue> m_queue;
 };
 
 class Provider : public QQuickAsyncImageProvider {
 public:
-    explicit Provider(ImageKind kind) : m_kind(kind) {
+    explicit Provider(ImageKind kind) : m_kind(kind), m_pool(new QThreadPool), m_queue(std::make_shared<Queue>()) {
         // Thumbnails read originals and decode: enough threads to keep the disk queue full (8 in
         // flight). Full-size images are big; two at a time keeps memory in check. A Yandex picture is a file the search
         // fetches on demand, so four at a time.
-        m_pool.setMaxThreadCount(kind == ImageKind::Thumb ? 8 : kind == ImageKind::Yandex ? 4 : 2);
+        m_pool->setMaxThreadCount(kind == ImageKind::Thumb ? 8 : kind == ImageKind::Yandex ? 4 : 2);
     }
 
     ~Provider() override {
-        m_pool.clear();
+        {
+            // Closing: no request that has not started starts, and none is started from now on (the pumps check it).
+            QMutexLocker lock(&m_queue->mutex);
+            m_queue->closing = true;
+            m_queue->waiting.clear();
+        }
+        m_pool->clear();
         // The idle threads end now, not after their expiry: each one's thread-local connections close as it ends.
-        m_pool.setExpiryTimeout(0);
-        m_pool.waitForDone();
+        m_pool->setExpiryTimeout(0);
+        if (m_kind == ImageKind::Yandex) {
+            // Not waited for (UI-213): the app has stopped Yandex, which cuts the fetches under way short at their next
+            // read (Images::stop), but a download held in a read can't be woken from here, and the close must not wait for
+            // it. The pool is left to end with the process; its pumps and jobs touch only the queue and the links they hold.
+            return;
+        }
+        m_pool->waitForDone();
+        delete m_pool;
     }
 
     QQuickImageResponse* requestImageResponse(const QString& id, const QSize&) override {
         auto link = std::make_shared<Link>();
         auto* response = new Response(link);
         {
-            QMutexLocker lock(&m_mutex);
-            m_waiting.push_back(std::make_unique<Job>(m_kind, id, link));
+            QMutexLocker lock(&m_queue->mutex);
+            m_queue->waiting.push_back(std::make_unique<Job>(m_kind, id, link));
         }
-        m_pool.start(new Pump(this));
+        m_pool->start(new Pump(m_queue));
         return response;
-    }
-
-    // The newest job that has not started, or none when they have all started.
-    std::unique_ptr<Job> take_newest() {
-        QMutexLocker lock(&m_mutex);
-        if (m_waiting.empty()) return nullptr;
-        std::unique_ptr<Job> job = std::move(m_waiting.back());
-        m_waiting.pop_back();
-        return job;
     }
 
 private:
     ImageKind m_kind;
-    QThreadPool m_pool;
-    QMutex m_mutex;
-    // The requests not yet started, oldest first.
-    std::vector<std::unique_ptr<Job>> m_waiting;
+    // Heap-allocated: a QThreadPool's destructor waits for its threads, and a Yandex pool must not be waited for at close.
+    QThreadPool* m_pool;
+    std::shared_ptr<Queue> m_queue;
 };
-
-void Pump::run() {
-    if (std::unique_ptr<Job> job = m_provider->take_newest()) job->run();
-}
 
 }  // namespace
 

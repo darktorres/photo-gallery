@@ -178,6 +178,8 @@ fn fold(first_failed: &mut Option<i64>, seq: i64) {
 struct Unwritten {
     failures: Vec<(LedgerFailure, i64)>,
     since: Instant,
+    /// The catalog's Retry count when the pass started: a Retry since then makes these failures stale.
+    retries: i64,
 }
 
 impl Unwritten {
@@ -189,7 +191,7 @@ impl Unwritten {
             return;
         }
         let failures: Vec<LedgerFailure> = self.failures.iter().map(|(f, _)| f.clone()).collect();
-        match catalog.record_failures(FilePass::Thumbs, &failures, unix_now()) {
+        match catalog.record_failures_since(FilePass::Thumbs, &failures, unix_now(), self.retries) {
             Ok(changed) => {
                 ledger.written();
                 if changed {
@@ -303,6 +305,11 @@ pub fn run_while(
         Ok(known) => known,
         Err(e) => return Err(stopped(stats)(Error::Catalog(e))),
     };
+    // The Retry count the pass's failures are recorded under: a Retry made while the pass runs makes them stale.
+    let retries = match catalog.failure_retries() {
+        Ok(retries) => retries,
+        Err(e) => return Err(stopped(stats)(Error::Catalog(e))),
+    };
     drop(setup);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
@@ -314,7 +321,7 @@ pub fn run_while(
     let writing = Writing {
         catalog,
         thumbs: Vec::with_capacity(BATCH),
-        unwritten: Unwritten { failures: Vec::new(), since: Instant::now() },
+        unwritten: Unwritten { failures: Vec::new(), since: Instant::now(), retries },
         first_failed: None,
         tried: 0,
         stats,

@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 
@@ -22,15 +23,21 @@ use crate::makers::Makers;
 /// How many files are fetched at once.
 const FETCHERS: usize = 4;
 
-/// Fetches a result's file from the host it is on.
+/// Fetches a result's file from the host it is on. `cancel` is set when the images are stopped: a fetch that is under way
+/// is then cut short, and it ends as [`SourceError::Closed`].
 pub trait Fetch: Send + Sync {
     /// Fetches the file at `url`.
-    fn fetch(&self, url: &str) -> Result<Download, SourceError>;
+    fn fetch(&self, url: &str, cancel: &AtomicBool) -> Result<Download, SourceError>;
 }
 
 impl Fetch for Fetcher {
-    fn fetch(&self, url: &str) -> Result<Download, SourceError> {
-        Ok(self.download(url)?)
+    fn fetch(&self, url: &str, cancel: &AtomicBool) -> Result<Download, SourceError> {
+        match self.download(url, cancel) {
+            Ok(download) => Ok(download),
+            // A download the close cut short is not a file that failed: the caller is told the images are closed.
+            Err(_) if cancel.load(Ordering::Relaxed) => Err(SourceError::Closed),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -108,6 +115,8 @@ pub struct Images {
     fetch: Arc<dyn Fetch>,
     check: Check,
     changes: Arc<Bus<()>>,
+    /// Set by [`Images::stop`]: the fetches under way are cut short (`Fetch::fetch`).
+    cancel: AtomicBool,
 }
 
 fn lock(table: &Mutex<Table>) -> MutexGuard<'_, Table> {
@@ -118,7 +127,14 @@ impl Images {
     /// The files of a search, fetched with `fetch` and checked with `check`. Each dead result, and each kept one (with
     /// its size), is announced on `changes`.
     pub fn new(fetch: Arc<dyn Fetch>, check: Check, changes: Arc<Bus<()>>) -> Arc<Images> {
-        Arc::new(Images { table: Mutex::default(), settled: Condvar::new(), fetch, check, changes })
+        Arc::new(Images {
+            table: Mutex::default(),
+            settled: Condvar::new(),
+            fetch,
+            check,
+            changes,
+            cancel: AtomicBool::new(false),
+        })
     }
 
     /// Queues the results `(id, url)` for fetching, and starts the fetchers for them. A result that no fetcher reaches
@@ -153,14 +169,17 @@ impl Images {
         self.settled.notify_all();
     }
 
-    /// The fetchers take no more results; the ones fetching end with the file in hand.
+    /// The fetchers take no more results, and nothing is fetched on demand any more. A caller waiting for a file gets
+    /// [`SourceError::Closed`] at once, and a download under way is cut short between its reads (`Fetch::fetch`).
     pub fn stop(&self) {
         lock(&self.table).stopped = true;
+        self.cancel.store(true, Ordering::Relaxed);
+        self.settled.notify_all();
     }
 
-    /// No fetcher is running.
-    pub fn idle(&self) -> bool {
-        lock(&self.table).fetchers == 0
+    /// How many results the search has (all of them, not only those still kept).
+    pub fn count(&self) -> usize {
+        lock(&self.table).slots.len()
     }
 
     /// The next result still waiting, marked as being fetched. None when none is waiting, or the images are stopped.
@@ -183,7 +202,7 @@ impl Images {
     /// The file at `url`, fetched, and kept only when the app decodes it: a format the model knows, which the check makes
     /// a grid picture of.
     fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, SourceError> {
-        let file = self.fetch.fetch(url)?;
+        let file = self.fetch.fetch(url, &self.cancel)?;
         let format = file.format.ok_or(SourceError::Undecodable("not a format this app knows"))?;
         let Picture { grid, size } = (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
         Ok(Arc::new(Fetched { file, format, grid, size }))
@@ -208,6 +227,8 @@ impl Images {
                     t.sized.push(Measured { id, size: fetched.size });
                     State::Ready(fetched)
                 }
+                // Cut short by the close: the file is neither kept nor dead, and nothing is fetched for it any more.
+                Err(SourceError::Closed) => State::Queued,
                 Err(error) => {
                     t.dead.push(id);
                     State::Dead(error)
@@ -222,28 +243,50 @@ impl Images {
     }
 
     /// The file of the result `id`, which is at `url`: kept when it is in, waited for when a fetcher is on it, and
-    /// fetched now otherwise. A dead result is an error.
-    pub fn get(&self, id: u64, url: &str) -> Result<Arc<Fetched>, SourceError> {
+    /// fetched now otherwise. A dead result is an error. The fetch runs on a thread of its own, and the caller waits
+    /// for it only while the images are open: once they are stopped ([`Images::stop`]) the caller gets
+    /// [`SourceError::Closed`] at once, so a closing app is not held up by a download.
+    pub fn get(self: &Arc<Self>, id: u64, url: &str) -> Result<Arc<Fetched>, SourceError> {
         let mut t = lock(&self.table);
-        let url = loop {
-            match t.slots.get(&id) {
-                Some(Slot { state: State::Ready(fetched), .. }) => return Ok(fetched.clone()),
-                Some(Slot { state: State::Dead(error), .. }) => return Err(error.clone()),
-                Some(Slot { state: State::Fetching, .. }) => {}
-                Some(Slot { url, state: State::Queued }) => break url.clone(),
-                None => break url.to_string(),
+        loop {
+            match t.slots.get(&id).map(|slot| &slot.state) {
+                Some(State::Ready(fetched)) => return Ok(fetched.clone()),
+                Some(State::Dead(error)) => return Err(error.clone()),
+                // Closed: nothing new is fetched, and a file in flight is not waited for.
+                _ if t.stopped => return Err(SourceError::Closed),
+                // A fetcher or another caller has it: wait for it to settle.
+                Some(State::Fetching) => {}
+                Some(State::Queued) | None => break,
             }
             t = self.settled.wait(t).unwrap_or_else(PoisonError::into_inner);
-        };
-        t.slots.insert(id, Slot { url: url.clone(), state: State::Fetching });
+        }
+        t.slots.insert(id, Slot { url: url.to_string(), state: State::Fetching });
         drop(t);
-        let outcome = self.fetch_caught(&url);
-        self.settle(id, outcome.clone());
-        outcome
+        let images = Arc::clone(self);
+        let fetching_url = url.to_string();
+        let spawned = thread::Builder::new().name(format!("yandex fetch {id}")).spawn(move || {
+            let outcome = images.fetch_caught(&fetching_url);
+            images.settle(id, outcome);
+        });
+        if spawned.is_err() {
+            // No thread for it: the file is fetched here, as it was before (the wait below then finds it settled).
+            let outcome = self.fetch_caught(url);
+            self.settle(id, outcome);
+        }
+        let mut t = lock(&self.table);
+        loop {
+            match t.slots.get(&id).map(|slot| &slot.state) {
+                Some(State::Ready(fetched)) => return Ok(fetched.clone()),
+                Some(State::Dead(error)) => return Err(error.clone()),
+                _ if t.stopped => return Err(SourceError::Closed),
+                _ => {}
+            }
+            t = self.settled.wait(t).unwrap_or_else(PoisonError::into_inner);
+        }
     }
 
     /// The file of the result `id`, at the URL it was queued with. An id that no search has is an error.
-    pub fn get_known(&self, id: u64) -> Result<Arc<Fetched>, SourceError> {
+    pub fn get_known(self: &Arc<Self>, id: u64) -> Result<Arc<Fetched>, SourceError> {
         let url = lock(&self.table)
             .slots
             .get(&id)
@@ -280,7 +323,7 @@ pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> 
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 
     use pg_model::format::Format;
@@ -294,7 +337,7 @@ mod tests {
     }
 
     impl Fetch for Counting {
-        fn fetch(&self, url: &str) -> Result<Download, SourceError> {
+        fn fetch(&self, url: &str, _cancel: &AtomicBool) -> Result<Download, SourceError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if self.fail.contains(&url) {
                 return Err(YandexError::Status(404).into());

@@ -46,15 +46,19 @@
 //! still busy (`pg_catalog::Error::is_busy`, which walks the error's chain) is tried again, in order, until it goes
 //! through: a scan's batch or an import's flush only delays it. Any other failure, `SQLITE_LOCKED` included (a conflict
 //! inside the connection, which trying again on the same connection could loop on), is not tried again: a lost event, post or
-//! replace counts toward `NoticesLost`, and a mark or a dismissal that fails is logged and the inbox is read again, which
-//! undoes the window's optimistic change (it doesn't count as lost). A clear or a resolve that fails counts nothing: the
-//! notices it would have removed stay, so none is lost. `NoticesLost` is posted after the next write that goes
-//! through, and counts lost notices only. The Retry is one writer command: it writes `Catalog::retry_failures`, then wakes
-//! the job; a failure reads the inbox again. The writer applies its ops through a small `Store` trait, so the tests inject
+//! replace counts toward `NoticesLost`. A dismissal or a Retry that fails is reported to the user (`Notice::InboxWriteFailed`)
+//! and the inbox is read again, which undoes the window's optimistic change; a mark that fails is reported, and is not sent
+//! again until a new event (no mark forces a read). None of these counts as lost. A clear or a resolve that fails counts
+//! nothing: the notices it would have removed stay, so none is lost. `NoticesLost` is posted after the next write that
+//! goes through, and counts lost notices only. The Retry is one writer command: it writes `Catalog::retry_failures`, then
+//! wakes the job. The writer applies its ops through a small `Store` trait, so the tests inject
 //! `SQLITE_BUSY` and `SQLITE_LOCKED`.
 //!
 //! **Shutdown.** `Inbox::close` sets the stop under the `Work` lock and wakes the writer, which goes on writing (and trying
 //! a busy catalog again) what is queued until it is empty or `SHUTDOWN_DRAIN` (5 s) has passed, then logs what is left.
+//! A user's write (a mark, a dismissal, a Retry) is queued in the catalog (`Catalog::queue_inbox_write`) before it is
+//! applied, and leaves the queue once it is written or refused. The writes still queued are written at the next start
+//! (`Writer::replay`), so a write is lost at shutdown only if it never got into the queue before the drain ran out.
 //! `App::shutdown` is idempotent, and `impl Drop for App` calls it, so a front end that only drops the app still closes the
 //! cache, the inbox and the catalogs in their order.
 //!
@@ -89,8 +93,8 @@ use pg_catalog::ledger::Failure;
 use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::ids::FileId;
-use pg_model::inbox::{InboxEntry as Entry, InboxEntryId as EntryId};
-use pg_model::notice::{FilePass, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
+use pg_model::inbox::{InboxEntry as Entry, InboxEntryId as EntryId, QueuedInboxWrite};
+use pg_model::notice::{FilePass, InboxAction, Key, KeyBuf, Level, Lifecycle, Notice, Trigger};
 use pg_model::num::count_u64;
 use pg_platform::clock::unix_now as now;
 
@@ -129,6 +133,10 @@ pub struct InboxListing {
     pub entries: Vec<Entry>,
     /// How many of them are unread.
     pub unread: u64,
+    /// The sequence of the last write this listing reflects (every write up to it is in the listing's state, or was
+    /// refused). A write with a higher sequence is not reflected yet: a window's optimistic change for it stays until a
+    /// listing says otherwise (`Inbox::dismiss` gives the sequence).
+    pub through: u64,
 }
 
 /// What the inbox tells its subscribers.
@@ -180,14 +188,50 @@ fn covers(scope: &KeyBuf, key: &KeyBuf) -> bool {
     scope.code == key.code && scope.root == key.root && (scope.part.is_none() || scope.part == key.part)
 }
 
-/// What the user does to the inbox: never dropped.
+/// What the user does to the inbox: never dropped. Each is queued in the catalog (`QueuedInboxWrite`) before it is written,
+/// so a write that the run ends before is written at the next start.
 enum Mutation {
     /// Mark these entries read, as they were displayed (one mark, or "Mark all read").
     MarkRead(Vec<EntryId>),
-    /// Dismiss these entries, as they were displayed (one, or "Clear all").
-    Dismiss(Vec<EntryId>),
+    /// Dismiss these entries, as they were displayed (a dismissal).
+    Dismiss(Vec<EntryId>, InboxAction),
+    /// "Clear all": every entry the inbox lists goes, not only the ones displayed (`Catalog::dismiss_all_listed`).
+    ClearAll,
     /// The user's Retry of a pass's failed files, then what follows it once written (the job woken).
     Retry(FilePass, Box<dyn FnOnce() + Send>),
+}
+
+impl Mutation {
+    /// The write as the catalog's queue keeps it.
+    fn queued(&self) -> QueuedInboxWrite {
+        match self {
+            Mutation::MarkRead(ids) => QueuedInboxWrite::Mark(ids.clone()),
+            Mutation::Dismiss(ids, _) => QueuedInboxWrite::Dismiss(ids.clone()),
+            Mutation::ClearAll => QueuedInboxWrite::ClearAll,
+            Mutation::Retry(pass, _) => QueuedInboxWrite::Retry(*pass),
+        }
+    }
+
+    /// The write a queued one is replayed as: a dismissal is reported as one. A replayed Retry has nothing to run after
+    /// it: the writer notes it (`Shared::retry_replayed`), and the library's start wakes the job for it.
+    fn replayed(write: QueuedInboxWrite) -> Mutation {
+        match write {
+            QueuedInboxWrite::Mark(ids) => Mutation::MarkRead(ids),
+            QueuedInboxWrite::Dismiss(ids) => Mutation::Dismiss(ids, InboxAction::Dismiss),
+            QueuedInboxWrite::ClearAll => Mutation::ClearAll,
+            QueuedInboxWrite::Retry(pass) => Mutation::Retry(pass, Box::new(|| {})),
+        }
+    }
+
+    /// The inbox action a failure of this write is reported as.
+    fn action(&self) -> InboxAction {
+        match self {
+            Mutation::MarkRead(_) => InboxAction::Mark,
+            Mutation::Dismiss(_, action) => *action,
+            Mutation::ClearAll => InboxAction::ClearAll,
+            Mutation::Retry(..) => InboxAction::Retry,
+        }
+    }
 }
 
 /// A thumbnail the window asked for: it couldn't be made, or it was.
@@ -286,9 +330,11 @@ impl Work {
         self.states.push((seq, op));
     }
 
-    fn mutation(&mut self, mutation: Mutation) {
+    /// Queue a user's write; its sequence.
+    fn mutation(&mut self, mutation: Mutation) -> u64 {
         let seq = self.seq();
         self.mutations.push((seq, mutation));
+        seq
     }
 
     fn thumb(&mut self, file: FileId, thumb: Thumb) {
@@ -333,6 +379,9 @@ struct Shared {
     wake: Condvar,
     /// The writer has applied a batch and read the inbox after it (`Work::done`).
     applied: Condvar,
+    /// Set when the writer replays a queued Retry at the start (`Writer::replay`); the library's start takes it and
+    /// wakes the job, which makes the Retry's files.
+    retry_replayed: Arc<AtomicBool>,
 }
 
 impl Shared {
@@ -396,6 +445,12 @@ impl Inbox {
             thumb_failures,
             writer: Mutex::new(Some(thread)),
         }))
+    }
+
+    /// The flag the writer sets when it replays a queued Retry at the start. The library takes it when it starts, and
+    /// wakes the job for the Retry's files (`LibraryService::start`).
+    pub(crate) fn retries_replayed(&self) -> Arc<AtomicBool> {
+        self.shared.retry_replayed.clone()
     }
 
     /// Queue work for the writer and wake it; `None` once the inbox is closed (the work is dropped: a post was only
@@ -478,16 +533,23 @@ impl Inbox {
         self.mark_read(ids);
     }
 
-    /// Dismiss the entry `id`, as it was displayed.
-    pub fn dismiss(&self, id: EntryId) {
-        self.dismiss_all(vec![id]);
+    /// Dismiss the entry `id`, as it was displayed. Its write's sequence (see [`InboxListing::through`]), 0 when none
+    /// was queued.
+    pub fn dismiss(&self, id: EntryId) -> u64 {
+        self.dismiss_with(vec![id], InboxAction::Dismiss)
     }
 
-    /// "Clear all": dismiss the entries displayed, `ids`, and never one the window wasn't given.
-    pub fn dismiss_all(&self, ids: Vec<EntryId>) {
-        if !ids.is_empty() {
-            self.push(|w| w.mutation(Mutation::Dismiss(ids)));
+    /// "Clear all": every entry the inbox lists goes, by the inbox's filter, not only the rows the window holds (the
+    /// window's listing is at most `LISTED` of them). Its write's sequence.
+    pub fn clear_all(&self) -> u64 {
+        self.push(|w| w.mutation(Mutation::ClearAll)).unwrap_or(0)
+    }
+
+    fn dismiss_with(&self, ids: Vec<EntryId>, action: InboxAction) -> u64 {
+        if ids.is_empty() {
+            return 0;
         }
+        self.push(|w| w.mutation(Mutation::Dismiss(ids, action))).unwrap_or(0)
     }
 
     /// Try `pass`'s failed files again (`pg_catalog::Catalog::retry_failures`), one write of the writer's: the thumbnails'
@@ -640,6 +702,7 @@ trait Store {
     fn resolve(&self, trigger: Trigger) -> pg_catalog::Result<bool>;
     fn mark(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool>;
     fn dismiss(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool>;
+    fn clear_listed(&self, now: i64) -> pg_catalog::Result<bool>;
     fn retry(&self, pass: FilePass) -> pg_catalog::Result<()>;
     fn thumbs_failed(&self, failures: &[Failure], now: i64) -> pg_catalog::Result<bool>;
     fn thumbs_made(&self, files: &[FileId]) -> pg_catalog::Result<bool>;
@@ -648,6 +711,12 @@ trait Store {
     fn thumb_failures(&self) -> pg_catalog::Result<bool>;
     fn version(&self) -> pg_catalog::Result<i64>;
     fn prune(&self, now: i64) -> pg_catalog::Result<u64>;
+    /// Queue a user's write before it is applied: its queue id.
+    fn queue(&self, write: &QueuedInboxWrite, now: i64) -> pg_catalog::Result<i64>;
+    /// Take a queued write out of the queue (written, or refused).
+    fn unqueue(&self, id: i64) -> pg_catalog::Result<bool>;
+    /// The queued writes, oldest first.
+    fn queued(&self) -> pg_catalog::Result<Vec<(i64, QueuedInboxWrite)>>;
 
     /// Whether `e` is worth trying again: another connection held the lock past the busy timeout.
     fn is_busy(&self, e: &pg_catalog::Error) -> bool {
@@ -678,6 +747,10 @@ impl Store for Catalog {
 
     fn dismiss(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool> {
         self.dismiss_all(ids, now)
+    }
+
+    fn clear_listed(&self, now: i64) -> pg_catalog::Result<bool> {
+        self.dismiss_all_listed(now)
     }
 
     fn retry(&self, pass: FilePass) -> pg_catalog::Result<()> {
@@ -711,6 +784,18 @@ impl Store for Catalog {
     fn prune(&self, now: i64) -> pg_catalog::Result<u64> {
         self.prune_inbox(now)
     }
+
+    fn queue(&self, write: &QueuedInboxWrite, now: i64) -> pg_catalog::Result<i64> {
+        self.queue_inbox_write(write, now)
+    }
+
+    fn unqueue(&self, id: i64) -> pg_catalog::Result<bool> {
+        self.unqueue_inbox_write(id)
+    }
+
+    fn queued(&self) -> pg_catalog::Result<Vec<(i64, QueuedInboxWrite)>> {
+        self.queued_inbox_writes()
+    }
 }
 
 /// One write of the writer's: an op, or a run of thumbnail reports of one kind written together. The naming is by
@@ -735,6 +820,14 @@ impl Step {
             Step::State(StateOp::Replace { notices, .. }) => count_u64(notices.len()).max(1),
             Step::ThumbsFailed(failures) => count_u64(failures.len()),
             Step::Mutation(_) | Step::ThumbsMade(_) => 0,
+        }
+    }
+
+    /// The inbox action of a user's write (`None` for anything else).
+    fn inbox_action(&self) -> Option<InboxAction> {
+        match self {
+            Step::Mutation(m) => Some(m.action()),
+            _ => None,
         }
     }
 }
@@ -770,7 +863,8 @@ fn apply(store: &impl Store, step: &mut Step, now: i64) -> pg_catalog::Result<bo
         Step::State(StateOp::Clear { scope }) => store.clear(&scope.key()),
         Step::State(StateOp::Resolve(trigger)) => store.resolve(*trigger),
         Step::Mutation(Mutation::MarkRead(ids)) => store.mark(ids, now),
-        Step::Mutation(Mutation::Dismiss(ids)) => store.dismiss(ids, now),
+        Step::Mutation(Mutation::Dismiss(ids, _)) => store.dismiss(ids, now),
+        Step::Mutation(Mutation::ClearAll) => store.clear_listed(now),
         Step::Mutation(Mutation::Retry(pass, _)) => store.retry(*pass).map(|()| true),
         Step::ThumbsFailed(failures) => store.thumbs_failed(failures, now),
         Step::ThumbsMade(files) => store.thumbs_made(files),
@@ -866,8 +960,10 @@ impl Writer {
         if let Err(e) = store.prune(now()) {
             pg_log::warn("inbox", &format!("the inbox couldn't be pruned: {e:#}"));
         }
+        // Before the first read: the listing shows what the last run's queued writes leave.
+        self.replay(store);
         // A read that failed leaves no version behind, so the next poll reads the inbox again.
-        self.version = if self.refresh(store, false) { store.version().ok() } else { None };
+        self.version = if self.refresh(store, false, 0) { store.version().ok() } else { None };
         loop {
             let batch = self.next_batch();
             if !self.handle(store, batch) {
@@ -909,7 +1005,7 @@ impl Writer {
         let version = store.version().ok();
         if drained.changed || drained.force || reported || viewed || version != self.version {
             // Recorded once the read has gone through: a failed read leaves none, and the next poll reads again.
-            self.version = if self.refresh(store, true) { version } else { None };
+            self.version = if self.refresh(store, true, batch.last) { version } else { None };
         }
         self.done(batch.last);
         true
@@ -927,13 +1023,20 @@ impl Writer {
                     finish(step);
                 }
                 Err(Unwritten::Failed(e)) => {
-                    out.force = true;
+                    let action = step.inbox_action();
+                    // A failed dismissal or Retry reads the inbox again, which undoes the window's optimistic change. A
+                    // failed mark doesn't: it is not sent again until a new event brings its entry back.
+                    out.force |= action != Some(InboxAction::Mark);
                     let notices = step.notices();
                     if notices > 0 {
                         self.lost = self.lost.saturating_add(notices);
                         pg_log::warn("inbox", &format!("the inbox couldn't keep {notices} notices: {e:#}"));
                     } else {
                         pg_log::warn("inbox", &format!("the inbox couldn't be changed: {e:#}"));
+                    }
+                    // The user is told what didn't save: the entry is still there.
+                    if let Some(action) = action {
+                        self.events.publish(InboxEvent::Toast(Notice::InboxWriteFailed { action }));
                     }
                 }
                 Err(Unwritten::Abandoned) => {
@@ -944,7 +1047,7 @@ impl Writer {
                         "inbox",
                         &format!(
                             "the inbox closed with the catalog still busy: {notices} notices and {changes} of the \
-                             user's changes weren't written"
+                             user's changes weren't written (a change already queued is written at the next start)"
                         ),
                     );
                     break;
@@ -954,17 +1057,54 @@ impl Writer {
         out
     }
 
-    /// Write `step`, trying again while the catalog is busy (until the shutdown's deadline, once the inbox closes).
+    /// Write `step`, trying again while the catalog is busy (until the shutdown's deadline, once the inbox closes). A
+    /// user's write is queued first, and is written through the queue (`apply_queued`).
     fn write(
         &self,
         store: &impl Store,
         step: &mut Step,
         deadline: &mut Option<Instant>,
     ) -> std::result::Result<bool, Unwritten> {
+        let queued = match &*step {
+            Step::Mutation(m) => Some(m.queued()),
+            _ => None,
+        };
+        let Some(write) = queued else {
+            return self.busy_retry(store, deadline, || apply(store, &mut *step, now()));
+        };
+        let id = self.busy_retry(store, deadline, || store.queue(&write, now()))?;
+        self.apply_queued(store, step, id, deadline)
+    }
+
+    /// Write the user's write `step`, which is queued as `id`, and take it out of the queue once it is written or refused.
+    /// A write the run ends before is left queued: the next start writes it (`replay`).
+    fn apply_queued(
+        &self,
+        store: &impl Store,
+        step: &mut Step,
+        id: i64,
+        deadline: &mut Option<Instant>,
+    ) -> std::result::Result<bool, Unwritten> {
+        let written = self.busy_retry(store, deadline, || apply(store, &mut *step, now()));
+        if !matches!(written, Err(Unwritten::Abandoned))
+            && let Err(e) = store.unqueue(id)
+        {
+            pg_log::warn("inbox", &format!("a queued inbox change couldn't leave the queue: {e:#}"));
+        }
+        written
+    }
+
+    /// Run `op` until it is not busy, trying again after a pause; `Abandoned` once the shutdown's deadline has passed.
+    fn busy_retry<T>(
+        &self,
+        store: &impl Store,
+        deadline: &mut Option<Instant>,
+        mut op: impl FnMut() -> pg_catalog::Result<T>,
+    ) -> std::result::Result<T, Unwritten> {
         let mut tries = 0u32;
         loop {
-            match apply(store, step, now()) {
-                Ok(changed) => return Ok(changed),
+            match op() {
+                Ok(value) => return Ok(value),
                 Err(e) if store.is_busy(&e) => {
                     tries = tries.saturating_add(1);
                     if tries == BUSY_WARN {
@@ -975,6 +1115,33 @@ impl Writer {
                     }
                 }
                 Err(e) => return Err(Unwritten::Failed(e)),
+            }
+        }
+    }
+
+    /// Write the queued writes the last run left, oldest first, before the first read. A Retry's wake is not replayed:
+    /// the job makes its files at its next run.
+    fn replay(&self, store: &impl Store) {
+        let queued = match store.queued() {
+            Ok(queued) => queued,
+            Err(e) => {
+                pg_log::warn("inbox", &format!("the inbox's queued changes couldn't be read: {e:#}"));
+                return;
+            }
+        };
+        for (id, write) in queued {
+            let retry = matches!(write, QueuedInboxWrite::Retry(_));
+            let mut step = Step::Mutation(Mutation::replayed(write));
+            match self.apply_queued(store, &mut step, id, &mut None) {
+                Ok(_) => {
+                    if retry {
+                        self.shared.retry_replayed.store(true, Ordering::SeqCst);
+                    }
+                }
+                Err(Unwritten::Failed(e)) => {
+                    pg_log::warn("inbox", &format!("a queued inbox change couldn't be written: {e:#}"));
+                }
+                Err(Unwritten::Abandoned) => return,
             }
         }
     }
@@ -1021,9 +1188,10 @@ impl Writer {
         self.shared.applied.notify_all();
     }
 
-    /// Read the inbox and publish what it lists; with `toast`, each entry that is news is toasted (the toast rule, in
-    /// the module's header). False when the read failed: nothing is published then.
-    fn refresh(&mut self, store: &impl Store, toast: bool) -> bool {
+    /// Read the inbox and publish what it lists, reflecting the writes up to `through` (`InboxListing::through`); with
+    /// `toast`, each entry that is news is toasted (the toast rule, in the module's header). False when the read failed:
+    /// nothing is published then.
+    fn refresh(&mut self, store: &impl Store, toast: bool, through: u64) -> bool {
         let read = store.marks().and_then(|marks| Ok((marks, store.entries(self.viewing)?)));
         let (marks, entries) = match read {
             Ok(read) => read,
@@ -1062,7 +1230,7 @@ impl Writer {
             Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
             Err(e) => pg_log::warn("inbox", &format!("the thumbnails' ledger couldn't be read: {e:#}")),
         }
-        let listing = Arc::new(InboxListing { entries, unread });
+        let listing = Arc::new(InboxListing { entries, unread, through });
         *self.listing.lock().unwrap_or_else(PoisonError::into_inner) = listing.clone();
         if toast {
             // The listing is newest first, and the window shows the last toast of a batch: the toasts go oldest first, so the
@@ -1234,6 +1402,9 @@ mod tests {
         fn dismiss(&self, ids: &[EntryId], now: i64) -> pg_catalog::Result<bool> {
             self.write(|c| c.dismiss_all(ids, now))
         }
+        fn clear_listed(&self, now: i64) -> pg_catalog::Result<bool> {
+            self.write(|c| c.dismiss_all_listed(now))
+        }
         fn retry(&self, pass: FilePass) -> pg_catalog::Result<()> {
             self.write(|c| c.retry_failures(pass))
         }
@@ -1257,6 +1428,15 @@ mod tests {
         }
         fn prune(&self, now: i64) -> pg_catalog::Result<u64> {
             self.catalog.prune_inbox(now)
+        }
+        fn queue(&self, write: &QueuedInboxWrite, now: i64) -> pg_catalog::Result<i64> {
+            self.write(|c| c.queue_inbox_write(write, now))
+        }
+        fn unqueue(&self, id: i64) -> pg_catalog::Result<bool> {
+            self.write(|c| c.unqueue_inbox_write(id))
+        }
+        fn queued(&self) -> pg_catalog::Result<Vec<(i64, QueuedInboxWrite)>> {
+            self.catalog.queued_inbox_writes()
         }
         fn is_busy(&self, e: &pg_catalog::Error) -> bool {
             matches!(e, pg_catalog::Error::Step { source, .. } if source.downcast_ref::<Injected>() == Some(&Injected::Busy))
@@ -1555,7 +1735,7 @@ mod tests {
         let id = writer.listing.lock().unwrap().entries[0].id;
         sub.take();
         store.faults.lock().unwrap().push_back(Injected::Locked);
-        writer.handle(&store, batch(vec![Op::Mutation(Mutation::Dismiss(vec![id]))]));
+        writer.handle(&store, batch(vec![Op::Mutation(Mutation::Dismiss(vec![id], InboxAction::Dismiss))]));
         assert_eq!(writer.lost, 0);
         let published: Vec<Arc<InboxListing>> = sub
             .take()
@@ -1595,7 +1775,7 @@ mod tests {
         let (path, dir) = catalog_in("inbox-rev");
         let catalog = open(&path);
         let (mut writer, sub) = writer();
-        writer.refresh(&catalog, false);
+        writer.refresh(&catalog, false, 0);
         let post = |w: &mut Writer, error: &str| w.handle(&catalog, batch(vec![Op::State(post_op(failed(error)))]));
         post(&mut writer, "a");
         assert_eq!(toasts(&sub), [failed("a")]);
@@ -1630,9 +1810,9 @@ mod tests {
         fixture::state::rewrite_notices(&catalog, "listing-failed", "listing-failed", "{}").unwrap();
         fixture::state::rewrite_notices(&catalog, "reload-failed", "retired-kind", "{}").unwrap();
         let (mut writer, _sub) = writer();
-        writer.refresh(&catalog, false);
+        writer.refresh(&catalog, false, 0);
         assert_eq!(writer.undecodable, BTreeSet::from(["listing-failed".to_string()]));
-        writer.refresh(&catalog, false);
+        writer.refresh(&catalog, false, 0);
         assert_eq!(writer.undecodable.len(), 1, "a second read says nothing new");
         drop(catalog);
         let _ = std::fs::remove_dir_all(&dir);

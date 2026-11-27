@@ -23,7 +23,7 @@ use cxx_qt_lib::QImage;
 use ffi::{ImageKind, PixelFormat, Pixels};
 
 use pg_client::image::{ImageRequest, Provider};
-use pg_model::image::ImageKey;
+use pg_model::image::{ImageKey, View};
 use pg_model::size::ThumbHeight;
 use pg_model::turns::Turns;
 use pg_render::display::Rgba;
@@ -103,12 +103,27 @@ fn yandex_picture(id: u64, original: bool) -> anyhow::Result<Pixels> {
     Ok(Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image })
 }
 
+/// The fit error code of a fit that failed (`GalleryModel.viewedFitError`): 1 the original is unavailable, 2 it doesn't
+/// decode, 3 it was being rewritten past the wait. Any other failure is shown as the original being unavailable.
+fn fit_code(error: &anyhow::Error) -> i32 {
+    match error.downcast_ref::<pg_app::Error>() {
+        Some(pg_app::Error::Undecodable(_)) => 2,
+        Some(pg_app::Error::Rewriting(_)) => 3,
+        _ => 1,
+    }
+}
+
 /// The image a request for `kind` and `id` (the URL's part after the provider's name, `pg_client::image`) asks for.
 pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
     let provider = Provider::ALL.into_iter().find(|&p| kind_of(p) == kind);
     let Some(request) = provider.and_then(|provider| ImageRequest::parse(provider, id)) else {
         pg_log::warn("providers", &format!("image {kind:?} {id}: not a request"));
         return failed();
+    };
+    // A fit of the viewer's picture reports its outcome to the model, which shows the failure's cause in the HUD.
+    let fit = match &request {
+        ImageRequest::Full { key, view: View::Fit(..) } => Some(key.file),
+        _ => None,
     };
     let result = match request {
         ImageRequest::Thumb { key, height } => thumbnail(key, height),
@@ -120,13 +135,15 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         }
         ImageRequest::Yandex { id, original } => yandex_picture(id, original),
     };
+    if let Some(file) = fit {
+        let code = result.as_ref().map_or_else(fit_code, |_| 0);
+        crate::gallery::post(move |model| model.fit_outcome(file, code));
+    }
     result.unwrap_or_else(|e| {
-        // An unavailable original is the catalog's offline state, and an undecodable one is logged where the image layer
-        // finds it (a thumbnail's once per file, a viewer's per request): neither is logged again for each request.
-        let logged_there = matches!(
-            e.downcast_ref::<pg_app::Error>(),
-            Some(pg_app::Error::Original(_) | pg_app::Error::Undecodable(_))
-        );
+        // An undecodable original is logged where the image layer finds it (once per file, while it is recent), so it is
+        // not logged again for each request. Every other failure is logged here, the unavailable original and a region
+        // that failed included.
+        let logged_there = matches!(e.downcast_ref::<pg_app::Error>(), Some(pg_app::Error::Undecodable(_)));
         if !logged_there {
             pg_log::warn("providers", &format!("image {kind:?} {id}: {e:#}"));
         }

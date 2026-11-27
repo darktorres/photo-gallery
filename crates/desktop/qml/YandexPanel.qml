@@ -44,6 +44,14 @@ Rectangle {
         visible = true;
         // The keys come here (Escape closes), not to the viewer's photo stepping behind.
         forceActiveFocus();
+        openGuard.restart();
+    }
+
+    // The second click of a double click on the button that opened the panel lands here: it is not a click on the
+    // background, so it does not close the panel the first click opened.
+    Timer {
+        id: openGuard
+        interval: Application.styleHints.mouseDoubleClickInterval
     }
 
     function close() {
@@ -97,7 +105,8 @@ Rectangle {
         Close,
         StepBack,
         StepForward,
-        Pick
+        Pick,
+        OneToOne
     }
 
     // The panel's keys: the key map (pg-client's keys) names the action.
@@ -115,7 +124,10 @@ Rectangle {
     // passes the wheel on at its ends, and the viewer would step to the next picture (its wheel), so it is not reached.
     MouseArea {
         anchors.fill: parent
-        onClicked: panel.close()
+        onClicked: {
+            if (!openGuard.running)
+                panel.close();
+        }
         onWheel: wheel => wheel.accepted = true
     }
 
@@ -132,7 +144,8 @@ Rectangle {
         id: savePicker
         onDone: yandex.downloadPicked()
         onOpenInApp: saveDialog.open = true
-        // The save's folder dialog couldn't open: the status line says why (this picker is only the save's).
+        // A dialog that could not open is said on the status line (this picker is only the save's). A folder the dialog
+        // cannot list is said in the dialog itself (saveDialog.failure, the picker's listError).
         onFailed: (purpose, message) => yandex.showFailure(message)
     }
     FolderPickerDialog {
@@ -140,11 +153,14 @@ Rectangle {
         z: 100
         names: savePicker.names
         here: savePicker.here
+        failure: savePicker.listError
         onGoUp: savePicker.up()
         onOpenRow: row => savePicker.enter(row)
         onChooseRow: row => savePicker.choose(row)
         onChooseHere: savePicker.chooseHere()
         onCancelled: savePicker.cancel()
+        // Hidden, the keys go back to the panel (Escape closes it), not to the dialog's hidden items.
+        onHidden: panel.forceActiveFocus()
     }
 
     Pane {

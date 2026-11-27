@@ -65,16 +65,19 @@ ApplicationWindow {
     // while it is open in the active window what it shows is marked read (Notices.setViewing).
     property bool inboxOpen: false
     onInboxOpenChanged: {
-        if (inboxOpen) {
+        if (inboxOpen)
             inboxLoader.active = true;
-            inboxModel.dismissToast();
-        } else {
+        else
             inboxExpandPass = -1;
-        }
+        // A toast about a notice the inbox showed is gone with the inbox: what it showed is read.
+        inboxModel.dismissToast();
         inboxModel.setViewing(inboxOpen, win.active);
     }
     // The ledger whose entry opens with the inbox, and again when it appears (a lane row's "N failed": its pass's
-    // ledger; --inbox-expand; -1: none): a `pass` code, a bit of Notices.passes.
+    // ledger; --inbox-expand; -1: none): a `pass` code, a bit of Notices.passes. The pass belongs to the open it was given
+    // with (openPanel, or the test hook before the inbox opens): the inbox spends it when it expands the entry
+    // (InboxPanel.expandApplied), and whatever the open did not spend is dropped when the inbox closes, so it never
+    // expands a later open's entry.
     property int inboxExpandPass: -1
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
@@ -114,6 +117,11 @@ ApplicationWindow {
             win.ready = true;
             win.startHooks();
         }
+        // A reloaded window: the start is already over, so its own library starts here.
+        onLibraryStartDue: {
+            win.ready = true;
+            library.start();
+        }
         onRelayoutDue: win.relayout()
         onSelectRequested: i => win.scrollTo(i)
         // A test hook the window performs (the shell ran the rest, in order: TestHooks.perform).
@@ -130,7 +138,8 @@ ApplicationWindow {
             win.similarCommandLineRequested();
         }
         onViewerRequested: i => viewerItem.show(i)
-        onPanelOpenRequested: kind => win.openPanel(kind)
+        // The controller accepted the open; `expandPass` is the ledger to expand with an inbox opened from a lane row (-1: none).
+        onPanelOpenRequested: (kind, expandPass) => win.openPanel(kind, expandPass)
         onPanelCloseRequested: kind => win.closePanel(kind)
         // A listing that shows a reveal or the failed files takes the viewer away (the controller's CloseViewer).
         onViewerCloseRequested: {
@@ -195,7 +204,8 @@ ApplicationWindow {
         id: addPicker
         onDone: library.addPicked()
         onOpenInApp: addDialog.open = true
-        // The picker's failure (the folder dialog, or a folder it cannot list) is said on the window, as the save picker does.
+        // A dialog that could not open is said on the window (a folder the app's dialog cannot list is said in the dialog:
+        // addDialog.failure, the picker's listError).
         onFailed: (purpose, message) => featurePopup.show(message)
     }
     FolderPickerDialog {
@@ -203,6 +213,7 @@ ApplicationWindow {
         z: 100
         names: addPicker.names
         here: addPicker.here
+        failure: addPicker.listError
         onGoUp: addPicker.up()
         onOpenRow: row => addPicker.enter(row)
         onChooseRow: row => addPicker.choose(row)
@@ -226,6 +237,7 @@ ApplicationWindow {
         z: 100
         names: cropPicker.names
         here: cropPicker.here
+        failure: cropPicker.listError
         onGoUp: cropPicker.up()
         onOpenRow: row => cropPicker.enter(row)
         onChooseRow: row => cropPicker.choose(row)
@@ -278,16 +290,35 @@ ApplicationWindow {
         onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
 
-    // Where the library panel's Discard starts: the removal is named, then the dialog confirms. Its changes are given up
-    // for good, so nothing is dropped before the user's confirmation.
-    function askDiscardRemoval(folder: string) {
-        discardDialog.folder = folder;
+    // Where the views menu's Delete view starts: the view is named, then the dialog confirms. A saved view leaves for good,
+    // so nothing is deleted before the user's confirmation.
+    function askDeleteView(name: string) {
+        deleteViewDialog.view = name;
+        deleteViewDialog.open();
+    }
+
+    DeleteViewDialog {
+        id: deleteViewDialog
+        onConfirmed: shell.deleteView(deleteViewDialog.view)
+        onClosed: win.refocus()
+        onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
+    }
+
+    // Where the library panel's Discard starts: the removal is named (its row of the kept removals, and that row's folder),
+    // then the dialog confirms. Its changes are given up for good, so nothing is dropped before the user's confirmation.
+    function askDiscardRemoval(row: int) {
+        discardDialog.row = row;
+        discardDialog.folder = library.keptRemovals[row] ?? "";
         discardDialog.open();
     }
 
     DiscardRemovalDialog {
         id: discardDialog
-        onConfirmed: library.discardRemoval(discardDialog.folder)
+        // The row must still be the removal the dialog named: the kept removals can be read again while it is open.
+        onConfirmed: {
+            if (library.keptRemovals[discardDialog.row] === discardDialog.folder)
+                library.discardRemoval(discardDialog.row);
+        }
         onClosed: win.refocus()
         onVisibleChanged: shell.setPanelShown(PanelKind.SaveViewDialog, visible)
     }
@@ -329,11 +360,11 @@ ApplicationWindow {
     // is only found again, the tree left as the user left it. The folder listed is the view's (the saved one, or the
     // applied view's): when the tree doesn't have it, the controller lists all folders.
     // The folder model works out the listed folder's row (-1: under a folder the user collapsed, or not in the tree).
-    // The shell keeps the folder as the tree spells it and tells the controller whether the folder is known.
+    // The shell keeps the folder as the tree spells it and works out whether the listed folder is known.
     function treeLoaded() {
-        // The model places the tree (treePlaced), then the shell hears whether the listed folder is known.
+        // The model places the tree (treePlaced), then the shell is told the tree is in.
         folderModel.treeLoaded();
-        shell.treeLoaded(folderModel.listedKnown());
+        shell.treeLoaded();
     }
 
     // The tree's highlight for the listed folder: its row, or none (-1) when the tree doesn't have it. Not row 0: that is
@@ -450,12 +481,15 @@ ApplicationWindow {
         inboxModel.setViewing(inboxOpen, active);
     }
 
-    // A shortcut asked for a panel (Shell.panelOpenRequested, panelCloseRequested).
-    function openPanel(kind: int) {
+    // A shortcut asked for a panel (Shell.panelOpenRequested, panelCloseRequested). The inbox opens with the ledger to
+    // expand given with the open (-1: none), which is applied only because the open was accepted.
+    function openPanel(kind: int, expandPass: int) {
         if (kind === PanelKind.Log) {
             logModel.start();
             win.logOpen = true;
         } else if (kind === PanelKind.Inbox) {
+            if (expandPass >= 0)
+                win.inboxExpandPass = expandPass;
             win.inboxOpen = true;
         }
     }
@@ -479,7 +513,8 @@ ApplicationWindow {
     }
 
     // The status bar's selection: the item's info and rating, or the key hints with none selected.
-    readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint()
+    // With border detection off, the grid's hint leaves out B and N (they do nothing then).
+    readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint(win.bordersOn)
 
     // The test hooks (command-line options): the shell runs them in order (Shell.runTestHooks), and hands the window
     // each one it performs (Shell.testStep, TestHooks.perform).
@@ -543,6 +578,7 @@ ApplicationWindow {
             fileCount: galleryModel.count
             filterActive: filterBar.active
             filterTotal: filterBar.total
+            filterCountsPending: filterBar.countsPending
             filtersOpen: win.filtersOpen
             rowHeight: win.rowHeight
             minRowHeight: shell.minRowHeight
@@ -575,7 +611,7 @@ ApplicationWindow {
                 grid.takeFocus();
             }
             onViewChosen: name => win.applyView(name)
-            onViewDeleteRequested: name => shell.deleteView(name)
+            onViewDeleteRequested: name => win.askDeleteView(name)
             onSaveViewRequested: win.askSaveView()
             onLibraryRequested: {
                 win.libraryOpen = true;
@@ -600,10 +636,13 @@ ApplicationWindow {
             onLogRequested: shell.globalAction(GlobalShortcuts.Log)
             onToastExpired: inboxModel.dismissToast()
             onInboxRequested: shell.globalAction(GlobalShortcuts.Inbox)
+            // An open inbox expands the lane's ledger now. Otherwise the pass goes with the open, which the controller may
+            // refuse (a non-switchable modal is open): the pass is applied only once the open is accepted (openPanel).
             onLaneFailedRequested: pass => {
-                win.inboxExpandPass = pass;
-                if (!win.inboxOpen)
-                    shell.globalAction(GlobalShortcuts.Inbox);
+                if (win.inboxOpen)
+                    win.inboxExpandPass = pass;
+                else
+                    shell.globalActionExpanding(GlobalShortcuts.Inbox, pass);
             }
             onLanePauseRequested: (number, paused) => library.setLanePaused(number, paused)
         }
@@ -711,9 +750,9 @@ ApplicationWindow {
                 else
                     featurePopup.show(words.text("ui-borders-disabled"));
             }
-            onBorderMarkToggled: (i, m) => {
+            onBorderMarkToggled: i => {
                 if (win.bordersOn)
-                    shell.setBorderMark(i, m);
+                    shell.toggleBorderMark(i);
                 else
                     featurePopup.show(words.text("ui-borders-disabled"));
             }
@@ -751,7 +790,7 @@ ApplicationWindow {
                     Component.onCompleted: shell.setPanelShown(PanelKind.Library, visible)
                     onAddRequested: addPicker.pick(PickerPurpose.AddFolder)
                     onRemoveRequested: row => win.askRemoveFolder(row)
-                    onDiscardRequested: folder => win.askDiscardRemoval(folder)
+                    onDiscardRequested: row => win.askDiscardRemoval(row)
                     onRescanRequested: library.rescan()
                     onWriteBackToggled: on => {
                         appSettings.writeBack = on;
@@ -909,6 +948,9 @@ ApplicationWindow {
                     failedTotal: failedFilesModel.total
                     failedLoading: failedFilesModel.loading
                     failedError: failedFilesModel.error
+                    copying: inboxModel.copying
+                    revealing: shell.revealing
+                    revealError: shell.revealError
                     // The pass's ledger entry, once the inbox lists it (its bit of `passes`): this follows it appearing.
                     expandRow: win.inboxExpandPass >= 0 && (inboxModel.passes & (1 << win.inboxExpandPass)) !== 0 ? inboxModel.rowOfKey(inboxModel.passKey(win.inboxExpandPass)) : -1
                     onCopyRequested: row => inboxModel.copy(row)
@@ -941,6 +983,8 @@ ApplicationWindow {
                     }
                     onDismissed: win.inboxOpen = false
                     onHidden: win.refocus()
+                    // The pass is one-shot: spent by the entry it expanded.
+                    onExpandApplied: win.inboxExpandPass = -1
                     onVisibleChanged: shell.setPanelShown(PanelKind.Inbox, visible)
                     // Made already open (the first open of the session): no visibleChanged comes, so the shell is told here.
                     Component.onCompleted: shell.setPanelShown(PanelKind.Inbox, visible)

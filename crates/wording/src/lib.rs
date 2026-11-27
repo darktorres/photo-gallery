@@ -337,10 +337,20 @@ pub fn write_status(queued: u64, error: Option<&str>) -> String {
     }
 }
 
-/// A notice as one line, its title then its details: the command line's, and what the inbox copies.
+/// A notice as one line, its title then its details: the command line's, and the inbox's toasts and rows.
 pub fn notice_line(notice: &Notice, rules: PathRules) -> String {
-    let title = render(&Message::NoticeTitle { notice: notice.clone(), rules });
-    let body = render(&Message::NoticeBody { notice: notice.clone(), rules });
+    notice_line_with(notice, rules, false)
+}
+
+/// A notice as one line of plain text, for the clipboard: the same words, with no bidi isolation marks in the paths (another
+/// program pastes the text, and the marks would go with it).
+pub fn notice_line_plain(notice: &Notice, rules: PathRules) -> String {
+    notice_line_with(notice, rules, true)
+}
+
+fn notice_line_with(notice: &Notice, rules: PathRules, plain: bool) -> String {
+    let title = render(&Message::NoticeTitle { notice: notice.clone(), rules, plain });
+    let body = render(&Message::NoticeBody { notice: notice.clone(), rules, plain });
     render(&Message::NoticeLine { title, body })
 }
 
@@ -359,6 +369,9 @@ pub fn hint(labels: &[Hint]) -> String {
 pub fn yandex_saved(written: usize, folder: &str, failed: usize, first_error: Option<&str>) -> String {
     match first_error {
         None => render(&Message::YandexSaved { count: written, folder: folder.to_string() }),
+        Some(e) if written == 0 => {
+            render(&Message::YandexSaveNothingWritten { failed: failed.to_string(), error: e.to_string() })
+        }
         Some(e) => render(&Message::YandexSavedFailed {
             written: written.to_string(),
             failed: failed.to_string(),
@@ -519,8 +532,8 @@ mod tests {
     fn worded(notice: &Notice) -> (String, String) {
         let rules = PathRules::Windows;
         (
-            render(&Message::NoticeTitle { notice: notice.clone(), rules }),
-            render(&Message::NoticeBody { notice: notice.clone(), rules }),
+            render(&Message::NoticeTitle { notice: notice.clone(), rules, plain: false }),
+            render(&Message::NoticeBody { notice: notice.clone(), rules, plain: false }),
         )
     }
 
@@ -605,6 +618,18 @@ mod tests {
         assert_eq!(lane_paused_status(&scan, rules), "Paused · Scanning D:\\Photos · 1,234 images found");
     }
 
+    /// The clipboard's line has no isolation marks in its paths; otherwise it is the same line.
+    #[test]
+    fn a_plain_notice_line_has_no_isolation_marks() {
+        let notice = Notice::FolderAlreadyAdded { folder: PathRules::Windows.parse(r"D:\Photos").unwrap() };
+        let plain = notice_line_plain(&notice, PathRules::Windows);
+        assert!(plain.contains(r"D:\Photos"), "{plain}");
+        assert!(!plain.contains('\u{2068}') && !plain.contains('\u{2069}'), "{plain}");
+        let isolated = notice_line(&notice, PathRules::Windows);
+        assert!(isolated.contains('\u{2068}'), "{isolated}");
+        assert_eq!(plain, isolated.replace(['\u{2068}', '\u{2069}'], ""));
+    }
+
     #[test]
     fn the_crop_notice_says_what_failed() {
         let cropped = |failed, failures| Notice::Cropped {
@@ -614,6 +639,8 @@ mod tests {
             failed,
             failures,
             unfinished: 0,
+            changed: 0,
+            missing: 0,
         };
         let out = iso("D:/out");
         assert_eq!(worded(&cropped(0, Vec::new())).1, format!("2 saved in {out}; 1 had nothing to crop; none failed"));
@@ -637,11 +664,31 @@ mod tests {
             failed: 0,
             failures: Vec::new(),
             unfinished: 4,
+            changed: 0,
+            missing: 0,
         };
         let out = iso("D:/out");
         assert_eq!(
             worded(&stopped).1,
             format!("2 saved in {out}; 1 had nothing to crop; none failed; 4 not reached: the pass was stopped first")
+        );
+        // Files that changed or went are not "nothing to crop": they are said as their own counts.
+        let gone = Notice::Cropped {
+            folder: "D:/out".into(),
+            saved: 2,
+            skipped: 1,
+            failed: 0,
+            failures: Vec::new(),
+            unfinished: 0,
+            changed: 1,
+            missing: 2,
+        };
+        assert_eq!(
+            worded(&gone).1,
+            format!(
+                "2 saved in {out}; 1 had nothing to crop; 1 changed on disk since their borders were found, so left as they \
+                 are; 2 no longer in the library; none failed"
+            )
         );
     }
 
@@ -758,6 +805,8 @@ mod tests {
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
         assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");
+        // Nothing written: not "Saved 0".
+        assert_eq!(yandex_saved(0, "D:/out", 3, Some("denied")), "Nothing was saved: 3 failed. First failure: denied");
         let download = SaveFailure::Download { url: "https://a/b.jpg".into(), error: RequestError::Status(404) };
         assert_eq!(yandex_failure(&download), "https://a/b.jpg couldn't be downloaded: Yandex answered HTTP 404");
         let write = SaveFailure::Write {
@@ -886,14 +935,14 @@ mod tests {
     fn the_key_hints_are_worded() {
         use pg_client::keys::{self, Media, Shown};
         assert_eq!(
-            hint(&keys::grid_hint()),
+            hint(&keys::grid_hint(true)),
             "Click to select · double-click, Enter or Space to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
              B borders · N not a border · Ctrl+wheel or Ctrl+/− resize"
         );
         let still = Shown { has_borders: false, still: true, video: false };
         assert_eq!(
             hint(&keys::viewer_hint(Media::Still, still)),
-            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · Shift+R ⟳ · wheel zoom · double-click 1:1 · Z real size · L loupe · \
+            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · Shift+R ⟳ · pinch or + − zoom · double-click 1:1 · Z real size · L loupe · \
              B borders · H hide · Esc close"
         );
         assert_eq!(

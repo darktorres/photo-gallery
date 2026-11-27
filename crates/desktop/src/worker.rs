@@ -8,6 +8,7 @@
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 /// A write to carry out.
 type Write = Box<dyn FnOnce() + Send>;
@@ -51,15 +52,27 @@ pub(crate) fn run(write: impl FnOnce() + Send + 'static) {
     }
 }
 
+/// How long `stop` waits for the writes asked for. A write that panicked holds the thread in its error box until the box
+/// is dismissed (`panic_log`), and the window's exit must not wait for that.
+const STOP_WAIT: Duration = Duration::from_secs(2);
+
 /// Stop the thread once the writes asked for so far are carried out: the queue closes, and the thread ends after them.
-/// The window calls it before the catalog closes.
+/// The window calls it before the catalog closes. It waits [`STOP_WAIT`] for them; a thread still busy after that (a box
+/// is open on it) is left to finish on its own, and the exit goes on.
 pub(crate) fn stop() {
     let Some(worker) = WORKER.get() else { return };
     worker.queue.lock().unwrap_or_else(PoisonError::into_inner).take();
     let thread = worker.thread.lock().unwrap_or_else(PoisonError::into_inner).take();
-    if let Some(thread) = thread
-        && thread.join().is_err()
-    {
+    let Some(thread) = thread else { return };
+    let deadline = Instant::now() + STOP_WAIT;
+    while !thread.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if !thread.is_finished() {
+        pg_log::warn("window", "the window's writes are still running (an error box is open on them); not waited for");
+        return;
+    }
+    if thread.join().is_err() {
         pg_log::error("window", "the window's writes thread panicked");
     }
 }

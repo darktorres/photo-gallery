@@ -26,6 +26,9 @@ pub mod qobject {
         #[qproperty(QStringList, names, READ, WRITE, NOTIFY, FINAL)]
         /// The app's dialog: the folder it is in (display text).
         #[qproperty(QString, here, READ, WRITE, NOTIFY, FINAL)]
+        /// The app's dialog could not list the folder it was asked to show: why, inside the dialog (it keeps the folder it
+        /// showed). Empty when it lists.
+        #[qproperty(QString, list_error, cxx_name = "listError", READ, WRITE, NOTIFY, FINAL)]
         type FolderPicker = super::PickerRust;
     }
 

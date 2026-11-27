@@ -36,6 +36,10 @@ pub mod qobject {
         /// Files in the folder, unfiltered, and those the query keeps (`countFacets()`).
         #[qproperty(i32, total, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
+        /// The counts for the folder and query shown are not in yet: `total` and `matching` are the last ones read, or
+        /// none (0). From the start and after a reload (`reload`), until `counted` delivers them: a pending state, not a
+        /// zero.
+        #[qproperty(bool, counts_pending, cxx_name = "countsPending", READ, WRITE, NOTIFY, FINAL)]
         /// One line saying what the query keeps, for the save-view dialog.
         #[qproperty(QString, description, READ, WRITE, NOTIFY, FINAL)]
         type Filters = super::FiltersRust;

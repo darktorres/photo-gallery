@@ -1,11 +1,14 @@
 //! The inbox's entries as a listing gives them: a kept notice, or a ledger of failures, with its counts.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use crate::notice::{LedgerKind, Notice};
+use serde::{Deserialize, Serialize};
+
+use crate::notice::{FilePass, LedgerKind, Notice};
 
 /// An entry of the inbox, as a listing names it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum InboxEntryId {
     /// A kept notice: its row's id and `uid` (`meta.seq` when it was made), at its revision `rev` (which rises when a
     /// state's data changes). Ids are reused, so the pair is what names the row: a mark or a dismissal for a row since
@@ -38,6 +41,20 @@ impl InboxEntryId {
             InboxEntryId::Row { id, uid, .. } => InboxEntryId::Row { id, uid, rev: 0 },
         }
     }
+}
+
+/// A user's write to the inbox, as the catalog's queue keeps it until it is written (`Catalog::queue_inbox_write`): a
+/// write the app ends before it is applied is replayed at the next start. Its entries are the ones the window displayed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueuedInboxWrite {
+    /// Mark these entries read.
+    Mark(Vec<InboxEntryId>),
+    /// Dismiss these entries.
+    Dismiss(Vec<InboxEntryId>),
+    /// "Clear all": every entry the inbox lists goes (by the inbox's filter, not by these ids).
+    ClearAll,
+    /// The user's Retry of a pass's failed files.
+    Retry(FilePass),
 }
 
 /// A ledger's counts, read only while the inbox is viewed (`count(*)` over its live rows): how many, how many came

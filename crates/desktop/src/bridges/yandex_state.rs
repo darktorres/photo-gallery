@@ -1,5 +1,8 @@
 //! The state of the `YandexSearch` QObject: the bridge's backing struct (the results of the app's search, and the preview).
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use cxx_qt_lib::QString;
 use pg_app::yandex::Hit;
 use pg_client::layout::Frame;
@@ -34,4 +37,12 @@ pub struct YandexSearchRust {
     pub(crate) results: Results<Hit>,
     /// Each result's frame in the panel's layout (`relayout`), by its index in `results`.
     pub(crate) frames: Vec<Frame>,
+    /// The photo the panel is for: the one its last search was asked for, whose results and picks it shows.
+    pub(crate) photo: Option<PathBuf>,
+    /// The photo the app's latest accepted search is for. The panel shows that search's results, progress and status only
+    /// while it is the panel's photo (`photo == searched`): a search of another photo never lands under this one.
+    pub(crate) searched: Option<PathBuf>,
+    /// The picks of each photo the panel showed, by the ids of its results: kept across a close and a reopen of that
+    /// photo, and put back on its results when they come in (`restore_picks`).
+    pub(crate) picks: BTreeMap<PathBuf, Vec<u64>>,
 }

@@ -22,6 +22,7 @@
 | `views-failed` | `list` | `next-success(views-list)` |
 | `views-failed` | `save` | `next-success(views-save)` |
 | `views-failed` | `delete` | `next-success(views-delete)` |
+| `views-failed` | `read` | `next-success(views-read)` |
 | `session-not-saved` | — | `next-success(session)` |
 | `edit-failed` | `rate` | `next-success(edit-rate)` |
 | `edit-failed` | `rotate` | `next-success(edit-rotate)` |

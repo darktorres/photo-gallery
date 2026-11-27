@@ -126,7 +126,7 @@ proptest! {
     /// The start is over exactly once, on the event that completes it, whichever order the tree and the list come in.
     #[test]
     fn the_start_finishes_once_whatever_the_order(order in 0usize..3, count in 1usize..12) {
-        let tree = Event::TreeLoaded { folder_known: true };
+        let tree = Event::TreeLoaded;
         let shown = Event::ListShown { count, generation: None };
         let placed = Event::ListPositioned;
         // The list is shown before it is placed; the tree may come before, between or after them.
@@ -147,21 +147,28 @@ proptest! {
         prop_assert!(c.started());
     }
 
-    /// A folder the tree no longer has lists all folders at once; the start waits for that list.
+    /// A folder the tree no longer has is listed as it is: the listing stays, no other folder is listed in its place, and
+    /// a failed tree read (`TreeFailed`) changes nothing either.
     #[test]
-    fn a_folder_the_tree_lost_lists_all_folders(folder in "[a-z]{1,8}") {
+    fn a_folder_the_tree_lost_keeps_its_listing(folder in "[a-z]{1,8}") {
         let mut c = controller(listing(&folder));
-        let commands = c.update(0, Event::TreeLoaded { folder_known: false });
-        let all = commands.iter().find_map(|c| match c {
-            Command::OpenList { listing, .. } => Some((listing.folder.clone(), listing.recursive)),
-            _ => None,
-        });
-        // All folders: the empty folder with its subfolders (without them it would be the drive roots' own files).
-        prop_assert_eq!(all, Some((Merged::default(), true)));
-        prop_assert!(!c.started());
+        let before = c.listing().clone();
+        let commands = c.update(0, Event::TreeLoaded);
+        prop_assert!(
+            !commands.iter().any(|c| matches!(c, Command::OpenList { .. })),
+            "no OpenList is sent"
+        );
+        prop_assert_eq!(c.listing(), &before);
+        let failed = c.update(1, Event::TreeFailed);
+        prop_assert!(
+            !failed.iter().any(|c| matches!(c, Command::OpenList { .. })),
+            "no OpenList is sent after a failed read"
+        );
+        prop_assert_eq!(c.listing(), &before);
     }
 
-    /// Without a current item, the keys that act on one do nothing; with one, they act on that item.
+    /// Without a current item, the keys that act on one do nothing; with one, each is handed on once as an action on the
+    /// current item, which the desktop resolves on the model's lane (`Command::OnCurrent`).
     #[test]
     fn item_keys_act_on_the_current_item_only(key in item_key(), item in 0usize..50) {
         let mut c = controller(listing(""));
@@ -170,13 +177,7 @@ proptest! {
         c.update(2, Event::CurrentChanged(Some(item)));
         let acted = c.update(3, Event::Key(key));
         prop_assert_eq!(acted.len(), 1);
-        match acted[0] {
-            Command::Rate { item: i, .. } | Command::Turn { item: i, .. } | Command::ToggleBorderMark(i) => {
-                prop_assert_eq!(i, item)
-            }
-            Command::ShowViewer(i) => prop_assert_eq!(i, item),
-            ref other => prop_assert!(false, "unexpected {other:?}"),
-        }
+        prop_assert!(matches!(acted[0], Command::OnCurrent(_)), "unexpected {:?}", acted[0]);
     }
 
     /// Events and commands survive the JSON a recording stores them in, unchanged, folders included: one with a lone
@@ -225,7 +226,7 @@ fn saves_and_lists(commands: &[Command]) -> (usize, usize, usize) {
 /// A controller whose start is over: the tree and the first list are in and placed.
 fn started(listing: Listing) -> Controller {
     let mut c = controller(listing);
-    c.update(0, Event::TreeLoaded { folder_known: true });
+    c.update(0, Event::TreeLoaded);
     c.update(0, Event::ListShown { count: 10, generation: None });
     c.update(0, Event::ListPositioned);
     assert!(c.started());
@@ -257,14 +258,14 @@ fn the_last_file_is_restored_in_the_first_list_shown() {
 fn an_applied_view_is_remembered_once_the_start_is_over() {
     let applied = Start { apply_view: true, ..Start::new(listing(""), ROW_200, ROW_200) };
     let mut c = Controller::new(applied);
-    let mut out = c.update(0, Event::TreeLoaded { folder_known: true });
+    let mut out = c.update(0, Event::TreeLoaded);
     out.extend(c.update(0, Event::ListShown { count: 10, generation: None }));
     out.extend(c.update(0, Event::ListPositioned));
     let saved = out.iter().position(|c| matches!(c, Command::SaveSession(_)));
     let started = out.iter().position(|c| matches!(c, Command::Started));
     assert!(saved.is_some() && saved < started, "remembered before Started: {out:?}");
     let mut plain = controller(listing(""));
-    let mut out = plain.update(0, Event::TreeLoaded { folder_known: true });
+    let mut out = plain.update(0, Event::TreeLoaded);
     out.extend(plain.update(0, Event::ListShown { count: 10, generation: None }));
     out.extend(plain.update(0, Event::ListPositioned));
     assert!(!out.iter().any(|c| matches!(c, Command::SaveSession(_))), "{out:?}");
@@ -292,7 +293,7 @@ fn a_selection_made_before_the_start_is_over_is_remembered_when_it_is() {
     let mut c = controller(listing(""));
     c.update(0, Event::CurrentChanged(Some(3)));
     c.update(1500, Event::Timeout);
-    let out = c.update(1500, Event::TreeLoaded { folder_known: true });
+    let out = c.update(1500, Event::TreeLoaded);
     assert!(out.is_empty(), "the tree alone does not finish the start: {out:?}");
     c.update(1501, Event::ListShown { count: 10, generation: None });
     let out = c.update(1502, Event::ListPositioned);
@@ -348,7 +349,8 @@ fn the_zero_key_takes_the_rating_away() {
     let mut c = started(listing(""));
     c.update(0, Event::CurrentChanged(Some(3)));
     let out = c.update(3, Event::Key(GridKey::Rate(0)));
-    assert!(out.contains(&Command::Rate { item: 3, rating: None }), "{out:?}");
+    // The key acts on the current item on the model lane (UI-037), so the command carries no item.
+    assert!(out.contains(&Command::OnCurrent(pg_client::controller::CurrentAct::Rate(None))), "{out:?}");
 }
 
 /// A viewer's 0 takes the rating away, and the viewer still moves on to the next picture.

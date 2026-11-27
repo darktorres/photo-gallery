@@ -114,6 +114,9 @@ TestCase {
             failedTotal: 2
             failedLoading: false
             failedError: ""
+            copying: false
+            revealing: false
+            revealError: ""
             selected: -1
             selectedKey: ""
             selectedText: ""

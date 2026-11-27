@@ -11,7 +11,7 @@ use crate::bridges::facet_choices_bridge::qobject::{self, ChoiceFacet};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
 
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_client::facets::{Counts, choices};
 use pg_client::input::key_of;
 use pg_model::query::{ListFacet, Query};
@@ -23,6 +23,7 @@ const ROLE_KEY: i32 = 256;
 const ROLE_LABEL: i32 = 257;
 const ROLE_COUNT: i32 = 258;
 const ROLE_CHOSEN: i32 = 259;
+const ROLE_PENDING: i32 = 260;
 
 /// Counts saturate: the properties are ints, as QML's are. (`Filters` shows its totals with the same function.)
 pub(crate) fn count(n: i64) -> i32 {
@@ -44,14 +45,18 @@ pub(crate) fn list_facet(kind: ChoiceFacet) -> Option<ListFacet> {
     .map(|(_, facet)| facet)
 }
 
-/// The rows of `facet` for a query and counts.
-fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
-    choices(facet, counts)
+/// The rows of `facet` for a query and counts. With no counts yet (`None`: the folder's are being read), a count that is
+/// shown is pending, not zero.
+fn rows(facet: ListFacet, query: &Query, counts: Option<&Counts>) -> Vec<Row> {
+    let empty = Counts::default();
+    let pending = counts.is_none();
+    choices(facet, counts.unwrap_or(&empty))
         .into_iter()
         .map(|(choice, shown)| Row {
             chosen: query.has(&choice),
             label: pg_wording::choice_label(&choice),
             count: count(shown.unwrap_or(0)),
+            pending: pending && shown.is_some(),
             key: key_of(&choice),
         })
         .collect()
@@ -82,9 +87,24 @@ impl qobject::FacetChoices {
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = controller::counts();
-        let rows = rows(self.facet, &query, &counts);
+        let rows = rows(self.facet, &query, counts.as_ref());
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.
         if rows == self.rows {
+            return;
+        }
+        // The same choices in the same order (only a count or a chosen mark moved): the rows are signalled as changed, not
+        // reset. A reset destroys the chip delegates, and with them the chip that has the keyboard focus.
+        let same_choices = rows.len() == self.rows.len()
+            && rows.iter().zip(&self.rows).all(|(new, old)| new.key == old.key && new.label == old.label);
+        if same_choices {
+            let last = rows.len().checked_sub(1);
+            self.as_mut().rust_mut().rows = rows;
+            if let Some(last) = last {
+                let root = QModelIndex::default();
+                let (top, bottom) = (self.index(0, 0, &root), self.index(qt_int(last), 0, &root));
+                let roles = [ROLE_COUNT, ROLE_CHOSEN, ROLE_PENDING];
+                self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
+            }
             return;
         }
         self.as_mut().begin_reset_model();
@@ -101,13 +121,20 @@ impl qobject::FacetChoices {
             ROLE_LABEL => QVariant::from(&QString::from(&row.label)),
             ROLE_COUNT => QVariant::from(&row.count),
             ROLE_CHOSEN => QVariant::from(&row.chosen),
+            ROLE_PENDING => QVariant::from(&row.pending),
             _ => QVariant::default(),
         }
     }
 
     pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
-        for (role, name) in [(ROLE_KEY, "key"), (ROLE_LABEL, "label"), (ROLE_COUNT, "count"), (ROLE_CHOSEN, "chosen")] {
+        for (role, name) in [
+            (ROLE_KEY, "key"),
+            (ROLE_LABEL, "label"),
+            (ROLE_COUNT, "count"),
+            (ROLE_CHOSEN, "chosen"),
+            (ROLE_PENDING, "pending"),
+        ] {
             roles.insert(role, QByteArray::from(name));
         }
         roles

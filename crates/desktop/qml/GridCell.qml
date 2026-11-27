@@ -33,6 +33,19 @@ Item {
     // Whether the cell's pictures may be asked for now (GridRow.loadStarted). Until they may, the images have no source, so
     // the loader's queue is not filled from the bottom of the grid up.
     property bool loadNow: true
+    // The thumbnail's source while the cell loads it: nothing when the row is pooled. A named function, so the retry can bind
+    // to it without a closure.
+    function thumbSource(): string {
+        return cell.loadNow ? cell.itemThumbUrl : "";
+    }
+    // True while a retry sets the thumbnail's source by hand (the binding below is off then).
+    property bool retrying: false
+    Binding {
+        target: thumb
+        property: "source"
+        value: cell.thumbSource()
+        when: !cell.retrying
+    }
 
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
@@ -69,13 +82,30 @@ Item {
         // Files not imported yet have no size: their cell is square until they are.
         fillMode: Image.PreserveAspectCrop
         clip: true
-        source: cell.loadNow ? cell.itemThumbUrl : ""
         asynchronous: true
         retainWhileLoading: true
         smooth: true
         mipmap: true
+        // A thumbnail on show: ready, and not failed or cleared since. A thumbnail that is replaced keeps its place while the
+        // new one loads (retainWhileLoading), so the fade stays at 1 for it: the old picture does not fade out.
+        property bool shown: false
+        // A failed thumbnail is asked for again (retryTimer), for as long as it fails; a ready one resets the count.
+        property int retries: 0
+        onStatusChanged: {
+            if (status === Image.Ready) {
+                shown = true;
+                retries = 0;
+                retryTimer.stop();
+            } else if (status === Image.Error) {
+                shown = false;
+                retryTimer.restart();
+            } else if (status === Image.Null) {
+                shown = false;
+                retryTimer.stop();
+            }
+        }
         // The fade in, from 0 to 1 once the thumbnail is ready.
-        property real fade: status === Image.Ready ? 1 : 0
+        property real fade: shown ? 1 : 0
         Behavior on fade {
             NumberAnimation {
                 duration: 120
@@ -88,6 +118,32 @@ Item {
         // (every channel from 128 one lower) in about one run in ten. From 0.999 the final 1 is far outside that
         // tolerance, and the step is invisible.
         opacity: fade < 0.999 ? fade : 1
+    }
+    // Asks again for a thumbnail that failed. Qt does not request an unchanged source again after an error (setSource
+    // returns when the URL is the same), so the source is set again: a file that was unreadable for a moment (an offline
+    // drive, a file another process holds) is read once it is. Qt does re-request on a device pixel ratio change by itself
+    // (QQuickImageBase::itemChange calls load()). The wait is 1 s, doubling, capped at 15 s, and it goes on while the
+    // thumbnail fails; a row that is pooled (off the view) has no source, so it stops there. A new URL starts over (the
+    // Connections below).
+    Timer {
+        id: retryTimer
+        repeat: false
+        interval: Math.min(1000 * Math.pow(2, Math.min(thumb.retries, 4)), 15000)
+        onTriggered: {
+            thumb.retries++;
+            // The binding below is off while the source is set by hand, so the same URL is asked for again.
+            cell.retrying = true;
+            thumb.source = "";
+            thumb.source = cell.thumbSource();
+            cell.retrying = false;
+        }
+    }
+    Connections {
+        target: cell
+        function onItemThumbUrlChanged() {
+            thumb.retries = 0;
+            retryTimer.stop();
+        }
     }
     // A thumbnail that won't load (it doesn't decode, or its original can't be read): an error mark in its place, a red
     // circle with a white cross, drawn with shapes so no font is needed. The placeholder under it is blank for such a file

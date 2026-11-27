@@ -62,6 +62,19 @@ fn nested_modals_close_by_their_kind() {
     assert!(panels.modals().is_empty());
 }
 
+/// A reloaded window has no modal open: the mirror is cleared, so the global keys work again, and what the new window
+/// opens is mirrored as it reports it.
+#[test]
+fn a_window_reload_clears_the_modal_mirror() {
+    let mut panels = Panels::default();
+    panels.update(Event::PanelOpened(PanelKind::Inbox));
+    panels.update(Event::PanelOpened(PanelKind::Library));
+    assert_eq!(panels.update(Event::WindowReloaded), vec![]);
+    assert!(panels.modals().is_empty());
+    panels.update(Event::PanelOpened(PanelKind::Inbox));
+    assert_eq!(panels.modals(), [PanelKind::Inbox]);
+}
+
 /// A kind opened again while it is open moves to the top, and is never in twice.
 #[test]
 fn a_duplicate_open_moves_the_kind_to_the_top() {
@@ -133,10 +146,11 @@ fn report(c: &mut Controller, event: Report) -> Vec<Command> {
     c.update(0, event)
 }
 
+/// Out of dev mode the log's key is refused, and the refusal is named.
 #[test]
-fn the_log_key_does_nothing_out_of_dev_mode() {
+fn the_log_key_is_refused_out_of_dev_mode() {
     let mut c = controller();
-    assert_eq!(report(&mut c, Report::Global(Global::Log)), vec![]);
+    assert_eq!(report(&mut c, Report::Global(Global::Log)), vec![Command::GlobalRefused(Global::Log)]);
 }
 
 /// Dev mode's key turns it on and saves that; a start's dev mode (`--dev=1`) is not saved.
@@ -207,15 +221,19 @@ fn the_log_key_switches_from_the_inbox() {
     );
 }
 
-/// While a dialog or a menu is open, it takes every key: the global shortcuts do nothing, dev mode's included.
+/// While a dialog or a menu is open, it takes every key: the global shortcuts are refused, dev mode's included.
 #[test]
 fn another_modal_takes_the_global_keys() {
     let mut c = controller();
     report(&mut c, Report::Panel(Event::SetDevMode(true)));
     for kind in PanelKind::ALL.into_iter().filter(|k| !k.is_switchable()) {
         report(&mut c, Report::Panel(Event::PanelOpened(kind)));
-        assert_eq!(report(&mut c, Report::Global(Global::Log)), vec![], "{kind:?}");
-        assert_eq!(report(&mut c, Report::Global(Global::DevMode)), vec![], "{kind:?}");
+        assert_eq!(report(&mut c, Report::Global(Global::Log)), vec![Command::GlobalRefused(Global::Log)], "{kind:?}");
+        assert_eq!(
+            report(&mut c, Report::Global(Global::DevMode)),
+            vec![Command::GlobalRefused(Global::DevMode)],
+            "{kind:?}"
+        );
         report(&mut c, Report::Panel(Event::PanelClosed(kind)));
     }
     assert!(c.panels().dev_mode());

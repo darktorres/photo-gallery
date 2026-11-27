@@ -270,10 +270,28 @@ impl Catalog {
             let rows = stmt.query_map([Rc::new(values(&folders))], |r| r.get(0))?;
             rows.collect::<rusqlite::Result<_>>()?
         };
+        // The temps are recorded as leftovers in this transaction, before the rows that name them go: a temp the caller
+        // can't delete is then still known to the catalog, and is deleted at a later start (`temp_leftovers`).
+        for temp in &temps {
+            tx.execute("INSERT OR IGNORE INTO temp_leftovers(path) VALUES (?1)", [temp])?;
+        }
         let rows = tx.execute("DELETE FROM files WHERE folder_id IN rarray(?1)", [Rc::new(values(&folders))])?;
         finish_folders(&tx, rules, path, &folders)?;
         tx.commit()?;
         Ok(Some(Discarded { rows: count_u64(rows), temps }))
+    }
+
+    /// The temp files left behind and not yet deleted (`temp_leftovers`), as the rules' bytes, in byte order.
+    pub fn temp_leftovers(&self) -> Result<Vec<Vec<u8>>> {
+        let mut stmt = self.conn.prepare_cached("SELECT path FROM temp_leftovers ORDER BY path")?;
+        let rows = stmt.query_map([], |r| r.get::<_, Vec<u8>>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The temp file `temp` (the rules' bytes) is deleted, or was gone: it is no longer left behind.
+    pub fn clear_temp_leftover(&self, temp: &[u8]) -> Result<()> {
+        self.conn.execute("DELETE FROM temp_leftovers WHERE path = ?1", [temp])?;
+        Ok(())
     }
 
     /// Gives the free pages of the catalog file back to the file system (step E). Only with incremental auto-vacuum,

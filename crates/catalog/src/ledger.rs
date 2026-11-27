@@ -164,6 +164,29 @@ impl Catalog {
         Ok(changed)
     }
 
+    /// How many Retries of the failed files have been made so far (`relist_failures`). A pass reads it when it starts, and
+    /// records what it found with that count (`record_failures_since`).
+    pub fn failure_retries(&self) -> Result<i64> {
+        Ok(self.conn.query_row("SELECT value FROM meta WHERE key = 'failure_retries'", [], |r| r.get(0))?)
+    }
+
+    /// `record_failures` for failures a pass found since `retries` was read ([`Catalog::failure_retries`]). A Retry since
+    /// then says the files are tried again by the pass's next run, so these are not recorded (the answer is `false`): the
+    /// count is checked in the same transaction as the write, so a late flush cannot undo a Retry.
+    pub fn record_failures_since(&self, pass: FilePass, failures: &[Failure], now: i64, retries: i64) -> Result<bool> {
+        if failures.is_empty() {
+            return Ok(false);
+        }
+        let tx = write_transaction(&self.conn)?;
+        let current: i64 = tx.query_row("SELECT value FROM meta WHERE key = 'failure_retries'", [], |r| r.get(0))?;
+        if current != retries {
+            return Ok(false);
+        }
+        let changed = record_failures_on(&tx, pass, failures, now)?;
+        tx.commit()?;
+        Ok(changed)
+    }
+
     /// The files `pass`'s ledger holds: a pass reads them when it starts, to [`Catalog::clear_failures`] only those it
     /// then makes.
     pub fn recorded_failures(&self, pass: FilePass) -> Result<BTreeSet<FileId>> {

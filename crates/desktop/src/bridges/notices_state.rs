@@ -31,8 +31,13 @@ pub struct NoticesRust {
     pub(crate) selected_serial: f64,
     pub(crate) selected_can_retry: bool,
     pub(crate) selected_can_show_files: bool,
-    /// The (key, serial) of the failed-file list last asked for, so it is asked once per entry and failure.
-    pub(crate) requested: (QString, f64),
+    /// The (key, serial, count) of the failed-file list last asked for, so it is asked once per entry and change of it.
+    pub(crate) requested: (QString, f64, f64),
+    /// The selected ledger's rows in all (`selectedCount`): with the newest serial, what the failed-file list is of. A
+    /// file cleared that is not the newest changes the count and not the serial.
+    pub(crate) selected_count: f64,
+    /// A ledger's Copy is reading its files (`copying`): the clipboard is written from the read, when it is delivered.
+    pub(crate) copying: bool,
 }
 
 impl Default for NoticesRust {
@@ -54,7 +59,9 @@ impl Default for NoticesRust {
             selected_serial: 0.0,
             selected_can_retry: false,
             selected_can_show_files: false,
-            requested: (QString::default(), 0.0),
+            requested: (QString::default(), 0.0, 0.0),
+            selected_count: 0.0,
+            copying: false,
         }
     }
 }

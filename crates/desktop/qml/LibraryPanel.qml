@@ -29,8 +29,8 @@ ModalOverlay {
     // Add a folder (Main asks the picker, then the library takes what it chose).
     signal addRequested
     signal removeRequested(int row)
-    // The folder whose kept removal is to be given up (its path as the panel lists it).
-    signal discardRequested(string folder)
+    // The kept removal to be given up, by its row of keptRemovals (the library finds it by that row's exact path).
+    signal discardRequested(int row)
     signal rescanRequested
     signal writeBackToggled(bool on)
     signal detectBordersToggled(bool on)
@@ -106,6 +106,7 @@ ModalOverlay {
                     model: panel.keptRemovals
                     delegate: RowLayout {
                         id: keptRow
+                        required property int index
                         required property string modelData
                         Layout.fillWidth: true
                         Label {
@@ -122,7 +123,7 @@ ModalOverlay {
                         Button {
                             text: words.text("ui-discard-removal")
                             flat: true
-                            onClicked: panel.discardRequested(keptRow.modelData)
+                            onClicked: panel.discardRequested(keptRow.index)
                         }
                     }
                 }

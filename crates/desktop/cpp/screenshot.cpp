@@ -101,8 +101,10 @@ Busy busy_of(QQuickWindow* window) {
                 busy.animating_owners << QString::fromLatin1(owner->metaObject()->className());
             }
         } else if (object->property("writeStatus").isValid()) {
-            // The Library object (the only one with a write status): its job and its writer.
-            if (object->property("busy").toBool())
+            // The Library object (the only one with a write status): its job and its writer. A scan that was asked for
+            // counts as the job from the request, before its first progress is shown (Library.scanPending): the job
+            // starts on its own thread, and the picture is not taken before it has.
+            if (object->property("busy").toBool() || object->property("scanPending").toBool())
                 ++busy.jobs;
             if (!object->property("writeStatus").toString().isEmpty())
                 ++busy.writes;

@@ -278,6 +278,40 @@ fn read_of(args: &[OsString], dev_env: Parsed) -> Read {
         bad.push(BadOption::new("--yandex-preview", "needs --find-similar; ignored"));
         hooks.yandex_preview = None;
     }
+    // The viewer's keys and zoom act on the viewer `--view` opens: without it they would do nothing, so they are named bad.
+    // A value that is bad is named by its own error already, so only a valid one is named here.
+    if hooks.view.is_none() {
+        if !hooks.viewer_keys.is_empty() {
+            bad.push(BadOption::new("--viewer-keys", "needs --view; ignored"));
+            hooks.viewer_keys = Vec::new();
+        }
+        if hooks.zoom.is_some() {
+            bad.push(BadOption::new("--zoom", "needs --view; ignored"));
+            hooks.zoom = None;
+        }
+    }
+    // The panels the hooks open in turn (`test_hooks::before_list`): the inbox and the log are opened after them, and
+    // a panel that is open stays, so an inbox or log hook given with one of them does nothing. It is named bad.
+    let modal = hooks.menu_views || hooks.library || hooks.save_view || has_option(&parsed, "find-similar");
+    if modal && hooks.inbox {
+        bad.push(BadOption::new("--inbox", "can't open over a panel the other hooks open; ignored"));
+        hooks.inbox = false;
+    }
+    if modal && hooks.log {
+        bad.push(BadOption::new("--log", "can't open over a panel the other hooks open; ignored"));
+        hooks.log = false;
+    }
+    // The log view is for dev mode, which the start's options turn off (`--dev=0`, `PG_DEV=0`): then it does nothing.
+    if hooks.log && start.dev_mode == Some(false) {
+        bad.push(BadOption::new("--log", "needs dev mode (--dev=1); ignored"));
+        hooks.log = false;
+    }
+    // The expansion is the pass of the inbox the hooks open: given without it, nothing opens to take it, and it would be
+    // left set for the user's own first open. It is named bad and dropped here, at parse time.
+    if hooks.inbox_expand.is_some() && !hooks.inbox {
+        bad.push(BadOption::new("--inbox-expand", "needs --inbox; ignored"));
+        hooks.inbox_expand = None;
+    }
     Read { start, hooks, bad }
 }
 
@@ -582,9 +616,6 @@ mod tests {
                 "--menu=views",
                 "--library=1",
                 "--save-view=0",
-                "--log=true",
-                "--inbox=1",
-                "--inbox-expand=import",
                 "--viewer-keys=LBr3",
                 "--grid-keys=LRUD",
                 "--locale=pseudo",
@@ -597,8 +628,8 @@ mod tests {
         assert!(r.bad.is_empty(), "{:?}", r.bad);
         let h = &r.hooks;
         assert_eq!((h.select, h.view, h.zoom, h.mascot), (Some(5), Some(0), Some(2.5), Some(40)));
-        assert!(h.menu_views && h.library && !h.save_view && h.log && h.inbox && h.pseudo);
-        assert_eq!(h.inbox_expand.as_deref(), Some("import"));
+        assert!(h.menu_views && h.library && !h.save_view && !h.log && !h.inbox && h.pseudo);
+        assert_eq!(h.inbox_expand, None, "the expansion needs the inbox hook, and this run has none");
         assert_eq!(h.viewer_keys, ["L", "B", "r3"]);
         assert_eq!(h.grid_keys, ["L", "R", "U", "D"]);
         assert_eq!((h.wait, h.yandex_preview), (2.5, Some(1)));
@@ -679,6 +710,34 @@ mod tests {
         assert_eq!(r.hooks.yandex_preview, None);
         assert_eq!(bad_names(&r), ["--yandex-preview"]);
         assert!(read(&["--yandex-preview=1", "--find-similar=a.jpg"], None).bad.is_empty());
+    }
+
+    /// A hook that would do nothing where it is given is named bad and dropped: the viewer's keys and zoom without
+    /// `--view`, the inbox or the log over a panel the other hooks open, and the log with dev mode off.
+    #[test]
+    fn an_inert_hook_is_named_and_dropped() {
+        let r = read(&["--viewer-keys=LB", "--zoom=2"], None);
+        assert_eq!((r.hooks.zoom, r.hooks.viewer_keys.is_empty()), (None, true));
+        assert_eq!(bad_names(&r), ["--viewer-keys", "--zoom"]);
+        assert!(read(&["--view=0", "--viewer-keys=LB", "--zoom=2"], None).bad.is_empty());
+
+        let r = read(&["--library=1", "--inbox=1", "--log=1"], None);
+        assert!(r.hooks.library && !r.hooks.inbox && !r.hooks.log);
+        assert_eq!(bad_names(&r), ["--inbox", "--log"]);
+        assert!(read(&["--inbox=1", "--log=1"], None).bad.is_empty());
+
+        let r = read(&["--log=1", "--dev=0"], None);
+        assert!(!r.hooks.log);
+        assert_eq!(bad_names(&r), ["--log"]);
+        assert!(read(&["--log=1"], Some("1")).bad.is_empty());
+
+        // The inbox's expansion is the inbox hook's: without it, the expansion is named bad and never left set.
+        let r = read(&["--inbox-expand=import"], None);
+        assert_eq!(r.hooks.inbox_expand, None);
+        assert_eq!(bad_names(&r), ["--inbox-expand"]);
+        let r = read(&["--inbox=1", "--inbox-expand=import"], None);
+        assert!(r.bad.is_empty(), "{:?}", r.bad);
+        assert_eq!(r.hooks.inbox_expand.as_deref(), Some("import"));
     }
 
     #[test]

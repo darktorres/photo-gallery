@@ -47,6 +47,8 @@ pub(crate) fn relist_failures(
     list: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<usize>,
 ) -> Result<()> {
     tx.execute_batch(next_seq!())?;
+    // A failure a pass found before this retry is not recorded after it: the pass's buffered ones are refused by the count.
+    tx.execute_batch("UPDATE meta SET value = value + 1 WHERE key = 'failure_retries';")?;
     list(tx)?;
     tx.execute("DELETE FROM file_failures WHERE pass = ?1", [pass_code])?;
     Ok(())

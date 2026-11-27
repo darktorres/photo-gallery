@@ -25,6 +25,8 @@ ToolBar {
     required property int fileCount
     required property int filterActive
     required property int filterTotal
+    // The folder's total is not counted yet (Filters.countsPending): the total reads as pending, not as 0 or the last folder's.
+    required property bool filterCountsPending
     required property bool filtersOpen
     // The grid's row height, which the size slider shows.
     required property real rowHeight
@@ -74,7 +76,7 @@ ToolBar {
         Label {
             textFormat: Text.PlainText
             color: "#999999"
-            text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading") : bar.filterActive > 0 ? words.phrase("ui-files-of", 0, words.count(bar.fileCount), words.count(bar.filterTotal)) : words.phrase("ui-files", 0, words.count(bar.fileCount), "")
+            text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading") : bar.filterActive > 0 ? words.phrase("ui-files-of", 0, words.count(bar.fileCount), bar.filterCountsPending ? words.text("ui-count-pending") : words.count(bar.filterTotal)) : words.phrase("ui-files", 0, words.count(bar.fileCount), "")
         }
         BusyIndicator {
             running: bar.loading

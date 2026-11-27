@@ -70,6 +70,9 @@ pub enum Event {
     PanelOpened(PanelKind),
     /// A modal panel closed: that kind leaves the panels open, wherever it is among them.
     PanelClosed(PanelKind),
+    /// The QML window was reloaded (a dev build's live reload). The new window has no modal panel open, and teardown
+    /// reports no close, so the mirror is cleared to that: each panel the new window opens reports itself again.
+    WindowReloaded,
 }
 
 /// A panel's flag that changed, with its new value.
@@ -147,6 +150,10 @@ impl Panels {
             }
             Event::PanelClosed(kind) => {
                 self.modals.retain(|k| *k != kind);
+                Vec::new()
+            }
+            Event::WindowReloaded => {
+                self.modals.clear();
                 Vec::new()
             }
         }

@@ -60,6 +60,36 @@ mod tests {
     }
 
     /// The entries of `ui.ftl`: the lines that start an entry (not a comment, a continuation or a variant).
+    /// The ids the native front end asks for: `pg_wording::ui("id"` in the desktop's Rust sources, and `words.text("id"` in its
+    /// C++ (the reload window's QML is written there).
+    fn ids_in_native() -> BTreeSet<String> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut ids = BTreeSet::new();
+        scan_for_ids(&root.join("src"), "rs", r#"pg_wording::ui(""#, &mut ids);
+        scan_for_ids(&root.join("cpp"), "cpp", r#"words.text(""#, &mut ids);
+        ids
+    }
+
+    /// Adds the id after each `call` in the files of `dir` (and its subfolders) with the extension `ext`.
+    fn scan_for_ids(dir: &Path, ext: &str, call: &str, ids: &mut BTreeSet<String>) {
+        for entry in fs::read_dir(dir).expect("a source folder") {
+            let path = entry.expect("a source entry").path();
+            if path.is_dir() {
+                scan_for_ids(&path, ext, call, ids);
+                continue;
+            }
+            // This file names the calls in its own text (the patterns and the doc comments), so it is not scanned.
+            if path.extension().is_none_or(|e| e != ext) || path.file_name().is_some_and(|n| n == "words.rs") {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("a readable source file");
+            for (at, _) in source.match_indices(call) {
+                let rest = source.get(at + call.len()..).unwrap_or_default();
+                ids.insert(rest.split('"').next().unwrap_or_default().to_string());
+            }
+        }
+    }
+
     fn entries() -> BTreeSet<String> {
         include_str!("../../wording/locales/en/ui.ftl")
             .lines()
@@ -88,6 +118,7 @@ mod tests {
     #[test]
     fn the_qml_words_and_the_ui_entries_are_the_same_set() {
         let mut used = ids_in_qml();
+        used.extend(ids_in_native());
         used.extend(pg_client::keys::Hint::ALL.iter().map(|hint| hint.id().to_string()));
         used.extend([pg_wording::HINT_SEPARATOR, pg_wording::SELECTION_LINE].map(str::to_string));
         let known = entries();

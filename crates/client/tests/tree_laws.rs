@@ -68,9 +68,10 @@ proptest! {
         prop_assert_eq!(tree.folders().total(), i64::try_from(paths.len()).unwrap() + roots);
         let all = Merged::default();
         prop_assert_eq!(tree.row_of(&all, true), Some(0));
-        prop_assert_eq!(tree.row_of(&all, false), Some(usize::from(has_row)));
-        // The label rule: the empty folder is "Drive roots" exactly when its row is the second one.
-        prop_assert_eq!(tree.shown_as(&all, false) == Some(Visible::DriveRoots), has_row);
+        // The empty folder's row without subfolders is "Drive roots", the second row, when the drive roots hold files; with
+        // none there is no such row, and the label still names the listing.
+        prop_assert_eq!(tree.row_of(&all, false), has_row.then_some(1));
+        prop_assert_eq!(tree.shown_as(&all, false), Some(Visible::DriveRoots));
         prop_assert_eq!(tree.shown_as(&all, true), Some(Visible::All));
         prop_assert_eq!(tree.reveal(&all, recursive), tree.row_of(&all, recursive));
         prop_assert_eq!(tree.plan_toggle(0), None);

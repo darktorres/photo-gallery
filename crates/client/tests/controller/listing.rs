@@ -118,14 +118,12 @@ fn a_reveal_lists_the_files_folder_and_selects_it_once_shown() {
     let mut c = controller(start());
     let out = c.update(0, Report::Reveal { file: FileId::new(7), folder: folder("beta") });
     let Some(generation) = generation_of(&out) else { panic!("{out:?}") };
+    // Before the start is over the session save is held (UI-002): the reveal opens the list and closes the inbox, and no
+    // save goes out yet.
     assert!(
         matches!(
             &out[..],
-            [
-                Do::OpenList { keep: false, .. },
-                Do::SaveSession(_),
-                Do::ClosePanel(pg_client::controller::panels::PanelKind::Inbox),
-            ]
+            [Do::OpenList { keep: false, .. }, Do::ClosePanel(pg_client::controller::panels::PanelKind::Inbox)]
         ),
         "{out:?}"
     );

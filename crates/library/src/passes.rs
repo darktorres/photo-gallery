@@ -47,8 +47,11 @@ pub(crate) fn cut_done(shared: &Shared, cut: &[FileId]) {
     if cut.is_empty() {
         return;
     }
-    for (_, e) in scans::forget_replaced(&shared.thumbs, cut) {
-        shared.notices.post(Notice::CutFailed { error: error_chain(&e) });
+    // The cut itself went through: a thumbnail the cache refused to forget is the cache's failure, counted as its own
+    // notice, and not a failed cut of the originals.
+    let refused = scans::forget_replaced(&shared.thumbs, cut).len();
+    if refused > 0 {
+        shared.notices.post(Notice::ThumbnailForgetFailed { count: pg_model::num::count_u64(refused) });
     }
     shared.imported();
 }
@@ -109,7 +112,7 @@ impl Pass<Cx<'_>> for Scans {
             let library: Vec<RulePath> = match cx.catalog.roots() {
                 Ok(roots) => roots.into_iter().map(|r| r.path).collect(),
                 Err(e) => {
-                    cx.inner.scans().push_front(path);
+                    cx.inner.push_front_scan(path);
                     return Err(Error::from(e).into());
                 }
             };
@@ -143,7 +146,7 @@ impl Pass<Cx<'_>> for Scans {
                         cx.inner.notify(notice);
                     }
                     if !s.complete {
-                        cx.inner.scans().push_front(path);
+                        cx.inner.push_front_scan(path);
                         return Ok(Step::Preempted);
                     }
                     // A complete walk of a whole library folder is what holds for it now: its kept notes (the folder's
@@ -154,6 +157,15 @@ impl Pass<Cx<'_>> for Scans {
                     if library.contains(&path) {
                         shared.notices.replace(Key::all("scan-note", Some(&path)).to_buf(), found.conditions);
                         shared.notices.replace(Key::all("scan-failed", Some(&path)).to_buf(), Vec::new());
+                        // The request that asked for this walk is done (`Catalog::request_scan`). A request that is not
+                        // cleared is walked again at the next start, which is harmless, so the failure is said as an event.
+                        if let Err(e) = cx.catalog.finish_scan_request(&path) {
+                            cx.inner.notify(Notice::ScanFailed {
+                                root: path.clone(),
+                                error: error_chain(&e),
+                                walk: false,
+                            });
+                        }
                     }
                     // A complete walk ends the run of lost leases.
                     cx.inner.lease_kept(&path);

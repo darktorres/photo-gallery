@@ -51,6 +51,7 @@ ui-no-folders =
 ui-nothing-matches = Nothing here matches the filters.
 ui-nothing-importing = Nothing here yet: the library is being imported.
 ui-no-images = No images here.
+ui-listing-failed = The images here couldn't be read.
 ui-grid-position = file ≈ { $text } of { $other }
 
 # The viewer's info line
@@ -59,6 +60,7 @@ ui-loupe = [loupe 10×]
 ui-turning = — turning…
 ui-original-unavailable = — original unavailable
 ui-player-error = — { $text }
+ui-player-error-playback = Playback failed
 
 # The library panel
 ui-library-folders = Library folders
@@ -184,7 +186,10 @@ ui-mute = Mute (M)
 # The views menu
 ui-views = Views ▾
 ui-save-current-view = Save current view…
+ui-delete = Delete
 ui-delete-view = Delete view
+ui-delete-view-title = Delete this saved view?
+ui-delete-view-question = The view is removed from the saved views. Nothing in the library changes.
 
 # The Yandex panel and preview
 ui-select-none = Select none
@@ -213,6 +218,9 @@ ui-cannot-decode = Can't load or decode it; saving may still work.
 ui-picked = Picked ✓
 ui-pick = Pick
 ui-fit = Fit
+ui-fit-undecodable = — this file cannot be decoded
+ui-fit-rewriting = — the file is being written; try again shortly
+ui-region-failed = — this part couldn't be shown
 ui-one-to-one = 1:1
 ui-back = Back
 # The key hints: each label of the grid's and the viewer's hint line (`keys::Hint`), joined by the separator
@@ -233,11 +241,16 @@ ui-hint-up-four = ↑ 4
 ui-hint-down-one = ↓ 1
 ui-hint-turn-back = R ⟲
 ui-hint-turn-on = Shift+R ⟳
-ui-hint-wheel-zoom = wheel zoom
+ui-hint-zoom = pinch or + − zoom
 ui-hint-one-to-one = double-click 1:1
 ui-hint-real-size = Z real size
 ui-hint-loupe = L loupe
 ui-hint-hide = H hide
 ui-hint-close = Esc close
+ui-details-unavailable = Details unavailable
+ui-count-pending = …
+ui-counting = counting…
+ui-dev-reload-failed = The QML did not load. Fix the file and save it, and the window loads again, or quit.
+ui-quit = Quit
 # The selection's status line: the item's info, then its rating symbol
 ui-selection-line = { $text }{ "   " }{ $other }

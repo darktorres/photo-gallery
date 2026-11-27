@@ -11,7 +11,7 @@
 use crate::bridges::folders_bridge::qobject;
 
 use core::pin::Pin;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
@@ -45,6 +45,14 @@ thread_local! {
     /// The folder tree as shown: which folders are open, and the rows that follow (GUI thread only, beside the
     /// controller). Each borrow is one read or one change; none calls back into another.
     static TREE: RefCell<Tree> = RefCell::new(Tree::new(pg_platform::native::PATH_RULES));
+    /// Whether the last tree read applied failed (`apply` got no tree). Set on the GUI thread before `loaded` is emitted,
+    /// read by the shell's `treeLoaded` (`tree_read_failed`), which the QML calls right after.
+    static READ_FAILED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether the last tree read failed: the shell reports `TreeFailed` to the start instead of `TreeLoaded`.
+pub(crate) fn tree_read_failed() -> bool {
+    READ_FAILED.with(Cell::get)
 }
 
 /// The tree as shown, read.
@@ -193,6 +201,8 @@ impl qobject::FolderModel {
         if generation != self.generation {
             return;
         }
+        // Before `loaded` is emitted: the shell's `treeLoaded` reads it then, and reports the start a failed read.
+        READ_FAILED.with(|failed| failed.set(tree.is_none()));
         let tree = match tree {
             Some(tree) => tree,
             None if self.shown => return,

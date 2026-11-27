@@ -25,8 +25,8 @@
 //! `--inbox-expand=<ledger>` opens a ledger's entry, by the ledger's code.
 //!
 //! **The status bar's link.** The job line says "N failed" as a link only while the inbox lists that ledger (a
-//! `passes` property with a change signal, a bit per ledger with a listed entry or an `unreadable-files` state); otherwise it
-//! is plain text. A click opens the inbox expanded at that entry, and an entry that appears later expands when it does. A
+//! `passes` property with a change signal, a bit per ledger with a listed entry); otherwise it is plain text, an
+//! unreadable file's row alone included (it names no ledger to open). A click opens the inbox expanded at that entry, and an entry that appears later expands when it does. A
 //! pass that writes or clears ledger rows calls `Control::ledger_changed`, whose hook the runner sets to the inbox's poke
 //! (the thumbnails' and the borders' passes after each write or clear that changed rows, the import after every batch,
 //! since its rows move by trigger, and the scan); pokes coalesce in `Work`. The thumbnails' pass flushes at least every
@@ -111,6 +111,52 @@ thread_local! {
     /// The number of the latest copy asked for (kept notice or ledger). A ledger's copy writes the clipboard only if no
     /// copy was asked for after it: its read can finish after a later copy. Read and written on the Qt thread.
     static COPY_SEQ: Cell<u64> = const { Cell::new(0) };
+    /// The entries the window dismissed at once, by identity, with the sequence of the dismissal's write until a listing
+    /// reflects it (`hide_dismissed`).
+    static DISMISSED: RefCell<BTreeMap<InboxEntryId, u64>> = const { RefCell::new(BTreeMap::new()) };
+    /// The notice the toast on the screen is about, if it is one of the inbox's (`None` for a toast the window makes
+    /// itself). The toast is derived from it: it goes when the notice is read or dismissed.
+    static TOAST_NOTICE: RefCell<Option<Notice>> = const { RefCell::new(None) };
+}
+
+/// Whether the toast on the screen is `notice`'s (see `TOAST_NOTICE`).
+fn is_toast_of(notice: &Notice) -> bool {
+    TOAST_NOTICE.with_borrow(|toast| toast.as_ref() == Some(notice))
+}
+
+/// Remember that the window dismissed `ids` at once, as the write `seq` (0: nothing was queued, so nothing is kept).
+fn remember_dismissed(ids: &[InboxEntryId], seq: u64) {
+    if seq == 0 {
+        return;
+    }
+    DISMISSED.with_borrow_mut(|dismissed| {
+        for id in ids {
+            dismissed.insert(id.entry(), seq);
+        }
+    });
+}
+
+/// The listing as the window shows it. An entry the window dismissed at once stays out of a listing that predates its
+/// write (`InboxListing::through` below its sequence), and the unread count it had is taken back with it; a listing that
+/// reflects the write retires the record.
+fn hide_dismissed(listing: &InboxListing) -> InboxListing {
+    DISMISSED.with_borrow_mut(|dismissed| {
+        dismissed.retain(|_, seq| *seq > listing.through);
+        let mut unread = listing.unread;
+        let entries = listing
+            .entries
+            .iter()
+            .filter(|entry| {
+                let hidden = dismissed.contains_key(&entry.id.entry());
+                if hidden && !entry.read {
+                    unread = unread.saturating_sub(1);
+                }
+                !hidden
+            })
+            .cloned()
+            .collect();
+        InboxListing { entries, unread, through: listing.through }
+    })
 }
 
 /// `kind`'s mark as the user last saw it, if it was listed (`None`: the acknowledgement as it is now).
@@ -147,6 +193,9 @@ const ROLE_SERIAL: i32 = 268;
 /// The most failed files (or folders) Copy puts on the clipboard for a ledger's entry.
 const COPIED_FILES: usize = 1000;
 
+/// How many times the inbox view's follower is started before the window says it has none.
+const FOLLOWER_STARTS: u32 = 3;
+
 /// The ledger the entry is, if it is one.
 fn ledger_kind(id: InboxEntryId) -> Option<LedgerKind> {
     match id {
@@ -169,34 +218,35 @@ fn ledger_key(kind: LedgerKind) -> String {
     format!("ledger:{}", kind.key())
 }
 
-/// The ledgers that something listed is about, as `Notices.passes`' bits (bit [`kind_code`]): a ledger's own entry, or a
-/// pass's unreadable files (`unreadable-files`), which the status bar's "N failed" counts too.
+/// The ledgers the inbox lists, as `Notices.passes`' bits (bit [`kind_code`]). A pass's unreadable files (an
+/// `UnreadableFiles` row) name no ledger, so they set no bit: the status bar's link would open nothing.
 fn passes_of(entries: &[InboxEntry]) -> i32 {
     entries
         .iter()
-        .filter_map(|entry| match (&entry.notice, entry.id) {
-            (_, InboxEntryId::Ledger { kind, .. }) => Some(kind),
-            (Notice::UnreadableFiles { pass, .. }, InboxEntryId::Row { .. }) => Some(LedgerKind::File(*pass)),
-            _ => None,
+        .filter_map(|entry| match entry.id {
+            InboxEntryId::Ledger { kind, .. } => Some(kind),
+            InboxEntryId::Row { .. } => None,
         })
         .filter_map(|kind| u32::try_from(kind_code(Some(kind))).ok())
         .fold(0, |bits, bit| bits | 1_i32.checked_shl(bit).unwrap_or(0))
 }
 
 /// What Copy puts on the clipboard: the notice on one line, then for a ledger what its read gave, one a line: its files,
-/// or its folders under the library folder that holds them.
-fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) -> String {
-    let mut words = pg_wording::notice_line(notice, rules);
+/// or its folders under the library folder that holds them. `read` is the items read with how many the ledger holds in
+/// all; a read that holds fewer ends with the "newest N of M" line (`Notice::CopyTruncated`). The notice lines are plain
+/// (`notice_line_plain`): the clipboard gets no bidi isolate characters around a path.
+fn copy_words(notice: &Notice, rules: PathRules, read: Option<(&FailedItems, u64)>) -> String {
+    let mut words = pg_wording::notice_line_plain(notice, rules);
+    let Some((items, total)) = read else { return words };
     match items {
-        None => {}
-        Some(FailedItems::Files(files)) => {
+        FailedItems::Files(files) => {
             for file in files {
                 words.push('\n');
                 let path = rules.display(&file.path);
                 words.push_str(&pg_wording::render(&Message::FailedFileLine { path, error: file.error.clone() }));
             }
         }
-        Some(FailedItems::Folders(folders)) => {
+        FailedItems::Folders(folders) => {
             let mut root = None;
             for folder in folders {
                 if root != Some(folder.root) {
@@ -213,6 +263,11 @@ fn copy_words(notice: &Notice, rules: PathRules, items: Option<&FailedItems>) ->
                 }));
             }
         }
+    }
+    let shown = pg_model::num::count_u64(items.len());
+    if shown < total {
+        words.push('\n');
+        words.push_str(&pg_wording::notice_line_plain(&Notice::CopyTruncated { shown, total }, rules));
     }
     words
 }
@@ -235,10 +290,12 @@ impl qobject::Notices {
             ROLE_TITLE => QVariant::from(&QString::from(&pg_wording::render(&Message::NoticeTitle {
                 notice: notice.clone(),
                 rules,
+                plain: false,
             }))),
             ROLE_BODY => QVariant::from(&QString::from(&pg_wording::render(&Message::NoticeBody {
                 notice: notice.clone(),
                 rules,
+                plain: false,
             }))),
             ROLE_SOURCE => {
                 QVariant::from(&QString::from(&pg_wording::render(&Message::SourceLabel { source: notice.source() })))
@@ -309,21 +366,52 @@ impl qobject::Notices {
         self.as_mut().rust_mut().started = true;
         let inbox = app::get().inbox();
         // Subscribed before the listing is read, so a change meanwhile comes as an event.
-        let events = inbox.subscribe();
+        let mut subscribed = Some(inbox.subscribe());
         self.as_mut().show(&inbox.listing());
-        // Without its thread the window isn't told the inbox's changes: the log says why.
-        let follower = crate::pump::start(
-            "inbox view",
-            self.qt_thread(),
-            move || events.recv(),
-            |changes: &mut InboxChanges, event: InboxEvent| match event {
-                InboxEvent::Changed(listing) => changes.listing = Some(listing),
-                InboxEvent::Toast(notice) => changes.toasts.push(notice),
-            },
-            |notices, pending| notices.on_pass(&pending),
-        );
-        if let Err(e) = follower {
-            pg_log::warn("inbox", &format!("the inbox view's follower didn't start: {e:#}"));
+        // Without its thread the window isn't told the inbox's changes. A start that fails is tried again on a new
+        // subscription (its listing read after the subscription, so what came meanwhile is not lost).
+        let mut error = None;
+        for attempt in 1..=FOLLOWER_STARTS {
+            let events = match subscribed.take() {
+                Some(events) => events,
+                None => {
+                    let events = inbox.subscribe();
+                    self.as_mut().show(&inbox.listing());
+                    events
+                }
+            };
+            let started = crate::pump::start(
+                "inbox view",
+                self.qt_thread(),
+                move || events.recv(),
+                |changes: &mut InboxChanges, event: InboxEvent| match event {
+                    InboxEvent::Changed(listing) => changes.listing = Some(listing),
+                    InboxEvent::Toast(notice) => changes.toasts.push(notice),
+                },
+                |notices, pending| notices.on_pass(&pending),
+            );
+            match started {
+                Ok(()) => return,
+                Err(e) => {
+                    pg_log::warn(
+                        "inbox",
+                        &format!("the inbox view's follower didn't start (attempt {attempt}): {e:#}"),
+                    );
+                    error = Some(e);
+                }
+            }
+        }
+        // The window has no follower, so nothing else will show what it would have: the failure is said here.
+        if let Some(e) = error {
+            pg_log::error("inbox", &format!("the inbox view has no follower, so its changes don't reach it: {e:#}"));
+            let notice = Notice::ToastFollowerFailed;
+            let words = pg_wording::render(&Message::NoticeTitle {
+                notice: notice.clone(),
+                rules: pg_platform::native::PATH_RULES,
+                plain: false,
+            });
+            TOAST_NOTICE.with_borrow_mut(|toast| *toast = None);
+            self.as_mut().set_toast_shown(QString::from(&words), notice.level().code());
         }
     }
 
@@ -337,14 +425,26 @@ impl qobject::Notices {
             let words = pg_wording::render(&Message::NoticeTitle {
                 notice: notice.clone(),
                 rules: pg_platform::native::PATH_RULES,
+                plain: false,
             });
+            TOAST_NOTICE.with_borrow_mut(|toast| *toast = Some(notice.clone()));
             self.as_mut().set_toast_shown(QString::from(&words), notice.level().code());
+            // Read already (the window marks what it shows as the user sees it): the toast is no news.
+            self.as_mut().end_toast_if_read();
+        }
+    }
+
+    /// The toast goes once its notice is read: the inbox lists the notice as read, so the toast says nothing new.
+    fn end_toast_if_read(mut self: Pin<&mut Self>) {
+        if self.rows.iter().any(|e| e.read && is_toast_of(&e.notice)) {
+            self.as_mut().dismiss_toast();
         }
     }
 
     /// Show `listing`: the changes from the rows shown (`list_diff`), then each row whose entry changed in place (a new
     /// revision, its counts, read) told so. Shown while the panel is open in an active window, what is new is read.
-    fn show(mut self: Pin<&mut Self>, listing: &InboxListing) {
+    fn show(mut self: Pin<&mut Self>, shown: &InboxListing) {
+        let listing = &hide_dismissed(shown);
         let old: Vec<InboxEntryId> = self.rows.iter().map(|e| e.id.entry()).collect();
         let new: Vec<InboxEntryId> = listing.entries.iter().map(|e| e.id.entry()).collect();
         let root = QModelIndex::default();
@@ -384,6 +484,7 @@ impl qobject::Notices {
         if self.marking {
             self.as_mut().mark_shown_read();
         }
+        self.as_mut().end_toast_if_read();
         self.as_mut().refresh_selection();
     }
 
@@ -467,21 +568,32 @@ impl qobject::Notices {
         }
         let passes = passes_of(&self.rows);
         self.as_mut().set_passes_shown(passes);
+        // The toast was this notice's: it goes with it.
+        if is_toast_of(&entry.notice) {
+            self.as_mut().dismiss_toast();
+        }
         self.as_mut().refresh_selection();
-        app::get().inbox().dismiss(entry.id);
+        let seq = app::get().inbox().dismiss(entry.id);
+        remember_dismissed(&[entry.id], seq);
     }
 
-    /// "Clear all": the entries shown, as they were displayed; none the window wasn't given.
+    /// "Clear all": every kept entry the inbox lists goes, not only the rows shown: the inbox clears by its filter, so the
+    /// entries past the rows shown (up to the kept ones) do not come back in the listing after it. The rows shown are
+    /// remembered as dismissed until a listing reflects the write (`remember_dismissed`).
     pub(crate) fn dismiss_all(mut self: Pin<&mut Self>) {
         let ids: Vec<InboxEntryId> = self.rows.iter().map(|e| e.id).collect();
         let unread = self.unread.saturating_sub(qt_int(self.rows.iter().filter(|e| !e.read).count()));
+        if self.rows.iter().any(|e| is_toast_of(&e.notice)) {
+            self.as_mut().dismiss_toast();
+        }
         self.as_mut().begin_reset_model();
         self.as_mut().rust_mut().rows.clear();
         self.as_mut().end_reset_model();
         self.as_mut().set_unread_count(unread);
         self.as_mut().set_passes_shown(0);
         self.as_mut().refresh_selection();
-        app::get().inbox().dismiss_all(ids);
+        let seq = app::get().inbox().clear_all();
+        remember_dismissed(&ids, seq);
     }
 
     /// Select the entry at `row` (none for a row past the list). Its details are what the panel shows.
@@ -552,16 +664,24 @@ impl qobject::Notices {
                 };
                 (
                     qt_int(at),
-                    QString::from(&pg_wording::render(&Message::NoticeBody { notice: notice.clone(), rules })),
+                    QString::from(&pg_wording::render(&Message::NoticeBody {
+                        notice: notice.clone(),
+                        rules,
+                        plain: false,
+                    })),
                     kind_code(ledger_kind(entry.id)),
                     serial,
                     notice.actions().contains(&Action::Retry),
                     notice.actions().contains(&Action::ShowFailedFiles),
+                    // The ledger's rows in all: a file cleared that is not the newest changes it, and the list is read again.
+                    entry.counts.as_ref().map_or(0.0, |c| i64::try_from(c.total).map_or(0.0, pg_model::num::signed)),
                 )
             }
-            None => (-1, QString::default(), -1, 0.0, false, false),
+            None => (-1, QString::default(), -1, 0.0, false, false, 0.0),
         };
-        let (row_index, text, pass, serial, retry, files) = shown;
+        let (row_index, text, pass, serial, retry, files, count) = shown;
+        self.as_mut().rust_mut().selected_count = count;
+        self.as_mut().selected_count_changed();
         self.as_mut().rust_mut().selected_row = row_index;
         self.as_mut().selected_row_changed();
         self.as_mut().rust_mut().selected_text = text;
@@ -583,40 +703,53 @@ impl qobject::Notices {
         let pass = if self.details_open && self.selected_row >= 0 { self.selected_pass } else { -1 };
         let key = if pass >= 0 { self.selected_key.to_string() } else { String::new() };
         let serial = self.selected_serial;
-        let (requested_key, requested_serial) = self.requested.clone();
-        if key == requested_key.to_string() && (key.is_empty() || serial == requested_serial) {
+        let count = self.selected_count;
+        let (requested_key, requested_serial, requested_count) = self.requested.clone();
+        if key == requested_key.to_string()
+            && (key.is_empty() || (serial == requested_serial && count == requested_count))
+        {
             return;
         }
-        self.as_mut().rust_mut().requested = (QString::from(&key), serial);
+        self.as_mut().rust_mut().requested = (QString::from(&key), serial, count);
         self.as_mut().files_requested(pass);
     }
 
     /// Put the entry at `row` on the clipboard: at once for a kept notice; for a ledger, once its files (or folders) are
     /// read off the window's thread.
-    pub(crate) fn copy(&self, row: i32) {
-        let Some(entry) = usize::try_from(row).ok().and_then(|row| self.rows.get(row)) else { return };
+    pub(crate) fn copy(mut self: Pin<&mut Self>, row: i32) {
+        let Some((notice, ledger)) = usize::try_from(row)
+            .ok()
+            .and_then(|row| self.rows.get(row))
+            .map(|entry| (entry.notice.clone(), ledger_kind(entry.id)))
+        else {
+            return;
+        };
         let rules = pg_platform::native::PATH_RULES;
-        let notice = entry.notice.clone();
         // This copy is the latest asked for: a ledger copy still reading does not write the clipboard after it.
         let seq = COPY_SEQ.with(|seq| {
             seq.set(seq.get() + 1);
             seq.get()
         });
-        let Some(kind) = ledger_kind(entry.id) else {
+        let Some(kind) = ledger else {
             crate::bridges::clipboard::ffi::copy_text(&QString::from(&copy_words(&notice, rules, None)));
+            self.as_mut().set_copying(false);
+            self.as_mut().copied();
             return;
         };
+        // Waited for until the read is written (`copying`): the button is busy, and a paste is not taken for this copy.
+        self.as_mut().set_copying(true);
         let notices = self.qt_thread();
         app::session().copy_details(kind, COPIED_FILES, seen_at_open(kind), move |read| {
+            // The items read, with how many the ledger holds in all (the copy says when it is cut short).
             let items = match read {
-                Ok(failed) => Ok(failed.items),
+                Ok(failed) => Ok((failed.items, failed.counts.total)),
                 Err(e) => {
                     pg_log::warn("inbox", &format!("the failed files to copy couldn't be read: {e:#}"));
                     Err(app::error_text(&e))
                 }
             };
             // On the Qt thread, which the clipboard and the inbox's notices are; fails only when the window is gone.
-            let _ = notices.queue(move |_| {
+            let _ = notices.queue(move |mut notices| {
                 let items = match items {
                     Ok(items) => Some(items),
                     Err(error) => {
@@ -625,9 +758,13 @@ impl qobject::Notices {
                         None
                     }
                 };
+                // A copy asked for after this one writes the clipboard (and ends the wait) itself.
                 if COPY_SEQ.with(Cell::get) == seq {
-                    let words = copy_words(&notice, rules, items.as_ref());
+                    let read = items.as_ref().map(|(items, total)| (items, *total));
+                    let words = copy_words(&notice, rules, read);
                     crate::bridges::clipboard::ffi::copy_text(&QString::from(&words));
+                    notices.as_mut().set_copying(false);
+                    notices.copied();
                 }
             });
         });
@@ -662,9 +799,22 @@ impl qobject::Notices {
     }
 
     pub(crate) fn dismiss_toast(self: Pin<&mut Self>) {
+        TOAST_NOTICE.with_borrow_mut(|toast| *toast = None);
         if !self.toast.is_empty() {
             self.set_toast_shown(QString::default(), 0);
         }
+    }
+
+    /// The clipboard was written: a toast says so. It is the window's own (`Notice::Copied`), not an entry of the inbox.
+    fn copied(mut self: Pin<&mut Self>) {
+        let notice = Notice::Copied;
+        let words = pg_wording::render(&Message::NoticeTitle {
+            notice: notice.clone(),
+            rules: pg_platform::native::PATH_RULES,
+            plain: false,
+        });
+        TOAST_NOTICE.with_borrow_mut(|toast| *toast = None);
+        self.as_mut().set_toast_shown(QString::from(&words), notice.level().code());
     }
 
     pub(crate) fn poke(&self) {
@@ -719,20 +869,19 @@ mod tests {
         assert_eq!(key_of(ledger(3)), "ledger:scan-folders");
     }
 
-    /// The status bar links a pass's "N failed" only to what the inbox lists: its ledger's entry, or its unreadable
-    /// files.
+    /// The status bar links a pass's "N failed" only to a ledger the inbox lists. An unreadable-files row names no ledger,
+    /// so its pass gets no link.
     #[test]
-    fn the_passes_are_the_ledgers_listed_and_the_unreadable_files() {
+    fn the_passes_are_the_ledgers_listed() {
         let thumbs = LedgerKind::File(FilePass::Thumbs);
-        let import = LedgerKind::File(FilePass::Import);
         let row = |id| InboxEntryId::Row { id, uid: id, rev: 0 };
         let listed = [
             entry(InboxEntryId::Ledger { kind: thumbs, seen: 5 }, thumbs.notice(None)),
             entry(row(1), Notice::UnreadableFiles { pass: FilePass::Import, count: 2, drives: Vec::new() }),
             entry(row(2), Notice::RoundFailed { error: "x".into() }),
         ];
-        assert_eq!(passes_of(&listed), (1 << kind_code(Some(thumbs))) | (1 << kind_code(Some(import))));
-        assert_eq!(passes_of(&listed[2..]), 0);
+        assert_eq!(passes_of(&listed), 1 << kind_code(Some(thumbs)));
+        assert_eq!(passes_of(&listed[1..]), 0);
         let folders = [entry(
             InboxEntryId::Ledger { kind: LedgerKind::ScanFolders, seen: 1 },
             Notice::ScanFoldersFailed { counts: Some(LedgerCounts { new: 1, earlier: 0 }) },
@@ -754,9 +903,9 @@ mod tests {
             first_seen: 0,
             new: true,
         };
-        let words = copy_words(&notice, rules, Some(&FailedItems::Files(vec![file])));
+        let words = copy_words(&notice, rules, Some((&FailedItems::Files(vec![file]), 1)));
         let mut lines = words.lines();
-        assert_eq!(lines.next(), Some(pg_wording::notice_line(&notice, rules).as_str()));
+        assert_eq!(lines.next(), Some(pg_wording::notice_line_plain(&notice, rules).as_str()));
         let shown = format!("{}: not a JPEG", rules.display(&p(r"D:\p\a.jpg")));
         assert_eq!(lines.next(), Some(shown.as_str()));
         assert_eq!(lines.next(), None);
@@ -772,7 +921,7 @@ mod tests {
         };
         let folders = vec![folder(1, r"D:\p", r"D:\p\x"), folder(1, r"D:\p", r"D:\p\y"), folder(2, r"E:\q", r"E:\q\z")];
         let notice = LedgerKind::ScanFolders.notice(None);
-        let words = copy_words(&notice, rules, Some(&FailedItems::Folders(folders)));
+        let words = copy_words(&notice, rules, Some((&FailedItems::Folders(folders), 3)));
         let lines: Vec<&str> = words.lines().skip(1).collect();
         assert_eq!(
             lines,
@@ -785,6 +934,26 @@ mod tests {
             ]
         );
         // A kept notice, or a ledger whose read failed: the notice alone.
-        assert_eq!(copy_words(&notice, rules, None), pg_wording::notice_line(&notice, rules));
+        assert_eq!(copy_words(&notice, rules, None), pg_wording::notice_line_plain(&notice, rules));
+    }
+
+    /// A read that holds fewer than the ledger does ends with the "newest N of M" line; a whole one has none.
+    #[test]
+    fn a_cut_short_copy_says_how_much_of_the_ledger_it_has() {
+        let rules = PathRules::Windows;
+        let notice = LedgerKind::File(FilePass::Thumbs).notice(None);
+        let file = FailedFile {
+            file_id: FileId::new(1),
+            path: rules.parse(r"D:\p\a.jpg").unwrap(),
+            error: "not a JPEG".into(),
+            retry: false,
+            first_seen: 0,
+            new: true,
+        };
+        let items = FailedItems::Files(vec![file]);
+        let cut = copy_words(&notice, rules, Some((&items, 3)));
+        let last = cut.lines().last().unwrap();
+        assert_eq!(last, pg_wording::notice_line_plain(&Notice::CopyTruncated { shown: 1, total: 3 }, rules));
+        assert_eq!(copy_words(&notice, rules, Some((&items, 1))).lines().count(), 2);
     }
 }

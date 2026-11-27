@@ -107,6 +107,11 @@ Rectangle {
         case YandexPanel.PanelAction.Pick:
             preview.pickRequested(preview.item);
             break;
+        case YandexPanel.PanelAction.OneToOne:
+            // The 1:1 button's key: the same toggle, where the picture can be zoomed (the button is off where it cannot).
+            if (full.zoomable)
+                preview.actual = !preview.actual;
+            break;
         }
         e.accepted = true;
     }

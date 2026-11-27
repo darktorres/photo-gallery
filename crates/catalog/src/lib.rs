@@ -60,8 +60,9 @@ pub use self::core::{BoundedCache, Catalog, Prepare, Reader, ScanLease, Tx};
 pub use roots::FolderRowReader;
 pub use transaction::{Patience, PatienceGuard, wait_for_writers};
 pub use types::{
-    CatalogCounts, CropSource, Folder, FolderRows, Listed, PairingMarks, PairingWork, PlaceholderWork, Prior, Rebuilt,
-    Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Versions, VolumeSet, WorkItem, WriteTarget,
+    CatalogCounts, CropGap, CropSource, Folder, FolderRows, Listed, PairingMarks, PairingWork, PlaceholderWork, Prior,
+    Rebuilt, Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip, SkipReason, Versions, VolumeSet, WorkItem,
+    WriteTarget,
 };
 pub use work::{CandidateRead, ThumbCandidate};
 // The writers are reached through `Tx`'s accessors, which name them in their signatures. Two of their argument types are

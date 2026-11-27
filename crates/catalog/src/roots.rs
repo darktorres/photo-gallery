@@ -67,6 +67,39 @@ impl Catalog {
         Ok(id.map(RootId::new))
     }
 
+    /// Asks for library folder `root` to be walked, and keeps the request until its complete walk ends
+    /// ([`Catalog::finish_scan_request`]), so a scan asked for before the app quits runs at the next start
+    /// ([`Catalog::pending_scans`]). A path that is not a library folder asks for nothing.
+    pub fn request_scan(&self, root: &RulePath) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO scan_requests(root) SELECT id FROM roots WHERE path = ?1",
+            [self.rules.join(root)],
+        )?;
+        Ok(())
+    }
+
+    /// The library folders whose scan was asked for and has not completed, in the order they were asked for.
+    pub fn pending_scans(&self) -> Result<Vec<RulePath>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT roots.path FROM scan_requests JOIN roots ON roots.id = scan_requests.root ORDER BY scan_requests.root",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, Vec<u8>>(0))?;
+        let mut paths = Vec::new();
+        for row in rows {
+            paths.push(stored_path(self.rules, &row?)?);
+        }
+        Ok(paths)
+    }
+
+    /// The scan request of library folder `root` is done: its complete walk ended. A folder with no request is no change.
+    pub fn finish_scan_request(&self, root: &RulePath) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM scan_requests WHERE root = (SELECT id FROM roots WHERE path = ?1)",
+            [self.rules.join(root)],
+        )?;
+        Ok(())
+    }
+
     /// Add a folder to the library. A folder already inside the library adds nothing (returns false); one that
     /// contains library folders replaces them (their notices and their folder ledger's rows go with them).
     pub fn add_root(&self, root: &RulePath) -> Result<bool> {

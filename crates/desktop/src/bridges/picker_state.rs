@@ -42,6 +42,9 @@ pub struct PickerRust {
     pub(crate) native: bool,
     pub(crate) names: QStringList,
     pub(crate) here: QString,
+    /// Why the app's dialog could not list the folder it was asked to show (`listError`), shown inside it; empty when it
+    /// lists.
+    pub(crate) list_error: QString,
     /// The app's dialog while it is open: this picker's own (each `FolderPicker` lists apart).
     pub(crate) listing: Option<Listing>,
 }

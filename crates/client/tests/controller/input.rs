@@ -24,7 +24,7 @@ fn keys_act_on_the_current_item_only_once_one_is_selected() {
     assert_eq!(out[1], vec![]);
     assert_eq!(out[2], vec![]);
     assert_eq!(out[3], vec![]);
-    assert_eq!(out[5], vec![Command::ShowViewer(3)]);
+    assert_eq!(out[5], vec![Command::Act(GridKey::Open)]);
     assert_eq!(out[6], vec![Command::Act(GridKey::Rate(4))]);
     assert_eq!(out[7], vec![Command::Act(GridKey::Turn { forward: true })]);
 }

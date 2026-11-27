@@ -3,7 +3,7 @@
 {"kind":"round-failed","error":"access is denied"}
 {"kind":"round-panicked","message":"index out of bounds"}
 {"kind":"cache-full","height":220,"made":40}
-{"kind":"cropped","folder":"D:\\Crops","saved":5,"skipped":1,"failed":1,"failures":[{"path":{"anchor":"D:","parts":["Photos","a.jpg"]},"error":"unexpected end of file","panicked":false}],"unfinished":2}
+{"kind":"cropped","folder":"D:\\Crops","saved":5,"skipped":1,"failed":1,"failures":[{"path":{"anchor":"D:","parts":["Photos","a.jpg"]},"error":"unexpected end of file","panicked":false}],"unfinished":2,"changed":1,"missing":2}
 {"kind":"crop-failed","error":"access is denied"}
 {"kind":"catalog-rebuilt","kept":"D:\\Gallery\\catalog.sqlite.bad","why":"table files: column added","carried":{"carried":"rows","files":1200,"folders":2}}
 {"kind":"catalog-not-closed","error":"access is denied"}
@@ -50,3 +50,14 @@
 {"kind":"changes-unseen","error":"access is denied"}
 {"kind":"cache-not-swept","error":"access is denied"}
 {"kind":"cache-not-read","error":"access is denied"}
+{"kind":"nothing-to-do","what":"crop-no-borders"}
+{"kind":"temp-left-behind","path":{"anchor":"D:","parts":["Photos",".a.jpg.rating.pg-write"]}}
+{"kind":"reveal-refused-root","folder":{"anchor":"D:","parts":["Photos"]}}
+{"kind":"thumbnail-forget-failed","count":3}
+{"kind":"inbox-write-failed","action":"dismiss"}
+{"kind":"yandex-save-unfinished","written":2,"unfinished":1}
+{"kind":"yandex-results-dropped","dropped":4,"found":30}
+{"kind":"copy-truncated","shown":2048,"total":5000}
+{"kind":"toast-follower-failed"}
+{"kind":"discard-failed","error":"access is denied"}
+{"kind":"copied"}

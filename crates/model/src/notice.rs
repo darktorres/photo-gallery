@@ -418,11 +418,13 @@ pub enum ViewOp {
     Save,
     /// Deleting a view.
     Delete,
+    /// Reading a saved view's query when it is applied.
+    Read,
 }
 
 impl ViewOp {
     /// Every view operation, in the inbox's order.
-    pub const ALL: [ViewOp; 3] = [ViewOp::List, ViewOp::Save, ViewOp::Delete];
+    pub const ALL: [ViewOp; 4] = [ViewOp::List, ViewOp::Save, ViewOp::Delete, ViewOp::Read];
 
     /// The operation's code, as the words select on it.
     pub fn key(self) -> &'static str {
@@ -430,6 +432,56 @@ impl ViewOp {
             ViewOp::List => "list",
             ViewOp::Save => "save",
             ViewOp::Delete => "delete",
+            ViewOp::Read => "read",
+        }
+    }
+}
+
+/// What a request found nothing to do for (`Notice::NothingToDo`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NothingKind {
+    /// A crop of files that have no borders to crop.
+    CropNoBorders,
+    /// A crop asked for while the library's background work isn't running, so nothing was cropped.
+    CropLibraryNotRunning,
+    /// A border mark on a file that has no border to mark.
+    BorderMarkNoBorders,
+}
+
+impl NothingKind {
+    /// The kind's code, as the words select on it.
+    pub fn key(self) -> &'static str {
+        match self {
+            NothingKind::CropNoBorders => "crop-no-borders",
+            NothingKind::CropLibraryNotRunning => "crop-library-not-running",
+            NothingKind::BorderMarkNoBorders => "border-mark-no-borders",
+        }
+    }
+}
+
+/// A write the user made in the inbox, which couldn't be saved (`Notice::InboxWriteFailed`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InboxAction {
+    /// Dismissing an entry.
+    Dismiss,
+    /// Retrying an entry's files.
+    Retry,
+    /// Marking an entry as seen.
+    Mark,
+    /// Clearing every entry.
+    ClearAll,
+}
+
+impl InboxAction {
+    /// The action's code, as the words select on it.
+    pub fn key(self) -> &'static str {
+        match self {
+            InboxAction::Dismiss => "dismiss",
+            InboxAction::Retry => "retry",
+            InboxAction::Mark => "mark",
+            InboxAction::ClearAll => "clear-all",
         }
     }
 }
@@ -464,7 +516,7 @@ impl FilePass {
 /// A ledger the inbox shows as one entry, built when the inbox is read: a pass's failed files, or the folders the scans
 /// couldn't read (the catalog's per-folder ledger). Its code is what its acknowledgement is stored under
 /// (`ledger_ack.kind`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum LedgerKind {
     /// A pass's failed files.
     File(FilePass),
@@ -581,6 +633,13 @@ pub enum Notice {
         /// How many were not reached: the pass was stopped (the app quit) before them. Zero for a pass that ran to the end.
         #[serde(default)]
         unfinished: u64,
+        /// How many changed on disk since their borders were found, so were left as they are (not "nothing to crop"). A row
+        /// an older build wrote has none.
+        #[serde(default)]
+        changed: u64,
+        /// How many are missing from the library, so were left as they are.
+        #[serde(default)]
+        missing: u64,
     },
     /// A crop job that failed before it could save anything.
     CropFailed {
@@ -609,6 +668,11 @@ pub enum Notice {
     CutFailed {
         /// Why the cut failed before it changed anything.
         error: String,
+    },
+    /// A crop or a border mark that had nothing to do, so nothing was changed: `what` says which. A toast only.
+    NothingToDo {
+        /// Which request found nothing to do.
+        what: NothingKind,
     },
 
     // The app's files.
@@ -700,6 +764,12 @@ pub enum Notice {
         /// Why the cache couldn't be opened.
         error: String,
     },
+    /// The thumbnails of `count` files that a cut or a rewrite changed couldn't be forgotten by the cache: they stay until
+    /// the cache's next sweep. The cut itself went through. An event of the pass that cut them.
+    ThumbnailForgetFailed {
+        /// How many thumbnails the cache refused to forget.
+        count: u64,
+    },
 
     // The write-back.
     /// The writer's latest write failed: why, and for a copy that may be incomplete, the file and its temporary copy.
@@ -747,6 +817,12 @@ pub enum Notice {
         /// Why the removal failed.
         error: String,
     },
+    /// The unwritten changes of a removed folder couldn't be discarded (the removal had already taken the folder out of
+    /// the library, so this is about the discard, not the removal).
+    DiscardFailed {
+        /// Why the discard failed.
+        error: String,
+    },
     /// A copy of a file in a folder being removed from the library is kept: the write was under way when the file was
     /// deleted outside the app, so its temp (the only whole copy of the edit) stays at `temp`, and the write goes.
     /// Keyless, as an event: the folder is not in the library, so the notice is not one of its folders.
@@ -755,6 +831,19 @@ pub enum Notice {
         folder: RulePath,
         /// The temporary copy kept for the edit.
         temp: RulePath,
+    },
+    /// A temporary copy of a write that a discard (or a removal) could not delete, so it stays in its folder: the change
+    /// it holds is the only whole copy of that edit. The app retries the deletion later; this is the record that it stays.
+    /// An event, keyless (the folder may be gone by the next try).
+    TempLeftBehind {
+        /// The temporary copy that is still on disk.
+        path: RulePath,
+    },
+    /// The library folder itself was asked to be revealed, which the window refuses (a file's folder can be revealed, the
+    /// folder is not one of its files). A toast only.
+    RevealRefusedRoot {
+        /// The library folder that was asked for.
+        folder: RulePath,
     },
     /// A rescan of a folder failed.
     RescanFailed {
@@ -890,6 +979,39 @@ pub enum Notice {
         /// The version that is out.
         version: String,
     },
+    /// A write the user made in the inbox (a dismiss, a retry, a mark, a clear) couldn't be saved: the entry is still
+    /// there, and the user is told so. A toast only.
+    InboxWriteFailed {
+        /// Which inbox write failed.
+        action: InboxAction,
+    },
+    /// A Yandex save that was stopped before every picked result was written: `written` are in, and `unfinished` were not
+    /// reached (the app quit first). The files written are whole.
+    YandexSaveUnfinished {
+        /// How many results were written.
+        written: u64,
+        /// How many picked results were not reached.
+        unfinished: u64,
+    },
+    /// Results of a Yandex search that were not kept: `dropped` of the `found` the search returned.
+    YandexResultsDropped {
+        /// How many results were dropped.
+        dropped: u64,
+        /// How many results the search returned.
+        found: u64,
+    },
+    /// A copy that was cut short to the `shown` newest files of the `total` it holds (the copy's limit). A toast only.
+    CopyTruncated {
+        /// How many files were copied.
+        shown: u64,
+        /// How many files the copy held.
+        total: u64,
+    },
+    /// The clipboard was written: a toast says so. The window's own, never an entry of the inbox.
+    Copied,
+    /// A toast's follower (the thread that carries the notices to the status bar) couldn't start: the toasts and the
+    /// listing updates don't reach the window until the app is started again.
+    ToastFollowerFailed,
     /// A stored notice of a kind this build doesn't know, by its code. Made only by the decoder; never written.
     #[serde(skip)]
     Unknown {
@@ -998,6 +1120,7 @@ impl Op {
             Op::Views(ViewOp::List) => "views-list",
             Op::Views(ViewOp::Save) => "views-save",
             Op::Views(ViewOp::Delete) => "views-delete",
+            Op::Views(ViewOp::Read) => "views-read",
             Op::Edit(EditOp::Rate) => "edit-rate",
             Op::Edit(EditOp::Rotate) => "edit-rotate",
             Op::Edit(EditOp::MarkBorder) => "edit-mark-border",
@@ -1167,6 +1290,7 @@ ids! {
     CropFailed => "crop-failed",
     BordersCut => "borders-cut",
     CutFailed => "cut-failed",
+    NothingToDo => "nothing-to-do",
     CatalogRebuilt => "catalog-rebuilt",
     CatalogNotClosed => "catalog-not-closed",
     PrefsUnreadable => "prefs-unreadable",
@@ -1179,6 +1303,7 @@ ids! {
     CacheWalNotMerged => "cache-wal-not-merged",
     CacheStartedOver => "cache-started-over",
     CacheDisabled => "cache-disabled",
+    ThumbnailForgetFailed => "thumbnail-forget-failed",
     WriteFailed => "write-failed",
     WriteStopped => "write-stopped",
     WriteDropped => "write-dropped",
@@ -1186,7 +1311,10 @@ ids! {
     FolderRefused => "folder-refused",
     FolderNotAdded => "folder-not-added",
     FolderNotRemoved => "folder-not-removed",
+    DiscardFailed => "discard-failed",
     FolderRemovalUnfinished => "folder-removal-unfinished",
+    TempLeftBehind => "temp-left-behind",
+    RevealRefusedRoot => "reveal-refused-root",
     RescanFailed => "rescan-failed",
     LibraryUnavailable => "library-unavailable",
     ChangesUnseen => "changes-unseen",
@@ -1210,6 +1338,12 @@ ids! {
     NoticesLost => "notices-lost",
     FileNoLongerInLibrary => "file-no-longer-in-library",
     UpdateAvailable => "update-available",
+    InboxWriteFailed => "inbox-write-failed",
+    YandexSaveUnfinished => "yandex-save-unfinished",
+    YandexResultsDropped => "yandex-results-dropped",
+    CopyTruncated => "copy-truncated",
+    Copied => "copied",
+    ToastFollowerFailed => "toast-follower-failed",
     Unknown => "unknown";
     // The scans' per-folder facts, now the catalog's folder ledger (`scan-folders-failed`).
     retired: "scan-unreadable", "mount-refused", "root-refused",
@@ -1282,9 +1416,17 @@ impl Notice {
             Notice::CacheTotalsFixed { .. }
             | Notice::FolderAlreadyAdded { .. }
             | Notice::FileNoLongerInLibrary
-            | Notice::UpdateAvailable { .. } => Level::Info,
+            | Notice::UpdateAvailable { .. }
+            | Notice::NothingToDo { .. }
+            | Notice::CopyTruncated { .. }
+            | Notice::Copied => Level::Info,
             Notice::CacheFull { .. }
             | Notice::CacheDisabled { .. }
+            | Notice::ThumbnailForgetFailed { .. }
+            | Notice::TempLeftBehind { .. }
+            | Notice::RevealRefusedRoot { .. }
+            | Notice::YandexSaveUnfinished { .. }
+            | Notice::YandexResultsDropped { .. }
             | Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::PrefsUnreadable { .. }
@@ -1328,7 +1470,10 @@ impl Notice {
             | Notice::ViewsFailed { .. }
             | Notice::SessionNotSaved { .. }
             | Notice::SessionNotRead { .. }
-            | Notice::EditFailed { .. } => Level::Error,
+            | Notice::EditFailed { .. }
+            | Notice::InboxWriteFailed { .. }
+            | Notice::DiscardFailed { .. }
+            | Notice::ToastFollowerFailed => Level::Error,
         }
     }
 
@@ -1341,8 +1486,12 @@ impl Notice {
             | Notice::RescanFailed { .. }
             | Notice::LibraryUnavailable { .. }
             | Notice::ChangesUnseen { .. } => Source::Library,
-            Notice::CacheFull { .. } | Notice::ThumbsFailed { .. } => Source::Thumbs,
-            Notice::Cropped { .. }
+            Notice::CacheFull { .. } | Notice::ThumbsFailed { .. } | Notice::ThumbnailForgetFailed { .. } => {
+                Source::Thumbs
+            }
+            Notice::NothingToDo { what: NothingKind::BorderMarkNoBorders } => Source::Borders,
+            Notice::NothingToDo { .. }
+            | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
             | Notice::BordersCut { .. }
             | Notice::CutFailed { .. } => Source::Crop,
@@ -1355,7 +1504,8 @@ impl Notice {
             | Notice::TreeFailed { .. }
             | Notice::ViewsFailed { .. }
             | Notice::SessionNotSaved { .. }
-            | Notice::SessionNotRead { .. } => Source::Catalog,
+            | Notice::SessionNotRead { .. }
+            | Notice::InboxWriteFailed { .. } => Source::Catalog,
             Notice::PrefsUnreadable { .. } | Notice::PrefsNotSaved { .. } => Source::Prefs,
             Notice::CacheTotalsFixed { .. }
             | Notice::CacheTouchesNotWritten { .. }
@@ -1372,7 +1522,10 @@ impl Notice {
             | Notice::FolderNotRemoved { .. }
             | Notice::FolderRemovalUnfinished { .. }
             | Notice::FoldersUnreadable { .. }
-            | Notice::PickerFailed { .. } => Source::Folders,
+            | Notice::PickerFailed { .. }
+            | Notice::RevealRefusedRoot { .. }
+            | Notice::DiscardFailed { .. } => Source::Folders,
+            Notice::TempLeftBehind { .. } => Source::Writeback,
             Notice::EditFailed { .. } => Source::Edit,
             Notice::BordersFailed { .. } => Source::Borders,
             Notice::ImportFailed { .. } => Source::Import,
@@ -1383,7 +1536,14 @@ impl Notice {
                 FilePass::Import => Source::Import,
             },
             Notice::UpdateAvailable { .. } => Source::Update,
-            Notice::NoticesLost { .. } | Notice::FileNoLongerInLibrary | Notice::Unknown { .. } => Source::App,
+            Notice::YandexSaveUnfinished { .. }
+            | Notice::YandexResultsDropped { .. }
+            | Notice::CopyTruncated { .. }
+            | Notice::Copied
+            | Notice::ToastFollowerFailed
+            | Notice::NoticesLost { .. }
+            | Notice::FileNoLongerInLibrary
+            | Notice::Unknown { .. } => Source::App,
         }
     }
 
@@ -1434,9 +1594,14 @@ impl Notice {
             Notice::BordersFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Borders)),
             Notice::ImportFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Import)),
             Notice::ScanFoldersFailed { .. } => Lifecycle::Ledger(LedgerKind::ScanFolders),
-            Notice::FolderAlreadyAdded { .. } | Notice::FileNoLongerInLibrary | Notice::Unknown { .. } => {
-                Lifecycle::Transient
-            }
+            Notice::FolderAlreadyAdded { .. }
+            | Notice::FileNoLongerInLibrary
+            | Notice::Unknown { .. }
+            | Notice::NothingToDo { .. }
+            | Notice::RevealRefusedRoot { .. }
+            | Notice::CopyTruncated { .. }
+            | Notice::Copied
+            | Notice::InboxWriteFailed { .. } => Lifecycle::Transient,
             Notice::WriteDropped { .. }
             | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
@@ -1459,6 +1624,12 @@ impl Notice {
             | Notice::PickerFailed { .. }
             | Notice::NoticesLost { .. }
             | Notice::FolderRemovalUnfinished { .. }
+            | Notice::TempLeftBehind { .. }
+            | Notice::ThumbnailForgetFailed { .. }
+            | Notice::YandexSaveUnfinished { .. }
+            | Notice::YandexResultsDropped { .. }
+            | Notice::DiscardFailed { .. }
+            | Notice::ToastFollowerFailed
             | Notice::UpdateAvailable { .. } => Lifecycle::Event,
         }
     }
@@ -1578,6 +1749,17 @@ impl Notice {
             | Notice::NoticesLost { .. }
             | Notice::FileNoLongerInLibrary
             | Notice::UpdateAvailable { .. }
+            | Notice::NothingToDo { .. }
+            | Notice::TempLeftBehind { .. }
+            | Notice::RevealRefusedRoot { .. }
+            | Notice::ThumbnailForgetFailed { .. }
+            | Notice::InboxWriteFailed { .. }
+            | Notice::YandexSaveUnfinished { .. }
+            | Notice::YandexResultsDropped { .. }
+            | Notice::CopyTruncated { .. }
+            | Notice::Copied
+            | Notice::DiscardFailed { .. }
+            | Notice::ToastFollowerFailed
             | Notice::Unknown { .. } => None,
         }
     }
@@ -1620,6 +1802,8 @@ impl Notice {
                 failed: 1,
                 failures: vec![failure],
                 unfinished: 2,
+                changed: 1,
+                missing: 2,
             },
             Notice::CropFailed { error: error() },
             Notice::CatalogRebuilt {
@@ -1700,6 +1884,17 @@ impl Notice {
             Notice::ChangesUnseen { error: error() },
             Notice::CacheNotSwept { error: error() },
             Notice::CacheNotRead { error: error() },
+            Notice::NothingToDo { what: NothingKind::CropNoBorders },
+            Notice::TempLeftBehind { path: sample_path(&["Photos", ".a.jpg.rating.pg-write"]) },
+            Notice::RevealRefusedRoot { folder: sample_path(&["Photos"]) },
+            Notice::ThumbnailForgetFailed { count: 3 },
+            Notice::InboxWriteFailed { action: InboxAction::Dismiss },
+            Notice::YandexSaveUnfinished { written: 2, unfinished: 1 },
+            Notice::YandexResultsDropped { dropped: 4, found: 30 },
+            Notice::CopyTruncated { shown: 2048, total: 5000 },
+            Notice::ToastFollowerFailed,
+            Notice::DiscardFailed { error: error() },
+            Notice::Copied,
         ]
     }
 }
@@ -1794,10 +1989,21 @@ mod tests {
             Notice::FolderRemovalUnfinished { .. } => 49,
             Notice::CacheNotSwept { .. } => 51,
             Notice::CacheNotRead { .. } => 52,
+            Notice::NothingToDo { .. } => 53,
+            Notice::TempLeftBehind { .. } => 54,
+            Notice::RevealRefusedRoot { .. } => 55,
+            Notice::ThumbnailForgetFailed { .. } => 56,
+            Notice::InboxWriteFailed { .. } => 57,
+            Notice::YandexSaveUnfinished { .. } => 58,
+            Notice::YandexResultsDropped { .. } => 59,
+            Notice::CopyTruncated { .. } => 60,
+            Notice::ToastFollowerFailed => 61,
+            Notice::DiscardFailed { .. } => 62,
+            Notice::Copied => 63,
         }
     }
 
-    const KINDS: usize = 53;
+    const KINDS: usize = 64;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {

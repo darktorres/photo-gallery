@@ -24,9 +24,11 @@ use pg_app::yandex::{Hit, Measured};
 use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
+use pg_model::notice::Notice;
 use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, YandexStatus};
-use pg_wording::{Message, render};
+use pg_platform::native::PATH_RULES;
+use pg_wording::{Message, notice_line, render};
 
 /// A status line's text. A panic's line names the log's file as it is on disk: the log is open before the window is made.
 fn status_text(status: &YandexStatus) -> String {
@@ -137,7 +139,10 @@ impl qobject::YandexSearch {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
                 pg_log::warn("yandex", &format!("file {}: {err:#}", file.get()));
-                // The results on the panel are another photo's: they go, so the error is not read as theirs.
+                // The results on the panel are another photo's: they go, so the error is not read as theirs. The panel is for
+                // no photo now, so the search that is running (if any) shows nothing here.
+                self.as_mut().keep_picks();
+                self.as_mut().rust_mut().photo = None;
                 self.as_mut().show(Results::default());
                 self.as_mut()
                     .set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
@@ -154,18 +159,52 @@ impl qobject::YandexSearch {
     /// Start a search for the photo at `path`. The app refuses one already running; the status line keeps showing that
     /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
+        // The panel is for this photo from now on, whatever the search does: the last photo's picks are kept for it, and
+        // its results leave the screen, so Save can't act on them (a refused search leaves none of the last photo's behind).
+        self.as_mut().keep_picks();
+        self.as_mut().rust_mut().photo = Some(path.to_path_buf());
+        self.as_mut().show(Results::default());
         if let Err(e) = self.as_mut().ensure_pump() {
             return self.not_started("search", &e);
         }
         match search().start(path, RESULT_ROW_HEIGHT) {
-            Ok(true) => {}
+            // The app's search is this photo's from now on: its results and progress are the panel's.
+            Ok(true) => self.as_mut().rust_mut().searched = Some(path.to_path_buf()),
+            // Another photo's search is still running: the panel shows nothing of it (`poll`), and says why.
             Ok(false) => return self.refused("search"),
             Err(e) => return self.not_started("search", &e),
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&pg_wording::yandex_phase(Phase::Starting)));
-        self.as_mut().show(Results::default());
+    }
+
+    /// The picks of the photo the panel shows are kept for it, by its results' ids, before its results leave the panel.
+    /// Nothing is kept when no results are shown (a refused search's clearing keeps the photo's picks as they were).
+    fn keep_picks(mut self: Pin<&mut Self>) {
+        let Some(photo) = self.photo.clone() else { return };
+        if self.results.is_empty() {
+            return;
+        }
+        let picked: Vec<u64> = self.results.picked().map(|hit| hit.id).collect();
+        self.as_mut().rust_mut().picks.insert(photo, picked);
+    }
+
+    /// The picks kept for the photo the panel shows are put back on its results, the ones with the same ids.
+    fn restore_picks(mut self: Pin<&mut Self>) {
+        let Some(kept) = self.photo.as_ref().and_then(|photo| self.picks.get(photo)).cloned() else { return };
+        let rows: Vec<usize> = self
+            .results
+            .items()
+            .iter()
+            .enumerate()
+            .filter(|(_, hit)| kept.contains(&hit.id))
+            .map(|(row, _)| row)
+            .collect();
+        for row in rows {
+            self.as_mut().rust_mut().results.picks_mut().set(row..row + 1, true);
+        }
+        self.picks_changed();
     }
 
     /// Start the thread that polls on each change of the search (once, unless it couldn't start). It subscribes before
@@ -261,12 +300,13 @@ impl qobject::YandexSearch {
     /// The results whose files died come off the grid, one run of consecutive rows at a time (the model says which rows
     /// went). Each run goes highest first, so the rows below it keep their indices; the frames of the rows go with them,
     /// and the layout of the rest is made once all are gone. The picks of the others stay on their results. The preview
-    /// keeps its picture where it went with the removals, and closes if the picture died.
-    fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) {
+    /// keeps its picture where it went with the removals, and closes if the picture died. Returns how many rows went.
+    fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) -> usize {
         let runs = dead_runs(self.results.items(), dead);
         if runs.is_empty() {
-            return;
+            return 0;
         }
+        let removed: usize = runs.iter().map(|run| run.len()).sum();
         let shown = self.shown_id();
         let turn = turn_after_removal(self.thumb_turn, &runs);
         let root = QModelIndex::default();
@@ -283,6 +323,7 @@ impl qobject::YandexSearch {
         let ids: Vec<u64> = self.results.items().iter().map(|hit| hit.id).collect();
         self.as_mut().set_preview_item(preview_item_after(&ids, shown));
         self.groups_changed();
+        removed
     }
 
     /// The results whose files came in take their sizes: each row's size roles change, the results are laid out again
@@ -420,22 +461,35 @@ impl qobject::YandexSearch {
 
     fn poll(mut self: Pin<&mut Self>) {
         let poll = search().poll();
+        // The app's search is shown only for the panel's photo: another photo's (one still running when this one was asked
+        // for) is not the panel's, so its results, status and progress are left out.
+        let ours = self.photo.is_some() && self.photo == self.searched;
         // The results first: whatever watches `busy` going off finds them in place.
-        if let Some(found) = poll.found {
+        if let Some(found) = poll.found.filter(|_| ours) {
             self.as_mut().show(Results::new(found.other, found.similar));
+            self.as_mut().restore_picks();
         }
         // The results whose files died come off the grid (their ids are the search's, so an older search's are ignored).
-        if !poll.dead.is_empty() {
-            self.as_mut().drop_dead(&poll.dead);
-        }
+        let dropped = if poll.dead.is_empty() { 0 } else { self.as_mut().drop_dead(&poll.dead) };
         // The results whose files came in show their sizes, and are laid out by them.
         if !poll.sized.is_empty() {
             self.as_mut().apply_sizes(&poll.sized);
         }
-        if let Some(status) = poll.status {
+        // The status line says what the panel's own request got (`refused`) while the app's search is another photo's.
+        if let Some(status) = poll.status.filter(|_| ours) {
             self.as_mut().set_status(QString::from(&status_text(&status)));
         }
-        self.set_busy(poll.busy);
+        // Results taken off the grid are said on the status line, as the notice that reports them: after the poll's
+        // status, which may be older. It is the line a panel with no results left shows, instead of "No results".
+        if dropped > 0 {
+            let notice = Notice::YandexResultsDropped {
+                dropped: u64::try_from(dropped).unwrap_or(u64::MAX),
+                found: u64::try_from(poll.total).unwrap_or(u64::MAX),
+            };
+            self.as_mut().set_status(QString::from(&notice_line(&notice, PATH_RULES)));
+        }
+        // Not the panel's photo's search: the panel is not busy with it.
+        self.set_busy(poll.busy && ours);
     }
 
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
@@ -506,15 +560,17 @@ impl qobject::YandexSearch {
     }
 
     pub(crate) fn download_picked(mut self: Pin<&mut Self>) {
+        // The picks are checked before the folder is taken, so a folder chosen for nothing to save is kept. A pick whose
+        // file died while the dialog was open is off the grid already, and the status line says so (`poll`): with no pick
+        // left, the save has nothing to do and says nothing over that line.
+        let hits: Vec<Hit> = self.results.picked().cloned().collect();
+        if hits.is_empty() {
+            return;
+        }
         let Some(folder) = crate::picker::take(crate::bridges::picker_state::Purpose::YandexSave) else {
             self.as_mut().set_status(QString::from(&render(&Message::YandexNoFolder)));
             return;
         };
-        let hits: Vec<Hit> = self.results.picked().cloned().collect();
-        if hits.is_empty() {
-            self.as_mut().set_status(QString::from(&render(&Message::YandexNothingPicked)));
-            return;
-        }
         let files = hits.len();
         if let Err(e) = self.as_mut().ensure_pump() {
             return self.not_started("save", &e);

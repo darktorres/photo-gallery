@@ -38,6 +38,8 @@ Rectangle {
     // Quarter turns asked for but not yet in the file; its rating.
     readonly property int turns: gallery.viewedTurns
     readonly property int rating: gallery.viewedRating
+    // Why the shown item's fit failed, from the window's record of it (Rust's FitError codes; 0 when it did not).
+    readonly property int fitError: gallery.viewedFitError
     // Upright size in image pixels (pending turns included); 0 before the import, which leaves only the fit.
     readonly property int fw: gallery.viewedFullWidth
     readonly property int fh: gallery.viewedFullHeight
@@ -96,6 +98,8 @@ Rectangle {
     // From the media: a frame of the shown video or animation was drawn (the poster gives way); the player's error.
     property bool videoStarted: false
     property string playerError: ""
+    // The player's error is the shown item's: another item clears the last one's, before its own player reports.
+    onIndexChanged: playerError = ""
 
     // To what the parts made: the view moved (render the visible part again, at once and then at most every 50 ms), a new image opened
     // (drop the old part), play or pause asked for.
@@ -111,9 +115,10 @@ Rectangle {
     signal stepRequested(int d)
     signal rated(int index, int rating)
     signal turned(int index, int turns)
-    // B: show or hide the borders (the window keeps the setting); N: mark the shown item's as not a border, or not.
+    // B: show or hide the borders (the window keeps the setting); N: toggle the shown item's mark as not a border. The
+    // window toggles it (Shell.toggleBorderMark), from the mark the writes queued before this press leave.
     signal bordersToggled
-    signal borderMarkToggled(int index, bool marked)
+    signal borderMarkToggled(int index)
     // The bar's "find similar" button: the photo's file (its id), for the Yandex panel (Main.qml).
     signal findSimilar(real fileId)
 
@@ -178,7 +183,7 @@ Rectangle {
     }
 
     // Rate the picture (the window's rating moves on to the next picture: the controller's). The rating's symbol shows
-    // for a moment on `rated`.
+    // for a moment once it is written (the gallery's ratingWritten, below), not on `rated`.
     function rate(r: int) {
         if (index < 0)
             return;
@@ -275,7 +280,8 @@ Rectangle {
         MarkBorder,
         Hide,
         PlayPause,
-        Mute
+        Mute,
+        FindSimilar
     }
 
     Keys.onPressed: e => {
@@ -328,7 +334,7 @@ Rectangle {
             bordersToggled();
             break;
         case Viewer.ViewerAction.MarkBorder:
-            borderMarkToggled(index, !borderMarked);
+            borderMarkToggled(index);
             break;
         case Viewer.ViewerAction.Hide:
             zen = !zen;
@@ -338,6 +344,11 @@ Rectangle {
             break;
         case Viewer.ViewerAction.Mute:
             muted = !muted;
+            break;
+        case Viewer.ViewerAction.FindSimilar:
+            // The find-similar search is for a still picture (its button's), as the key map says (S).
+            if (still)
+                findSimilar(fileId);
             break;
         }
         e.accepted = true;
@@ -545,6 +556,9 @@ Rectangle {
                     zoomable: viewer.zoomable
                     loupe: viewer.loupe
                     fitFailed: layers.fitStatus === Image.Error
+                    fitError: viewer.fitError
+                    fullFailed: layers.fullFailed
+                    regionFailed: layers.regionFailed
                     turns: viewer.turns
                     rating: viewer.rating
                     borderMarked: viewer.borderMarked
@@ -555,21 +569,26 @@ Rectangle {
                     onCloseRequested: viewer.close()
                     onRateRequested: r => viewer.rate(r)
                     onTurnRequested: d => viewer.turn(d)
-                    onBorderMarkRequested: marked => viewer.borderMarkToggled(viewer.index, marked)
+                    onBorderMarkRequested: viewer.borderMarkToggled(viewer.index)
                     onFindSimilarRequested: viewer.findSimilar(viewer.fileId)
                 }
 
-                // The rating just given, for half a second (over the next picture).
+                // The rating just given, for half a second (over the next picture). It shows once the rating is written
+                // (the gallery's ratingWritten), not when it is asked for: a failed write shows no success.
                 RatingPopup {
                     id: ratingPopup
+                }
+                Connections {
+                    target: viewer.gallery
+                    function onRatingWritten(r: int) {
+                        if (viewer.visible)
+                            ratingPopup.show(r);
+                    }
                 }
 
                 // What the root asks of it.
                 Connections {
                     target: viewer
-                    function onRated(i: int, r: int) {
-                        ratingPopup.show(r);
-                    }
                     function onViewMoved() {
                         layers.restartRegion();
                     }

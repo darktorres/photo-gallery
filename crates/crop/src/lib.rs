@@ -83,8 +83,12 @@ fn io(what: impl Into<String>, source: std::io::Error) -> Error {
 pub struct Stats {
     /// The copies saved.
     pub saved: usize,
-    /// Nothing to crop now (no borders, marked, changed since), or not in the library any more.
+    /// Nothing to crop now (no borders, or marked): not a file that changed or went.
     pub skipped: usize,
+    /// The files that changed on disk since their borders were found (their size or time differ): left as they are.
+    pub changed: usize,
+    /// The files that are missing from the library, or no longer in it: left as they are.
+    pub missing: usize,
     /// The files that failed, the first of them kept in `failures`.
     pub failed: usize,
     /// The first failures, each with its file, up to `FAILURES_KEPT`; `failed` counts them all. A panic on a file is a
@@ -125,12 +129,22 @@ pub fn save_with(
     let folder = pg_platform::names::real_path_lenient(folder)
         .map_err(|e| Error::Invalid(format!("the folder for the copies isn't a path: {e}")))?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, failures: Vec::new(), remaining: Vec::new() };
+    let mut stats =
+        Stats { saved: 0, skipped: 0, changed: 0, missing: 0, failed: 0, failures: Vec::new(), remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();
     for &id in ids {
         let Some(source) = catalog.crop_source(id, &mut paths)? else {
-            stats.skipped += 1;
+            // No source: the file went or changed since its borders were found, or it has nothing to crop (no borders, or
+            // marked). Only the last is "nothing to crop".
+            let gap = catalog.crop_gap(id)?;
+            if gap.missing {
+                stats.missing += 1;
+            } else if gap.changed {
+                stats.changed += 1;
+            } else {
+                stats.skipped += 1;
+            }
             continue;
         };
         let path = rules
@@ -138,7 +152,8 @@ pub fn save_with(
             .ok_or_else(|| Error::Invalid("a stored path doesn't parse".into()))?;
         // The deepest library folder holding it (library folders don't nest; a removed one can be inside another).
         let Some(root) = roots.iter().filter(|r| rules.is_under(&path, r)).max_by_key(|r| r.parts.len()) else {
-            stats.skipped += 1;
+            // Not in the library any more: missing.
+            stats.missing += 1;
             continue;
         };
         // The copies' folder: the chosen folder, then the library folder's place (its drive as a part, so
@@ -188,14 +203,11 @@ pub fn save_with(
                 return Err(Failed::from(Error::Invalid("an item outside the pass".into())));
             };
             *job_done = true;
-            let result = result.map_err(Error::Pass).map(|written| match written {
-                Written::Skipped => false,
-                Written::Saved => true,
-            });
+            let result = result.map_err(Error::Pass);
             ctl.add(len, result.is_err());
             match result {
-                Ok(true) => stats.saved += 1,
-                Ok(false) => stats.skipped += 1,
+                Ok(Written::Saved) => stats.saved += 1,
+                Ok(Written::Changed) => stats.changed += 1,
                 Err(e) => {
                     stats.failed += 1;
                     if stats.failures.len() < FAILURES_KEPT {
@@ -214,8 +226,8 @@ pub fn save_with(
 
 enum Written {
     Saved,
-    /// Changed since its borders were found.
-    Skipped,
+    /// Changed on disk since its borders were found: not copied.
+    Changed,
 }
 
 /// What a worker of `save` keeps from one copy to the next: its ExifTool, started for the first copy that needs its tags
@@ -470,7 +482,7 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], worker: &mut CopyWorke
     // written, not a sibling without it.
     let (source_path, out_path) = (disk_path_of(source), disk_path_of(out));
     if !still_listed(&source_path, s, bytes.len())? {
-        return Ok(Written::Skipped);
+        return Ok(Written::Changed);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
     if let Some(dir) = out_path.parent() {

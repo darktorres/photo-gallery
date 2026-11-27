@@ -23,8 +23,13 @@ Item {
     required property bool still
     required property bool zoomable
     required property bool loupe
-    // The original could not be loaded.
+    // The picture could not be shown: the fit, the full-size original (1:1, the loupe) or a zoomed region of it failed.
     required property bool fitFailed
+    required property bool fullFailed
+    required property bool regionFailed
+    // Why the fit failed, from the window (Rust's FitError codes): 0 none or the original unavailable, 2 undecodable,
+    // 3 rewriting (the file was being written past the wait).
+    required property int fitError
     // Quarter turns asked for but not yet in the file.
     required property int turns
     required property int rating
@@ -41,8 +46,28 @@ Item {
     signal closeRequested
     signal rateRequested(int r)
     signal turnRequested(int d)
-    signal borderMarkRequested(bool marked)
+    signal borderMarkRequested
     signal findSimilarRequested
+
+    readonly property bool pictureFailed: fitFailed || fullFailed || regionFailed
+
+    // The line's words for a failed picture: the fit's own cause when the fit failed, else the original (1:1, the loupe)
+    // is unavailable, else a zoomed part of it could not be shown.
+    function failureText(): string {
+        if (hud.fitFailed) {
+            switch (hud.fitError) {
+            case 2:
+                return words.text("ui-fit-undecodable");
+            case 3:
+                return words.text("ui-fit-rewriting");
+            default:
+                return words.text("ui-original-unavailable");
+            }
+        }
+        if (hud.fullFailed)
+            return words.text("ui-original-unavailable");
+        return words.text("ui-region-failed");
+    }
 
     KeyMap {
         id: keymap
@@ -109,7 +134,7 @@ Item {
         InfoText {
             elide: Text.ElideRight
             // Real size is a still's mode: a video or an animation does not take it, so the line does not say it.
-            text: (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.still && hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.fitFailed ? " · " + words.text("ui-original-unavailable") : "") + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
+            text: (hud.zoomable ? " · " + Math.round(hud.viewport.zoom * 100) + "%" : "") + (hud.still && hud.settings.realSize ? " · " + words.text("ui-real-size") : "") + (hud.loupe ? " · " + words.text("ui-loupe") : "") + (hud.turns !== 0 ? " · " + words.text("ui-turning") : "") + (hud.pictureFailed ? " · " + hud.failureText() : "") + (hud.playerError !== "" ? " · " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
         }
         // The parts keep to the left.
         Item {
@@ -125,7 +150,7 @@ Item {
         rating: hud.rating
         onRateRequested: r => hud.rateRequested(r)
         onTurnRequested: d => hud.turnRequested(d)
-        onBorderMarkRequested: marked => hud.borderMarkRequested(marked)
+        onBorderMarkRequested: hud.borderMarkRequested()
         onFindSimilarRequested: hud.findSimilarRequested()
     }
 }

@@ -18,7 +18,14 @@ FocusScope {
     visible: overlay.open
     // The keys go to the panel when it opens.
     Component.onCompleted: forceActiveFocus()
-    onVisibleChanged: visible ? forceActiveFocus() : overlay.hidden()
+    onVisibleChanged: {
+        if (visible) {
+            forceActiveFocus();
+            return;
+        }
+        // A hidden overlay keeps the focus, so its owner takes it back in its `hidden` handler.
+        overlay.hidden();
+    }
     Keys.onEscapePressed: overlay.dismissed()
 
     Rectangle {

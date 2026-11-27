@@ -687,6 +687,8 @@ impl Lanes {
                         failed: count_u64(s.failed),
                         failures: s.failures.into_iter().map(cap_error).collect(),
                         unfinished: count_u64(s.remaining.len()),
+                        changed: count_u64(s.changed),
+                        missing: count_u64(s.missing),
                     });
                     if s.remaining.is_empty() { Done::Finished } else { Done::Stopped(Job::Save(s.remaining, folder)) }
                 }
@@ -779,6 +781,11 @@ fn route_scans(reg: &mut Registry, rules: &PathRules, roots: &[RulePath], pendin
         let Some(root) = roots.iter().find(|root| rules.is_under(&path, root)) else { continue };
         match reg.lanes.iter().find(|lane| lane.roots.contains(root)) {
             Some(lane) => {
+                // The walk under way of this folder is the request: a second one would walk the folder again from its start,
+                // so nothing is queued and the round goes on.
+                if lane.inner.walking(&path) {
+                    continue;
+                }
                 if !lane.inner.scans().contains(&path) {
                     lane.inner.scans().push_back(path);
                 }

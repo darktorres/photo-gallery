@@ -161,6 +161,7 @@ msg-yandex-saved = { $count ->
    *[other] Saved { $text } files to { $folder }
 }
 msg-yandex-saved-failed = Saved { $written }, { $failed } failed. First failure: { $error }
+msg-yandex-save-nothing-written = Nothing was saved: { $failed } failed. First failure: { $error }
 msg-yandex-download-failed = { $url } couldn't be downloaded: { $error }
 msg-yandex-write-failed = { $url } couldn't be written to { $path }: { $error }
 # A search or a save stopped by a panic, which the app logged
@@ -235,7 +236,13 @@ msg-notice-round-panicked-body = { $message }. The job went on with the next req
 msg-notice-cache-full-title = The thumbnail cache is full
 msg-notice-cache-full-body = { $made } thumbnails at { $height } px weren't made. Make the cache bigger, or let it drop old thumbnails.
 msg-notice-cropped-title = Cropped copies saved
-msg-notice-cropped-body = { $saved } saved in { $folder }; { $skipped } had nothing to crop; { $failed ->
+msg-notice-cropped-body = { $saved } saved in { $folder }; { $skipped } had nothing to crop{ $changed ->
+    [0] {""}
+   *[other] ; { $changed } changed on disk since their borders were found, so left as they are
+}{ $missing ->
+    [0] {""}
+   *[other] ; { $missing } no longer in the library
+}; { $failed ->
     [0] none failed
    *[other] { $failed } failed, the first: { $path }: { $error }
 }{ $unfinished ->
@@ -257,6 +264,16 @@ msg-notice-borders-cut-body = { $saved } cut in place; { $skipped } had nothing 
 }
 msg-notice-cut-failed-title = Cutting the borders failed
 msg-notice-cut-failed-body = { $error }
+msg-notice-nothing-to-do-title = { $what ->
+    [crop-no-borders] Nothing to crop
+    [crop-library-not-running] Nothing cropped
+   *[border-mark-no-borders] No border to mark
+}
+msg-notice-nothing-to-do-body = { $what ->
+    [crop-no-borders] None of the selected files has borders to crop, so no copy was saved.
+    [crop-library-not-running] The library's background work isn't running, so no copy was saved.
+   *[border-mark-no-borders] This file has no border to mark.
+}
 msg-notice-catalog-rebuilt-title = The catalog was rebuilt
 msg-notice-catalog-rebuilt-body = It didn't match this version of the app ({ $why }), so a new one was made and the old one kept as { $kept }. { $carried ->
     [rows] It took the old one's { $files } files and { $folders } library folders.
@@ -281,6 +298,11 @@ msg-notice-cache-not-swept-title = The thumbnails of removed files couldn't be d
 msg-notice-cache-not-swept-body = { $error }. They are dropped at the next try.
 msg-notice-cache-not-read-title = The thumbnail cache couldn't be read
 msg-notice-cache-not-read-body = { $error }. Its thumbnails wait until it can be read.
+msg-notice-thumbnail-forget-failed-title = Old thumbnails weren't forgotten
+msg-notice-thumbnail-forget-failed-body = { $count ->
+    [one] The thumbnail of a changed file is still in the cache: the cache drops it at its next sweep. The cut itself went through.
+   *[other] { $text } thumbnails of changed files are still in the cache: the cache drops them at its next sweep. The cuts themselves went through.
+}
 msg-notice-cache-wal-not-merged-title = The thumbnail cache wasn't closed cleanly
 msg-notice-cache-wal-not-merged-body = { $error }. It is merged when the app starts again.
 msg-notice-cache-started-over-title = The thumbnail cache was started over
@@ -318,8 +340,14 @@ msg-notice-folder-not-added-title = The folder couldn't be added
 msg-notice-folder-not-added-body = { $error }
 msg-notice-folder-not-removed-title = The folder couldn't be removed from the library
 msg-notice-folder-not-removed-body = { $error }
+msg-notice-discard-failed-title = The unwritten changes couldn't be discarded
+msg-notice-discard-failed-body = { $error }
 msg-notice-folder-removal-unfinished-title = A change to a file in { $folder } is waiting to be written
 msg-notice-folder-removal-unfinished-body = The file was deleted before its change was written, and its folder is being removed from the library. The new content is kept in { $temp }; the change is not written anywhere else.
+msg-notice-temp-left-behind-title = A temporary copy is still in a photo folder
+msg-notice-temp-left-behind-body = It holds an edit that was being written, and it couldn't be deleted (a file in use, say). It is kept at { $path }, and the app tries to delete it again.
+msg-notice-reveal-refused-root-title = A library folder can't be revealed
+msg-notice-reveal-refused-root-body = { $folder } is a library folder, not a file, so there is no file in the grid to show.
 msg-notice-rescan-failed-title = The library couldn't be scanned again
 msg-notice-rescan-failed-body = { $error }
 msg-notice-library-unavailable-title = The background work couldn't start
@@ -343,6 +371,7 @@ msg-notice-tree-failed-body = { $error }
 msg-notice-views-failed-title = { $op ->
     [list] The saved views couldn't be listed
     [save] The view couldn't be saved
+    [read] The saved view couldn't be applied
    *[delete] The view couldn't be deleted
 }
 msg-notice-views-failed-body = { $error }
@@ -396,6 +425,26 @@ msg-notice-file-no-longer-in-library-title = The file is no longer in the librar
 msg-notice-file-no-longer-in-library-body = It was moved, deleted, or its folder was removed.
 msg-notice-update-available-title = A new version is out
 msg-notice-update-available-body = Version { $version } is available.
+msg-notice-inbox-write-failed-title = The inbox couldn't save a change
+msg-notice-inbox-write-failed-body = { $action ->
+    [dismiss] The entry wasn't dismissed: it is still in the inbox.
+    [retry] The retry wasn't saved: the entry is still in the inbox.
+    [mark] The entry wasn't marked as seen.
+   *[clear-all] The entries weren't cleared: they are still in the inbox.
+}
+msg-notice-yandex-save-unfinished-title = A save of search results was stopped
+msg-notice-yandex-save-unfinished-body = { $written } saved; { $count ->
+    [one] one picked result was not reached, because the app quit first
+   *[other] { $text } picked results were not reached, because the app quit first
+}.
+msg-notice-yandex-results-dropped-title = Some search results weren't kept
+msg-notice-yandex-results-dropped-body = { $dropped } of the { $found } results of the search weren't kept.
+msg-notice-copy-truncated-title = The copied text was cut short
+msg-notice-copy-truncated-body = The newest { $shown } of { $total } files
+msg-notice-copied-title = Copied to the clipboard
+msg-notice-copied-body = The text is on the clipboard.
+msg-notice-toast-follower-failed-title = Messages can't reach the window
+msg-notice-toast-follower-failed-body = New notices and status updates won't show until the app is started again.
 msg-notice-unknown-title = A notice from a newer version
 msg-notice-unknown-body = This version of the app can't read it ({ $code }).
 # A notice on one line (the command line, a copy of its details)

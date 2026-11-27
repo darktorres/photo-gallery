@@ -100,12 +100,14 @@ impl qobject::GalleryModel {
         let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
         let label = if shown.is_empty() { String::new() } else { format!("{shown}: ") };
         crate::app::session().grid(folder, recursive, query, sort, move |entries| {
-            let entries = crate::app::observe(pg_model::notice::Op::Listing, entries, |e| {
+            let read = crate::app::observe_result(pg_model::notice::Op::Listing, entries, |e| {
                 pg_model::notice::Notice::ListingFailed { error: crate::app::error_text(&format!("{label}{e:#}")) }
-            })
-            .unwrap_or_default();
+            });
             // Fails only when the model is gone (the window closing): nothing left to show it in.
-            let _ = model.queue(move |model| model.apply(generation, entries));
+            let _ = match read {
+                Ok(entries) => model.queue(move |model| model.apply(generation, entries)),
+                Err(_) => model.queue(move |model| model.apply_failed(generation)),
+            };
         });
     }
 
@@ -134,6 +136,8 @@ impl qobject::GalleryModel {
             Arrival::Ready(entries) => entries,
             Arrival::Stale | Arrival::Held => return,
         };
+        // A read made before a press was queued has no pending turn for it: the press is put back (`with_unqueued`).
+        let entries = self.with_unqueued(entries);
         self.as_mut().about_to_load();
         let keep = self.grid.keep();
         let (current, anchor) = (self.file_at(self.current), self.file_at(self.anchor));
@@ -145,6 +149,9 @@ impl qobject::GalleryModel {
         };
         // The list the window shows from now on: what its `ListShown` reports (`Shell::list_shown`).
         super::APPLIED.with(|applied| applied.set(Some(generation)));
+        // A list whose read failed (`apply_failed`) is shown as failed; any other list is not.
+        let failed = self.as_mut().rust_mut().failed_generation.take() == Some(generation);
+        self.as_mut().set_listing_failed(failed);
         self.as_mut().set_count(count);
         // The same folder read again: only the rows that changed change.
         let changed = if keep { Changed::List(&shown) } else { Changed::All };
@@ -269,6 +276,18 @@ impl qobject::GalleryModel {
         self.as_mut().set_revision(revision);
     }
 
+    /// A list asked for could not be read (`open_listing`; the failure is posted there). It is applied as a failed list:
+    /// a refresh of the folder shown keeps its photos as they are, and any other listing shows none, so the photos of the
+    /// folder before never stand under the name of the one that failed. A list asked for since is left to its own read.
+    pub(super) fn apply_failed(mut self: Pin<&mut Self>, generation: u64) {
+        if generation != self.grid.generation() {
+            return;
+        }
+        self.as_mut().rust_mut().failed_generation = Some(generation);
+        let entries = if self.grid.keep() { self.grid.entries().to_vec() } else { Vec::new() };
+        self.apply(generation, entries);
+    }
+
     /// A file's details came in (`GalleryRust::read_details`): kept, and the values that show them are read again. A
     /// read asked for before the details were emptied is dropped.
     pub(super) fn details_read(mut self: Pin<&mut Self>, generation: u64, file: FileId, details: Option<Details>) {
@@ -351,5 +370,19 @@ impl qobject::GalleryModel {
         self.as_mut().set_viewed_rejected_right(right);
         let marked = self.border_marked(item);
         self.as_mut().set_viewed_border_marked(marked);
+        let fit = match (self.file_at(item), self.last_fit_error) {
+            (Some(file), Some((fitted, code))) if fitted == file => code,
+            _ => 0,
+        };
+        self.as_mut().set_viewed_fit_error(fit);
+    }
+
+    /// A fit of a file was made (`code`: 0) or failed with that error (the codes of `viewedFitError`, from the image
+    /// provider's thread): the viewer's item shows it when it is the file.
+    pub(crate) fn fit_outcome(mut self: Pin<&mut Self>, file: FileId, code: i32) {
+        self.as_mut().rust_mut().last_fit_error = Some((file, code));
+        if self.file_at(self.viewing) == Some(file) {
+            self.as_mut().set_viewed_fit_error(code);
+        }
     }
 }

@@ -21,7 +21,9 @@ Rectangle {
 
     signal rateRequested(int r)
     signal turnRequested(int d)
-    signal borderMarkRequested(bool marked)
+    // The border mark is toggled by the window's toggle (Shell.toggleBorderMark), which reads the mark the writes queued
+    // before this press leave, so the button asks for the toggle and no value.
+    signal borderMarkRequested
     signal findSimilarRequested
 
     anchors.horizontalCenter: parent.horizontalCenter
@@ -67,7 +69,7 @@ Rectangle {
             font.strikeout: bar.borderMarked
             ToolTip.visible: hovered
             ToolTip.text: bar.borderMarked ? words.text("ui-unmark-not-border") : words.text("ui-not-a-border")
-            onClicked: bar.borderMarkRequested(!bar.borderMarked)
+            onClicked: bar.borderMarkRequested()
         }
         ToolButton {
             text: "⟲"

@@ -28,9 +28,10 @@ pub mod qobject {
         #[cxx_name = "viewerArg"]
         fn viewer_arg(self: &KeyMap, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32;
 
+        /// The grid's key hint line. `detection`: border detection is on (the B and N keys are named only then).
         #[qinvokable]
         #[cxx_name = "gridHint"]
-        fn grid_hint(self: &KeyMap) -> QString;
+        fn grid_hint(self: &KeyMap, detection: bool) -> QString;
 
         #[qinvokable]
         #[cxx_name = "viewerHint"]

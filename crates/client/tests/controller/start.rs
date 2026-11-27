@@ -1,13 +1,14 @@
 //! The start gate's traces (`pg_client::controller::start`): the tree and the list in either order, a list placed after
-//! the grid's width, a folder the tree no longer has, and the events after the start. The session's last file (the
-//! prefs') is the gate's, and its selection is asked for at each list shown until the start is over.
+//! the grid's width, a folder the tree no longer has (the listing stays as it is), a failed tree read (a state the gate
+//! passes), and the events after the start. The session's last file (the prefs') is the gate's, and its selection is
+//! asked for at each list shown until the start is over.
 
 use pg_client::controller::start::{Command, Event, StartGate};
 use pg_model::ids::FileId;
 use proptest::prelude::*;
 
-use Command::{OpenAll, RestoreSelection, Started};
-use Event::{ListPositioned, ListShown, TreeLoaded};
+use Command::{RestoreSelection, Started};
+use Event::{ListPositioned, ListShown, TreeFailed, TreeLoaded};
 
 /// Runs `events` through a new gate that restores `last_file`, and the commands they give in order.
 fn run(last_file: Option<FileId>, events: &[Event]) -> Vec<Command> {
@@ -28,65 +29,45 @@ fn the_start_traces() {
         (
             "tree first, then the list with the session's file",
             Some(file(3)),
-            &[TreeLoaded { folder_known: true }, ListShown, ListPositioned],
+            &[TreeLoaded, ListShown, ListPositioned],
             &[RestoreSelection(file(3)), Started],
         ),
         (
             "list first, then the tree: the start waits for the tree",
             Some(file(3)),
-            &[ListShown, ListPositioned, TreeLoaded { folder_known: true }],
+            &[ListShown, ListPositioned, TreeLoaded],
             &[RestoreSelection(file(3)), Started],
         ),
-        (
-            "no file was remembered: nothing is restored",
-            None,
-            &[TreeLoaded { folder_known: true }, ListShown, ListPositioned],
-            &[Started],
-        ),
+        ("no file was remembered: nothing is restored", None, &[TreeLoaded, ListShown, ListPositioned], &[Started]),
         (
             "a list placed after the grid's width (the relayout) still starts",
             Some(file(2)),
-            &[ListShown, TreeLoaded { folder_known: true }, ListPositioned],
+            &[ListShown, TreeLoaded, ListPositioned],
             &[RestoreSelection(file(2)), Started],
         ),
         (
-            "the folder is gone at the start: all folders are listed, then the start",
-            None,
-            &[TreeLoaded { folder_known: false }, ListShown, ListPositioned],
-            &[OpenAll, Started],
+            "a folder the tree no longer has is listed as it is: the start goes on with that listing",
+            Some(file(1)),
+            &[TreeLoaded, ListShown, ListPositioned],
+            &[RestoreSelection(file(1)), Started],
         ),
         (
-            "a list of the gone folder before the tree says so: the start waits for the list asked again",
-            Some(file(1)),
-            &[ListShown, ListPositioned, TreeLoaded { folder_known: false }, ListShown, ListPositioned],
-            // The list asked again for all folders restores the file too: it is the first list the start is over with.
-            &[RestoreSelection(file(1)), OpenAll, RestoreSelection(file(1)), Started],
+            "a failed tree read is a state the gate passes: the start goes on with the listing it has",
+            Some(file(2)),
+            &[TreeFailed, ListShown, ListPositioned],
+            &[RestoreSelection(file(2)), Started],
+        ),
+        (
+            "a tree that fails after the list is shown still starts once it is placed",
+            Some(file(2)),
+            &[ListShown, ListPositioned, TreeFailed],
+            &[RestoreSelection(file(2)), Started],
         ),
         (
             "a second tree and list after the start change nothing",
             Some(file(0)),
-            &[
-                TreeLoaded { folder_known: true },
-                ListShown,
-                ListPositioned,
-                TreeLoaded { folder_known: true },
-                ListShown,
-                ListPositioned,
-            ],
+            &[TreeLoaded, ListShown, ListPositioned, TreeLoaded, ListShown, ListPositioned],
             &[RestoreSelection(file(0)), Started],
-        ),
-        (
-            "a folder gone after the start lists all folders again",
-            None,
-            &[
-                TreeLoaded { folder_known: true },
-                ListShown,
-                ListPositioned,
-                TreeLoaded { folder_known: false },
-                ListShown,
-                ListPositioned,
-            ],
-            &[Started, OpenAll],
         ),
         (
             "the list alone does not start the window",
@@ -103,7 +84,7 @@ fn the_start_traces() {
 #[test]
 fn a_list_shown_but_not_placed_is_not_the_start() {
     let mut gate = StartGate::new(None);
-    assert!(gate.update(TreeLoaded { folder_known: true }).is_empty());
+    assert!(gate.update(TreeLoaded).is_empty());
     assert!(gate.update(ListShown).is_empty());
     assert!(!gate.is_started());
     assert_eq!(gate.update(ListPositioned), [Started]);
@@ -111,16 +92,12 @@ fn a_list_shown_but_not_placed_is_not_the_start() {
 }
 
 fn event() -> impl Strategy<Value = Event> {
-    prop_oneof![
-        any::<bool>().prop_map(|folder_known| TreeLoaded { folder_known }),
-        Just(ListShown),
-        Just(ListPositioned),
-    ]
+    prop_oneof![Just(TreeLoaded), Just(TreeFailed), Just(ListShown), Just(ListPositioned)]
 }
 
 proptest! {
-    // Whatever the order: the start happens at most once, only after the tree and a placed list were reported, and no
-    // selection is asked for once it is over.
+    // Whatever the order: the start happens at most once, only after the tree (loaded or failed) and a placed list were
+    // reported, and no selection is asked for once it is over.
     #[test]
     fn the_start_happens_once_and_after_its_parts(events in prop::collection::vec(event(), 0..40)) {
         let mut gate = StartGate::new(Some(file(7)));
@@ -129,12 +106,7 @@ proptest! {
         let mut started = 0;
         for e in events {
             match e {
-                TreeLoaded { folder_known } => {
-                    tree = true;
-                    if !folder_known {
-                        placed = false;
-                    }
-                }
+                TreeLoaded | TreeFailed => tree = true,
                 ListShown => {}
                 ListPositioned => placed = true,
             }
@@ -145,7 +117,6 @@ proptest! {
                         prop_assert!(tree && placed, "started before the tree and a placed list");
                     }
                     RestoreSelection(_) => prop_assert_eq!(started, 0, "a selection after the start"),
-                    OpenAll => {}
                 }
             }
         }

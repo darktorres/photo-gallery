@@ -8,7 +8,7 @@ use cxx_qt::{CxxQtType, Threading};
 use pg_client::grid::Changed;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::notice::{EditOp, Notice, Op};
+use pg_model::notice::{EditOp, NothingKind, Notice, Op};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -18,29 +18,82 @@ use crate::worker;
 
 impl qobject::GalleryModel {
     /// Turn a file by quarter turns clockwise (three is counterclockwise), losslessly, in the background: the
-    /// controller's `Turn` command. The turn is queued for the file on the writes' thread, and the item shows it once
-    /// it is queued (`turn_queued`).
-    pub(crate) fn rotate(self: Pin<&mut Self>, item: i32, turns: Turns) {
+    /// controller's `Turn` command. The item shows the turn at press (`pending_turns`), before the write, which waits on
+    /// the writes' thread for the catalog's write lock; a turn that is not written is taken back off the item.
+    pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: Turns) {
         let Some(id) = self.file_at(item) else { return };
         if turns == Turns::NONE {
             return;
         }
+        self.as_mut().pending_turn(id, turns, true);
+        self.as_mut().unqueued_turn(id, turns, true);
         let model = self.qt_thread();
         worker::run(move || {
-            if edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_some() {
-                let _ = model.queue(move |model| model.turn_queued(id, turns));
-            }
+            // Done whatever the write does: a write that panics still takes its turn back off the item.
+            let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                edit_outcome(EditOp::Rotate, crate::app::get().library().turn(id, turns)).is_some()
+            }))
+            .unwrap_or(false);
+            let _ = model.queue(move |model| model.turn_done(id, turns, written));
         });
     }
 
-    /// A turn was queued for the file: the item shows it (the item's shape, when the turn swaps the axes, changes the
-    /// rows).
-    fn turn_queued(mut self: Pin<&mut Self>, id: FileId, turns: Turns) {
+    /// A turn's write is done. One that was not written is taken back off the item; one that was stays pending until the
+    /// catalog's read shows it written (`refresh_turned`).
+    fn turn_done(mut self: Pin<&mut Self>, id: FileId, turns: Turns, written: bool) {
+        // The writer is done with the press: it is queued in the catalog now (or refused), so a list read from here counts
+        // it.
+        self.as_mut().unqueued_turn(id, turns, false);
+        if written {
+            // The file changed in the catalog: what was read of it before is stale.
+            self.as_mut().rust_mut().forget_details();
+        } else {
+            self.as_mut().pending_turn(id, turns, false);
+        }
+    }
+
+    /// Records a press as not queued in the catalog yet (`add`), or takes one off when the writer is done with it
+    /// (`turn_done`). The record is `unqueued`, what `with_unqueued` puts back on a list that arrives before the queue.
+    fn unqueued_turn(mut self: Pin<&mut Self>, id: FileId, turns: Turns, add: bool) {
+        let mut this = self.as_mut().rust_mut();
+        let before = this.unqueued.get(&id).copied().unwrap_or(Turns::NONE);
+        let after = if add { before.plus(turns) } else { unturned(before, turns) };
+        if after == Turns::NONE {
+            this.unqueued.remove(&id);
+        } else {
+            this.unqueued.insert(id, after);
+        }
+    }
+
+    /// The entries a list read brings, with the presses the catalog does not count yet put back on them. The catalog
+    /// counts a turn as pending once the writer has queued it, so a read made before that has none for the press: it is
+    /// counted again here, until `turn_done` takes it off. An entry the read already has pending turns for is left as
+    /// read, so a press queued before the read is not counted twice (a press queued before the read, and another not yet
+    /// queued, is undercounted until the write lands and the turned files are read again).
+    pub(super) fn with_unqueued(&self, mut entries: Vec<Entry>) -> Vec<Entry> {
+        if self.unqueued.is_empty() {
+            return entries;
+        }
+        for entry in &mut entries {
+            if entry.pending_turns == Turns::NONE
+                && let Some(&turns) = self.unqueued.get(&entry.id)
+            {
+                entry.pending_turns = turns;
+            }
+        }
+        entries
+    }
+
+    /// Puts a turn on the file's item as waiting to be written (`add`), or takes one back (a write that failed), and shows
+    /// the item with it. A turn that swaps the picture's axes changes its shape, and so the rows.
+    fn pending_turn(mut self: Pin<&mut Self>, id: FileId, turns: Turns, add: bool) {
         let Some(at) = self.grid.position_of(id) else { return };
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            this.grid.edit(at, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
+            this.grid.edit(at, loading, |e| {
+                e.pending_turns = if add { e.pending_turns.plus(turns) } else { unturned(e.pending_turns, turns) };
+            });
             this.forget_details();
         }
         // An odd turn changes the item's shape, and so the rows.
@@ -79,6 +132,7 @@ impl qobject::GalleryModel {
     /// The entries read for the items waiting for a turn (`request_turned`), put in unless an edit or a new list came
     /// since the read was made: then they are read again.
     fn turned_read(mut self: Pin<&mut Self>, revision: u64, fresh: Vec<Entry>) {
+        let fresh = self.with_unqueued(fresh);
         let Some(turned) = self.as_mut().rust_mut().grid.refresh_turned(revision, fresh) else {
             self.request_turned();
             return;
@@ -109,8 +163,9 @@ impl qobject::GalleryModel {
         });
     }
 
-    /// A rating was written for the file: the item shows it.
+    /// A rating was written for the file: the viewer's popup says so (`ratingWritten`), and the item shows it.
     fn rating_written(mut self: Pin<&mut Self>, id: FileId, rating: Option<Rating>) {
+        self.as_mut().emit_rating_written(rating.map_or(0, |r| i32::from(r.get())));
         let Some(at) = self.grid.position_of(id) else { return };
         let loading = self.loading;
         {
@@ -129,6 +184,8 @@ impl qobject::GalleryModel {
         let Some(at) = crate::rows::row_of(item) else { return };
         let Some(e) = self.grid.item(at).copied() else { return };
         if !matches!(e.borders, Borders::Found | Borders::Marked) {
+            // The key was received and has nothing to mark: the user is told why nothing changed.
+            crate::app::post(Notice::NothingToDo { what: NothingKind::BorderMarkNoBorders });
             return;
         }
         if self.mark_target(e.id, e.borders) == marked {
@@ -164,12 +221,25 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
+    /// Crops the listed files with borders found into the folder the user chose. Nothing queued is said to the user: no
+    /// file with borders found, or a library that has not started yet (`save_crops` is a no-op then).
     pub(crate) fn save_cropped_copies_picked(&self) -> i32 {
         // The picker says `done` only with its folder, so no folder means nothing to save.
         let Some(folder) = crate::picker::take(crate::bridges::picker_state::Purpose::SaveCrops) else {
             return 0;
         };
-        self.with_borders_found(|ids| crate::app::get().library().save_crops(ids, folder))
+        let ids = self.borders_found();
+        if ids.is_empty() {
+            crate::app::post(Notice::NothingToDo { what: NothingKind::CropNoBorders });
+            return 0;
+        }
+        if crate::library::running().is_none() {
+            crate::app::post(Notice::NothingToDo { what: NothingKind::CropLibraryNotRunning });
+            return 0;
+        }
+        let n = qt_int(ids.len());
+        crate::app::get().library().save_crops(ids, folder);
+        n
     }
 
     /// How many files the cut dialog says its borders come off: the files the copy action takes.
@@ -197,6 +267,11 @@ impl qobject::GalleryModel {
         }
         n
     }
+}
+
+/// The quarter turns `pending` less `taken` (the turns a write that failed takes back), modulo four.
+fn unturned(pending: Turns, taken: Turns) -> Turns {
+    Turns::new(pending.get() + 4 - taken.get())
 }
 
 /// The inbox says that the edit `op` couldn't be saved, for `error`.

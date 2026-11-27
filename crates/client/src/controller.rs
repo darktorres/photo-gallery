@@ -81,11 +81,10 @@ impl Start {
 /// as its contents.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    /// The folder tree was loaded (at the start, and after each scan).
-    TreeLoaded {
-        /// Whether the listed folder is in the tree.
-        folder_known: bool,
-    },
+    /// The folder tree was loaded (at the start, and after each scan). A folder the tree doesn't have is listed as it is.
+    TreeLoaded,
+    /// The folder tree couldn't be read: the start goes on with the listing it has (see the start gate).
+    TreeFailed,
     /// The list was shown with `count` rows. `generation` is the [`Command::OpenList`] whose list it is (the one the
     /// model applied last); `None` when no list was applied yet, and in a recording made before it was reported.
     ListShown {
@@ -260,6 +259,26 @@ pub enum Command {
     FindSimilar(FileId),
     /// The window searches for the command line's photo.
     FindSimilarCommandLine,
+    /// An action on the grid's current item, which the desktop resolves on the model's lane, after the commands queued
+    /// before it: a key acts on the item the model holds then (a step queued before it has moved the selection), not on
+    /// the item the controller last heard of (its `CurrentChanged` comes back after the step).
+    OnCurrent(CurrentAct),
+    /// A window shortcut the controller refused: a modal panel is open (other than the inbox and the log view), or the log
+    /// view is asked for without dev mode. Named, so the window can say why nothing opened.
+    GlobalRefused(Global),
+}
+
+/// What a grid key does to the current item, as the desktop carries it out on the model's lane (`Command::OnCurrent`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CurrentAct {
+    /// Rate the item; `None` takes the rating away.
+    Rate(Option<Rating>),
+    /// Turn the item by these quarter turns.
+    Turn(Turns),
+    /// Toggle the item's border mark.
+    ToggleBorderMark,
+    /// Show the viewer at the item.
+    ShowViewer,
 }
 
 /// The one controller: every sub-machine, and the pauses.
@@ -282,6 +301,9 @@ pub struct Controller {
     session_listing: bool,
     /// A selection's save came due before the start was over (and was held back): it is made when the start is over.
     selection_pending: bool,
+    /// A listing's save (the user's change, or a query's pause) came before the start was over: it is held back, and
+    /// made when the start is over, so a start's listing is never saved by a change that happens during the start.
+    listing_save_pending: bool,
     /// The start the controller was made from: the recording's `Init`, which replays it.
     initial: Start,
 }
@@ -301,6 +323,7 @@ impl Controller {
             reveal: None,
             session_listing: start.apply_view,
             selection_pending: false,
+            listing_save_pending: false,
             initial: start,
         }
     }
@@ -358,7 +381,8 @@ impl Controller {
     /// Apply `event` at `now_ms`, and return the commands, in order.
     pub fn update(&mut self, now_ms: u64, event: Event) -> Vec<Command> {
         match event {
-            Event::TreeLoaded { folder_known } => self.start(start::Event::TreeLoaded { folder_known }),
+            Event::TreeLoaded => self.start(start::Event::TreeLoaded),
+            Event::TreeFailed => self.start(start::Event::TreeFailed),
             Event::ListShown { count, generation } => {
                 let mut out = self.input_update(input::Event::ListShown { count });
                 out.extend(self.start(start::Event::ListShown));
@@ -388,7 +412,11 @@ impl Controller {
                 let out = self.listing_event(*event);
                 if shows_failures { self.closed_for_listing(out) } else { out }
             }
-            Event::Select(item) => vec![Command::Select(item)],
+            // A selection made by the window is the selection the session is on: its save is due as a key's is.
+            Event::Select(item) => {
+                self.deadlines.arm(Timer::SaveSession, now_ms);
+                vec![Command::Select(item)]
+            }
             Event::FindSimilar(file) => vec![Command::FindSimilar(file)],
             Event::FindSimilarCommandLine => vec![Command::FindSimilarCommandLine],
             Event::Rate { item, rating } => vec![Command::Rate { item, rating }],
@@ -449,16 +477,17 @@ impl Controller {
         (generation == wanted).then_some(Command::Reveal(file))
     }
 
-    /// The gate's commands for `event`; the one that lists all folders is a listing change, as the window makes it.
+    /// The gate's commands for `event`.
     fn start(&mut self, event: start::Event) -> Vec<Command> {
         let mut out = Vec::new();
         for command in self.start.update(event) {
             match command {
-                start::Command::OpenAll => out.extend(self.start_listing(listing::Event::OpenAll)),
                 start::Command::RestoreSelection(file) => out.push(Command::RestoreSelection(file)),
                 start::Command::Started => {
-                    // A view applied at the start is what the session is from now on: remembered once, here.
-                    if self.initial.apply_view {
+                    // A view applied at the start is what the session is from now on, and a listing save held back
+                    // before the start was over is made now: remembered once, here.
+                    let held = core::mem::take(&mut self.listing_save_pending);
+                    if held || self.initial.apply_view {
                         out.push(Command::SaveSession(self.listing.clone()));
                     }
                     // A selection held back before the start was over is remembered now.
@@ -472,42 +501,20 @@ impl Controller {
         out
     }
 
-    /// The listing change the start makes (its fallback to all folders): listed, and not saved, since a start's own
-    /// listing is not the user's to remember.
-    fn start_listing(&mut self, event: listing::Event) -> Vec<Command> {
-        let commands = listing::update(&mut self.listing, event);
-        commands
-            .into_iter()
-            .filter_map(|c| match c {
-                listing::Command::OpenList => Some(self.open_list(false)),
-                listing::Command::SaveSession => None,
-            })
-            .collect()
+    /// The command that saves the listing, once the start is over. Before that the listing may be the start's own, so the
+    /// save is held back (`listing_save_pending`) and made when the start is over (`start`).
+    fn save_listing(&mut self) -> Option<Command> {
+        if self.started() {
+            Some(Command::SaveSession(self.listing.clone()))
+        } else {
+            self.listing_save_pending = true;
+            None
+        }
     }
 
     fn input_update(&mut self, event: input::Event) -> Vec<Command> {
         let commands = self.input.update(event);
-        commands.into_iter().filter_map(|c| self.input_command(c)).collect()
-    }
-
-    /// The desktop's command for an input command. A model action is on the current item, which the input only
-    /// asks for while one is selected; `Forward` never gets here (`key` routes the size and the panels itself).
-    fn input_command(&self, command: input::Command) -> Option<Command> {
-        Some(match command {
-            input::Command::Select(i) => Command::Select(i),
-            input::Command::Step { dx, dy } => Command::Step { dx, dy },
-            input::Command::ShowViewer(i) => Command::ShowViewer(i),
-            input::Command::Act(grid) => {
-                let item = self.input.current()?;
-                match grid {
-                    // The key map rates 0 to 5 only, and 0 takes the rating away (`Rating::new` gives `None`).
-                    GridKey::Rate(stars) => Command::Rate { item, rating: Rating::new(stars) },
-                    GridKey::Turn { forward } => Command::Turn { item, turns: Turns::of(if forward { 1 } else { -1 }) },
-                    _ => Command::ToggleBorderMark(item),
-                }
-            }
-            input::Command::Forward(_) => return None,
-        })
+        commands.into_iter().filter_map(input_command).collect()
     }
 
     fn key(&mut self, now_ms: u64, grid: GridKey) -> Vec<Command> {
@@ -515,6 +522,12 @@ impl Controller {
             GridKey::Resize { grow } => self.size(now_ms, size::Event::Resize { grow }),
             GridKey::Filters => self.panel(panels::Event::ToggleFilters),
             GridKey::Borders => self.panel(panels::Event::ToggleBorders),
+            // A key that moves the selection is a selection the session is on: its save is due, so a close before the
+            // move lands is saved as well (the flush reads the model's selection).
+            GridKey::Step { .. } | GridKey::First | GridKey::Last => {
+                self.deadlines.arm(Timer::SaveSession, now_ms);
+                self.input_update(input::Event::Key(grid))
+            }
             _ => self.input_update(input::Event::Key(grid)),
         }
     }
@@ -537,17 +550,17 @@ impl Controller {
     }
 
     /// A window shortcut. While a modal panel other than the inbox and the log view is open, it is that panel's (a dialog,
-    /// a menu): the shortcut does nothing. Otherwise the log view's key closes it when it is open, else opens it,
-    /// closing its sibling first (only in dev mode); dev mode's key turns it on or off, and saves it, and closes the
-    /// log view when it turns off.
+    /// a menu): the shortcut is refused. Otherwise the log view's key closes it when it is open, else opens it, closing
+    /// its sibling first (only in dev mode); dev mode's key turns it on or off, and saves it, and closes the log view when
+    /// it turns off. A refusal is `Command::GlobalRefused`, so the window can say what was refused.
     fn global(&mut self, global: Global) -> Vec<Command> {
         if self.panels.modals().iter().any(|k| !k.is_switchable()) {
-            return Vec::new();
+            return vec![Command::GlobalRefused(global)];
         }
         match global {
             Global::Inbox => self.switch_to(PanelKind::Inbox),
             Global::Log if self.panels.dev_mode() => self.switch_to(PanelKind::Log),
-            Global::Log => Vec::new(),
+            Global::Log => vec![Command::GlobalRefused(global)],
             Global::DevMode => {
                 let on = !self.panels.dev_mode();
                 let mut out = self.panel(panels::Event::SetDevMode(on));
@@ -621,13 +634,14 @@ impl Controller {
         if commands.contains(&listing::Command::OpenList) {
             self.deadlines.cancel(Timer::ApplyQuery);
         }
-        commands
-            .into_iter()
-            .map(|c| match c {
-                listing::Command::OpenList => self.open_list(false),
-                listing::Command::SaveSession => Command::SaveSession(self.listing.clone()),
-            })
-            .collect()
+        let mut out = Vec::new();
+        for c in commands {
+            match c {
+                listing::Command::OpenList => out.push(self.open_list(false)),
+                listing::Command::SaveSession => out.extend(self.save_listing()),
+            }
+        }
+        out
     }
 
     /// The pauses that are due at `now_ms`, carried out in the order they were due.
@@ -684,11 +698,31 @@ impl Controller {
 
     /// The listing's commands for its current state (the query's pause ended).
     fn listing_now(&mut self) -> Vec<Command> {
-        vec![self.open_list(false), Command::SaveSession(self.listing.clone())]
+        let mut out = vec![self.open_list(false)];
+        out.extend(self.save_listing());
+        out
     }
 
     /// A saved view, applied (the listing's change, as the window reports it).
     pub fn apply_view(&mut self, view: SavedView) -> Vec<Command> {
         self.listing_event(listing::Event::ViewApplied(view))
     }
+}
+
+/// The desktop's command for an input command. A model action is on the current item, and is resolved by the desktop on
+/// the model's lane (`Command::OnCurrent`), not with the item the input holds: the input's current lags a step. `Forward`
+/// never gets here (`Controller::key` routes the size and the panels itself).
+fn input_command(command: input::Command) -> Option<Command> {
+    Some(match command {
+        input::Command::Select(i) => Command::Select(i),
+        input::Command::Step { dx, dy } => Command::Step { dx, dy },
+        input::Command::Act(grid) => Command::OnCurrent(match grid {
+            // The key map rates 0 to 5 only, and 0 takes the rating away (`Rating::new` gives `None`).
+            GridKey::Rate(stars) => CurrentAct::Rate(Rating::new(stars)),
+            GridKey::Turn { forward } => CurrentAct::Turn(Turns::of(if forward { 1 } else { -1 })),
+            GridKey::Open => CurrentAct::ShowViewer,
+            _ => CurrentAct::ToggleBorderMark,
+        }),
+        input::Command::Forward(_) => return None,
+    })
 }

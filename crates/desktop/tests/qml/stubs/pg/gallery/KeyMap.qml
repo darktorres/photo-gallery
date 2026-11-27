@@ -19,7 +19,7 @@ QtObject {
     }
     // The hint texts and the Yandex panels' action: the real ones come from keymap.rs. No test reads their values, so
     // the stub gives an empty hint and no action, and the QML that calls them runs without a TypeError.
-    function gridHint() {
+    function gridHint(detection) {
         return "";
     }
     function viewerHint(kind, hasBorders) {

@@ -63,7 +63,13 @@ fn owner() -> Option<usize> {
 
 impl Default for PickerRust {
     fn default() -> Self {
-        PickerRust { native: native_dialog(), names: QStringList::default(), here: QString::default(), listing: None }
+        PickerRust {
+            native: native_dialog(),
+            names: QStringList::default(),
+            here: QString::default(),
+            list_error: QString::default(),
+            listing: None,
+        }
     }
 }
 
@@ -100,11 +106,13 @@ impl qobject::FolderPicker {
         let here = start.unwrap_or_else(|| PathBuf::from("/"));
         let folders = match pg_platform::dir::folders_in(&here) {
             Ok(folders) => folders,
-            Err(e) => return self.report_unlisted(purpose, &here, &e),
+            // The dialog is not opened: the caller's status line says why, as a failed dialog does.
+            Err(e) => return self.report_start_unlisted(purpose, &here, &e),
         };
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(here.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
+        self.as_mut().set_list_error(QString::default());
         self.as_mut().rust_mut().listing = Some(Listing { purpose, here, folders });
         self.open_in_app(purpose.code());
     }
@@ -154,9 +162,8 @@ impl qobject::FolderPicker {
         self.rust_mut().listing = None;
     }
 
-    /// The app's dialog can't list `folder` (`error`): the inbox and the purpose's picker say so (`failed`), and the
-    /// dialog keeps what it showed.
-    fn report_unlisted(self: Pin<&mut Self>, purpose: Purpose, folder: &Path, error: &std::io::Error) {
+    /// The app's dialog can't list `folder` at its start (`error`): the inbox and the purpose's picker say so (`failed`).
+    fn report_start_unlisted(self: Pin<&mut Self>, purpose: Purpose, folder: &Path, error: &std::io::Error) {
         crate::app::post(Notice::PickerFailed {
             error: crate::app::error_text(&format!("{}: {error}", folder.display())),
         });
@@ -164,20 +171,26 @@ impl qobject::FolderPicker {
         self.failed(purpose.code(), message);
     }
 
+    /// The app's dialog was asked to show `folder`, which it can't list (`error`): the inbox says so, and the dialog says
+    /// why inside itself (`listError`), keeping the folder it showed. The status line behind the dialog is not used.
+    fn report_unlisted(mut self: Pin<&mut Self>, folder: &Path, error: &std::io::Error) {
+        crate::app::post(Notice::PickerFailed {
+            error: crate::app::error_text(&format!("{}: {error}", folder.display())),
+        });
+        let message = QString::from(&pg_wording::render(&Message::FolderUnreadable { error: error.to_string() }));
+        self.as_mut().set_list_error(message);
+    }
+
     /// The app's dialog now shows `folder` (and its folders).
     fn show_folder(mut self: Pin<&mut Self>, folder: PathBuf) {
         let folders = match pg_platform::dir::folders_in(&folder) {
             Ok(folders) => folders,
-            Err(e) => {
-                if let Some(purpose) = self.listing.as_ref().map(|l| l.purpose) {
-                    self.as_mut().report_unlisted(purpose, &folder, &e);
-                }
-                return;
-            }
+            Err(e) => return self.report_unlisted(&folder, &e),
         };
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(folder.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
+        self.as_mut().set_list_error(QString::default());
         if let Some(listing) = self.as_mut().rust_mut().listing.as_mut() {
             listing.here = folder;
             listing.folders = folders;

@@ -126,10 +126,11 @@ impl App {
             catalogs.clone(),
             thumbs.clone(),
             inbox.clone(),
+            inbox.retries_replayed(),
             features,
             start,
         ));
-        let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone());
+        let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone(), inbox.clone());
         let images = Images::new(catalogs.clone(), makers, thumbs.clone(), inbox.clone());
         Ok(App {
             inbox,
@@ -197,7 +198,8 @@ impl App {
     }
 
     /// Stop the background work: the Yandex search, the catalog reader, then the library's writer and job. Waits for each
-    /// to end (a Yandex request only a while: it is left to end with the process). After this
+    /// to end (a Yandex search request only a while: it is left to end with the process; a download is cut short between
+    /// its reads). After this
     /// nothing runs on its own, so the front end can drop what borrows the app and then [`App::shutdown`]. An error says
     /// the job was still running after its wait (its last changes are merged at the next open).
     pub fn stop(&self) -> Result<()> {

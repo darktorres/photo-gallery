@@ -13,11 +13,14 @@ use pg_codec::animation::{self, Frame};
 /// once, and a larger one is decoded again at each loop. (A 480 × 270 GIF of 200 frames is about 100 MB, so it fits.)
 const FRAME_BUDGET: usize = 128 << 20;
 
-/// Where the frames go. `present` may be called from the player's thread; `close` once, after the last `present`,
-/// when the player stops.
+/// Where the frames go. `present` and `failed` may be called from the player's thread; `close` once, after the last
+/// `present`, when the player stops.
 pub trait Sink: Send + Sync + 'static {
     /// A frame of `width` by `height` pixels, as RGBA bytes, to show.
     fn present(&self, width: u32, height: u32, rgba: &[u8]);
+    /// The animation could not be played as far as it goes: its file couldn't be read, its frames couldn't be decoded, or
+    /// the player's thread couldn't start. `error` says why. What was shown stays, and the player goes on as far as it can.
+    fn failed(&self, _error: &str) {}
     /// The player has stopped: nothing more is presented.
     fn close(&self) {}
 }
@@ -41,13 +44,17 @@ impl<S: Sink> Player<S> {
     /// decoded shows nothing.
     pub fn start(path: PathBuf, sink: Arc<S>, paused: bool) -> Player<S> {
         let control: Shared = Arc::new((Mutex::new(Control { stop: false, paused }), Condvar::new()));
-        let thread = std::thread::Builder::new()
-            .name("animation".into())
-            .spawn({
-                let (control, sink) = (control.clone(), sink.clone());
-                move || play(&path, &*sink, &control)
-            })
-            .ok();
+        let spawned = std::thread::Builder::new().name("animation".into()).spawn({
+            let (control, sink) = (control.clone(), sink.clone());
+            move || play(&path, &*sink, &control)
+        });
+        let thread = match spawned {
+            Ok(thread) => Some(thread),
+            Err(e) => {
+                sink.failed(&format!("the animation's thread couldn't start: {e}"));
+                None
+            }
+        };
         Player { control, sink, thread }
     }
 
@@ -76,7 +83,13 @@ impl<S: Sink> Drop for Player<S> {
 /// (decoding the next counts toward it). An unreadable file, or one whose first frame fails, shows nothing: the
 /// viewer keeps the poster.
 fn play(path: &Path, sink: &impl Sink, control: &Shared) {
-    let Ok(bytes) = std::fs::read(path) else { return };
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            sink.failed(&format!("the file couldn't be read: {e}"));
+            return;
+        }
+    };
     let bytes: Arc<[u8]> = bytes.into();
     let mut due = Instant::now();
     // The frames of the first pass, kept for the loops after it while they fit in `FRAME_BUDGET`; `None` once they don't.
@@ -93,10 +106,23 @@ fn play(path: &Path, sink: &impl Sink, control: &Shared) {
             }
             continue;
         }
-        let Ok(pass) = animation::frames(bytes.clone()) else { return };
+        let pass = match animation::frames(bytes.clone()) {
+            Ok(pass) => pass,
+            Err(e) => {
+                sink.failed(&format!("the animation couldn't be decoded: {e}"));
+                return;
+            }
+        };
         let mut shown = false;
-        // A frame that fails to decode ends the pass: what came before it still loops.
-        for frame in pass.map_while(Result::ok) {
+        // A frame that fails to decode ends the pass: what came before it still loops, and the failure is said.
+        for item in pass {
+            let frame = match item {
+                Ok(frame) => frame,
+                Err(e) => {
+                    sink.failed(&format!("a frame couldn't be decoded: {e}"));
+                    break;
+                }
+            };
             if !wait_until(control, &mut due) {
                 return;
             }

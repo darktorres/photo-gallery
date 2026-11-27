@@ -81,6 +81,8 @@ macro_rules! messages {
                 notice: Notice,
                 /// The rules the notice's paths are shown under.
                 rules: PathRules,
+                /// Plain text: the paths are not bidi-isolated (the clipboard's text, which another program pastes).
+                plain: bool,
             },
             /// A notice's details (`msg-notice-<code>-body`).
             NoticeBody {
@@ -88,6 +90,8 @@ macro_rules! messages {
                 notice: Notice,
                 /// The rules the notice's paths are shown under.
                 rules: PathRules,
+                /// Plain text: the paths are not bidi-isolated (see `NoticeTitle`).
+                plain: bool,
             },
             /// An inbox category's name (`msg-source-<code>`).
             SourceLabel {
@@ -112,8 +116,12 @@ macro_rules! messages {
                 let mut a = FluentArgs::new();
                 match self {
                     $( Message::$variant $({ $($field),* })? => { $($( Arg::set($field, stringify!($field), &mut a); )*)? } )*
-                    Message::NoticeTitle { notice, rules } | Message::NoticeBody { notice, rules } => {
-                        let nested = super::notice::Nested { refused: &refused_reason, panicked: &file_panicked };
+                    Message::NoticeTitle { notice, rules, plain } | Message::NoticeBody { notice, rules, plain } => {
+                        let nested = super::notice::Nested {
+                            refused: &refused_reason,
+                            panicked: &file_panicked,
+                            isolate: !*plain,
+                        };
                         super::notice::args(notice, *rules, &nested, &mut a);
                     }
                     Message::SourceLabel { .. } => {}
@@ -127,8 +135,8 @@ macro_rules! messages {
                 let mut messages = vec![ $( Message::$variant $({ $($field: Arg::sample()),* })?, )* ];
                 let rules = PathRules::Windows;
                 for notice in Notice::samples() {
-                    messages.push(Message::NoticeTitle { notice: notice.clone(), rules });
-                    messages.push(Message::NoticeBody { notice, rules });
+                    messages.push(Message::NoticeTitle { notice: notice.clone(), rules, plain: false });
+                    messages.push(Message::NoticeBody { notice, rules, plain: false });
                 }
                 messages.extend(Source::ALL.into_iter().map(|source| Message::SourceLabel { source }));
                 messages
@@ -513,6 +521,13 @@ messages! {
         /// The first failure, as text.
         error: String
     } => "msg-yandex-saved-failed",
+    /// A save in which no file was written, and some failed: how many failed, and the first failure. Not "Saved 0".
+    YandexSaveNothingWritten {
+        /// How many failed, as text.
+        failed: String,
+        /// The first failure, as text.
+        error: String
+    } => "msg-yandex-save-nothing-written",
     /// A result that couldn't be downloaded.
     YandexDownloadFailed {
         /// The result's address.

@@ -1,6 +1,7 @@
 // The confirmation before a removal kept for its unfinished writes is given up (the library panel's Discard). The changes
 // not yet written into the folder's files are dropped and their temporary copies deleted, and the originals they were being
-// written into may be left partly written, so this asks first. `folder` is the folder as the panel shows it (Main sets it).
+// written into may be left partly written, so this asks first. `folder` is the folder as the panel shows it, and `row` its row
+// of the kept removals (Main sets both).
 // Cancel has the focus when the dialog opens, so Enter does not confirm; Escape, a click outside and Cancel close it without
 // a choice. Only "Discard changes" accepts, and `confirmed()` follows that accept, once.
 pragma ComponentBehavior: Bound
@@ -17,8 +18,9 @@ Dialog {
     // Centred on the window: Main declares it under the window, where a dialog has no parent of its own to centre on.
     parent: Overlay.overlay
     anchors.centerIn: parent
-    // The folder shown.
+    // The folder shown, and its row of the library's kept removals (the row the library's discardRemoval takes).
     property string folder: ""
+    property int row: -1
 
     // The user chose "Discard changes": the library gives the removal up (Main connects it to the library's discardRemoval).
     signal confirmed

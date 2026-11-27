@@ -5,7 +5,7 @@
 {"kind":"Update","now_ms":4,"event":{"GridResized":null},"commands":[]}
 {"kind":"Update","now_ms":20,"event":{"Size":{"Scale":1.0}},"commands":[{"Size":{"ThumbHeight":220}}]}
 {"kind":"Update","now_ms":20,"event":"Reload","commands":[{"OpenList":{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"keep":true,"generation":1}}]}
-{"kind":"Update","now_ms":25,"event":{"TreeLoaded":{"folder_known":true}},"commands":[]}
+{"kind":"Update","now_ms":25,"event":"TreeLoaded","commands":[]}
 {"kind":"Update","now_ms":46,"event":{"GridResized":1254.0},"commands":[]}
 {"kind":"Update","now_ms":113,"event":"Timeout","commands":[{"Relayout":{"width":1254.0,"row_height":220}}]}
 {"kind":"Update","now_ms":113,"event":{"ListShown":{"count":12,"generation":1}},"commands":[]}

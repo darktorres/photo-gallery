@@ -22,6 +22,9 @@ pub mod qobject {
         /// The folders whose removal is not finished and is still going.
         #[qproperty(QStringList, removing_removals, cxx_name = "removingRemovals", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
+        /// A scan was asked for (a rescan, a folder added) and the job has not shown its first progress, or ended, yet: true
+        /// from the request, so the window's picture (the screenshot's settle) waits for the job the request starts.
+        #[qproperty(bool, scan_pending, cxx_name = "scanPending", READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
@@ -67,11 +70,11 @@ pub mod qobject {
         #[cxx_name = "folderAt"]
         fn folder_at(self: &Library, row: i32) -> QString;
 
-        /// Give up the removal of the folder `folder` (as `keptRemovals` lists it) that waits for unfinished writes: the
-        /// changes are dropped.
+        /// Give up the removal at `row` of `keptRemovals` (the row the list shows; it waits for unfinished writes): the
+        /// changes are dropped. The removal is found by its exact path, not by its text.
         #[qinvokable]
         #[cxx_name = "discardRemoval"]
-        fn discard_removal(self: Pin<&mut Library>, folder: QString);
+        fn discard_removal(self: Pin<&mut Library>, row: i32);
 
         /// Scan every library folder again (new, changed, moved and deleted files).
         #[qinvokable]

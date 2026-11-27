@@ -32,6 +32,9 @@ Item {
     // The parts' values over the picture (the Loupe, the frame, the Hud), read from the images.
     readonly property int fitStatus: fit.status
     readonly property bool fullReady: full.status === Image.Ready
+    // The original failed to load or decode (1:1, the loupe), or a zoomed region of it did: the Hud says so.
+    readonly property bool fullFailed: full.status === Image.Error
+    readonly property bool regionFailed: region.status === Image.Error
     readonly property url fullSource: full.source
     readonly property real fullWidth: full.implicitWidth
     readonly property real fullHeight: full.implicitHeight

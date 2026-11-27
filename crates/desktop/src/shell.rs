@@ -21,7 +21,7 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_client::controller::listing::Event as ListingEvent;
 use pg_client::controller::panels;
 use pg_client::controller::size;
-use pg_client::controller::{Command, Event};
+use pg_client::controller::{Command, CurrentAct, Event};
 use pg_client::sort::choice_index;
 use pg_model::ids::FileId;
 use pg_model::notice::{Notice, Op, ViewOp};
@@ -59,6 +59,8 @@ impl Default for ShellRust {
             min_row_height: qt_int(RowHeight::MIN.get()),
             max_row_height: qt_int(RowHeight::MAX.get()),
             dev_mode: panels.dev_mode(),
+            revealing: false,
+            reveal_error: QString::default(),
         }
     }
 }
@@ -68,6 +70,9 @@ thread_local! {
     /// with the count as it is; when its folder is delivered, a count that has moved on means the user chose a listing
     /// since (a folder, a view, the failed imports), which replaces the Reveal, so it is dropped.
     static LISTING_SEQ: Cell<u64> = const { Cell::new(0) };
+    /// How many Reveals are asked for and not yet delivered: `revealing` is on while there is one (each has its folder
+    /// read off the window's thread).
+    static REVEALS_OPEN: Cell<u32> = const { Cell::new(0) };
 }
 
 /// A size value the window sent that is not a valid one: logged and dropped, never applied.
@@ -131,14 +136,16 @@ fn view_names() -> QStringList {
 }
 
 impl qobject::Shell {
-    /// The folder tree is in. The listed folder is kept as the tree spells it, when the tree shows it under another
-    /// spelling (the controller remembers that), and then the start is told whether the folder is known.
-    pub(crate) fn tree_loaded(mut self: Pin<&mut Self>, folder_known: bool) {
+    /// The folder tree's read was applied (`FolderModel.treeLoaded`, called first). The listed folder is kept as the tree
+    /// spells it, when the tree shows it under another spelling (the controller remembers that). The start is told the
+    /// tree is in, or that its read failed (`TreeFailed`), as the folder model's last read says.
+    pub(crate) fn tree_loaded(mut self: Pin<&mut Self>) {
         let listing = controller::listing();
         if let Some(spelled) = folders::spelling_of(&listing.folder, listing.recursive) {
             self.as_mut().dispatch(Event::FolderSpelled(spelled));
         }
-        self.dispatch(Event::TreeLoaded { folder_known });
+        let event = if folders::tree_read_failed() { Event::TreeFailed } else { Event::TreeLoaded };
+        self.dispatch(event);
     }
 
     /// The list shown is the grid model's last applied (`gallery::APPLIED`, on this thread): its generation tells the
@@ -235,6 +242,25 @@ impl qobject::Shell {
         if let Some(global) = keymap::global_of(code) {
             self.dispatch(Event::Global(global));
         }
+    }
+
+    /// A shortcut that opens a panel with an expansion (`pass`, -1 for none): the pass goes with the open the shortcut
+    /// asks for, and `panelOpenRequested` carries it only when the controller accepts that open. A refused open carries
+    /// nothing on, so the pass is never left set for a later open.
+    pub(crate) fn global_action_expanding(self: Pin<&mut Self>, code: i32, pass: i32) {
+        if let Some(global) = keymap::global_of(code) {
+            self.dispatch_expanding(Event::Global(global), (pass >= 0).then_some(pass));
+        }
+    }
+
+    /// The window was made again (live reload): the controller is told that the panels the old window had open are gone,
+    /// so they are not counted as open (`panels::Event::WindowReloaded`).
+    /// The start is not made again for the new window (the controller's start is over, and `Started` is sent once), so the
+    /// window's own library is started by QML on `libraryStartDue`: a `Library` is started per object, and only QML holds
+    /// the new one.
+    pub(crate) fn window_reloaded(mut self: Pin<&mut Self>) {
+        self.as_mut().dispatch(Event::Panel(panels::Event::WindowReloaded));
+        self.later(|shell| shell.library_start_due());
     }
 
     pub(crate) fn panel_opened(self: Pin<&mut Self>, kind: i32) {
@@ -425,9 +451,13 @@ impl qobject::Shell {
     /// window's thread (`pg_app::Session::reveal_folder`); when it is delivered, the controller lists the folder and
     /// selects the file once its list is shown (`Command::Reveal`), and `revealShown` is emitted. A file the library
     /// no longer has is a toast instead; a newer Reveal supersedes this one, whose delivery is dropped.
-    pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) {
+    pub(crate) fn reveal(mut self: Pin<&mut Self>, file_id: f64) {
         // The bridge's number becomes a file's id here, once: everything after it is typed. Not a file id: nothing to show.
         let Some(file) = file_id_of(file_id) else { return };
+        // A new Reveal replaces the last one's message: the panel shows what the Reveal it asked for said.
+        self.as_mut().set_reveal_error(QString::default());
+        REVEALS_OPEN.with(|open| open.set(open.get() + 1));
+        self.as_mut().set_revealing(true);
         let shell = self.qt_thread();
         let listing = LISTING_SEQ.with(Cell::get);
         app::session().reveal_folder(file, move |folder| {
@@ -436,9 +466,13 @@ impl qobject::Shell {
         });
     }
 
-    /// A Reveal's folder, delivered on the Qt thread: listed, or a toast when the file is no longer in the library. A
-    /// Reveal the user has replaced with a listing since it was asked for (`listing`, see `LISTING_SEQ`) is dropped.
+    /// A Reveal's folder, delivered on the Qt thread: listed, or a message inline in the panel when the file is no longer in
+    /// the library or its folder can't be read. A Reveal the user has replaced with a listing since it was asked for
+    /// (`listing`, see `LISTING_SEQ`) is dropped, but it is no longer waited for either way.
     fn revealed(mut self: Pin<&mut Self>, file: FileId, folder: pg_app::Result<Option<RulePath>>, listing: u64) {
+        REVEALS_OPEN.with(|open| open.set(open.get().saturating_sub(1)));
+        let open = REVEALS_OPEN.with(Cell::get) > 0;
+        self.as_mut().set_revealing(open);
         if listing != LISTING_SEQ.with(Cell::get) {
             return;
         }
@@ -448,19 +482,33 @@ impl qobject::Shell {
                 self.as_mut().dispatch(Event::Reveal { file, folder });
                 self.later(|shell| shell.reveal_shown());
             }
-            Ok(None) => app::post(Notice::FileNoLongerInLibrary),
-            // The folder couldn't be read: the user is told, as a failed listing is (the window doesn't move).
+            Ok(None) => self.as_mut().reveal_failed(&Notice::FileNoLongerInLibrary),
+            // The folder couldn't be read: the panel says so inline, as a failed listing does (the window doesn't move).
             Err(e) => {
                 pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e:#}"));
-                app::post(Notice::ListingFailed { error: app::error_text(&e) });
+                self.as_mut().reveal_failed(&Notice::ListingFailed { error: app::error_text(&e) });
             }
         }
+    }
+
+    /// A Reveal that could not show its file: its message is `revealError`, shown inline in the panel that asked. A toast
+    /// would sit under the open inbox's scrim, so it is not used for these.
+    fn reveal_failed(self: Pin<&mut Self>, notice: &Notice) {
+        let words = pg_wording::notice_line(notice, pg_platform::native::PATH_RULES);
+        self.set_reveal_error(QString::from(&words));
     }
 
     /// Show the folder above the scans' failed folder at `row` of the expanded entry's list (`failed_files`), nothing
     /// filtered: the folder itself couldn't be read, so its parent is where it shows. Then `revealShown`.
     pub(crate) fn reveal_folder(mut self: Pin<&mut Self>, row: i32) {
         let Some(folder) = crate::rows::row_of(row).and_then(crate::failed_files::shown_folder) else { return };
+        self.as_mut().set_reveal_error(QString::default());
+        // A library folder that was refused (a drive that can't be walked) is the failed folder itself: its parent is not
+        // in the library, so there is nothing to show there. The window stays where it is, and says why.
+        if app::get().library().roots().is_ok_and(|roots| roots.iter().any(|root| root.path == folder)) {
+            self.as_mut().reveal_failed(&Notice::RevealRefusedRoot { folder });
+            return;
+        }
         let rules = pg_platform::native::PATH_RULES;
         let shown = rules.split_file_name(&folder).map_or(folder, |(parent, _)| parent);
         self.as_mut().dispatch(Event::Listing(Box::new(ListingEvent::Reveal(rules.merge(&shown)))));
@@ -478,7 +526,9 @@ impl qobject::Shell {
     }
 
     pub(crate) fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> bool {
-        let Some(v) = app::get().views().view(&name.to_string()).ok().flatten() else {
+        // A read that fails is posted (the views' outcome), as a save or a delete that fails is; a view that isn't there is
+        // not a failure, and nothing changes.
+        let Some(v) = views_outcome(ViewOp::Read, app::get().views().view(&name.to_string())).flatten() else {
             return false;
         };
         // A view that uses borders is not applied as a whole while border detection is off: nothing of it is shown.
@@ -492,7 +542,13 @@ impl qobject::Shell {
 
     /// Report `event` to the controller, then carry out what it gives: the mirrored properties follow the listing, the
     /// one timer is set to the next pause, and each command runs in order.
-    fn dispatch(mut self: Pin<&mut Self>, event: Event) {
+    fn dispatch(self: Pin<&mut Self>, event: Event) {
+        self.dispatch_expanding(event, None);
+    }
+
+    /// `dispatch`, for an event that carries an inbox expansion (`pass`): the pass goes with the commands, and only an
+    /// `OpenPanel` for the inbox takes it.
+    fn dispatch_expanding(mut self: Pin<&mut Self>, event: Event, pass: Option<i32>) {
         if matches!(event, Event::Listing(_)) {
             LISTING_SEQ.with(|seq| seq.set(seq.get() + 1));
         }
@@ -500,7 +556,7 @@ impl qobject::Shell {
         self.as_mut().mirror();
         self.as_mut().rearm();
         for command in commands {
-            self.as_mut().execute(command);
+            self.as_mut().execute(command, pass);
         }
     }
 
@@ -530,7 +586,7 @@ impl qobject::Shell {
     }
 
     /// Carry out one of the controller's commands.
-    fn execute(mut self: Pin<&mut Self>, command: Command) {
+    fn execute(mut self: Pin<&mut Self>, command: Command, pass: Option<i32>) {
         prefs_effect(&command, app::get().prefs());
         match command {
             // The selection is the model's, set on the model's lane. Select then asks the grid to show the item;
@@ -560,8 +616,10 @@ impl qobject::Shell {
                     if model.is_item(item) {
                         model.as_mut().set_current_item(item);
                         let _ = shell.queue(move |s| s.select_requested(item));
-                    } else {
-                        app::post(Notice::FileNoLongerInLibrary);
+                    } else if !model.listing_failed {
+                        // A list that could not be read is the failure the user was told (`ListingFailed`), not a file
+                        // gone from the library. A file gone is the Reveal's message, inline in the panel that asked.
+                        let _ = shell.queue(|s| s.reveal_failed(&Notice::FileNoLongerInLibrary));
                     }
                 });
             }
@@ -640,7 +698,12 @@ impl qobject::Shell {
             Command::Panel(change) => self.as_mut().panel(change),
             Command::OpenPanel(kind) => {
                 let kind = keymap::panel_kind_code(kind);
-                self.as_mut().later(move |shell| shell.panel_open_requested(kind));
+                // The inbox's expansion goes with the inbox's open only; any other open carries none (-1).
+                let expand = match pass {
+                    Some(pass) if kind == keymap::panel_kind_code(panels::PanelKind::Inbox) => pass,
+                    _ => -1,
+                };
+                self.as_mut().later(move |shell| shell.panel_open_requested(kind, expand));
             }
             Command::ClosePanel(kind) => {
                 let kind = keymap::panel_kind_code(kind);
@@ -650,6 +713,41 @@ impl qobject::Shell {
             // Saved by `prefs_effect`, above.
             Command::SaveDevMode(_) | Command::SaveShowBorders(_) => {}
             Command::Size(change) => self.as_mut().size(change),
+            // A grid key's act on the grid's current item, carried out on the model's lane after the commands queued before
+            // it: the item is the model's current then (a step queued before this one has moved the selection), as the
+            // keyboard path has always had it.
+            Command::OnCurrent(act) => {
+                let shell = self.qt_thread();
+                gallery::post(move |model| {
+                    let item = model.current;
+                    if !model.is_item(item) {
+                        return;
+                    }
+                    match act {
+                        CurrentAct::Rate(rating) => {
+                            if let Ok(at) = usize::try_from(item) {
+                                model.set_rating(at, rating);
+                            }
+                        }
+                        CurrentAct::Turn(turns) => model.rotate(item, turns),
+                        CurrentAct::ToggleBorderMark => {
+                            let marked = !model.border_mark_target(item);
+                            model.set_border_marked(item, marked);
+                        }
+                        CurrentAct::ShowViewer => {
+                            let _ = shell.queue(move |s| s.viewer_requested(item));
+                        }
+                    }
+                });
+            }
+            // A window shortcut the controller refused (a modal panel is open, or the log view needs dev mode): logged, so
+            // the refusal is on record; the window shows no notice for it.
+            Command::GlobalRefused(global) => {
+                pg_log::warn(
+                    "shortcut",
+                    &format!("{} refused: a modal panel is open, or the log view needs dev mode", global.sequence()),
+                );
+            }
         }
     }
 
@@ -802,7 +900,7 @@ mod tests {
         };
         let start_events = [
             (0, Event::Size(size::Event::Scale(pg_model::size::Scale::new(1.0).expect("a scale")))),
-            (1, Event::TreeLoaded { folder_known: true }),
+            (1, Event::TreeLoaded),
             (2, Event::ListShown { count: 10, generation: None }),
             (3, Event::ListPositioned),
         ];
@@ -902,8 +1000,9 @@ mod tests {
         builder.add(2, &rules.parse(r"D:\p").unwrap(), 3).unwrap();
         let mut without_roots = Tree::new(rules);
         without_roots.replace(builder.build());
-        assert_eq!(folders::listing_kind_of(&without_roots, &all, false), folders::KIND_ALL);
-        assert_eq!(without_roots.row_of(&all, false), Some(0));
+        // No file in the drive roots: the empty non-recursive folder reads "Drive roots", and has no row (UI-055).
+        assert_eq!(folders::listing_kind_of(&without_roots, &all, false), folders::KIND_DRIVE_ROOTS);
+        assert_eq!(without_roots.row_of(&all, false), None);
         // A folder the tree lacks is still a folder: its name is the label.
         let nope = Merged::from(vec![pg_model::name::Name::from("nope")]);
         assert_eq!(folders::listing_kind_of(&without_roots, &nope, false), folders::KIND_FOLDER);

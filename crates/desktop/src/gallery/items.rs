@@ -15,6 +15,7 @@ use pg_model::size::ThumbHeight;
 use pg_wording::FoundBorders;
 
 use super::qobject;
+use crate::bridges::gallery_state::Detail;
 
 impl qobject::GalleryModel {
     /// The image's aspect as shown (pending turns included); 1 without its height (`ROLE_IMAGE_ASPECTS`).
@@ -153,6 +154,7 @@ impl qobject::GalleryModel {
                 .find(|(at, _)| *at == edge)
                 .map_or(-1.0, |(_, d)| d)
         })
+        .loaded()
         .unwrap_or(-1.0)
     }
 
@@ -184,7 +186,12 @@ impl qobject::GalleryModel {
     /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file (the
     /// rating's symbol is added after it, `refresh_derived`), and the borders found.
     pub(super) fn info(&self, item: i32) -> QString {
-        self.with_details(item, |e, d| {
+        // No item (none selected, or the viewer closed): no line at all.
+        if self.entry(item).is_none() {
+            return QString::default();
+        }
+        // While the details are read the line says so, and a file with no details says that: neither is left blank.
+        match self.with_details(item, |e, d| {
             let classes: Vec<Class> = d.border_sides.iter().filter(|s| s.accepted()).map(|s| s.class()).collect();
             let borders = match (e.borders, e.shown_cut()) {
                 (Borders::Found | Borders::Marked, Some(cut)) => {
@@ -195,7 +202,10 @@ impl qobject::GalleryModel {
             let kept = e.rating.is_some() && !d.rating_in_file;
             let path = pg_platform::native::PATH_RULES.display(&d.path);
             QString::from(&pg_wording::info(&path, e.shown_size(), d.size, kept, borders))
-        })
-        .unwrap_or_default()
+        }) {
+            Detail::Loaded(line) => line,
+            Detail::Loading => QString::from(&pg_wording::ui("ui-loading", 0.0, "", "")),
+            Detail::Unavailable => QString::from(&pg_wording::ui("ui-details-unavailable", 0.0, "", "")),
+        }
     }
 }

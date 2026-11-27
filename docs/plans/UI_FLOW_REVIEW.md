@@ -147,6 +147,7 @@ Entry: `crates/desktop/qml/Main.qml:860 (Component.onCompleted: setScale, sortIn
 
 ### UI-002 [medium/stale-result] Startup folder fallback overwrites the saved session, including on a failed tree read — CONFIRMED
 
+- Status: Done (build and tests). The desktop dispatches TreeFailed on a failed tree read, and the client gate never opens All folders from absence.
 - Needs: Fix. Make a failed tree read a TreeFailed state the start gate handles; never derive OpenAll from absence; hold session saves until the start completes. Files: crates/client/src/controller/start.rs, crates/client/src/controller.rs, crates/desktop/src/folders.rs.
 - Verdict: CONFIRMED
 - Note: folders.rs:184 falls back to an empty tree on read error. Main.qml:292 sends treeLoaded(false), start.rs:59 emits OpenAll, and listing::update returns SaveSession unconditionally (listing.rs:77). listing_event maps it at once (controller.rs:495), with no started gate, so the start options are saved too.
@@ -157,6 +158,7 @@ Entry: `crates/desktop/qml/Main.qml:860 (Component.onCompleted: setScale, sortIn
 
 ### UI-004 [low/wrong-message] A failed first listing shows the empty-folder message — CONFIRMED
 
+- Status: Done (build and tests). Rows are kept on a failed read, and the GalleryGrid error label uses ui-listing-failed.
 - Needs: Fix. Carry ListingFailed to QML as an error state instead of unwrap_or_default, and keep the rows on failure. Same fix as UI-280. Files: crates/desktop/src/gallery/model.rs, crates/desktop/qml/GalleryGrid.qml.
 - Verdict: CONFIRMED
 - Note: gallery/model.rs:104 applies an empty list on a failed read (unwrap_or_default) after observe posts ListingFailed. GalleryGrid.qml:97 then shows the empty-state text while the toast reports the error.
@@ -171,6 +173,7 @@ Entry: `crates/desktop/qml/Main.qml:142 (onClosing: shell.flush())`
 
 ### UI-011 [medium/unhandled-close] Closing mid-save drops the unwritten Yandex results silently — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. save_all checks closed and reports unfinished hits through the shared outcome path, recorded in the inbox. Read save_one first. Files: crates/app/src/yandex.rs, crates/app/src/app.rs.
 - Verdict: CONFIRMED
 - Note: Main.qml:142 flush does not touch Yandex. App::stop only logs (app.rs:156-158). save_all's loop (yandex.rs:372-376) does not check `closed`, and the `closed` checks at 425, 456 and 539 are in other paths. Hits left unwritten are lost without a shown outcome. save_one was not read.
@@ -181,6 +184,7 @@ Entry: `crates/desktop/qml/Main.qml:142 (onClosing: shell.flush())`
 
 ### UI-012 [low/stale-result] Last file saved at close can be the previous selection — CONFIRMED
 
+- Status: Partial (validated). The controller arms the save on selection. SaveLastFile still reads SHOWN synchronously, and the shutdown order is unchanged.
 - Needs: Fix. Flush reads the pending selection, not only the shown file, so a selection made just before close is saved. Files: crates/desktop/src/shell.rs, crates/desktop/src/gallery.rs.
 - Verdict: CONFIRMED
 - Note: SaveLastFile reads gallery::shown_file() on the window thread (shell.rs:96). SHOWN is set only by publish_shown from the model's queued closures (gallery.rs:58, model.rs:290, 298), so a selection still in the queue at close is not what is saved. Latent, needs a close inside the queue latency.
@@ -195,6 +199,7 @@ Entry: `crates/desktop/qml/TestHooks.qml:83 run() and :121 runAfterLibraryStart(
 
 ### UI-018 [low/missing-feedback] Panel hooks dropped silently by the modal rule and the dev-mode gate — CONFIRMED
 
+- Status: Done (build and tests). Inert and conflicting hook combinations are named at parse time, and a refused shortcut is logged (GlobalRefused).
 - Needs: Fix (test hooks). Reject inert or conflicting hook combinations at parse time with an error. Files: crates/desktop/src/command_line.rs, crates/desktop/qml/TestHooks.qml.
 - Verdict: CONFIRMED
 - Note: controller.rs:427 returns no commands for any open modal that is not switchable (only inbox and log are), so --inbox after --library does nothing. controller.rs:432-433 ignores Global::Log without dev mode. Nothing reports either refusal.
@@ -205,6 +210,7 @@ Entry: `crates/desktop/qml/TestHooks.qml:83 run() and :121 runAfterLibraryStart(
 
 ### UI-019 [low/stale-state] --inbox-expand without --inbox persists into the user's first inbox open — CONFIRMED
 
+- Status: Done (validated). command_line.rs rejects --inbox-expand without --inbox, and the pass is spent on the accepted open.
 - Needs: Fix (test hooks). Make --inbox-expand a one-shot pass consumed by the first open it applies to, not a value reset on close. Files: crates/desktop/qml/TestHooks.qml, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: TestHooks.qml:116 sets the expand pass. The reset is in the inbox open-change handler (Main.qml:64-69), and it runs only on a change to closed. The first user open is an open change, so the reset is skipped and expandRow (Main.qml:833) uses the stale pass.
@@ -215,6 +221,7 @@ Entry: `crates/desktop/qml/TestHooks.qml:83 run() and :121 runAfterLibraryStart(
 
 ### UI-020 [low/missing-feedback] --viewer-keys and --zoom without --view are silently ignored — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix (test hooks). Validate at parse time that --viewer-keys and --zoom require --view. Files: crates/desktop/src/command_line.rs.
 - Verdict: CONFIRMED
 - Note: The viewer keys and --zoom sit inside `if (commandLine.view >= 0)` (TestHooks.qml:92-109), so they do nothing without --view. command_line.rs:278-279 reports --yandex-preview without --find-similar as a bad option, but nothing reports these.
@@ -229,6 +236,7 @@ Entry: `crates/desktop/src/lib.rs:214 screenshot::schedule(engine)`
 
 ### UI-023 [low/stale-result] Settle check can pass before the library job's first progress is seen — PARTIAL
 
+- Status: Done (validated). Library.scanPending is declared and set on add-folder and rescan, and screenshot.cpp reads it.
 - Needs: Fix (checked: partly; the race needs an add-folder request in the same run, and the 300 ms quiet gate does not protect the first ready tick). The settle waits for a pending scan request or the first progress. Test harness only. Files: crates/desktop/cpp/screenshot.cpp, crates/desktop/src/library.rs, crates/desktop/src/shell.rs (331-332), crates/desktop/qml/TestHooks.qml (154-155).
 - Verdict: PARTIAL
 - Note: The race needs a job that starts after the start. A plain start (Main.qml:879) requests no scan, so progress stays Idle and the settle check is right to pass. The window only sees a non-idle job when a scan is requested in the same run, for example by the add-folder hook (TestHooks.qml:122, which runs after library.start). The trigger as written (library folders alone) does not reach it.
@@ -243,6 +251,7 @@ Entry: `crates/desktop/src/panic_log.rs:17 install (panic hook) and :32 alert::e
 
 ### UI-029 [low/unhandled-close] Closing the window waits for an open panic box on the writes thread — CONFIRMED
 
+- Status: Done (validated). The panic box still blocks the writes thread, but exit waits at most 2 s.
 - Needs: Fix. worker::stop must not wait on a writes thread that a panic box is blocking; the box must not hold up the exit it is reporting on. Files: crates/desktop/src/worker.rs, crates/desktop/src/panic_log.rs, crates/desktop/src/lib.rs.
 - Verdict: CONFIRMED
 - Note: worker::stop joins the writes thread (worker.rs:54-63), and the box from a writes-thread panic blocks that thread (panic_log.rs:25). The window's exit therefore waits until the box is dismissed (lib.rs:221).
@@ -257,6 +266,7 @@ Entry: `crates/desktop/src/lib.rs:195 read_qml_from_source and :210 reload_on_ch
 
 ### UI-030 [high/missing-start] Reloaded window never starts the library: no folders, no change events — CONFIRMED
 
+- Status: Done (build and tests). The reloaded window's QML starts its own library on libraryStartDue. Not exercised at runtime.
 - Needs: Fix (dev build only). The reloaded window must start its own library; the early return in Library::start (library.rs:148) must key on the new object. Files: crates/desktop/src/library.rs, crates/desktop/src/pump.rs, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: Library::start returns early when running() is Some (desktop library.rs:148-151), before load_roots (:152). The reloaded window's new Library therefore has empty roots, and the pump is attached to the deleted object. Live reload is debug-only.
@@ -267,6 +277,7 @@ Entry: `crates/desktop/src/lib.rs:195 read_qml_from_source and :210 reload_on_ch
 
 ### UI-032 [medium/stale-open-panel] Reload with a panel open leaves its mirror set, blocking shortcuts and the inbox — CONFIRMED
 
+- Status: Done (validated). live_reload.cpp invokes shell.windowReloaded, and the client clears the modal mirror.
 - Needs: Fix (dev build only). The controller owns the modal mirror: reconcile it with the reloaded window, not by patching teardown. Files: crates/client/src/controller/panels.rs, crates/desktop/cpp/live_reload.cpp, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: The modal mirror is only changed by PanelOpened and PanelClosed (panels.rs:127-135), and teardown emits neither. The global() rule (controller.rs:427) then blocks inbox, log and dev-mode keys while a non-switchable modal stays in the mirror. Debug-only.
@@ -277,6 +288,7 @@ Entry: `crates/desktop/src/lib.rs:195 read_qml_from_source and :210 reload_on_ch
 
 ### UI-033 [low/no-window-state] A failed QML load on reload leaves no window and no way to quit from the UI — CONFIRMED
 
+- Status: Done (build and tests). The fallback window and its ui-dev-reload-failed and ui-quit strings are in place.
 - Needs: Fix (dev build only). A failed QML load shows an actionable error and keeps a quit path. Files: crates/desktop/cpp/live_reload.cpp.
 - Verdict: CONFIRMED
 - Note: live_reload.cpp:56 sets quitOnLastWindowClosed to false. After the window is deleted at reload (:95), a failed engine.load (:100) leaves no window. quit_on_close only quits on a visibleChanged(false) of a window that exists (:40). Debug-only.
@@ -291,6 +303,7 @@ Entry: `crates/desktop/qml/GalleryGrid.qml:73 Keys.onPressed -> GalleryGrid.qml:
 
 ### UI-037 [low/stale-result] A key pressed right after an arrow acts on the previous photo — CONFIRMED
 
+- Status: Done (build and tests). Act goes to OnCurrent, which the desktop resolves on the model lane.
 - Needs: Fix. Step goes through the controller's current, so the next key sees the moved item. QML sends intents only. Files: crates/desktop/src/shell.rs, crates/client/src/controller/input.rs, crates/client/src/controller.rs.
 - Verdict: CONFIRMED
 - Note: The arrow's Step is applied on the gallery lane (shell.rs:476-484), but the controller's current (input.current, controller.rs:384) changes only when QML reports CurrentChanged (Main.qml:141). A key handled in the same pass therefore acts on the old item. Rate, turn and mark write to the file.
@@ -305,6 +318,7 @@ Entry: `crates/desktop/qml/GlobalShortcuts.qml:24-40 Shortcut blocks with onActi
 
 ### UI-038 [low/stale-result] Lane 'N failed' sets the inbox expand pass before the controller may refuse the open — CONFIRMED
 
+- Status: Done (validated). globalActionExpanding and panelOpenRequested(kind, expandPass) are declared, and the pass goes with the accepted open.
 - Needs: Fix. Pass the expand request with the open, and apply it only when the controller accepts the open. Files: crates/desktop/qml/Main.qml, crates/client/src/controller.rs.
 - Verdict: CONFIRMED
 - Note: Main.qml:565 sets inboxExpandPass before globalAction, and the controller can refuse it (controller.rs:427). The reset runs only in the closed branch (Main.qml:68), so the stale pass expands the first later open (InboxPanel.qml:134-142). Severity low: it needs a non-switchable modal open at the click.
@@ -319,6 +333,7 @@ Entry: `crates/desktop/qml/GridCell.qml:182 MouseArea onClicked -> cellClicked (
 
 ### UI-040 [low/missing-feedback] Status line goes blank for a selected file whose details are unavailable — CONFIRMED
 
+- Status: Done (build and tests). The tri-state detail is in place, and ui-details-unavailable is defined.
 - Needs: Fix. A tri-state detail (loading, unavailable, loaded) instead of Option flattening. Also correct the doc's claim that the state persists. Files: crates/desktop/src/gallery/state.rs, crates/desktop/src/gallery/items.rs, crates/desktop/src/gallery/model.rs.
 - Verdict: CONFIRMED
 - Note: Details are read with .flatten() (state.rs:156) and an info miss gives an empty string (items.rs:195). The cache keeps (file, None) (state.rs:135). The finding says the state persists until the list reloads, but the two-entry cache also evicts when other reads come in, so that part is overstated.
@@ -333,6 +348,7 @@ Entry: `crates/desktop/qml/GalleryGrid.qml:123 onPositionChanged (while pressed)
 
 ### UI-050 [low/wrong-position] Readout is placed from the logical position, not the drawn handle — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed). Centre the readout on (visualPosition + visualSize / 2) times the track height, and keep the number on the logical position. Files: crates/desktop/qml/GalleryGrid.qml (readout at 165), Qt quicktemplates/qquickscrollbar.cpp (visualArea, 134-147).
 - Verdict: PARTIAL
 - Note: The readout uses gridBar.position (GalleryGrid.qml:138). The handle is placed from visual.position (qquickscrollbar.cpp:229). I did not check whether position and visual.position differ once minimumSize applies, which is what the 24 px figure depends on.
@@ -347,6 +363,7 @@ Entry: `crates/desktop/qml/TopBar.qml:97 onToggled -> recursiveToggled -> Main.q
 
 ### UI-055 [medium/wrong-message] Empty folder without subfolders says All folders over an empty grid — CONFIRMED
 
+- Status: Done (validated). An empty non-recursive folder reads "Drive roots".
 - Needs: Fix. Bind the top-bar label to the listing actually shown, so an empty non-recursive listing is not labelled All folders with 0 files. Files: crates/client/src/tree.rs, crates/desktop/src/folders.rs, crates/desktop/qml/TopBar.qml.
 - Verdict: CONFIRMED
 - Note: shown_as (tree.rs:113-117) gives All when root_files is 0, and listing_kind_of maps that to KIND_ALL (folders.rs:95-100). TopBar.qml:75 then labels All folders while the box is unchecked and the non-recursive listing is empty.
@@ -361,6 +378,7 @@ Entry: `crates/desktop/qml/ViewsMenu.qml:41 onTriggered -> viewChosen (ViewsMenu
 
 ### UI-062 [low/missing-feedback] A failed read of the chosen view is silently a no-op — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A failed view read reports through the shared outcome path, as save and delete already do. Files: crates/desktop/src/shell.rs, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: shell.rs:379-381 returns false on a failed view read with no notice. Main.qml:324-325 then returns at once. views_outcome (shell.rs:115-117) is used for save and delete only.
@@ -371,6 +389,7 @@ Entry: `crates/desktop/qml/ViewsMenu.qml:41 onTriggered -> viewChosen (ViewsMenu
 
 ### UI-065 [low/stale-result] A view applied before the start is over can be replaced by all folders — CONFIRMED
 
+- Status: Done (build and tests). The client gate never opens All folders from absence, and the desktop dispatches TreeFailed.
 - Needs: Fix. Same start-gate fix as UI-002: a TreeFailed state, and no OpenAll from absence. Files: crates/client/src/controller/start.rs.
 - Verdict: CONFIRMED
 - Note: start.rs:59-64 has no started check, so TreeLoaded{false} emits OpenAll whenever it arrives. Main.qml:292 sends it for a view whose folder is missing from the tree (folders.rs:246 gives -2). This needs a view applied before the tree arrives, a narrow window.
@@ -385,6 +404,7 @@ Entry: `crates/desktop/qml/ViewsMenu.qml:60 onTriggered -> viewDeleteRequested -
 
 ### UI-069 [low/missing-confirmation] Saved view deleted immediately with no confirmation or undo — CONFIRMED
 
+- Status: Done (build and tests). The delete dialog, its build entry and its strings are in place.
 - Needs: Fix. Confirm before deleting, using the same dialog pattern as RemoveFolderDialog. Files: crates/desktop/qml/ViewsMenu.qml, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: ViewsMenu.qml:60 calls viewDeleteRequested on a single trigger, and Main.qml:539 forwards it to shell.deleteView (shell.rs:326-329) with no confirmation. The other destructive dialogs, such as RemoveFolderDialog, do confirm.
@@ -399,6 +419,7 @@ Entry: `crates/desktop/qml/TopBar.qml:103 onClicked -> filtersToggled -> Main.qm
 
 ### UI-073 [low/missing-feedback] Chip counts show zeros or the previous folder's counts until the count returns — CONFIRMED
 
+- Status: Done (build and tests). The pending state reaches the chips, and ui-count-pending is defined.
 - Needs: Fix. A pending state until counts arrive for the current folder and query, not 0 or the previous folder's counts. Files: crates/desktop/src/facet_choices.rs, crates/desktop/qml/FilterBar.qml.
 - Verdict: CONFIRMED
 - Note: facet_choices.rs:41 maps a count that has not arrived to 0 (shown.unwrap_or(0)), so the chips show 0 until the first count. After a folder change the previous rows stay until the new count is delivered.
@@ -413,6 +434,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:157 (types), :170 (ratings), :182 (exte
 
 ### UI-076 [low/unneeded-relist] An unparsed bound keystroke re-lists and clears the selection — CONFIRMED
 
+- Status: Already fixed (validated). filters.rs:78-88 and 149-157 compare before set_query. Candidate for removal, pending your call.
 - Needs: Fix. Compare the parsed bound before arming the relist, so set_query runs only on change. Correct the citation: filters.rs:270 is out of range; the mechanism is at filters.rs:133-136. Files: crates/desktop/src/filters.rs, crates/desktop/qml/FilterBar.qml.
 - Verdict: CONFIRMED
 - Note: edit() (filters.rs:78-82) never compares, and set_query calls edited() unconditionally (filters.rs:84-88). That arms the 300 ms pause (controller.rs:301-303), which lists from the top with keep=false. The citation filters.rs:270 is out of range (the file has 191 lines). The mechanism is at filters.rs:133-136.
@@ -423,6 +445,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:157 (types), :170 (ratings), :182 (exte
 
 ### UI-077 [low/focus] Keyboard toggle of a chip loses focus and focus is not returned to the grid — CONFIRMED
 
+- Status: Done (validated). A chip toggle returns focus to the grid.
 - Needs: Fix. Focus returns to the grid after a chip toggle, under the shared focus policy. Files: crates/desktop/src/facet_choices.rs, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: facet_choices.rs:62-64 resets the whole model when the rows change, which destroys the focused chip delegate. Main.qml:317-320 (showListing) takes no focus action, and nothing in the chip path calls grid.takeFocus.
@@ -433,6 +456,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:157 (types), :170 (ratings), :182 (exte
 
 ### UI-078 [low/stale-result] Total reads N of 0 until the first count arrives after start or a view applies — CONFIRMED
 
+- Status: Done (build and tests). countsPending drives the TopBar label, and ui-count-pending is defined.
 - Needs: Fix. Show a pending state until the first count, or request the count at start. Files: crates/desktop/src/filters.rs, crates/desktop/qml/TopBar.qml.
 - Verdict: CONFIRMED
 - Note: total and matching start at 0 (filters.rs:38-39) and change only when a count is applied. updateFacets counts only when the bar is open or a filter is active (Main.qml:146-149), so the 'N of 0' label shows until that count arrives. The interval is brief.
@@ -447,6 +471,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:153 onClicked addRequested -> Main.q
 
 ### UI-096 [medium/unhandled-close] Added folder's scan request is lost when the app quits before it runs — CONFIRMED
 
+- Status: Done (validated). The scan_requests table is in baseline.sql, as you confirmed.
 - Needs: Fix. Persist pending scan requests in the catalog, so a scan requested before quit runs on the next start. Files: crates/app/src/library.rs, crates/library/src/coordinator.rs.
 - Verdict: CONFIRMED
 - Note: add_folder queues the scan only when the job runs (app library.rs:377), and the queue is in memory (coordinator.rs:277-282). I found no scan requested at start (the grep of library.start shows none), so existing roots are not re-queued on the next launch.
@@ -461,6 +486,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:71 onClicked removeRequested -> Main
 
 ### UI-104 [low/stale-result] Grid keeps listing the removed folder's images until the removal job ends — PARTIAL
 
+- Status: Partial (build and tests). Begun::Started now only loads roots; the grid and tree refresh on Scanned, published after hide_pages. No separate tree refresh at Started.
 - Needs: Fix (checked: confirmed; the stale window ends at hide_pages, not at the final publish). Hide the folder's rows when the removal starts, or skip the reload at Begun::Started. Files: crates/desktop/src/library.rs (290-292), crates/desktop/qml/Main.qml (155), crates/library/src/coordinator.rs (959, 1012).
 - Verdict: PARTIAL
 - Note: The removal's final publish is Scanned (coordinator.rs:847), so the grid refreshes only then. Whether the Begun::Started reload still lists the removed folder's files depends on the listing query, which I did not trace.
@@ -475,6 +501,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:103 onClicked discardRequested -> Ma
 
 ### UI-106 [low/wrong-message] Discard failures are worded as 'folder couldn't be removed from the library' — CONFIRMED
 
+- Status: Done (build and tests). Notice::DiscardFailed is declared, with its wording.
 - Needs: Fix. A discard-failure message separate from the removal-failure message, as a new string key. Files: crates/desktop/src/library.rs, crates/client/locales/en/text.ftl.
 - Verdict: CONFIRMED
 - Note: The desktop posts FolderNotRemoved for every discard failure (desktop library.rs:134, :144), so the title is "couldn't be removed from the library" (text.ftl:280), while the folder had already left the library.
@@ -485,6 +512,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:103 onClicked discardRequested -> Ma
 
 ### UI-107 [medium/wrong-message] Discard shows success while a temp copy is left on disk — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Record the leftover temp as a pending cleanup in the catalog and retry it. The notice is secondary. Files: crates/app/src/library.rs, crates/catalog/src/removal.rs.
 - Verdict: CONFIRMED
 - Note: discard_removal logs a failed temp unlink as a warning and carries on (app library.rs:420-422), then returns success. The dialog promises the temp copies are deleted (ui.ftl:74). The user gets no notice.
@@ -495,6 +523,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:103 onClicked discardRequested -> Ma
 
 ### UI-109 [low/wrong-target] Discard finds its removal by lossy display text, so two removals can match — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Address the pending removal by its row id, not display text. Files: crates/desktop/src/library.rs, crates/model/src/rules.rs.
 - Verdict: CONFIRMED
 - Note: library.rs:139 finds the pending removal by comparing rules.display(p) with the folder text, and display is lossy (rules.rs:207-211, documented as lossy). Two removals with the same display text match the first. Latent, as the finding says.
@@ -509,6 +538,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:157 onClicked rescanRequested -> Mai
 
 ### UI-110 [low/double-fire] Second Rescan during a walk re-walks that folder — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. The coordinator queue holds each root at most once, keyed by root. Files: crates/library/src/coordinator.rs, crates/library/src/passes.rs.
 - Verdict: CONFIRMED
 - Note: A preempted walk is pushed back to the front of its lane queue (passes.rs:100). A second rescan adds the same path to the lane's queue when it is not already there (coordinator.rs:509-511), and the lane's own queue does not hold the path while it is being walked. The folder is therefore queued twice and walked twice.
@@ -519,6 +549,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:157 onClicked rescanRequested -> Mai
 
 ### UI-112 [low/missing-feedback] Rescan silently switches the listing to All when the listed folder has no present files left — CONFIRMED
 
+- Status: Done (build and tests). The gate never changes the listing, and TreeLoaded takes no argument.
 - Needs: Fix. Absence never switches the listing to All; the folder stays listed in its current state. Same start-gate fix as UI-002. Files: crates/client/src/controller/start.rs, crates/desktop/src/folders.rs.
 - Verdict: CONFIRMED
 - Note: The tree counts only present files (tree.rs:11, 15: missing = 0). After a rescan marks the listed folder's files missing, the folder is not in the tree, so folders.rs:246 gives -2 and Main.qml:292 sends treeLoaded(false). The gate then emits OpenAll with no started check (start.rs:59-63).
@@ -533,6 +564,7 @@ Entry: `crates/desktop/qml/LaneRow.qml:117 onClicked -> pauseRequested (LaneRow.
 
 ### UI-116 [low/wrong-target] Failed link can open the inbox with no entry expanded — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed for an unreadable-only pass). Disable the link when the pass has no ledger row, or give unreadable files a ledger row. Files: crates/desktop/src/notices.rs (174-180, 637-645), crates/desktop/qml/LaneRow.qml, crates/desktop/qml/Main.qml (913).
 - Verdict: PARTIAL
 - Note: The link is enabled by the pass's bit in notices.rs:173 and LaneRow.qml:37, and the lookup at Main.qml:833-834 then finds no row. Whether unreadable files really leave no ledger row was not traced in the runner.
@@ -547,6 +579,7 @@ Entry: `crates/desktop/qml/Main.qml:412-417 Timer (250 ms, running while laneRow
 
 ### UI-119 [low/stale-result] A held-back count change is shown only at the next file or phase end — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Emit a trailing progress update when the throttle holds one back, so the row never trails the last count. Files: crates/jobs/src/control.rs, crates/desktop/qml/Main.qml.
 - Verdict: CONFIRMED
 - Note: control.rs:416-424 throttles the progress notice by NOTICE_INTERVAL, and the desktop timer that refreshes the lane rows runs only while laneRows.settling is set (Main.qml:412-417). The comment at control.rs:413-416 that calls it intentional was not read.
@@ -561,6 +594,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:32 saveCropsRequested (emitted from one
 
 ### UI-127 [low/missing-feedback] Folder chosen, but nothing is saved and nothing says so — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. "Nothing queued" (no borders, or library not running) reports through the shared outcome path. Files: crates/desktop/src/gallery/edits.rs, crates/desktop/qml/Main.qml, crates/app/src/library.rs.
 - Verdict: CONFIRMED
 - Note: saveCroppedCopiesPicked returns n and queues nothing when borders_found is empty (edits.rs:169-174). In the not-started case, app library.rs:349-352 does nothing when the library is not running. Main.qml:176 drops the return value, so the user gets no message in either case.
@@ -571,6 +605,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:32 saveCropsRequested (emitted from one
 
 ### UI-128 [low/wrong-message] "Had nothing to crop" also counts changed and missing files — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed). Give changed or missing files their own outcome, separate from nothing-to-crop (crates/crop/src/lib.rs:133, 141, 198, 472; wording at crates/wording/locales/en/text.ftl:238). Files: crates/crop/src/lib.rs, crates/wording/locales/en/text.ftl.
 - Verdict: PARTIAL
 - Note: The wording is confirmed: the notice says "{skipped} had nothing to crop" (text.ftl:209), and crop lib.rs:137 counts every Skipped as skipped. Whether Written::Skipped covers files that changed or went missing (crop lib.rs:119) was not traced.
@@ -585,6 +620,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:39 cutBordersRequested (handler at Filt
 
 ### UI-130 [medium/wrong-message] Thumbnail-forget error reported as a failed cut — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Forget errors are their own thumbnail outcome, not CutFailed. Files: crates/library/src/passes.rs.
 - Verdict: CONFIRMED
 - Note: cut_done posts a CutFailed for each forget error (passes.rs:48-50). The BordersCut summary is posted separately when the cut finishes (coordinator.rs:656-665), so the user sees a failed-cut entry beside a success for the same originals.
@@ -599,6 +635,7 @@ Entry: `crates/desktop/qml/RatingBar.qml:83 onClicked -> rateAsked (RatingBar.qm
 
 ### UI-142 [medium/wrong-message] Rating popup shows success before the write, and still shows it when the write fails — CONFIRMED
 
+- Status: Done (validated). edits.rs emits ratingWritten after a successful write, and the popup is shown from it.
 - Needs: Fix. Show the popup from rating_written, and show a failure in it through the shared outcome path. Files: crates/desktop/qml/Viewer.qml, crates/desktop/qml/RatingPopup.qml, crates/desktop/src/gallery/edits.rs.
 - Verdict: CONFIRMED
 - Note: Viewer.qml:521 shows the popup on rated, before the write. The write runs on the worker (edits.rs:108-112). On failure the model is not updated (rating_written is not called) and the error is posted by edit_outcome (app.rs:36-38).
@@ -613,6 +650,7 @@ Entry: `crates/desktop/qml/Viewer.qml:277-278 keys TurnForward and TurnBack -> t
 
 ### UI-144 [low/missing-feedback] Turn shows nothing until the catalog write lock is free — CONFIRMED
 
+- Status: Done (validated). The pending turn is set at press, and taken back if the write fails.
 - Needs: Fix. Show a pending turn state at press, from pending_turns, before the write. Files: crates/desktop/qml/Viewer.qml, crates/desktop/src/gallery/edits.rs.
 - Verdict: CONFIRMED
 - Note: Viewer.turn sends turned and resets the view at once (Viewer.qml:190-193). The rotation is queued on the worker (edits.rs:27-34) and its result is applied only after turn_queued. The 5 s wait is the catalog's busy timeout, which I did not read.
@@ -623,6 +661,7 @@ Entry: `crates/desktop/qml/Viewer.qml:277-278 keys TurnForward and TurnBack -> t
 
 ### UI-147 [low/stale-result] A turn can be counted twice if a refresh read lands between the catalog write and turn_queued — CONFIRMED
 
+- Status: Partial (build and tests). The desktop keeps unwritten presses on the model, so a refresh does not drop them. Residual: a second press before the first write is undercounted until the turned files are re-read.
 - Needs: Fix (checked: confirmed; the window is narrow). Key pending turns by revision, or stop counting in turn_queued what the refresh read already includes. Files: crates/desktop/src/gallery/edits.rs, crates/client/src/grid.rs.
 - Verdict: CONFIRMED
 - Note: edits.rs:44 adds the turn to pending_turns from the model thread, and turned_request reads that state. refresh_turned applies only when the revision is unchanged (grid.rs:405-408). The interleaving with turn_queued and whether edit() bumps the revision were not fully traced. Low severity, as the finding says.
@@ -637,6 +676,7 @@ Entry: `crates/desktop/qml/Viewer.qml:284 MarkBorder key -> Viewer.qml:114 borde
 
 ### UI-148 [medium/double-fire] Two quick border-mark toggles collapse into one while the first write is pending — CONFIRMED
 
+- Status: Done (validated). Uses the existing shell.toggleBorderMark.
 - Needs: Fix (checked: confirmed; the UI-036 fix covers only the grid). Route the viewer's N key and RatingBar's border button through the toggle the grid uses, so the target comes from border_mark_target. Files: crates/desktop/qml/Viewer.qml, crates/desktop/qml/RatingBar.qml, crates/desktop/src/gallery/edits.rs, crates/desktop/src/shell.rs.
 - Verdict: CONFIRMED (duplicate of UI-036)
 - Note: Duplicate of UI-036 extended to the viewer: Viewer.qml:284 sends !borderMarked from the viewer's own viewed value, which is also stale until the write lands. Both presses ask for marked = true, and edits.rs:137 drops the second.
@@ -647,6 +687,7 @@ Entry: `crates/desktop/qml/Viewer.qml:284 MarkBorder key -> Viewer.qml:114 borde
 
 ### UI-150 [low/missing-feedback] N on a photo with no borders found does nothing and says nothing — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. N on a photo with no borders reports through the shared outcome path. Files: crates/desktop/src/gallery/edits.rs, crates/client/src/keys.rs.
 - Verdict: CONFIRMED
 - Note: keys.rs:118 binds N for any selected item. set_border_marked returns early for an item without borders Found or Marked (edits.rs:134-136), so the key does nothing, and no message is posted.
@@ -661,6 +702,7 @@ Entry: `crates/desktop/qml/Viewer.qml:283 Borders key -> bordersToggled (Viewer.
 
 ### UI-154 [low/misleading-hint] Grid key hint advertises B and N with border detection off — CONFIRMED
 
+- Status: Done (validated). Main.qml passes the detection flag to the grid hint.
 - Needs: Fix. Build the grid hint from the enabled features, so B and N appear only when detection is on. Files: crates/client/src/keys.rs, crates/desktop/src/keymap.rs.
 - Verdict: CONFIRMED
 - Note: keymap.rs:153-155 calls keys::grid_hint, which always lists Borders and NotBorder (keys.rs:288-291) with no feature check. The status bar shows it with nothing selected (Main.qml:468).
@@ -675,7 +717,8 @@ Entry: `crates/desktop/qml/Viewer.qml:302-313 WheelHandler (notches), :274-275 K
 
 ### UI-158 [medium/wrong-message] Viewer hint says wheel zoom, but the wheel steps pictures — PARTIAL
 
-- Needs: Decide. Either the wheel zooms or the hint changes. Verify the wheel branch first (Viewer.qml:300-312). Either way, generate the hint from the real bindings. Files: crates/client/locales/en/ui.ftl, crates/client/src/keys.rs, crates/desktop/qml/Viewer.qml.
+- Status: Done (build and tests). Decision B: the hint reads Hint::Zoom with ui-hint-zoom, and ui-hint-wheel-zoom is removed.
+- Needs: Fix (decision: B, change the hint). Verify the wheel branch (Viewer.qml:300-312) first. The hint is generated from the real bindings and no longer says wheel zoom. Files: crates/client/locales/en/ui.ftl, crates/client/src/keys.rs, crates/desktop/qml/Viewer.qml.
 - Verdict: PARTIAL
 - Note: The hint lists WheelZoom for stills (keys.rs:304; ui.ftl:231), and the wheel handler calls viewer.step(-n) (Viewer.qml:306-311). I did not read the branch above it at Viewer.qml:300-312 that decides whether a notch zooms when the image is not zoomed.
 - Confidence: high
@@ -689,6 +732,7 @@ Entry: `crates/desktop/qml/Viewer.qml:130-131 onFitWidthChanged/onFitHeightChang
 
 ### UI-166 [low/missing-feedback] A failed region, or an offline original seen while zoomed, shows nothing and logs nothing — CONFIRMED
 
+- Status: Done (build and tests). Region and Original failures are logged, the HUD shows fullFailed and regionFailed, and ui-region-failed is defined.
 - Needs: Fix. Region and original failures show in the HUD, and Original errors are logged. Files: crates/desktop/qml/Viewer.qml, crates/app/src/images.rs, crates/desktop/src/providers.rs.
 - Verdict: CONFIRMED
 - Note: Hud.qml:95 shows "original unavailable" only from fitFailed (Viewer.qml:498). full_image logs only Undecodable (images.rs:317-319), and providers.rs:125-128 skips logging for Original and Undecodable. An Original error or a failed region is therefore invisible to the user and the log.
@@ -699,6 +743,7 @@ Entry: `crates/desktop/qml/Viewer.qml:130-131 onFitWidthChanged/onFitHeightChang
 
 ### UI-167 [low/wrong-message] Any fit failure is labelled original unavailable, including undecodable files and rewrite timeouts — CONFIRMED
 
+- Status: Done (build and tests). viewedFitError drives the HUD, and ui-fit-undecodable and ui-fit-rewriting are defined.
 - Needs: Fix. Distinct fit error kinds for undecodable files and rewrite timeouts, each with its own string. Files: crates/desktop/qml/Hud.qml, crates/client/locales/en/ui.ftl, crates/app/src/images.rs.
 - Verdict: CONFIRMED
 - Note: Hud.qml:95 uses fitFailed, which is true for any fit error, so an Undecodable or Rewriting failure (images.rs:189) shows the same "original unavailable" text.
@@ -713,7 +758,8 @@ Entry: `crates/desktop/qml/Viewer.qml:282 Loupe key -> loupe toggle (Viewer.qml:
 
 ### UI-171 [low/missing-feedback] L with the pointer off the picture shows nothing, but the label says loupe is on — CONFIRMED
 
-- Needs: Decide. The loupe with the keyboard: follow the last known pointer position, or show a hint to move the pointer. Files: crates/desktop/qml/Loupe.qml, crates/desktop/qml/Viewer.qml, crates/desktop/qml/Hud.qml.
+- Status: Done (validated). Decision A: the loupe falls back to the last pointer position, or the picture centre.
+- Needs: Fix (decision: A, keyboard loupe). The loupe follows the last known pointer position, or the picture centre when the pointer has not been over the picture. Files: crates/desktop/qml/Loupe.qml, crates/desktop/qml/Viewer.qml, crates/desktop/qml/Hud.qml.
 - Verdict: CONFIRMED
 - Note: Loupe.qml:30 requires hovered, which comes from the HoverHandler in the viewport (Viewer.qml:469). A keyboard L with the pointer off the picture sets the flag and the label without showing anything.
 - Confidence: high
@@ -723,6 +769,7 @@ Entry: `crates/desktop/qml/Viewer.qml:282 Loupe key -> loupe toggle (Viewer.qml:
 
 ### UI-172 [low/missing-feedback] Full-size decode failure leaves the loupe silently absent — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed). Add a full-decode error to the HUD line, from full.status === Image.Error (ImageLayers.qml:34 fullReady, :127-130), and keep the existing log. Files: crates/desktop/qml/ImageLayers.qml, crates/desktop/qml/Hud.qml.
 - Verdict: PARTIAL
 - Note: A failed full decode would leave the full layer in Error and the loupe absent, and Hud shows only the fit status (Viewer.qml:498). fullReady (ImageLayers.qml:33) was not read, so whether it stays false is not settled.
@@ -737,6 +784,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 
 ### UI-179 [low/missing-feedback] Video catalog-lookup failure is silent — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A lookup failure sets the player error, as device errors already do. Files: crates/desktop/src/video_source.rs.
 - Verdict: CONFIRMED
 - Note: video_source.rs:36-38 on Err logs a warning and calls player.clear(), which sets no playerError. The HUD shows a player error only when playerError is set (Hud.qml:96), so the failure is silent apart from the log.
@@ -747,6 +795,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 
 ### UI-180 [low/missing-feedback] Animation that cannot be read or decoded fails silently — PARTIAL
 
+- Status: Done (build and tests). The animation player declares playerError, and the HUD shows it for animations. Not exercised at runtime.
 - Needs: Fix (checked: partly; animation.rs has 72 lines, so :76 and :112 are out of range). Have Player::start report read and decode failures (crates/render/src/player.rs:79, :96, :114) to AnimationPlayer, and show them in the HUD for animations too. Files: crates/render/src/player.rs, crates/desktop/qml/MediaView.qml, crates/desktop/qml/Hud.qml.
 - Verdict: PARTIAL
 - Note: Citation error: animation.rs:76 and :112 are both past end of file (LINE OUT OF RANGE). The HUD part holds: Hud.qml:96 shows playerError only for Video kind, so an animation failure gets no message. The animation decode path that would set an error was not read, so the failure mechanism is not verified.
@@ -757,6 +806,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 
 ### UI-181 [low/wrong-message] HUD shows untranslated Qt English error text — CONFIRMED
 
+- Status: Partial (build and tests). Player errors show the catalogued playback line. The open and format wording was dropped, because this build's QML compiler cannot compare the player's error enum; restoring it needs a C++ helper.
 - Needs: Fix. Map the backend error to a catalogued string; do not show Qt's English. Files: crates/desktop/qml/MediaView.qml, crates/desktop/qml/Hud.qml, crates/client/locales/en/ui.ftl.
 - Verdict: CONFIRMED
 - Note: MediaView.qml:101 forwards errorString unchanged to playerFailed. Hud.qml:96 wraps it in ui-player-error (ui.ftl:61, "— { $text }"), so the prefix is translated and the body is Qt's English. The string is at qffmpegmediadataholder.cpp:210 ("Could not open source device.").
@@ -771,6 +821,7 @@ Entry: `crates/desktop/qml/Hud.qml:44 findSimilarAsked (RatingBar.qml:45 same si
 
 ### UI-184 [low/double-fire] Double-clicking the find-similar button opens and immediately closes the panel — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed; yandexLoader sits above the viewer). Ignore the second click of a double-click on the find-similar button, or have the panel ignore clicks within the double-click interval of opening. Files: crates/desktop/qml/RatingBar.qml, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED
 - Note: RatingBar.qml:45 opens the panel on the first click (openPanel makes it visible, YandexPanel.qml:42-47). The panel's full-window MouseArea (YandexPanel.qml:105-107) then receives the second click and calls close(). The stacking of the panel over the viewer was not read, but the comment at YandexPanel.qml:103-104 says no click reaches the viewer below.
@@ -781,6 +832,7 @@ Entry: `crates/desktop/qml/Hud.qml:44 findSimilarAsked (RatingBar.qml:45 same si
 
 ### UI-185 [low/missing-keyboard-path] Find similar has no keyboard path in the viewer — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Add find-similar to the shared viewer key map (keys.rs), so every mouse action has a key. Files: crates/client/src/keys.rs, crates/desktop/qml/Viewer.qml.
 - Verdict: CONFIRMED
 - Note: keys.rs viewer() (keys.rs:124-...) has no find-similar arm, and ViewerAction (Viewer.qml:265) has no find-similar entry. The only keyboard route is the command-line --find-similar hook (YandexPanel.qml:36-40).
@@ -791,6 +843,7 @@ Entry: `crates/desktop/qml/Hud.qml:44 findSimilarAsked (RatingBar.qml:45 same si
 
 ### UI-186 [low/missing-feedback] Dead results are dropped from the list with no note — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. The status line says how many results were dropped as dead, through the shared outcome path. Files: crates/desktop/src/yandex.rs, crates/app/src/yandex/images.rs.
 - Verdict: CONFIRMED
 - Note: yandex.rs:372-374 calls drop_dead without setting any status, and the status comes only from poll.status (yandex.rs:375-376), which carries the search's note and not the download failures.
@@ -805,6 +858,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:31-34 show -> yandex.searchFile; comm
 
 ### UI-190 [medium/wrong-message] 'No results.' shown when every found result failed to load — CONFIRMED
 
+- Status: Done (validated). The dropped-results status is set, which hides the No results label.
 - Needs: Fix. Status text when every result failed to load, instead of "No results". Files: crates/desktop/qml/YandexPanel.qml, crates/app/src/yandex.rs, crates/client/src/text.rs.
 - Verdict: CONFIRMED
 - Note: YandexPanel.qml:255 shows "No results" when not busy, both counts are 0 and status is "". Status is set at search completion (app/yandex.rs:462) and maps to empty when no note is given (text.rs:415), before any download fails. So it stays empty and the rows dropped by drop_dead (yandex.rs:372-374) leave the empty-result label.
@@ -815,6 +869,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:31-34 show -> yandex.searchFile; comm
 
 ### UI-193 [low/focus] No keyboard path to pick or open an individual result — CONFIRMED
 
+- Status: Done (validated). Tab reachability at runtime is not tested.
 - Needs: Fix. Make ResultTile a focusable FocusScope with keys for pick and open. This also fixes UI-196. Files: crates/desktop/qml/ResultTile.qml, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED
 - Note: ResultTile.qml:97-113 is a MouseArea only, with no focus or key handling. YandexPanel.qml:97-102 accepts only Close, so no tile can be picked or opened from the keyboard.
@@ -829,6 +884,7 @@ Entry: `crates/desktop/qml/ResultTile.qml:100 onClicked -> toggled (ResultTile.q
 
 ### UI-197 [low/unhandled-close] Quitting while a save runs cuts it short with no record of what was saved — CONFIRMED
 
+- Status: Done (validated). Caveat: a save still running after the 2 s stop wait is not recorded at exit.
 - Needs: Fix. Report an unfinished save through the outcome path, as UI-011 does. Files: crates/app/src/app.rs, crates/app/src/yandex.rs.
 - Verdict: CONFIRMED
 - Note: app.rs:156-158 logs a warning when yandex.stop() returns false and then carries on with shutdown. Nothing reaches the user or the inbox, so an unfinished save is not reported.
@@ -843,6 +899,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:81 onClicked -> yandex.setPicked(firs
 
 ### UI-198 [medium/wrong-message] Second photo's search is silently dropped while busy; old results stay shown — CONFIRMED
 
+- Status: Done (validated). Results carry their photo, so a later search does not land under the new photo.
 - Needs: Fix (checked: partly; 76fb1c43 already reports the refusal, but the previous photo's results and picks stay). Clear the results and picks when a new photo's search is accepted, so Save never acts on the previous photo's picks. Files: crates/desktop/src/yandex.rs, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED (duplicate of UI-182)
 - Note: Duplicate of UI-182 and UI-188 for the viewer's show path: YandexPanel.qml:31-34 opens the panel and calls searchFile, and search_photo returns on Ok(false) (yandex.rs:141) while busy (app/yandex.rs:425-426) without changing status or results.
@@ -853,6 +910,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:81 onClicked -> yandex.setPicked(firs
 
 ### UI-200 [low/stale-state] Picks are discarded on close and reopen because each open starts a new search — CONFIRMED
 
+- Status: Done (validated). Picks are kept per photo path.
 - Needs: Fix. Key picks by photo id and keep them for the session, so reopening the same photo keeps them. Files: crates/desktop/qml/YandexPanel.qml, crates/desktop/src/yandex.rs.
 - Verdict: CONFIRMED
 - Note: A new open runs search_photo, which calls show(Results::default()) (yandex.rs:147), so the picks reset. close() only hides the panel (YandexPanel.qml:49-52) and gives no message.
@@ -867,6 +925,7 @@ Entry: `crates/desktop/qml/ResultTile.qml:36 previewRequested via double-click (
 
 ### UI-203 [low/keyboard-parity] The 1:1 zoom has no keyboard path — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Add the 1:1 key to the shared viewer key map, and use it in the Yandex preview. Files: crates/desktop/qml/YandexPreview.qml, crates/client/src/keys.rs.
 - Verdict: CONFIRMED
 - Note: YandexPreview.qml:155-160 sets NoFocus on the 1:1 button, and the panel key map (keys.rs:186-193) has no zoom or real-size action. Only a mouse click or a tap reaches 1:1.
@@ -877,6 +936,7 @@ Entry: `crates/desktop/qml/ResultTile.qml:36 previewRequested via double-click (
 
 ### UI-204 [low/missing-feedback] Preview closes silently when its picture turns out dead — CONFIRMED
 
+- Status: Done (validated). The report is on the status line; the preview still closes.
 - Needs: Fix. A dead preview picture reports through the shared outcome path, not a silent close. Files: crates/desktop/src/yandex.rs, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED
 - Note: images.rs:187-189 publishes a change when a result settles dead. yandex.rs:260 sets the preview item to -1 when its picture is gone, and YandexPanel.qml:288-289 closes the preview. The status line is not changed on this path. The short "Can't load or decode it" label was not traced.
@@ -891,6 +951,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:164-170 Save button onClicked -> save
 
 ### UI-206 [low/wrong-message] Picks that die while the folder dialog is open are dropped silently, and if all die the save says Pick at least one image — PARTIAL
 
+- Status: Done (validated). The logic is in yandex.rs; the cited yandex_bridge.rs lines are out of range.
 - Needs: Fix (checked: confirmed; yandex_bridge.rs:449-455 are out of range, the logic is in crates/desktop/src/yandex.rs:508-531). Check the picks before taking the folder (yandex.rs:508-517), and report dropped picks through the status line in poll (yandex.rs:421-439). Files: crates/desktop/src/yandex.rs, crates/desktop/src/bridges/yandex_bridge.rs.
 - Verdict: PARTIAL
 - Note: Citation error: yandex_bridge.rs:449, 453 and 455 are past the end of the file (LINE OUT OF RANGE). The save path could not be checked at those lines. The general claim that a pick dying while the folder dialog is open is dropped is consistent with drop_dead (yandex.rs:241) and the poll (yandex.rs:372-374), but the empty-set path into "Pick at least one image" was not read.
@@ -901,6 +962,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:164-170 Save button onClicked -> save
 
 ### UI-208 [low/wrong-message] Failed save with nothing written reads Saved 0, 3 failed — CONFIRMED
 
+- Status: Done (validated). The text is in crates/wording/src/message.rs. The cited crates/client paths do not exist.
 - Needs: Fix. Wording for a save that wrote nothing: a new string, not "Saved 0". Files: crates/client/src/text.rs, crates/client/locales/en/text.ftl.
 - Verdict: CONFIRMED
 - Note: text.rs:346-350 renders YandexSavedFailed with written = 0 when nothing was written, and text.ftl:157 reads "Saved { $written }, { $failed } failed". The string starts with "Saved 0".
@@ -911,6 +973,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:164-170 Save button onClicked -> save
 
 ### UI-209 [low/missing-feedback] In-app folder dialog's Up or open failure is shown only in the dimmed status line behind it — CONFIRMED
 
+- Status: Done (build and tests). The dialog's failure label is bound to listError in all three pickers.
 - Needs: Fix. Show a folder-list failure as a state inside the dialog. Files: crates/platform/src/picker.rs, crates/desktop/qml/FolderPickerDialog.qml.
 - Verdict: CONFIRMED
 - Note: picker.rs:170-176 calls report_unlisted on an unlistable folder, which emits failed (picker.rs:160-166). The save picker forwards it to showFailure (YandexPanel.qml:125), so the message goes to the panel's status line. The scrim (ModalOverlay.qml:26, #b0000000) dims that line under the dialog. The Windows-only gate (picker.rs:16) was not read.
@@ -925,6 +988,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:171 Close button and :107 background 
 
 ### UI-210 [high/stale-result] Refused Find similar leaves the previous photo's results on screen — CONFIRMED
 
+- Status: Done (validated). Same fix as UI-198.
 - Needs: Fix (checked: partly; the refusal now sets a status, but the previous photo's results stay). Clear the results and picks, or name the photo in the panel, on refusal. The closed-search case also returns Ok(false), so the status text must cover both. Same fix as UI-198. Severity stays high. Files: crates/desktop/src/yandex.rs, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED (duplicate of UI-182)
 - Note: Duplicate of UI-182 and UI-188 for the close-then-reopen case: YandexPanel.qml:31-34 opens the panel, yandex.rs:141 returns on Ok(false) while busy (app/yandex.rs:425-426), and the panel keeps A's results and state.
@@ -935,6 +999,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:171 Close button and :107 background 
 
 ### UI-211 [low/focus] Hidden save-folder dialog keeps focus, so Escape no longer closes the Yandex panel — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Shared focus policy: a hidden dialog never keeps focus. Files: crates/desktop/qml/ModalOverlay.qml, crates/desktop/qml/FolderPickerDialog.qml.
 - Verdict: CONFIRMED
 - Note: The same Qt rule (qquickitem.cpp:6641-6645, 6669-6681) means the hidden overlay keeps activeFocus, so Escape reaches ModalOverlay's Keys.onEscapePressed (ModalOverlay.qml:22) and not YandexPanel's handler.
@@ -949,6 +1014,7 @@ Entry: `crates/desktop/qml/ResultTile.qml:55 onStatusChanged -> thumbSettled (Re
 
 ### UI-213 [medium/unhandled-close] Closing the window waits for an in-flight Yandex download before the process exits — CONFIRMED
 
+- Status: Done (validated). Caveat: close still waits on the providers.cpp waitForDone for a read already in progress.
 - Needs: Fix. A cancellation token through the fetcher, honoured at close, instead of waiting for downloads. Files: crates/desktop/src/lib.rs, crates/desktop/cpp/providers.cpp, crates/app/src/yandex/images.rs.
 - Verdict: CONFIRMED
 - Note: lib.rs:221-224 runs app::stop and then drop(engine) before app::shutdown. providers.cpp:131-135 calls waitForDone on the pool, which blocks while a fetch is running. Yandex::stop cannot cut a request short (app/yandex.rs:100-102), so the process waits for the download to end. The 15-minute body timeout was not read.
@@ -963,6 +1029,7 @@ Entry: `crates/desktop/qml/StatusBar.qml:107-111 Timer -> toastExpired (StatusBa
 
 ### UI-219 [low/stale-toast] A warning toast about an already-read notice survives closing the inbox — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Derive the toast from notice state, so it clears when its notice is marked read. Files: crates/desktop/qml/Main.qml, crates/desktop/src/notices.rs.
 - Verdict: CONFIRMED
 - Note: StatusBar.qml:110 runs the toast timer only for level 0, so a warning stays until it is dismissed. Main.qml:66 dismisses the toast only on open, and Main.qml:70 closes the inbox with setViewing and no dismissal. notices.rs:466 sets marking on close, which covers the read state.
@@ -973,6 +1040,7 @@ Entry: `crates/desktop/qml/StatusBar.qml:107-111 Timer -> toastExpired (StatusBa
 
 ### UI-220 [low/missing-feedback] A failed spawn of the toast follower leaves the toast silently dead — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. If the follower thread fails to start, retry it, and report a failure through the outcome path. Files: crates/desktop/src/notices.rs.
 - Verdict: CONFIRMED
 - Note: notices.rs:344-346 logs a warning when the follower thread fails to start and does nothing else, so no toast or listing update reaches the status bar.
@@ -987,6 +1055,7 @@ Entry: `crates/desktop/qml/StatusBar.qml:105 TapHandler and :118 onClicked -> in
 
 ### UI-221 [medium/double-fire] Failed mark is re-sent on every listing with no bound — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A failed mark is stored as a failed state and is re-sent only after a new event, not on every listing. Files: crates/desktop/src/notices.rs, crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:923 sets force when a mark write fails. inbox.rs:903-906 then refreshes and publishes Changed (inbox.rs:1074). notices.rs:400-406 re-marks the shown rows while marking is set, and notices.rs:452 sends them to the writer again. No backoff or bound appears on this path.
@@ -1001,6 +1070,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:331-337 TapHandler -> panel.select (In
 
 ### UI-228 [low/missing-feedback] A failed Retry or Dismiss write is only logged, so the user gets no explanation — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: confirmed). Report failed Dismiss and Retry writes through the outcome path at the drain error arm (inbox.rs:933-937); NoticesLost counts notices only, so these are silent. Files: crates/app/src/inbox.rs, crates/desktop/src/notices.rs.
 - Verdict: PARTIAL
 - Note: inbox.rs:922-927 forces a refresh, adds to self.lost and logs a warning, which matches the finding. Whether self.lost is shown anywhere in the UI was not read, so "only logged" is not settled.
@@ -1015,6 +1085,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:485 onClicked copyRequested; Ctrl+C at
 
 ### UI-231 [medium/missing-feedback] Copy of a ledger silently truncates at 1000 items with no note — CONFIRMED
 
+- Status: Done (build and tests). The copy line says the newest N of M files. The scan-folders copy still says files, which is a cross-lane gap.
 - Needs: Fix. A truncated copy ends with the "newest N of M" line, from the same formatter as the panel. Files: crates/desktop/src/notices.rs, crates/client/locales/en/text.ftl.
 - Verdict: CONFIRMED
 - Note: notices.rs:142 caps the read at COPIED_FILES = 1000, and notices.rs:512 keeps only failed.items. The counts are dropped, so no "newest N of M" line is added to the copy, unlike the panel's ui-inbox-more.
@@ -1025,6 +1096,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:485 onClicked copyRequested; Ctrl+C at
 
 ### UI-234 [low/shadowed-key] Clicking the details text takes focus and Ctrl+C no longer copies the entry — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. The read-only details text does not take focus, so the list keeps Ctrl+C. Shared focus policy. Files: crates/desktop/qml/InboxPanel.qml.
 - Verdict: CONFIRMED
 - Note: InboxPanel.qml:351-355 is a readOnly TextArea, which takes focus. qquicktextcontrol.cpp:833-836 accepts QKeySequence::Copy and copies the selection only, so the list handler at InboxPanel.qml:233 never runs.
@@ -1035,6 +1107,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:485 onClicked copyRequested; Ctrl+C at
 
 ### UI-235 [low/missing-feedback] Copy gives no confirmation, and a ledger copy can land after the user has pasted — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A busy state on Copy, and a confirmation once the clipboard is written from the read result. Files: crates/desktop/qml/InboxPanel.qml, crates/desktop/src/notices.rs.
 - Verdict: CONFIRMED
 - Note: InboxPanel.qml:481-485 leaves the button enabled and shows no busy state. The clipboard write is queued only after the read (notices.rs:510-520), so the write can land after a paste made in between.
@@ -1045,6 +1118,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:485 onClicked copyRequested; Ctrl+C at
 
 ### UI-236 [low/invisible-characters] Clipboard text for a kept notice carries bidi isolate controls — CONFIRMED
 
+- Status: Done (validated). The fix is in crates/wording. The cited crates/client/src/text/notice.rs does not exist.
 - Needs: Fix. The copy path uses a plain-text formatter with no isolate characters, rather than stripping them afterwards. Files: crates/client/src/text/notice.rs, crates/desktop/src/notices.rs.
 - Verdict: CONFIRMED
 - Note: text/notice.rs:21-24 wraps a value in U+2068 and U+2069 through isolated(). copy_words takes notice_line unchanged (notices.rs:183, text.rs:325-329), and nothing strips the characters. Which notice kinds call isolated() was not checked.
@@ -1059,7 +1133,8 @@ Entry: `crates/desktop/qml/InboxPanel.qml:491 onClicked dismissSelected (-> dism
 
 ### UI-237 [medium/stale-state] Clear all leaves the entries past 200 that show at once after it — CONFIRMED
 
-- Needs: Decide. Clear all clears every entry matching the filter (recommended), or only the displayed rows. Files: crates/desktop/src/notices.rs, crates/catalog/src/inbox.rs.
+- Status: Done (validated). Decision A: clear by filter, through dismiss_all_listed in the catalog.
+- Needs: Fix (decision: A, clear every matching entry). Clear all clears by filter in the catalog, up to the 1000 kept entries, not a list of the 200 IDs shown. Files: crates/desktop/src/notices.rs, crates/catalog/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: notices.rs:489 takes the ids of the rows the window holds, and the writer clears those. catalog/inbox.rs:211 lists only the first 200 rows afterwards, so the rest appear after the clear. The unread count covers all entries (app inbox.rs:1051). The 1000-event retention was not read.
 - Confidence: high
@@ -1069,6 +1144,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:491 onClicked dismissSelected (-> dism
 
 ### UI-240 [low/stale-result] A listing computed before a dismissal can put the dismissed entry back until the next listing — CONFIRMED
 
+- Status: Done (validated). Stale listings are filtered rather than dropped, and the outcome is the same.
 - Needs: Fix. Sequence numbers on listings; a listing older than the latest is dropped. Files: crates/desktop/src/notices.rs, crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: notices.rs:357 applies a pending listing whenever the Qt thread runs it, and notices.rs:476-484 removes the row at once on dismiss. The order is not checked, so an older listing can add the entry and reset the count (notices.rs:400) until the next refresh. The window in which this happens is short.
@@ -1079,6 +1155,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:491 onClicked dismissSelected (-> dism
 
 ### UI-241 [low/missing-feedback] A dismissal the catalog refuses reappears with no message — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A refused dismissal reverts the optimistic removal and reports through the shared outcome path. Files: crates/app/src/inbox.rs, crates/desktop/src/notices.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:922-929 sets force, adds to lost and logs a warning. The window removed the entry optimistically (notices.rs:476-484), and the forced refresh brings it back. Nothing in the UI reports the failure.
@@ -1089,6 +1166,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:491 onClicked dismissSelected (-> dism
 
 ### UI-242 [low/unhandled-close] A dismissal is dropped at shutdown if the catalog stays busy past the 5 s drain — CONFIRMED
 
+- Status: Partial (validated). Writes are not persisted before ack, and an abandoned queue insert drops the dismissal past the 5 s drain. Needs your decision.
 - Needs: Fix. Durable queue: persist each dismissal before acknowledging it, so the shutdown drain cannot drop it. Files: crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:932-943 handles Abandoned by logging the count of notices and changes that were not written and then breaking. Nothing is shown to the user, and the dismissal is not replayed.
@@ -1103,6 +1181,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:473 onClicked retrySelected (InboxPane
 
 ### UI-244 [low/missing-feedback] A failed Retry shows nothing to the user — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A failed Retry reports through the shared outcome path. Files: crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:922-929 forces a refresh and logs a warning, with no message to the user. The test at inbox.rs:1562-1564 ("a_failed_retry_wakes_nothing") shows the same path.
@@ -1113,6 +1192,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:473 onClicked retrySelected (InboxPane
 
 ### UI-245 [low/unhandled-close] A Retry queued at close is dropped without a user-visible trace — CONFIRMED
 
+- Status: Partial (validated). The replayed Retry wakes the job, but the Retry is not persisted before ack and is lost if its queue insert is abandoned.
 - Needs: Fix. Durable queue, as UI-242: a queued Retry is persisted before it is acknowledged. Files: crates/app/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: inbox.rs:932-943 drops the rest of the queue, including Step Retry with its FnOnce, when the writer is Abandoned. The job is not woken, and only a warning is logged. The Retry variant is at inbox.rs:210.
@@ -1123,6 +1203,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:473 onClicked retrySelected (InboxPane
 
 ### UI-246 [low/stale-result] Thumbnail failures buffered before a Retry can be recorded again after it — PARTIAL
 
+- Status: Done (validated). Fixed by a failure_retries counter, not the ordering in the Needs bullet.
 - Needs: Fix (checked: confirmed; impact narrow, the number of buffered failures is not measured). Order the pass's ledger writes through the writer queue, or have record_failures check the listing sequence, so a late flush cannot undo a Retry. Files: crates/thumbs/src/lib.rs, crates/catalog/src/writers.rs, crates/catalog/src/ledger/failure.rs.
 - Verdict: PARTIAL
 - Note: thumbs lib.rs:329-330 writes the buffered failures on its own connection, and ledger.rs:209 deletes the rows of the pass. The finding says the ordering against Retry was not traced, and that remains open.
@@ -1137,6 +1218,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:75 requestFiles, from the ledger rows 
 
 ### UI-247 [medium/stale-result] Open list not re-read when a non-newest failed file is cleared — CONFIRMED
 
+- Status: Done (validated). The re-read gate is in notices.rs, keyed on serial and count.
 - Needs: Fix. The listing key includes the file count or a revision, not only the newest serial. Files: crates/desktop/qml/InboxPanel.qml, crates/desktop/src/failed_files.rs, crates/catalog/src/inbox.rs.
 - Verdict: CONFIRMED
 - Note: InboxPanel.qml:78-82 returns early when the key and serial match, and onSerialChanged alone re-tells (InboxPanel.qml:276). clear_failures (ledger.rs:188-) removes a non-newest file without changing the newest serial, so the list is not re-read. The body of tell() was not read, so whether it calls requestFiles() is not settled, but requestFiles() itself would return early.
@@ -1151,6 +1233,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not fo
 
 ### UI-251 [medium/missing-feedback] File-gone toast is dimmed behind the open inbox — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Show the file-gone message inside the inbox panel, through the shared outcome path. Files: crates/desktop/qml/Main.qml, crates/desktop/src/shell.rs, crates/desktop/qml/InboxPanel.qml.
 - Verdict: CONFIRMED
 - Note: shell.rs:353 posts FileNoLongerInLibrary as an info toast, and StatusBar sits under the inbox, which fills the window (Main.qml:819-822 anchors.fill: parent) with the ModalOverlay scrim (ModalOverlay.qml:26, #b0000000). The toast is dimmed as the finding says.
@@ -1161,6 +1244,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not fo
 
 ### UI-252 [low/wrong-message] A failed listing read is reported as a missing file — PARTIAL
 
+- Status: Done (validated).
 - Needs: Fix (checked: partly; shell.rs:447-451 is the Ok(None) branch, which this trigger does not reach). At shell.rs:560-566, check whether the listing failed before posting FileNoLongerInLibrary after an empty listing. Files: crates/desktop/src/shell.rs, crates/desktop/src/gallery/model.rs.
 - Verdict: PARTIAL
 - Note: model.rs:100-104 turns a listing error into ListingFailed and an empty list (unwrap_or_default), and applies it with the generation. The reveal branch that then posts FileNoLongerInLibrary (shell.rs:447-451 and the code after it) was not read, so the second notice is not verified.
@@ -1171,6 +1255,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not fo
 
 ### UI-253 [low/missing-feedback] Reveal shows no busy state while its folder is read — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. A busy state on the Reveal button while the folder is read. Files: crates/desktop/qml/InboxPanel.qml.
 - Verdict: CONFIRMED
 - Note: InboxPanel.qml:448-453 has no busy state, and the button stays enabled while the folder is read. Low severity. The notices.rs remark about the reader being busy was not read.
@@ -1185,6 +1270,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (folder) -> f
 
 ### UI-257 [low/missing-feedback] Reveal of a refused library root lands on a folder with nothing in it, with no message — CONFIRMED
 
+- Status: Done (validated). Caveat: a root whose listing failed gets the same message as a refused root.
 - Needs: Fix. A reveal that lands on a refused root reports the refusal through the shared outcome path. Files: crates/desktop/src/shell.rs, crates/catalog/src/roots.rs, crates/client/locales/en/text.ftl.
 - Verdict: CONFIRMED
 - Note: shell.rs:363 takes the parent of the failed folder with split_file_name, or the folder itself when there is no parent. The refused-root row is written by roots.rs:241-245. A drive root therefore shows itself and a folder under a drive shows a parent outside the library, with no message.
@@ -1199,6 +1285,7 @@ Entry: `crates/desktop/qml/StatusBar.qml:124 onClicked logRequested -> Main.qml:
 
 ### UI-269 [low/wrong-message] Translator comment for the log strings is attached to the inbox key — CONFIRMED
 
+- Status: Already fixed (validated). The comment sits above ui-log at ui.ftl:115-116. Candidate for removal, pending your call.
 - Needs: Fix. Move the log comment above ui-log in ui.ftl. Files: crates/client/locales/en/ui.ftl.
 - Verdict: CONFIRMED
 - Note: ui.ftl:91 holds the log comment, and the next key is ui-inbox (ui.ftl:93). ui-log, ui-log-title and ui-log-empty (ui.ftl:116-118) have no comment of their own.
@@ -1213,6 +1300,7 @@ Entry: `crates/desktop/qml/GridRow.qml:103 Component.onCompleted take and :106 o
 
 ### UI-279 [medium/stuck-error] A transient thumbnail failure leaves the error mark on a readable photo — PARTIAL
 
+- Status: Partial (build and tests). The QML retry is unbounded with a 15 s cap, and Qt re-requests on a device pixel ratio change (read in its source). Not yet checked: that the Rust side does not cache a failure as final.
 - Needs: Fix (checked: confirmed; an unchanged source is not re-requested after Error, qquickimagebase.cpp:119-123). Stop caching a transient failure as final (providers.rs:107-135), and re-request when the cell's URL is re-bound or the device pixel ratio changes (qquickimagebase.cpp:426-445). Files: crates/desktop/qml/GridCell.qml, crates/desktop/src/providers.rs.
 - Verdict: PARTIAL
 - Note: GridCell.qml:68 binds the source to the thumbnail URL and :89 shows the error mark when thumb.status is Error. providers.rs:122-132 reports any error as failed(). Whether Qt's Image re-requests an unchanged source after an Error was not read in qquickimage.cpp, and that decides the finding.
@@ -1223,6 +1311,7 @@ Entry: `crates/desktop/qml/GridRow.qml:103 Component.onCompleted take and :106 o
 
 ### UI-280 [medium/wrong-message] A failed grid listing shows the empty-folder message and clears the photos — CONFIRMED
 
+- Status: Done (build and tests). Rows are kept on a failed listing, and ui-listing-failed is defined.
 - Needs: Fix. A failed listing keeps the photos and shows the error, instead of "No images here". Same fix as UI-004. Files: crates/desktop/src/gallery/model.rs, crates/desktop/qml/GalleryGrid.qml.
 - Verdict: CONFIRMED
 - Note: model.rs:100-106 applies an empty list when the read fails (unwrap_or_default), and GalleryGrid.qml:96-99 shows "No images here" (or the filter or import text) whenever the count is 0 and not loading.
@@ -1233,6 +1322,7 @@ Entry: `crates/desktop/qml/GridRow.qml:103 Component.onCompleted take and :106 o
 
 ### UI-281 [low/visual-flicker] retainWhileLoading is undone by the fade, so a changed thumbnail flashes to the placeholder — CONFIRMED
 
+- Status: Done (validated).
 - Needs: Fix. Keep the previous thumbnail visible while the new one loads; fade only once it is ready. Files: crates/desktop/qml/GridCell.qml.
 - Verdict: CONFIRMED
 - Note: GridCell.qml:70 sets retainWhileLoading. GridCell.qml:74 sets fade to 0 unless the status is Ready, so a new URL makes the status Loading and the retained image fades out through the Behavior at :75. GridCell.qml:58 then shows the blurred ThumbHash until the new image is Ready.

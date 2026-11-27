@@ -27,14 +27,20 @@ pub(crate) fn post(notice: Notice) {
 /// operation's trigger, which clears the notice its failure kept. Both are the same `op`, so a failure can't be posted
 /// without a clear for it. The value on success, `None` on a failure.
 pub(crate) fn observe<T, E>(op: Op, result: Result<T, E>, failure: impl FnOnce(&E) -> Notice) -> Option<T> {
+    observe_result(op, result, failure).ok()
+}
+
+/// As [`observe`], but a failure is handed back as well: for a caller whose own state shows the failure too (a listing
+/// in error), and still needs the error.
+pub(crate) fn observe_result<T, E>(op: Op, result: Result<T, E>, failure: impl FnOnce(&E) -> Notice) -> Result<T, E> {
     match result {
         Ok(value) => {
             get().inbox().resolve(Trigger::Op(op));
-            Some(value)
+            Ok(value)
         }
         Err(e) => {
             post(failure(&e));
-            None
+            Err(e)
         }
     }
 }

@@ -17,6 +17,8 @@ pub mod qobject {
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qlist.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
     /// A list facet of the filter bar, as QML names it (`FacetChoices.Types`); maps to `pg_model::query::ListFacet` in
@@ -69,5 +71,17 @@ pub mod qobject {
         #[inherit]
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut FacetChoices>);
+
+        #[inherit]
+        fn index(self: &FacetChoices, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        #[inherit]
+        #[cxx_name = "dataChanged"]
+        fn data_changed(
+            self: Pin<&mut FacetChoices>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
     }
 }

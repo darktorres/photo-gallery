@@ -119,39 +119,51 @@ impl qobject::Library {
                 .map(|(path, _)| QString::from(&pg_platform::native::PATH_RULES.display(path)))
                 .collect()
         };
+        // The exact paths of the kept removals, row for row with their texts: Discard is asked for by row.
+        let kept_paths: Vec<_> =
+            pending.iter().filter(|(_, deferred)| *deferred > 0).map(|(path, _)| path.clone()).collect();
         let kept = folders(true);
         let removing = folders(false);
+        self.as_mut().rust_mut().kept_removal_paths = kept_paths;
         self.as_mut().set_kept_removals(kept);
         self.set_removing_removals(removing);
     }
 
-    /// Gives up the removal of `folder` (as the panel lists it) that waits for unfinished writes: the Discard button, after
-    /// the window asks. The folder is found again in the catalog's pending removals, so a list read before a change is never
-    /// acted on by its position.
-    pub(crate) fn discard_removal(mut self: Pin<&mut Self>, folder: QString) {
-        let folder = folder.to_string();
+    /// Gives up the removal at `row` of `keptRemovals` that waits for unfinished writes: the Discard button, after the window
+    /// asks. The removal is found by the exact path the row was read with, in the catalog's pending removals: the list's
+    /// text is lossy, and a list read before a change is never acted on by its position alone.
+    pub(crate) fn discard_removal(mut self: Pin<&mut Self>, row: i32) {
+        let Some(shown) =
+            usize::try_from(row).ok().and_then(|index| self.rust().kept_removal_paths.get(index)).cloned()
+        else {
+            return;
+        };
         let library = app::get().library();
         let pending = match library.pending_removals() {
             Ok(pending) => pending,
             Err(e) => {
-                app::post(Notice::FolderNotRemoved { error: app::error_text(&e) });
+                app::post(Notice::DiscardFailed { error: app::error_text(&e) });
                 return;
             }
         };
-        let rules = pg_platform::native::PATH_RULES;
-        let Some(path) = pending.into_iter().map(|(path, _)| path).find(|p| rules.display(p) == folder) else {
+        if !pending.iter().any(|(path, _)| *path == shown) {
+            // It is gone since the list was read (the job finished it, or it was discarded): nothing is discarded.
+            self.as_mut().load_removals();
             return;
-        };
+        }
         // The list is read again either way: a discard can fail after the catalog has dropped the removal.
-        let result = library.discard_removal(&path);
+        let result = library.discard_removal(&shown);
         self.as_mut().load_roots();
         if let Err(e) = result {
-            app::post(Notice::FolderNotRemoved { error: app::error_text(&e) });
+            app::post(Notice::DiscardFailed { error: app::error_text(&e) });
         }
     }
 
+    /// Starts the library for this window's object: the library itself is started once per process, so a window made
+    /// again (live reload) finds it running, and still lists its folders and takes its changes (`app::Library::start`
+    /// returns the one running).
     pub(crate) fn start(mut self: Pin<&mut Self>) {
-        if running().is_some() {
+        if self.started {
             return;
         }
         self.as_mut().load_roots();
@@ -163,6 +175,7 @@ impl qobject::Library {
                 return;
             }
         };
+        self.as_mut().rust_mut().started = true;
         // Subscribed before the pump starts, so no change is missed between the start and the first one it handles.
         let changes = library.changes().subscribe();
         // Without its thread the window isn't told the library's changes; the log says why.
@@ -205,6 +218,8 @@ impl qobject::Library {
             self.as_mut().files_changed();
         }
         if taken.scanned {
+            // The scan asked for has ended: the window need not wait for it any more.
+            self.as_mut().set_scan_pending(false);
             // A folder can have left the library since the list was read (a removal finished by the job, or from a command).
             self.as_mut().load_roots();
             self.as_mut().scanned();
@@ -227,6 +242,10 @@ impl qobject::Library {
     fn refresh_progress(mut self: Pin<&mut Self>) -> u64 {
         let Some(library) = running() else { return 0 };
         let p = &library.status().progress;
+        // The job has shown itself: a scan asked for is no longer waited for on its account (`scanPending`).
+        if p.phase != Phase::Idle {
+            self.as_mut().set_scan_pending(false);
+        }
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().progressed();
         p.failed
@@ -258,7 +277,11 @@ impl qobject::Library {
     fn add_path(mut self: Pin<&mut Self>, path: &Path) {
         match app::get().library().add_folder(path) {
             Ok((root, added)) => {
-                // A folder already in the library is rescanned (the app scans it either way).
+                // A folder already in the library is rescanned (the app scans it either way): a scan is asked for while the
+                // library runs.
+                if running().is_some() {
+                    self.as_mut().set_scan_pending(true);
+                }
                 if !added {
                     app::post(Notice::FolderAlreadyAdded { folder: root });
                 }
@@ -286,8 +309,12 @@ impl qobject::Library {
             return;
         };
         match app::get().library().remove_folder(id, &path) {
-            // Gone from the list at once; its files are finished by the library's job, which tells the grid when it has.
-            Ok(Begun::Started { .. } | Begun::Pending(_)) => {
+            // Gone from the list at once. A started removal's files stay listed until the job hides them: the job's
+            // `Change::Scanned` (published after `hide_pages`, coordinator.rs) is what reads the grid and the tree again
+            // (`scanned`, which QML answers with `reloadAll`), so the grid is not read here. A pending removal keeps its
+            // previous refresh.
+            Ok(Begun::Started { .. }) => self.as_mut().load_roots(),
+            Ok(Begun::Pending(_)) => {
                 self.as_mut().load_roots();
                 self.scanned();
             }
@@ -304,9 +331,11 @@ impl qobject::Library {
         }
     }
 
-    pub(crate) fn rescan(self: Pin<&mut Self>) {
-        if let Err(e) = app::get().library().rescan() {
-            app::post(Notice::RescanFailed { error: app::error_text(&e) });
+    pub(crate) fn rescan(mut self: Pin<&mut Self>) {
+        match app::get().library().rescan() {
+            // The job has been asked to scan: the window waits for it from here (`scanPending`).
+            Ok(()) => self.as_mut().set_scan_pending(true),
+            Err(e) => app::post(Notice::RescanFailed { error: app::error_text(&e) }),
         }
     }
 

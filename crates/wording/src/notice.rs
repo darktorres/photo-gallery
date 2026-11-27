@@ -18,25 +18,28 @@ const ISOLATE: char = '\u{2068}';
 /// Closes it (U+2069 POP DIRECTIONAL ISOLATE).
 const POP: char = '\u{2069}';
 
-/// `path` as a value: bidi-isolated. An empty one (a field the notice doesn't have) stays empty.
-fn isolated(path: &str) -> String {
-    if path.is_empty() { String::new() } else { format!("{ISOLATE}{path}{POP}") }
+/// `path` as a value: bidi-isolated when `isolate` (plain text takes it as it is). An empty one (a field the notice doesn't
+/// have) stays empty.
+fn isolated(path: &str, isolate: bool) -> String {
+    if path.is_empty() || !isolate { path.to_string() } else { format!("{ISOLATE}{path}{POP}") }
 }
 
 /// A library path, displayed under `rules`, as a value.
-fn shown(rules: PathRules, path: &RulePath) -> String {
-    isolated(&rules.display(path))
+fn shown(rules: PathRules, path: &RulePath, isolate: bool) -> String {
+    isolated(&rules.display(path), isolate)
 }
 
 /// An optional path as a value: isolated, or `none` (a selector, not a path) when there is none.
-fn isolated_or_none(path: Option<&str>) -> String {
-    path.map_or_else(|| "none".to_string(), isolated)
+fn isolated_or_none(path: Option<&str>, isolate: bool) -> String {
+    path.map_or_else(|| "none".to_string(), |path| isolated(path, isolate))
 }
 
-/// The words a notice's values nest, made by the caller: a refusal's reason, and a panicked file's error.
+/// The words a notice's values nest, made by the caller: a refusal's reason, and a panicked file's error. `isolate`: whether
+/// its paths are bidi-isolated (the words on screen), or plain (the clipboard's text).
 pub(super) struct Nested<'n> {
     pub(super) refused: &'n dyn Fn(&RefusedReason) -> String,
     pub(super) panicked: &'n dyn Fn(&str) -> String,
+    pub(super) isolate: bool,
 }
 
 /// The id of a source's name, `msg-source-<code>`.
@@ -61,13 +64,14 @@ pub(super) fn source_id(source: Source) -> &'static str {
 
 /// Set the values of `notice`'s entries in `a`. The title and the body take the same values; each uses those it needs.
 pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &mut FluentArgs<'_>) {
+    let isolate = nested.isolate;
     match notice {
         Notice::ScanFailed { root, error, .. } => {
-            a.set("root", shown(rules, root));
+            a.set("root", shown(rules, root, isolate));
             a.set("error", error.clone());
         }
         Notice::ScanNote { root, note, count } => {
-            a.set("root", shown(rules, root));
+            a.set("root", shown(rules, root, isolate));
             a.set("kind", note.key());
             plural(a, *count);
         }
@@ -83,6 +87,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         | Notice::CacheDisabled { error }
         | Notice::FolderNotAdded { error }
         | Notice::FolderNotRemoved { error }
+        | Notice::DiscardFailed { error }
         | Notice::RescanFailed { error }
         | Notice::LibraryUnavailable { error }
         | Notice::ChangesUnseen { error }
@@ -111,19 +116,22 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("failed", pg_model::num::size(*failed));
             // A number too: the entry says "not reached" only when there are some.
             a.set("unfinished", pg_model::num::size(*unfinished));
-            first_failure(a, rules, failures);
+            first_failure(a, rules, failures, isolate);
         }
-        Notice::Cropped { folder, saved, skipped, failed, failures, unfinished } => {
-            a.set("folder", isolated(folder));
+        Notice::Cropped { folder, saved, skipped, failed, failures, unfinished, changed, missing } => {
+            a.set("folder", isolated(folder, isolate));
             a.set("saved", saved.to_string());
             a.set("skipped", skipped.to_string());
             // A number: the entry says "none failed" for 0.
             a.set("failed", pg_model::num::size(*failed));
             a.set("unfinished", pg_model::num::size(*unfinished));
-            first_failure(a, rules, failures);
+            // Numbers too: the entry says them only when there are some.
+            a.set("changed", pg_model::num::size(*changed));
+            a.set("missing", pg_model::num::size(*missing));
+            first_failure(a, rules, failures, isolate);
         }
         Notice::CatalogRebuilt { kept, why, carried } => {
-            a.set("kept", isolated(kept));
+            a.set("kept", isolated(kept, isolate));
             a.set("why", why.clone());
             match carried {
                 Carried::Rows { files, folders } => {
@@ -138,13 +146,13 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             }
         }
         Notice::PrefsUnreadable { path, error, kept, keep_error } => {
-            a.set("path", isolated(path));
+            a.set("path", isolated(path, isolate));
             a.set("error", error.clone());
-            a.set("kept", isolated_or_none(kept.as_deref()));
+            a.set("kept", isolated_or_none(kept.as_deref(), isolate));
             a.set("keep_error", keep_error.clone().unwrap_or_default());
         }
         Notice::PrefsNotSaved { path, error } => {
-            a.set("path", isolated(path));
+            a.set("path", isolated(path, isolate));
             a.set("error", error.clone());
         }
         Notice::CacheTotalsFixed { kept_bytes, kept_count, bytes, count } => {
@@ -155,15 +163,40 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
         }
         Notice::CacheStartedOver { reason, path, .. } => {
             a.set("reason", reason.key());
-            a.set("path", isolated(path));
+            a.set("path", isolated(path, isolate));
         }
         Notice::WriteFailed { error, panicked, file, temp } => {
             let error = if *panicked { (nested.panicked)(error) } else { error.clone() };
             a.set("error", error);
-            a.set("file", isolated_or_none(file.as_deref()));
-            a.set("temp", temp.as_deref().map(isolated).unwrap_or_default());
+            a.set("file", isolated_or_none(file.as_deref(), isolate));
+            a.set("temp", temp.as_deref().map(|temp| isolated(temp, isolate)).unwrap_or_default());
         }
-        Notice::WriteStopped | Notice::FileNoLongerInLibrary => {}
+        Notice::WriteStopped | Notice::FileNoLongerInLibrary | Notice::ToastFollowerFailed | Notice::Copied => {}
+        Notice::NothingToDo { what } => {
+            a.set("what", what.key());
+        }
+        Notice::TempLeftBehind { path } => {
+            a.set("path", shown(rules, path, isolate));
+        }
+        Notice::RevealRefusedRoot { folder } => {
+            a.set("folder", shown(rules, folder, isolate));
+        }
+        Notice::ThumbnailForgetFailed { count } => plural(a, *count),
+        Notice::InboxWriteFailed { action } => {
+            a.set("action", action.key());
+        }
+        Notice::YandexSaveUnfinished { written, unfinished } => {
+            a.set("written", written.to_string());
+            plural(a, *unfinished);
+        }
+        Notice::YandexResultsDropped { dropped, found } => {
+            a.set("dropped", dropped.to_string());
+            a.set("found", found.to_string());
+        }
+        Notice::CopyTruncated { shown: kept, total } => {
+            a.set("shown", kept.to_string());
+            a.set("total", total.to_string());
+        }
         Notice::WriteDropped { write, count } => {
             plural(a, *count);
             // A selector, not shown: the entry has the words for each kind.
@@ -174,15 +207,15 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
             a.set("kind", kind);
         }
         Notice::FolderAlreadyAdded { folder } => {
-            a.set("folder", shown(rules, folder));
+            a.set("folder", shown(rules, folder, isolate));
         }
         Notice::FolderRefused { folder, reason } => {
-            a.set("folder", shown(rules, folder));
+            a.set("folder", shown(rules, folder, isolate));
             a.set("reason", (nested.refused)(reason));
         }
         Notice::FolderRemovalUnfinished { folder, temp } => {
-            a.set("folder", shown(rules, folder));
-            a.set("temp", shown(rules, temp));
+            a.set("folder", shown(rules, folder, isolate));
+            a.set("temp", shown(rules, temp, isolate));
         }
         Notice::ViewsFailed { op, error } => {
             a.set("op", op.key());
@@ -231,9 +264,9 @@ pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &m
 
 /// The first of a notice's failures, as the entry's `path` and `error`: the entry shows the first; the list is kept for
 /// the rest. Empty for none.
-fn first_failure(a: &mut FluentArgs<'_>, rules: PathRules, failures: &[FileFailure]) {
+fn first_failure(a: &mut FluentArgs<'_>, rules: PathRules, failures: &[FileFailure], isolate: bool) {
     let (path, error) = match failures.first() {
-        Some(FileFailure { path, error, .. }) => (shown(rules, path), error.clone()),
+        Some(FileFailure { path, error, .. }) => (shown(rules, path, isolate), error.clone()),
         None => (String::new(), String::new()),
     };
     a.set("path", path);
@@ -257,7 +290,7 @@ mod tests {
     fn values(notice: &Notice) -> FluentArgs<'static> {
         let refused = |_: &RefusedReason| "refused".to_string();
         let panicked = |e: &str| e.to_string();
-        let nested = Nested { refused: &refused, panicked: &panicked };
+        let nested = Nested { refused: &refused, panicked: &panicked, isolate: true };
         let mut a = FluentArgs::new();
         args(notice, PathRules::Windows, &nested, &mut a);
         a
@@ -314,6 +347,8 @@ mod tests {
             failed: 0,
             failures: Vec::new(),
             unfinished: 0,
+            changed: 0,
+            missing: 0,
         });
         assert_eq!(text(&a, "folder"), isolate(r"D:\out"));
         assert_eq!(text(&a, "path"), "", "no first failure: nothing to isolate");

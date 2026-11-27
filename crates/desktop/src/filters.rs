@@ -34,6 +34,7 @@ impl Default for FiltersRust {
             border_marked_index: review_index(q.border_marked),
             total: 0,
             matching: 0,
+            counts_pending: true,
             description: QString::from(&pg_wording::describe(&q)),
             facets: Facets::default(),
             generation: 0,
@@ -61,7 +62,11 @@ impl qobject::Filters {
     /// After the query changed: the properties that show it, and the counts the choices show.
     fn sync(mut self: Pin<&mut Self>) {
         let q = controller::listing().query;
-        publish_counts(&self.facets, &q);
+        // While the counts of the folder shown are pending (`reload`), the facets' counts wait for the new ones
+        // (`apply_facets`), which are for the query then shown.
+        if !self.counts_pending {
+            publish_counts(&self.facets, &q);
+        }
         // The generated setters notify only on a change.
         self.as_mut().set_name(QString::from(&q.name));
         self.as_mut().set_duplicates_index(duplicates_index(q.duplicates));
@@ -90,8 +95,14 @@ impl qobject::Filters {
     }
 
     pub(crate) fn reload(mut self: Pin<&mut Self>) {
+        // The folder or the query may have changed: the counts shown are pending until the new ones are in, and a count
+        // asked for before this is dropped (its generation is older), so it can't stand for the new listing.
+        self.as_mut().rust_mut().generation += 1;
+        self.as_mut().set_counts_pending(true);
+        controller::set_counts(None);
         self.as_mut().sync();
-        self.loaded();
+        self.as_mut().loaded();
+        self.as_mut().count_if_needed();
     }
 
     pub(crate) fn edit_name(self: Pin<&mut Self>, value: &QString) {
@@ -218,13 +229,14 @@ impl qobject::Filters {
         self.as_mut().rust_mut().facets = facets;
         self.as_mut().set_total(total);
         self.as_mut().set_matching(matching);
+        self.as_mut().set_counts_pending(false);
         self.counted();
     }
 }
 
 /// Publish what the list facets show (`Counts::new`): the catalog's counts for the query.
 fn publish_counts(facets: &Facets, q: &Query) {
-    controller::set_counts(Counts::new(facets.types.clone(), facets.borders.clone(), &facets.exts, q));
+    controller::set_counts(Some(Counts::new(facets.types.clone(), facets.borders.clone(), &facets.exts, q)));
 }
 
 /// The `ListFacetKind` a QML `Filters.ListFacetKind` value names: the int of the enum's value, in declaration order.

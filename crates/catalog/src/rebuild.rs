@@ -179,6 +179,10 @@ pub(crate) const CARRIED: &[&str] = &[
     "notices",
     "file_failures",
     "ledger_ack",
+    // Work the app has promised and not yet done: a scan asked for, a temp to remove, a user write queued for the inbox.
+    "scan_requests",
+    "temp_leftovers",
+    "inbox_queue",
 ];
 
 /// The tables whose rows hold only while the processes that wrote them run: a rebuilt catalog starts without them. The

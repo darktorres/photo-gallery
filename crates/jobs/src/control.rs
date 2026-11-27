@@ -166,6 +166,10 @@ struct Family {
     hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// When the hook last ran for a change of the count, across the run's lanes.
     last_notice: Mutex<Option<Instant>>,
+    /// A change of the count was held back by the throttle, and the hook has not been told of it yet.
+    held: AtomicBool,
+    /// A thread that tells the hook of the held change is running (one at a time).
+    trailing: AtomicBool,
     /// Called when a lane changed the failure ledger ([`Control::ledger_changed`]).
     on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
     next_lane: AtomicU32,
@@ -184,6 +188,8 @@ impl Family {
             root_stop: AtomicBool::new(false),
             hook: OnceLock::new(),
             last_notice: Mutex::new(None),
+            held: AtomicBool::new(false),
+            trailing: AtomicBool::new(false),
             on_ledger: OnceLock::new(),
             next_lane: AtomicU32::new(0),
             cpu: OnceLock::new(),
@@ -412,18 +418,52 @@ impl Control {
     }
 
     /// The hook for a change of the count: at most one call per [`NOTICE_INTERVAL`] across the run's lanes. A change the
-    /// throttle holds back is told by the next call that passes it, or by the phase's end. The phase's begin and end,
-    /// the pauses and the holds call the hook without the throttle.
+    /// throttle holds back is told by a trailing call once the interval has passed (`trail`), so a row never trails the
+    /// count when no later change comes (a file that takes long after a burst). The phase's begin and end, the pauses and
+    /// the holds call the hook without the throttle.
     fn progress_changed(&self) {
-        {
+        let now = Instant::now();
+        let held_since = {
             let mut last = self.family.last_notice.lock().unwrap_or_else(PoisonError::into_inner);
-            let now = Instant::now();
-            if last.is_some_and(|at| now.saturating_duration_since(at) < NOTICE_INTERVAL) {
-                return;
+            match *last {
+                Some(at) if now.saturating_duration_since(at) < NOTICE_INTERVAL => Some(at),
+                _ => {
+                    *last = Some(now);
+                    None
+                }
             }
-            *last = Some(now);
+        };
+        match held_since {
+            None => self.changed(),
+            Some(at) => {
+                self.family.held.store(true, Ordering::SeqCst);
+                self.trail(at);
+            }
         }
-        self.changed();
+    }
+
+    /// Schedules the trailing call for a change held back since `since`: a thread (one at a time) sleeps out the rest of
+    /// the interval, then tells the hook of what was held. A failure to start the thread leaves the held change for the
+    /// phase's end, as it was.
+    fn trail(&self, since: Instant) {
+        if self.family.trailing.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let wait = NOTICE_INTERVAL.saturating_sub(Instant::now().saturating_duration_since(since));
+        let family = Arc::clone(&self.family);
+        let spawned = std::thread::Builder::new().name("progress-notice".to_string()).spawn(move || {
+            std::thread::sleep(wait);
+            family.trailing.store(false, Ordering::SeqCst);
+            if family.held.swap(false, Ordering::SeqCst) {
+                *family.last_notice.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+                if let Some(hook) = family.hook.get() {
+                    hook();
+                }
+            }
+        });
+        if spawned.is_err() {
+            self.family.trailing.store(false, Ordering::SeqCst);
+        }
     }
 
     /// The hook [`Control::ledger_changed`] calls from now on (set once: a second one is ignored). Shared by the run's lanes.

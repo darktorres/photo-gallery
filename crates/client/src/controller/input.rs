@@ -35,10 +35,9 @@ pub enum Command {
         /// Rows away.
         dy: i32,
     },
-    /// A model action on the current item (rate, turn, mark its border): the desktop carries out `GridKey` for it.
+    /// An action on the current item (rate, turn, mark its border, open the viewer): the controller resolves it on the
+    /// model's lane (`Command::OnCurrent`), since the current item here may lag a step that is still queued.
     Act(GridKey),
-    /// Show the viewer at this item.
-    ShowViewer(usize),
     /// Not the grid's to decide: the size or the panels take it (`Shell` passes it on).
     Forward(GridKey),
 }
@@ -92,8 +91,7 @@ impl Input {
             GridKey::First if self.count > 0 => vec![Command::Select(0)],
             GridKey::Last if self.count > 0 => vec![Command::Select(self.count - 1)],
             GridKey::First | GridKey::Last => Vec::new(),
-            GridKey::Open => self.current.map(Command::ShowViewer).into_iter().collect(),
-            GridKey::Rate(_) | GridKey::Turn { .. } | GridKey::MarkBorder => {
+            GridKey::Rate(_) | GridKey::Turn { .. } | GridKey::MarkBorder | GridKey::Open => {
                 if self.current.is_some() {
                     vec![Command::Act(grid)]
                 } else {

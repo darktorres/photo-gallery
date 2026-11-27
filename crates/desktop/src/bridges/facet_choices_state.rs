@@ -2,14 +2,15 @@
 
 use pg_model::query::ListFacet;
 
-/// One row: its key (the value the bar sends back, `key_of`), its label, its count (0 where none is shown), and whether
-/// it's chosen.
+/// One row: its key (the value the bar sends back, `key_of`), its label, its count (0 where none is shown or none is read
+/// yet), whether it's chosen, and whether its count is pending (the folder's counts are being read: `count` is not one).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Row {
     pub(crate) key: String,
     pub(crate) label: String,
     pub(crate) count: i32,
     pub(crate) chosen: bool,
+    pub(crate) pending: bool,
 }
 
 pub struct FacetChoicesRust {

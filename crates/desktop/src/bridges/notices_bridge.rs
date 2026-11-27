@@ -46,12 +46,16 @@ pub mod qobject {
         #[qproperty(i32, selected_pass, cxx_name = "selectedPass", READ, NOTIFY, FINAL)]
         /// The selected ledger's newest failure as listed (0 for a kept notice).
         #[qproperty(f64, selected_serial, cxx_name = "selectedSerial", READ, NOTIFY, FINAL)]
+        /// The selected ledger's rows in all: its failed-file list is read again when this changes, not only the newest serial.
+        #[qproperty(f64, selected_count, cxx_name = "selectedCount", READ, NOTIFY, FINAL)]
         /// The selected entry can be retried.
         #[qproperty(bool, selected_can_retry, cxx_name = "selectedCanRetry", READ, NOTIFY, FINAL)]
         /// The selected entry's failed files can be listed.
         #[qproperty(bool, selected_can_show_files, cxx_name = "selectedCanShowFiles", READ, NOTIFY, FINAL)]
         /// The selected entry's details are open.
         #[qproperty(bool, details_open, cxx_name = "detailsOpen", READ, NOTIFY, FINAL)]
+        /// A ledger's Copy is reading its files, and the clipboard is not written yet: the Copy button is busy meanwhile.
+        #[qproperty(bool, copying, READ, WRITE, NOTIFY, FINAL)]
         type Notices = super::NoticesRust;
     }
 
@@ -138,9 +142,9 @@ pub mod qobject {
         fn dismiss_all(self: Pin<&mut Notices>);
 
         /// Put the entry at `row` on the clipboard: its words, and a ledger's files or folders (read off the window's
-        /// thread first).
+        /// thread first). A toast confirms the write.
         #[qinvokable]
-        fn copy(self: &Notices, row: i32);
+        fn copy(self: Pin<&mut Notices>, row: i32);
 
         /// Take the toast down.
         #[qinvokable]

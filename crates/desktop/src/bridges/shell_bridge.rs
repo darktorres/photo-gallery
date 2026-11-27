@@ -39,6 +39,11 @@ pub mod qobject {
         #[qproperty(i32, max_row_height, cxx_name = "maxRowHeight", READ, CONSTANT, FINAL)]
         /// Dev mode is on: the log view's button shows (the start's `--dev`/`PG_DEV`, then Ctrl+Shift+D).
         #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
+        /// A Reveal's folder is being read: the inbox's Reveal shows busy until the folder is listed or refused.
+        #[qproperty(bool, revealing, READ, WRITE, NOTIFY, FINAL)]
+        /// Why the last Reveal could not show its file (the file is gone, or its folder could not be read), shown inline in
+        /// the panel that asked; empty when there is none. A new Reveal clears it.
+        #[qproperty(QString, reveal_error, cxx_name = "revealError", READ, WRITE, NOTIFY, FINAL)]
         type Shell = super::ShellRust;
     }
 
@@ -49,10 +54,11 @@ pub mod qobject {
         #[qinvokable]
         fn timeout(self: Pin<&mut Shell>);
 
-        /// The folder tree was loaded. `folderKnown`: the listed folder is in it (or it is all folders, "").
+        /// The folder tree's read was applied (`FolderModel.treeLoaded` came first): the start is told the tree is in, or
+        /// that its read failed (`TreeFailed`), as the folder model's last read says. Takes no argument.
         #[qinvokable]
         #[cxx_name = "treeLoaded"]
-        fn tree_loaded(self: Pin<&mut Shell>, folder_known: bool);
+        fn tree_loaded(self: Pin<&mut Shell>);
 
         /// A list of `count` items was shown. Which list it is, the shell reads from the grid model (the one it applied
         /// last). The session's last file is selected by the controller's start, not reported here.
@@ -144,6 +150,25 @@ pub mod qobject {
         #[cxx_name = "globalAction"]
         fn global_action(self: Pin<&mut Shell>, code: i32);
 
+        /// A window shortcut that opens a panel with an expansion (the status bar's "N failed" asks for the inbox with a
+        /// ledger's entry open): `pass` is the expansion's pass, and it reaches `panelOpenRequested` only when the
+        /// controller accepts the open. -1 is none.
+        #[qinvokable]
+        #[cxx_name = "globalActionExpanding"]
+        fn global_action_expanding(self: Pin<&mut Shell>, code: i32, pass: i32);
+
+        /// The window was made again (live reload): the controller forgets the panels the old window had open, which the
+        /// new window does not show.
+        #[qinvokable]
+        #[cxx_name = "windowReloaded"]
+        fn window_reloaded(self: Pin<&mut Shell>);
+
+        /// After a reload (`windowReloaded`): this window's own `Library` is to start (`library.start()`), and the window is
+        /// ready for it, since the start itself (`started`) was over before the reload and is not sent again.
+        #[qsignal]
+        #[cxx_name = "libraryStartDue"]
+        fn library_start_due(self: Pin<&mut Shell>);
+
         /// A modal panel opened (a `PanelKind.Kind` code): the controller mirrors which are open, for the shortcuts.
         #[qinvokable]
         #[cxx_name = "panelOpened"]
@@ -159,10 +184,11 @@ pub mod qobject {
         #[cxx_name = "setPanelShown"]
         fn set_panel_shown(self: Pin<&mut Shell>, kind: i32, shown: bool);
 
-        /// Open this modal panel (a `PanelKind.Kind` code): a shortcut asked for it.
+        /// Open this modal panel (a `PanelKind.Kind` code): a shortcut asked for it. `expandPass` is the inbox's ledger pass
+        /// to expand with the open (-1: none); it is sent only when the controller accepted the open.
         #[qsignal]
         #[cxx_name = "panelOpenRequested"]
-        fn panel_open_requested(self: Pin<&mut Shell>, kind: i32);
+        fn panel_open_requested(self: Pin<&mut Shell>, kind: i32, expand_pass: i32);
 
         /// Close this modal panel (a `PanelKind.Kind` code).
         #[qsignal]

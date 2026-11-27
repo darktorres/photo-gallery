@@ -12,6 +12,7 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::media::MediaType;
 use pg_model::notice::{Notice, Op};
+use pg_model::turns::Turns;
 
 /// Hands a details read's answer to the model's thread: the generation the read was asked in, the file, and what the
 /// catalog had (`None`: gone, or unreadable). The model's `initialize` sets it (`gallery.rs`); the state holds it rather
@@ -25,6 +26,11 @@ pub struct GalleryRust {
     pub(crate) croppable: i32,
     pub(crate) loading: bool,
     pub(crate) holding: bool,
+    /// The list shown was asked for and could not be read (`listingFailed`).
+    pub(crate) listing_failed: bool,
+    /// The generation of a list asked for whose read failed, until that list is applied (`apply_failed`): it may wait
+    /// under the viewer (`Grid::arrive`), and is shown as failed when it is.
+    pub(crate) failed_generation: Option<u64>,
     pub(crate) current: i32,
     pub(crate) selection_info: QString,
     pub(crate) viewing: i32,
@@ -52,6 +58,11 @@ pub struct GalleryRust {
     pub(crate) viewed_rejected_left: f64,
     pub(crate) viewed_rejected_right: f64,
     pub(crate) viewed_border_marked: bool,
+    /// `viewedFitError`: the viewer's item's fit error, as `refresh_viewed` sets it from `last_fit_error`.
+    pub(crate) viewed_fit_error: i32,
+    /// The last fit of a file that was made (`fit_outcome`): the file and its error code (0 when the fit was made). One
+    /// slot, not a record per file, so it does not grow with the library: only the viewer's item's counts.
+    pub(crate) last_fit_error: Option<(FileId, i32)>,
     /// The list, its rows and the list session (`pg_client::grid`).
     pub(crate) grid: Grid,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first, each as the
@@ -68,6 +79,10 @@ pub struct GalleryRust {
     /// The border marks written off the window's thread and not yet shown, per file: the marks the writes still to be
     /// made set, in the order they were asked for (`set_border_marked`).
     pub(crate) mark_writes: BTreeMap<FileId, VecDeque<bool>>,
+    /// The turns pressed on a file that the window's writer has not queued yet (`turn_done` takes them off). The catalog
+    /// counts a turn as pending only once it is queued, so a list read before that has none: a list that arrives carries
+    /// these (`with_unqueued`). Only the presses in flight are here, so it does not grow with the library.
+    pub(crate) unqueued: BTreeMap<FileId, Turns>,
 }
 
 impl Default for GalleryRust {
@@ -78,6 +93,8 @@ impl Default for GalleryRust {
             croppable: 0,
             loading: false,
             holding: false,
+            listing_failed: false,
+            failed_generation: None,
             current: -1,
             selection_info: QString::default(),
             viewing: -1,
@@ -100,12 +117,15 @@ impl Default for GalleryRust {
             viewed_rejected_left: -1.0,
             viewed_rejected_right: -1.0,
             viewed_border_marked: false,
+            viewed_fit_error: 0,
+            last_fit_error: None,
             grid: Grid::default(),
             details: Vec::new(),
             details_generation: 0,
             details_delivery: None,
             details_pending: Cell::new(None),
             mark_writes: BTreeMap::new(),
+            unqueued: BTreeMap::new(),
         }
     }
 }
@@ -126,19 +146,19 @@ impl GalleryRust {
         self.file_at(if self.viewing >= 0 { self.viewing } else { self.current })
     }
 
-    /// `f` of an item's entry and details; `None` without the item, when its file is gone from the catalog, or while
-    /// its details are being read: a read is asked for on a miss, and the model shows the details once they come in
-    /// (`details_read`).
-    pub(crate) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
-        let e = self.entry(item)?;
+    /// `f` of an item's entry and details, as the item's details stand. A read is asked for on a miss, and the model shows
+    /// the details once they come in (`details_read`): until then they are `Loading`. `Unavailable` is an item with no
+    /// file, or a file that is gone from the catalog or can't be read.
+    pub(crate) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Detail<R> {
+        let Some(e) = self.entry(item) else { return Detail::Unavailable };
         match self.details.iter().find(|(id, _)| *id == e.id) {
-            Some((_, Some(details))) => Some(f(e, details)),
-            Some((_, None)) => None,
+            Some((_, Some(details))) => Detail::Loaded(f(e, details)),
+            Some((_, None)) => Detail::Unavailable,
             None => {
                 if self.details_pending.get() != Some(e.id) {
                     self.read_details(e.id);
                 }
-                None
+                Detail::Loading
             }
         }
     }
@@ -191,6 +211,27 @@ impl GalleryRust {
         };
         if empty {
             self.mark_writes.remove(&file);
+        }
+    }
+}
+
+/// A file's details as the model shows them (`GalleryRust::with_details`): read and in the catalog, not yet read, or
+/// not to be had. Kept apart so that a value shown for a file says which of the three it is.
+pub(crate) enum Detail<R> {
+    /// Asked for from the reader, not yet delivered.
+    Loading,
+    /// The file has no details to show: it is gone from the catalog, or its read failed (the inbox says why).
+    Unavailable,
+    /// The file's details, read.
+    Loaded(R),
+}
+
+impl<R> Detail<R> {
+    /// The value, when the details are read.
+    pub(crate) fn loaded(self) -> Option<R> {
+        match self {
+            Detail::Loaded(value) => Some(value),
+            Detail::Loading | Detail::Unavailable => None,
         }
     }
 }

@@ -19,6 +19,12 @@ pub(crate) fn play_path(player: Pin<&mut ffi::VideoPlayer>, path: &Path) {
     player.play_file(handle, ext_of(path));
 }
 
+/// Gives the player no file, for a video whose file is not known (its catalog lookup failed): the player reports it as
+/// its error, as a file that can't be opened is reported.
+pub(crate) fn play_missing(player: Pin<&mut ffi::VideoPlayer>) {
+    player.play_file(-1, "");
+}
+
 /// The file's extension, when it is ASCII: the player's format probe reads it from the name it is given, so the name
 /// is the extension alone (the file's own name never reaches the player). Empty otherwise.
 fn ext_of(path: &Path) -> &str {

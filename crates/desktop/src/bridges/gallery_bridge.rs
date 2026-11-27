@@ -51,6 +51,9 @@ pub mod qobject {
         /// The list asked for has arrived and waits under the viewer (`Grid::is_held`): it is loaded, not shown, so
         /// it is not "loading" to the user. QML reads `loading && !holding`.
         #[qproperty(bool, holding, READ, WRITE, NOTIFY, FINAL)]
+        /// The list shown is the one asked for but it could not be read (`open_listing`): QML shows an error, not the
+        /// folder's empty state. The photos stay only for a refresh of the folder shown; a list of another folder shows none.
+        #[qproperty(bool, listing_failed, cxx_name = "listingFailed", READ, WRITE, NOTIFY, FINAL)]
         /// The selected item (-1: none): it follows its file to a new list. Set through `set_current_item`, which
         /// reads the selection's text again.
         #[qproperty(i32, current, READ, WRITE = set_current_item, NOTIFY, FINAL)]
@@ -98,6 +101,9 @@ pub mod qobject {
         #[qproperty(f64, viewed_rejected_right, cxx_name = "viewedRejectedRight", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the viewer's item's borders are marked as not a border (the review).
         #[qproperty(bool, viewed_border_marked, cxx_name = "viewedBorderMarked", READ, WRITE, NOTIFY, FINAL)]
+        /// Why the viewer's item's fit failed (`refresh_viewed`, `fit_outcome`): 0 none, 1 the original is unavailable,
+        /// 2 it doesn't decode, 3 it was being rewritten past the wait. The viewer's HUD words it.
+        #[qproperty(i32, viewed_fit_error, cxx_name = "viewedFitError", READ, WRITE, NOTIFY, FINAL)]
         type GalleryModel = super::GalleryRust;
     }
 
@@ -116,6 +122,12 @@ pub mod qobject {
         /// The list asked for is shown. `index`: where `anchor`'s file is now (-1: not kept, or gone).
         #[qsignal]
         fn loaded(self: Pin<&mut GalleryModel>, index: i32);
+
+        /// A rating was written for a file (`rating`: the stars, 0 for none). Sent only when the write is made: the
+        /// viewer's rating popup shows it then.
+        #[qsignal]
+        #[cxx_name = "ratingWritten"]
+        fn emit_rating_written(self: Pin<&mut GalleryModel>, rating: i32);
 
         #[qinvokable]
         #[cxx_override]

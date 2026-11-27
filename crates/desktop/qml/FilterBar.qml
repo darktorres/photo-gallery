@@ -21,6 +21,9 @@ Pane {
     // How many facets filter, and how many files the folder has unfiltered (countFacets()).
     readonly property int active: filters.active
     readonly property int total: filters.total
+    // The folder's counts for what is shown are not in yet (Filters.countsPending): the total and the choices' counts
+    // are shown as pending, not as the 0 or the last folder's numbers they hold meanwhile.
+    readonly property bool countsPending: filters.countsPending
     // What the query keeps, in one line.
     readonly property string description: filters.description
 
@@ -91,7 +94,10 @@ Pane {
         required property string label
         required property int count
         required property bool chosen
+        // The count is not in yet (FacetChoices role "pending"): the chip shows a mark for it, dimmed, not a 0.
+        required property bool pending
         highlighted: chosen
+        opacity: pending ? 0.5 : 1
         padding: 3
         leftPadding: 8
         rightPadding: 8
@@ -200,7 +206,7 @@ Pane {
                     Repeater {
                         model: typeChoices
                         delegate: Chip {
-                            text: label + " · " + words.count(count)
+                            text: label + " · " + (pending ? words.text("ui-count-pending") : words.count(count))
                             onClicked: {
                                 filters.toggle(Filters.Types, key);
                                 bar.focusGridRequested();
@@ -234,10 +240,18 @@ Pane {
                     Caption {
                         text: words.text("ui-extension")
                     }
+                    // The folder's extensions are not counted yet: there are no choices to show, so the row says so.
+                    Label {
+                        visible: extRepeater.count === 0 && filters.countsPending
+                        text: words.text("ui-counting")
+                        color: Theme.captionText
+                        font.pixelSize: 12
+                    }
                     Repeater {
+                        id: extRepeater
                         model: extChoices
                         delegate: Chip {
-                            text: label + " · " + words.count(count)
+                            text: label + " · " + (pending ? words.text("ui-count-pending") : words.count(count))
                             onClicked: {
                                 filters.toggle(Filters.Exts, key);
                                 bar.focusGridRequested();
@@ -361,7 +375,10 @@ Pane {
                         model: statusChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle(Filters.Status, key)
+                            onClicked: {
+                                filters.toggle(Filters.Status, key);
+                                bar.focusGridRequested();
+                            }
                         }
                     }
                 }
@@ -374,7 +391,7 @@ Pane {
                     Repeater {
                         model: borderChoices
                         delegate: Chip {
-                            text: label + " · " + words.count(count)
+                            text: label + " · " + (pending ? words.text("ui-count-pending") : words.count(count))
                             onClicked: {
                             if (bar.bordersOn)
                                 filters.toggle(Filters.Borders, key);

@@ -10,6 +10,8 @@ pub struct FiltersRust {
     pub(crate) border_marked_index: i32,
     pub(crate) total: i32,
     pub(crate) matching: i32,
+    /// The counts for what is shown are not in yet (`countsPending`).
+    pub(crate) counts_pending: bool,
     pub(crate) description: QString,
     pub(crate) facets: Facets,
     /// The latest counts asked for; older ones arriving are dropped.

@@ -454,6 +454,16 @@ pub struct Listed {
     pub turns: Turns,
 }
 
+/// Why a file has no [`CropSource`] (`Catalog::crop_gap`), when it has none: it is missing from the library, or its row no
+/// longer matches the analysis its borders were found on (its size or time changed). Neither is a file with nothing to crop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CropGap {
+    /// The file is missing from the library (or no longer in the catalog).
+    pub missing: bool,
+    /// The file changed on disk since its borders were found (its size or its time, as the scan recorded them).
+    pub changed: bool,
+}
+
 /// A file with borders to crop off (`Catalog::crop_source`).
 pub struct CropSource {
     /// In the arena `crop_source` was given.

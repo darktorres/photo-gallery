@@ -7,6 +7,7 @@
 //! operations are on [`LibraryService`]: they work on the catalog whether or not the job has started.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -379,6 +380,9 @@ pub struct LibraryService {
     start: Mutex<StartConfig>,
     /// The started job and writer; set once, by the first [`LibraryService::start`].
     cell: OnceLock<Library>,
+    /// Set by the inbox when it replayed a queued Retry at the app's start: the job is woken once it starts, for the
+    /// files the Retry marked.
+    retries_replayed: Arc<AtomicBool>,
 }
 
 impl LibraryService {
@@ -387,6 +391,7 @@ impl LibraryService {
         catalogs: Arc<Catalogs>,
         thumbs: Arc<ThumbCache>,
         inbox: Arc<dyn NoticeSink>,
+        retries_replayed: Arc<AtomicBool>,
         features: Features,
         start: StartConfig,
     ) -> LibraryService {
@@ -399,6 +404,7 @@ impl LibraryService {
             features: FeatureCell::new(features),
             start: Mutex::new(start),
             cell: OnceLock::new(),
+            retries_replayed,
         }
     }
 
@@ -445,6 +451,19 @@ impl LibraryService {
             self.inbox.clone(),
             start.clone(),
         )?;
+        // The scans asked for before the app quit are walked now: their requests are kept until each complete walk ends.
+        match self.catalogs.with_catalog(|c| c.pending_scans()) {
+            Ok(roots) if roots.is_empty() => {}
+            Ok(roots) => library.scan(roots),
+            Err(e) => self
+                .inbox
+                .post(Notice::RescanFailed { error: pg_model::notice::error_text(&pg_model::error::chain(&e)) }),
+        }
+        // A queued Retry the inbox replayed at the app's start has marked its files; the job is woken for them.
+        if self.retries_replayed.swap(false, Ordering::SeqCst) {
+            library.wake_job();
+        }
+        self.retry_leftovers();
         Ok(self.cell.get_or_init(|| library))
     }
 
@@ -506,18 +525,78 @@ impl LibraryService {
             }
             result => result?,
         };
+        // The scan is asked for in the catalog before the job is asked: a scan the app quits before it finishes is walked at
+        // the next start. A request that can't be kept is said, and the scan still runs now.
+        if let Err(e) = self.record_scans(std::slice::from_ref(&root)) {
+            self.inbox.post(Notice::RescanFailed { error: pg_model::notice::error_text(&pg_model::error::chain(&e)) });
+        }
         match self.running() {
             Some(library) => {
                 library.scan(vec![root.clone()]);
             }
-            // The folder is in the library, but nothing scans it: the inbox says so, at the add.
+            // The folder is in the library, and its scan is kept for the library's start: the inbox says so, at the add.
             None => {
                 self.inbox.post(Notice::LibraryUnavailable {
-                    error: "the folder was added, but the library isn't running, so it wasn't scanned".to_string(),
+                    error: "the folder was added, but the library isn't running, so it will be scanned when it starts"
+                        .to_string(),
                 });
             }
         }
         Ok((root, added))
+    }
+
+    /// Records that `roots` are asked to be scanned (`Catalog::request_scan`): the request is kept in the catalog until
+    /// the folder's complete walk ends, so a scan the app quits before it finishes runs at the next start.
+    fn record_scans(&self, roots: &[RulePath]) -> Result<()> {
+        for root in roots {
+            self.catalogs.with_catalog(|c| c.request_scan(root))?;
+        }
+        Ok(())
+    }
+
+    /// Deletes the temp file `bytes` (the rules' bytes) that a discard or a removal left behind. Deleted, or gone, its record
+    /// is dropped; when it can't be deleted the record stays for the next start, and its path is returned so the caller says so.
+    fn unlink_leftover(&self, bytes: &[u8]) -> Option<RulePath> {
+        let rules = pg_platform::native::PATH_RULES;
+        let Some(temp) = rules.parse_bytes(bytes) else {
+            // Not a path of this platform: there is nothing to delete, so the record goes.
+            self.forget_leftover(bytes);
+            return None;
+        };
+        match pg_writeback::discard_temps(rules, std::slice::from_ref(&temp)).into_iter().next() {
+            Some((path, e)) => {
+                pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e:#}", rules.display(&path)));
+                Some(path)
+            }
+            None => {
+                self.forget_leftover(bytes);
+                None
+            }
+        }
+    }
+
+    /// Drops the record of a leftover that is gone. A record that can't be dropped is logged, and kept: the next start
+    /// deletes the temp (again) and tries the record once more.
+    fn forget_leftover(&self, bytes: &[u8]) {
+        if let Err(e) = self.catalogs.with_catalog(|c| c.clear_temp_leftover(bytes)) {
+            pg_log::warn("removal", &format!("a temp file's record wasn't cleared: {}", pg_model::error::chain(&e)));
+        }
+    }
+
+    /// Tries again the temp files that earlier discards and removals left behind (`temp_leftovers`), at the start: a temp
+    /// that was in use then is deleted once it is not. A failure stays recorded; the discard that left it said so.
+    fn retry_leftovers(&self) {
+        match self.catalogs.with_catalog(|c| c.temp_leftovers()) {
+            Ok(leftovers) => {
+                for bytes in &leftovers {
+                    self.unlink_leftover(bytes);
+                }
+            }
+            Err(e) => pg_log::warn(
+                "removal",
+                &format!("the temp files left behind weren't listed: {}", pg_model::error::chain(&e)),
+            ),
+        }
     }
 
     /// Remove a folder from the library for good, by its id (from [`LibraryService::roots`]): its files, their analyses,
@@ -577,10 +656,12 @@ impl LibraryService {
     /// removal is pending.
     pub fn discard_removal(&self, path: &RulePath) -> Result<bool> {
         let Some(discarded) = self.catalogs.with_catalog(|c| c.discard_removal(path))? else { return Ok(false) };
-        let rules = pg_platform::native::PATH_RULES;
-        let temps: Vec<RulePath> = discarded.temps.iter().filter_map(|bytes| rules.parse_bytes(bytes)).collect();
-        for (temp, e) in pg_writeback::discard_temps(rules, &temps) {
-            pg_log::warn("removal", &format!("{}: the temp file wasn't deleted: {e:#}", rules.display(&temp)));
+        // Each temp is the only copy of an edit the user made. One that can't be deleted now stays recorded as a leftover
+        // (the catalog kept it in the discard's transaction), is deleted at the next start, and is said here.
+        for bytes in &discarded.temps {
+            if let Some(temp) = self.unlink_leftover(bytes) {
+                self.inbox.post(Notice::TempLeftBehind { path: temp });
+            }
         }
         // The thumbnails of the files the discard dropped (section 10, D11). A sweep that fails is said as its own state,
         // not as this discard's failure: the files are gone, and a later sweep drops their thumbnails.
@@ -614,6 +695,7 @@ impl LibraryService {
             self.catalogs.with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect()))?;
         match self.running() {
             Some(library) => {
+                self.record_scans(&roots)?;
                 library.scan(roots);
                 Ok(())
             }
@@ -622,10 +704,11 @@ impl LibraryService {
     }
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.
-    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<()> {
-        self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
+    /// Returns the file's queued turns now, the catalog's total (`Catalog::queue_rotation`).
+    pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<pg_model::turns::Turns> {
+        let total = self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
         self.wake_writer();
-        Ok(())
+        Ok(total)
     }
 
     /// Stop the library; an error when the job was still running after its wait.

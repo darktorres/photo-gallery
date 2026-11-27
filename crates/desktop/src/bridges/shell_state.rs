@@ -16,4 +16,8 @@ pub struct ShellRust {
     pub(crate) min_row_height: i32,
     pub(crate) max_row_height: i32,
     pub(crate) dev_mode: bool,
+    /// Whether a Reveal's folder is being read (`revealing`).
+    pub(crate) revealing: bool,
+    /// The message of the last Reveal that could not show its file (`revealError`): empty when none.
+    pub(crate) reveal_error: QString,
 }

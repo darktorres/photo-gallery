@@ -161,6 +161,19 @@ impl Inner {
         self.scans.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Whether the walk of `path` is the one under way in this lane (`scanning`).
+    pub(crate) fn walking(&self, path: &RulePath) -> bool {
+        self.scanning.lock().unwrap_or_else(PoisonError::into_inner).as_ref() == Some(path)
+    }
+
+    /// Puts `path` at the front of the queue, once: a walk stopped early goes back first, and a request for the same folder
+    /// queued meanwhile is the same walk, not a second one.
+    pub(crate) fn push_front_scan(&self, path: RulePath) {
+        let mut scans = self.scans();
+        scans.retain(|queued| *queued != path);
+        scans.push_front(path);
+    }
+
     /// The scans refused by another walk's lease, waiting for their retry.
     pub(crate) fn busy(&self) -> MutexGuard<'_, Vec<RulePath>> {
         self.busy.lock().unwrap_or_else(PoisonError::into_inner)

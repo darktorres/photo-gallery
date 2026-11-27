@@ -138,6 +138,14 @@ CREATE TABLE ledger_ack(
     read      INTEGER,
     dismissed_to INTEGER);
 
+-- The user's inbox writes (marks, dismissals, Clear all, Retries), queued before they are applied and taken out once
+-- written or refused: a write the app ends before it is applied is replayed at the next start. `write` is the write as
+-- `pg_model::inbox::QueuedInboxWrite` JSON; `queued` is Unix seconds.
+CREATE TABLE inbox_queue(
+    id      INTEGER PRIMARY KEY,
+    write   TEXT NOT NULL,
+    queued  INTEGER NOT NULL);
+
 CREATE TABLE "session"(
     id        INTEGER PRIMARY KEY CHECK (id = 1),
     folder    BLOB NOT NULL,     -- as views.folder
@@ -204,6 +212,15 @@ CREATE TABLE root_removals(
 );
 
 CREATE TABLE "roots"(id INTEGER PRIMARY KEY AUTOINCREMENT, path BLOB NOT NULL UNIQUE, added INTEGER NOT NULL);
+
+-- The library folders whose scan was asked for and is not yet complete (a folder added, or rescanned): a request made
+-- before the app quits is walked at the next start. A complete walk of the folder removes its row; a removed folder's row
+-- goes with it.
+CREATE TABLE scan_requests(root INTEGER PRIMARY KEY REFERENCES roots(id) ON DELETE CASCADE);
+
+-- The temp files of discarded writes that could not be deleted then (a file in use): the discard drops their rows, so
+-- these are what remains of them. The app deletes them at its next start, and a deleted one leaves the table.
+CREATE TABLE temp_leftovers(path BLOB PRIMARY KEY);
 
 -- The volumes the files are on, interned: a file row holds the id (one byte for a small catalog), not the 64-bit
 -- serial. The serial is the volume's identity (pg_model::ids::FileIdentity::volume, stored signed); a row is made the
@@ -490,6 +507,9 @@ INSERT INTO meta(key, value) VALUES ('import_version', 0);
 INSERT INTO meta(key, value) VALUES ('pairing_epoch', 0);
 INSERT INTO meta(key, value) VALUES ('pairing_version', 1);
 INSERT INTO meta(key, value) VALUES ('seq', 0);
+-- How many Retries of a pass's failed files have been made (`relist_failures`): a pass's failures found before one are
+-- not recorded after it (`Catalog::record_failures_since`).
+INSERT INTO meta(key, value) VALUES ('failure_retries', 0);
 INSERT INTO meta(key, value) VALUES ('taken_zone', '');
 INSERT INTO meta(key, value) VALUES ('thumbs_version', 0);
 INSERT INTO meta(key, value) VALUES ('vacuum_owed', 0);

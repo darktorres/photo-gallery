@@ -2,15 +2,32 @@
 // it is picked. The tile is a delegate of the search's results model (YandexSearch), so its roles are what it shows,
 // its frame (where and how big it is in its group's block) included. A click toggles the pick, Shift-click gives every
 // result from the last one clicked to this one that one's state (`rangeTo`), and a double-click shows it at full size
-// (`previewRequested`).
+// (`previewRequested`). The keyboard does the same: Tab reaches a tile, Space picks it (Shift+Space range-picks, as
+// Shift-click does) and Enter shows it at full size.
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
 import pg.gallery
 
-Item {
+FocusScope {
     id: tile
+
+    // The keys of a tile that has the focus: the pick and the open, as the mouse gives them.
+    activeFocusOnTab: true
+    Keys.onPressed: e => {
+        if (e.key === Qt.Key_Space) {
+            if ((e.modifiers & Qt.ShiftModifier) !== 0)
+                tile.rangeTo(tile.index);
+            else
+                tile.toggled(tile.index);
+        } else if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter) {
+            tile.previewRequested(tile.index);
+        } else {
+            return;
+        }
+        e.accepted = true;
+    }
 
     // The result's index in the search (its row): the other sizes first, then the similar images.
     required property int index
@@ -56,6 +73,14 @@ Item {
             if (status === Image.Ready || status === Image.Error)
                 tile.thumbSettled(tile.index);
         }
+    }
+    // The keyboard's place: a frame while the tile has the focus.
+    Rectangle {
+        anchors.fill: parent
+        color: "transparent"
+        border.color: Theme.pickedBadge
+        border.width: 2
+        visible: tile.activeFocus
     }
     // Picked: a check in the accent colour, in the top-right corner.
     Rectangle {

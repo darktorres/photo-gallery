@@ -25,7 +25,7 @@ use crate::{app, command_line, deadline};
 /// left out what it was given for border detection (`start_refused`).
 struct Core {
     controller: Controller,
-    counts: Counts,
+    counts: Option<Counts>,
     recorder: Option<std::fs::File>,
     options_refused: bool,
 }
@@ -72,7 +72,7 @@ impl Core {
                     None
                 }
             });
-        let mut core = Core { controller, counts: Counts::default(), recorder, options_refused };
+        let mut core = Core { controller, counts: None, recorder, options_refused };
         let init = replay::init(&core.controller);
         core.write(&init);
         core
@@ -183,13 +183,15 @@ pub(crate) fn listing() -> Listing {
     with(|c| c.listing().clone())
 }
 
-/// The counts the filter bar's list facets show, as `Filters` last set them.
-pub(crate) fn counts() -> Counts {
+/// The counts the filter bar's list facets show, as `Filters` last set them; `None` while the counts of the folder shown
+/// are not read (a folder change, and the start), so the facets show them as pending.
+pub(crate) fn counts() -> Option<Counts> {
     CORE.with(|core| core.borrow().counts.clone())
 }
 
-/// The counts the list facets show (`Filters` sets them when they are in or the query changed).
-pub(crate) fn set_counts(counts: Counts) {
+/// The counts the list facets show (`Filters` sets them when they are in or the query changed; `None` while they are
+/// pending).
+pub(crate) fn set_counts(counts: Option<Counts>) {
     CORE.with(|core| core.borrow_mut().counts = counts);
 }
 

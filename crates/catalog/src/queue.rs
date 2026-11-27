@@ -101,8 +101,10 @@ impl Catalog {
     }
 
     /// Turn a file `turns` quarter turns clockwise: queued for the writer, which turns the file itself losslessly where
-    /// it can and keeps the turn in the catalog otherwise. Turns add up until written.
-    pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<()> {
+    /// it can and keeps the turn in the catalog otherwise. Turns add up until written. Returns the file's queued turns
+    /// now, the total the catalog holds (what a reader sees as its pending turns), so a caller sets its picture of them
+    /// to this rather than adding `turns` to it.
+    pub fn queue_rotation(&self, file_id: FileId, turns: Turns) -> Result<Turns> {
         let conn = &self.conn;
         let tx = crate::transaction::write_transaction(conn)?;
         let file_id = file_id.get();
@@ -135,7 +137,7 @@ impl Catalog {
             [file_id],
         )?;
         tx.commit()?;
-        Ok(())
+        Ok(total)
     }
 
     /// The oldest job the writer can try now: an interrupted copy first (its temp is complete), then the oldest change

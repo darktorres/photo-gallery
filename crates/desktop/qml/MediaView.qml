@@ -85,6 +85,11 @@ Item {
         }
     }
 
+    Words {
+        id: words
+    }
+
+
     MediaPlayer {
         id: player
         videoOutput: videoOut
@@ -98,7 +103,9 @@ Item {
             if (media.playsVideo)
                 play();
         }
-        onErrorChanged: media.playerFailed(errorString)
+        // The window words a failure as its own line, never the backend's English text (errorString is only checked for
+        // being empty). The enum itself is not compared: this build's QML compiler cannot compile that.
+        onErrorChanged: media.playerFailed(player.errorString === "" ? "" : words.text("ui-player-error-playback"))
     }
 
     VideoSource {
@@ -110,6 +117,9 @@ Item {
         id: animPlayer
         fileId: media.playsAnimation ? media.fileId : 0
         onFileIdChanged: media.sourceSwitched()
+        // An animation that could not be read or decoded says why in its playerError, as a video's player does (the Hud
+        // shows it); "" when it plays on.
+        onPlayerErrorChanged: media.playerFailed(playerError)
         Component.onCompleted: setSink(videoOut.videoSink)
     }
 

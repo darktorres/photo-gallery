@@ -9,9 +9,33 @@ use crate::bridges::animation_bridge::qobject;
 use core::pin::Pin;
 use std::sync::Arc;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtThread, CxxQtType, Threading};
+use cxx_qt_lib::QString;
 use pg_model::ids::FileId;
-use pg_render::player::Player;
+use pg_render::player::{Player, Sink};
+
+/// An animation's sink: its frames go to the video sink (`Frames`), and the player's failures to the `AnimationPlayer`'s
+/// `playerError`, on the window's thread. A failure of a file that is no longer the one played is dropped there.
+pub(crate) struct Watched {
+    frames: Frames,
+    player: CxxQtThread<qobject::AnimationPlayer>,
+    file_id: i64,
+}
+
+impl Sink for Watched {
+    fn present(&self, width: u32, height: u32, rgba: &[u8]) {
+        self.frames.present(width, height, rgba);
+    }
+
+    fn failed(&self, error: &str) {
+        let (file_id, text) = (self.file_id, error.to_string());
+        let _ = self.player.queue(move |player| player.animation_failed(file_id, &text));
+    }
+
+    fn close(&self) {
+        self.frames.close();
+    }
+}
 
 impl qobject::AnimationPlayer {
     pub(crate) fn set_file_id_and_play(mut self: Pin<&mut Self>, file_id: i64) {
@@ -51,22 +75,42 @@ impl qobject::AnimationPlayer {
         self.restart();
     }
 
-    /// Stops the animation playing, then starts the file, if any.
+    /// The player reported a failure for `file_id` (`Watched::failed`): what it says is the player's error.
+    fn animation_failed(mut self: Pin<&mut Self>, file_id: i64, text: &str) {
+        if file_id == self.file_id {
+            self.as_mut().set_player_error_text(text);
+        }
+    }
+
+    /// Sets the player's error text (`""` for none), signalling only a change.
+    fn set_player_error_text(mut self: Pin<&mut Self>, text: &str) {
+        if self.player_error.to_string() != text {
+            self.as_mut().rust_mut().player_error = QString::from(&text.to_string());
+            self.as_mut().player_error_changed();
+        }
+    }
+
+    /// Stops the animation playing, then starts the file, if any. A file that can't be found or played is said in
+    /// `playerError`.
     fn restart(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().worker = None;
+        self.as_mut().set_player_error_text("");
         let file_id = self.file_id;
-        if file_id <= 0 {
+        if file_id <= 0 || self.sink.is_none() {
             return;
         }
-        let Some(sink) = &self.sink else { return };
         let path = match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
             Ok(path) => path,
             Err(err) => {
-                pg_log::warn("animation", &format!("file {file_id}: {err:#}"));
+                let text = format!("{err:#}");
+                pg_log::warn("animation", &format!("file {file_id}: {text}"));
+                self.as_mut().set_player_error_text(&text);
                 return;
             }
         };
-        let (frames, paused) = (Arc::new(Frames::of(sink)), !self.playing);
-        self.as_mut().rust_mut().worker = Some(Player::start(path, frames, paused));
+        let Some(sink) = &self.sink else { return };
+        let frames = Watched { frames: Frames::of(sink), player: self.qt_thread(), file_id };
+        let paused = !self.playing;
+        self.as_mut().rust_mut().worker = Some(Player::start(path, Arc::new(frames), paused));
     }
 }

@@ -29,6 +29,12 @@ ModalOverlay {
     required property int failedTotal
     required property bool failedLoading
     required property string failedError
+    // Copy: the entry's text is being read for the clipboard (the button waits; the clipboard is written from that read).
+    required property bool copying
+    // Reveal: the file's folder is being read (its buttons wait), and why the last reveal could not show the file (the
+    // window's text, through its outcome path; "" when it did or none was asked).
+    required property bool revealing
+    required property string revealError
     // The selection is the notice model's, and the window gives the panel what it shows: the selected row, its key, its
     // text, its pass, its newest failure, what it offers, and whether its details are open. The panel asks for each change
     // (the signals below): the model holds the selection, so it follows its entry as the entries move.
@@ -63,6 +69,8 @@ ModalOverlay {
     signal detailsOpenRequested(bool open)
     signal dismissSelectedRequested
     signal retrySelectedRequested
+    // The entry at `expandRow` was expanded: the request is spent, so the window drops it (Main: inboxExpandPass).
+    signal expandApplied
 
     // Select `row` (none for a row past the list). The notice model holds the selection, and its details.
     function select(row: int) {
@@ -105,6 +113,7 @@ ModalOverlay {
         moveTo(expandRow);
         panel.detailsOpenRequested(true);
         expanded = true;
+        panel.expandApplied();
     }
     onOpenChanged: expand()
     onExpandRowChanged: expand()
@@ -168,7 +177,7 @@ ModalOverlay {
                     else if (event.key === Qt.Key_Delete)
                         panel.dismissSelected();
                     else if (event.key === Qt.Key_C && ctrl) {
-                        if (at >= 0)
+                        if (at >= 0 && !panel.copying)
                             panel.copyRequested(at);
                     } else if (event.key === Qt.Key_R && event.modifiers === Qt.NoModifier)
                         panel.retrySelected();
@@ -272,6 +281,8 @@ ModalOverlay {
                     textFormat: TextEdit.PlainText
                     readOnly: true
                     wrapMode: TextEdit.Wrap
+                    // Read-only text does not take the focus on a click: the list keeps the keys (Ctrl+C, Delete, the arrows).
+                    activeFocusOnPress: false
                     activeFocusOnTab: false
                 }
             }
@@ -365,6 +376,7 @@ ModalOverlay {
                                 objectName: "inboxReveal" + file.index
                                 text: words.text("ui-inbox-reveal")
                                 flat: true
+                                enabled: !panel.revealing
                                 onClicked: {
                                     if (file.isFolder)
                                         panel.folderRevealRequested(file.index);
@@ -382,6 +394,16 @@ ModalOverlay {
                     textFormat: Text.PlainText
                     color: Theme.hintText
                 }
+            }
+            // Why the last reveal could not show its file: in the panel, where the user is looking.
+            Label {
+                objectName: "inboxRevealError"
+                visible: panel.revealError.length > 0
+                text: panel.revealError
+                textFormat: Text.PlainText
+                color: Theme.statusText
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
             }
             RowLayout {
                 // The action buttons are taken by Tab, not by a click: a click on one (which then hides or disables it) would
@@ -403,9 +425,17 @@ ModalOverlay {
                 Button {
                     objectName: "inboxCopy"
                     text: words.text("ui-inbox-copy")
-                    enabled: panel.selected >= 0
+                    enabled: panel.selected >= 0 && !panel.copying
                     focusPolicy: Qt.TabFocus
                     onClicked: panel.copyRequested(panel.selected)
+                }
+                // Busy while the copy's read (Copy) or the folder's read (Reveal) is under way.
+                BusyIndicator {
+                    objectName: "inboxBusy"
+                    running: panel.copying || panel.revealing
+                    visible: running
+                    implicitWidth: 22
+                    implicitHeight: 22
                 }
                 Button {
                     objectName: "inboxDismiss"

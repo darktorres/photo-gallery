@@ -327,9 +327,13 @@ impl Images {
             if let Some(text) = self.recent_failure(file_id, src) {
                 return Err(Error::Undecodable(text));
             }
-            self.decode(file_id, src, view).inspect_err(|e| {
-                if let Error::Undecodable(text) = e {
-                    self.record_failure(file_id, src, text);
+            self.decode(file_id, src, view).inspect_err(|e| match e {
+                Error::Undecodable(text) => self.record_failure(file_id, src, text),
+                // An original that can't be read, or a region that failed (the viewer keeps the view it has): logged, as
+                // the viewer shows nothing for them.
+                other => {
+                    let what = if matches!(view, View::Region(..)) { "region" } else { "original" };
+                    pg_log::warn("images", &format!("file {}: the {what} can't be shown: {other}", file_id.get()));
                 }
             })
         });

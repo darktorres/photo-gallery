@@ -265,7 +265,7 @@ dependencies = [
  "gungraun",
  "jpeg-decoder",
  "turbojpeg",
- "zune-core 0.5.3 (git+https://github.com/darktorres/zune-image?rev=b4f668c817204c60f38e8416064902dea8a9441d)",
+ "zune-core",
  "zune-jpeg",
 ]
 
@@ -581,12 +581,6 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "zune-core"
 version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b"
-
-[[package]]
-name = "zune-core"
-version = "0.5.3"
 source = "git+https://github.com/darktorres/zune-image?rev=b4f668c817204c60f38e8416064902dea8a9441d#b4f668c817204c60f38e8416064902dea8a9441d"
 
 [[package]]
@@ -594,5 +588,5 @@ name = "zune-jpeg"
 version = "0.5.15"
 source = "git+https://github.com/darktorres/zune-image?rev=b4f668c817204c60f38e8416064902dea8a9441d#b4f668c817204c60f38e8416064902dea8a9441d"
 dependencies = [
- "zune-core 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zune-core",
 ]

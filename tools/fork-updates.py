@@ -59,8 +59,10 @@ def collect(lock_paths: list[Path]) -> list[tuple[str, str, str, list[str]]]:
     """Each fork crate once per (crate, locked version, repository), with the lock files that name it, relative to the
     repository's root. A crate locked at two versions is two rows."""
     found: dict[tuple[str, str, str], list[str]] = {}
+    # Both sides resolved: a lock path resolves to the disk's spelling (a temp folder's 8.3 name becomes its long one).
+    root = ROOT.resolve()
     for lock_path in lock_paths:
-        name = lock_path.resolve().relative_to(ROOT).as_posix()
+        name = lock_path.resolve().relative_to(root).as_posix()
         for crate, locked, repository in forked_crates(lock_path):
             found.setdefault((crate, locked, repository), []).append(name)
     return [(crate, locked, repository, locks) for (crate, locked, repository), locks in sorted(found.items())]

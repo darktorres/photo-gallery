@@ -28,6 +28,8 @@ harness = false
 [profile.release]
 debug = "line-tables-only"
 
-# The app's libjpeg-turbo build.
+# The app's libjpeg-turbo build, and the app's zune-core: zune-jpeg (the fork) must use the same zune-core as the direct
+# dependency above, or its ZCursor and reader traits are another crate's types and the decoder does not compile.
 [patch.crates-io]
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "28b8b86af795d5e6f1402c978e62facd61952da2" }
+zune-core = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }

@@ -96,7 +96,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "clang-cl did not run at $clang" }
           "CLANG_CL=$clang" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+      - uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
         with:
           # Pinned in the Justfile: a new release of these can change what the lint reports. `just lint` checks the same versions.
           tool: ${{ env.TAIKI_TOOLS }}
@@ -266,7 +266,7 @@ jobs:
       - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
         run: python3 tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
 
-      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+      - uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
         with:
           # Pinned (see the Windows job): `just lint` checks these versions too.
           tool: ${{ env.TAIKI_TOOLS }}

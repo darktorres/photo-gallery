@@ -1,6 +1,6 @@
 # The Rust toolchain. rustup reads this file, so a build here, in CI (.github/workflows/ci.yml) and in the Linux container (docker/) uses the same
 # compiler. Change the channel on purpose: a new stable can add a clippy lint, and CI's clippy runs with -D warnings.
 [toolchain]
-channel = "nightly-2026-11-06"
+channel = "nightly-2026-11-26"
 components = ["clippy", "rustfmt", "rust-analyzer"]
 targets = ["wasm32-unknown-unknown"]

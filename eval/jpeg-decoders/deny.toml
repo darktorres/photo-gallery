@@ -62,7 +62,8 @@ deny = [
 unknown-registry = "deny"
 unknown-git = "deny"
 unused-allowed-source = "allow"
-# The fork this harness reaches, pinned by rev.
+# The forks this harness reaches, pinned by rev: the turbojpeg fork, and the zune fork that the app decodes with.
 allow-git = [
     "https://github.com/darktorres/rust-turbojpeg",
+    "https://github.com/darktorres/zune-image",
 ]

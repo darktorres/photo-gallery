@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds Qt 6.12.0 as static libraries with MSVC, for the app's static build. Windows only.
+"""Builds Qt 6.12.1 as static libraries with MSVC, for the app's static build. Windows only.
 
 Two inputs come from the other static recipes, and each is checked before the configure: the libjpeg-turbo prefix
 (build_jpeg_turbo.py, for -system-libjpeg) and the static FFmpeg prefix (build_static_ffmpeg.py, for Qt Multimedia's FFmpeg
@@ -39,12 +39,13 @@ from pgtools import (
 )
 
 # ---- Pins. Change them here, and note the reason beside each one. --------------------------------------
-QT_VERSION = "6.12.0"
+QT_VERSION = "6.12.1"
 SOURCE_NAME = f"qt-everywhere-src-{QT_VERSION}"
-# Qt publishes an MD5 file, not a SHA-256 one: the SHA-256 here was computed from the zip (its MD5 matches Qt's md5sums.txt).
+# The SHA-256 is Qt's published value for the zip (download.qt.io, <zip>.sha256), and the size is the zip's Content-Length;
+# both were checked against a download of this archive.
 SOURCE_URL = f"https://download.qt.io/official_releases/qt/6.12/{QT_VERSION}/single/{SOURCE_NAME}.zip"
-SOURCE_BYTES = 604_643_023
-SOURCE_SHA256 = "A72E89C33726D742E67EDF494ABF7B625EAFFC756673221C9823322ECD1A32D1"  # upper case, as sha256() gives it
+SOURCE_BYTES = 607_023_793
+SOURCE_SHA256 = "A0E2DCB589AC074D2D257DA8089E3F94ACEE068203E3702E2F863A18D7CF3E1A"  # upper case, as sha256() gives it
 # The modules the app uses. qtbase carries the platforms, the image formats' base, the TLS and network plugins.
 SUBMODULES = ["qtbase", "qtshadertools", "qtdeclarative", "qtmultimedia", "qtimageformats", "qtsvg"]
 # Each of these folders must hold static plugin libraries after the install, or the app's plugin list cannot be linked.

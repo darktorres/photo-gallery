@@ -735,7 +735,7 @@ mod tests {
             first.tend(&mut slot);
             assert!(slot.given_up);
         }
-        assert!(first_sink.calls().contains(&"post write-stopped".to_string()));
+        assert!(first_sink.calls().iter().any(|call| call == "post write-stopped"));
         assert!(first.stop());
 
         // The next run, on the same catalog.

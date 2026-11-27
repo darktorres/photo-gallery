@@ -25,7 +25,7 @@ rustup_init_sha256 := "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d96
 # groups before each run. `uv run --group eval python ...` runs with the GPU groups too. PG_PYTHON overrides it.
 py := env('PG_PYTHON', 'uv run python')
 
-# Qt's kit folder (PG_QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
+# Qt's kit folder (PG_QT_DIR, Qt 6.12.1 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
 # and the tests of the desktop crate need Qt's DLLs. Recipes that link Qt depend on `_qt`, which fails when it is unset.
 qt := env('PG_QT_DIR', '')
 path_sep := if os() == "windows" { ";" } else { ":" }
@@ -99,7 +99,7 @@ fmt:
 
 # The lint tools' versions. ruff is pinned in the lint group of pyproject.toml (uv.lock), markdownlint in tools/lint (its lockfile);
 # cargo-deny, cargo-machete and cargo-modules are pinned here, and CI's install step names the same three.
-cargo_deny_version := "0.21.0"
+cargo_deny_version := "0.22.1"
 cargo_machete_version := "0.10.1"
 
 # The pins of the Linux container (docker/Dockerfile) and of CI, each written once, here. Python reads these lines from the
@@ -108,7 +108,7 @@ cargo_machete_version := "0.10.1"
 # qt_version is the Qt kit for the Linux container and for CI's Windows job (PG_QT_DIR is derived from it).
 just_version := "1.59.0"
 # uv, which runs every recipe's Python (pyproject.toml, uv.lock) and installs the lint group. CI and the image install this release.
-uv_version := "0.11.7"
+uv_version := "0.13.10"
 cargo_fuzz_version := "0.13.2"
 # sccache, the container's compiler cache (RUSTC_WRAPPER in docker/Dockerfile; its cache is the pg-sccache volume).
 sccache_version := "0.20.1"
@@ -128,7 +128,7 @@ exiftool_source_sha256 := "dcb9f6be1f6705ee826a92d1522e3fec1d0b3749cdc061b03c468
 # Windows (CI's Windows job): the Windows package, with its bundled perl.
 exiftool_windows_url := "https://sourceforge.net/projects/exiftool/files/exiftool-13.64_64.zip/download"
 exiftool_windows_sha256 := "72c29c44d1e860eebcaefa71692d979af9858fe9a6d7d791a5e7f1dac77804af"
-qt_version := "6.12.0"
+qt_version := "6.12.1"
 # The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
 aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
 

@@ -63,7 +63,7 @@ impl Meta {
             .unwrap_or_default();
         if format == Format::Tiff {
             // A TIFF file keeps its packet in IFD0.
-            scratch.packets.extend(exif.xmp().map(|x| Packet::InFile(range_in(bytes, x))));
+            scratch.packets.extend(exif.xmp().and_then(|x| range_in(bytes, x)).map(Packet::InFile));
         }
         // In packet order: the first packet's value of each, but MicrosoftPhoto's only counts without an XMP one.
         let (mut xmp_rating, mut microsoft, mut xmp_taken) = (None, None, None);

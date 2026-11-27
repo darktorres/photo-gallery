@@ -27,6 +27,6 @@ proptest! {
     ) {
         let end = end.min(bytes.len());
         let start = start.min(end);
-        prop_assert_eq!(range_in(&bytes, &bytes[start..end]), start..end);
+        prop_assert_eq!(range_in(&bytes, &bytes[start..end]), Some(start..end));
     }
 }

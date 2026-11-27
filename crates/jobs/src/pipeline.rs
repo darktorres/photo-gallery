@@ -107,7 +107,7 @@ fn logical_cpus() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(CPUS_IF_UNKNOWN)
 }
 
-/// The logical CPUs the pools are sized by (see [`logical_cpus`]).
+/// The logical CPUs the pools are sized by (see `logical_cpus`).
 pub fn cpus() -> usize {
     logical_cpus().get()
 }

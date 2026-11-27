@@ -13,15 +13,14 @@ use std::ops::Range;
 /// The signature of an APP1 segment that holds a chunk of an extended XMP packet.
 pub const JPEG_XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
 
-/// Where `part`, a slice of `bytes`, is in it. Panics when `part` does not lie inside `bytes`.
-pub fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
+/// Where `part` is in `bytes`, when `part` is a slice of `bytes`: `None` when it does not lie inside `bytes`.
+pub fn range_in(bytes: &[u8], part: &[u8]) -> Option<Range<usize>> {
     let start = part
         .as_ptr()
         .addr()
         .checked_sub(bytes.as_ptr().addr())
-        .filter(|&start| start.checked_add(part.len()).is_some_and(|end| end <= bytes.len()));
-    let start = start.expect("`part` is a slice of `bytes`");
-    start..start + part.len()
+        .filter(|&start| start.checked_add(part.len()).is_some_and(|end| end <= bytes.len()))?;
+    Some(start..start + part.len())
 }
 
 /// The `N` bytes of `bytes` at `at`, if they are all in it.
@@ -231,10 +230,11 @@ pub fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedCh
         && let Some((guid, rest)) = rest.split_first_chunk::<32>()
         && let Some((&full, rest)) = rest.split_first_chunk::<4>()
         && let Some((&offset, data)) = rest.split_first_chunk::<4>()
+        && let Some(guid) = range_in(bytes, guid)
+        && let Some(data) = range_in(bytes, data)
     {
         let full = usize::try_from(u32::from_be_bytes(full)).unwrap_or(usize::MAX);
         let offset = usize::try_from(u32::from_be_bytes(offset)).unwrap_or(usize::MAX);
-        let (guid, data) = (range_in(bytes, guid), range_in(bytes, data));
         chunks.push(ExtendedChunk { guid, full, offset, data, seq: chunks.len() });
     }
 }

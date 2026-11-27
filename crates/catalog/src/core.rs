@@ -407,7 +407,7 @@ impl Catalog {
     }
 
     /// How long a statement on this connection waits for a lock another connection holds before it fails with
-    /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s ([`crate::schema::BUSY_TIMEOUT_MS`]); a writer
+    /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s (`crate::schema::BUSY_TIMEOUT_MS`); a writer
     /// that retries on its own, and checks for a stop between tries, sets a shorter one.
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<()> {
         Ok(self.conn.busy_timeout(timeout)?)

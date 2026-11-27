@@ -146,7 +146,7 @@ pub fn view_path(view: &View) -> String {
 const MAX_SIDE: usize = 8192;
 
 /// The view the part after the key names, or `None` when it doesn't read, or a region is out of the image. A region is
-/// cut to the image; a fit box and a region's output are capped to [`MAX_SIDE`] a side.
+/// cut to the image; a fit box and a region's output are capped to `MAX_SIDE` a side.
 pub fn view_of(rest: &str) -> Option<View> {
     if rest == "full" {
         return Some(View::Full);

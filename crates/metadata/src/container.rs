@@ -41,7 +41,7 @@ impl Container {
                         c.exif = jpeg_exif(&s);
                     }
                     if let Some(packet) = s.data.strip_prefix(JPEG_XMP) {
-                        packets.push(Packet::InFile(range_in(bytes, packet)));
+                        packets.extend(range_in(bytes, packet).map(Packet::InFile));
                     } else {
                         add_extended_chunk(bytes, s.data, chunks);
                     }
@@ -59,7 +59,7 @@ impl Container {
                     match &chunk.kind {
                         b"eXIf" if c.exif.is_none() => c.exif = Some(chunk_data(&chunk)),
                         b"iTXt" => match png_itxt_xmp(chunk.data) {
-                            Some(ItxtXmp::Plain(text)) => packets.push(Packet::InFile(range_in(bytes, text))),
+                            Some(ItxtXmp::Plain(text)) => packets.extend(range_in(bytes, text).map(Packet::InFile)),
                             Some(ItxtXmp::Compressed(text)) => {
                                 let inflater = inflater.get_or_insert_with(Box::default);
                                 // The budget is for the file: what its earlier packets left of it.
@@ -100,7 +100,7 @@ impl Container {
                 // Only a GIF read to its trailer.
                 if blocks.complete() {
                     c.frames = images.max(1);
-                    packets.extend(packet.map(|x| Packet::InFile(range_in(bytes, x))));
+                    packets.extend(packet.and_then(|x| range_in(bytes, x)).map(Packet::InFile));
                 }
             }
             Format::Tiff => c.exif = Some(0..bytes.len()),

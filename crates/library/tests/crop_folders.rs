@@ -20,7 +20,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn jpeg(pixel: [u8; 3]) -> Result<Vec<u8>> {
     let mut rgb = pg_testkit::letterboxed_rgb(320, 240, 40);
     let at = (120 * 320 + 160) * 3;
-    rgb[at..at + 3].copy_from_slice(&pixel);
+    rgb.get_mut(at..at + 3).ok_or("the picture's centre is inside it")?.copy_from_slice(&pixel);
     pg_codec::fixtures::encode(320, 240, &rgb, pg_codec::fixtures::Encoding::Jpeg).map_err(Into::into)
 }
 

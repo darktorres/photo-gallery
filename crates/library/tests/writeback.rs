@@ -111,6 +111,10 @@ fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
     pg_platform::names::disk_path(c.rules(), path)
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "a query of the test's own catalog fails only when the test is broken, and that failure is the test's"
+)]
 fn wait_for_queue(c: &Catalog) {
     pg_testkit::wait_until(
         Duration::from_secs(60),

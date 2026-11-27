@@ -11,7 +11,7 @@ use super::raster::zeroed;
 /// its end code. What it holds past the image's pixels (some encoders write more) is decoded into a small buffer and
 /// dropped: the frame's size, not the stream, bounds what is kept, so a few KB of file that claim a 65535 x 65535 frame
 /// make no buffer larger than the frame. An image with no pixels decodes nothing. `pixels` is a size
-/// [`decoded_size`](crate::codecs::limits::decoded_size) passed; the buffer is allocated fallibly.
+/// [`crate::codecs::limits::decoded_size`] passed; the buffer is allocated fallibly.
 fn decode_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
     let mut indices = zeroed(pixels)?;
     if pixels == 0 {

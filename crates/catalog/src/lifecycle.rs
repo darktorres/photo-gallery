@@ -437,14 +437,14 @@ pub(crate) fn vacuum_if_owed(conn: &Connection, path: Option<&Path>, exclusive: 
     if !exclusive {
         return Ok(());
     }
-    if let Some(path) = path {
-        if !has_room(file_len(path), volume_free(path), VACUUM_ROOM) {
-            pg_log::warn(
-                "catalog",
-                &format!("catalog {}: no room to compact it after its migration; {RETRY_AT_START}", path.display()),
-            );
-            return Ok(());
-        }
+    if let Some(path) = path
+        && !has_room(file_len(path), volume_free(path), VACUUM_ROOM)
+    {
+        pg_log::warn(
+            "catalog",
+            &format!("catalog {}: no room to compact it after its migration; {RETRY_AT_START}", path.display()),
+        );
+        return Ok(());
     }
     // Incremental auto-vacuum: set first, a `VACUUM` is what makes it take effect on a file that has pages.
     let compacted = (|| -> Result<()> {

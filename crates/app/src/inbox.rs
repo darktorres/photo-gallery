@@ -364,7 +364,7 @@ pub struct Inbox {
     writer: Mutex<Option<JoinHandle<()>>>,
 }
 
-/// The writer never outlives the inbox that started it: dropping the inbox closes it, as [`Inbox::close`] does (a second
+/// The writer never outlives the inbox that started it: dropping the inbox closes it, as `Inbox::close` does (a second
 /// close does nothing). So an early return from opening the app, after the writer has started, does not leave the writer
 /// running on its own catalog connection.
 impl Drop for Inbox {

@@ -112,14 +112,17 @@ mod tests {
         assert_eq!(stub, pg_wording::RATING_SYMBOLS);
     }
 
-    /// Every id the QML asks for is an entry of `ui.ftl`, and every entry is asked for by some QML. The key hint labels,
-    /// their separator and the selection line are worded by Rust (`pg_wording::hint`, the status bar), which hands the front
-    /// end their text, so their ids count as asked for too.
+    /// Every id the QML asks for is an entry of `ui.ftl`, and every entry is asked for by some QML. The key hint keys and
+    /// labels, their separator and the selection line are worded by Rust (`pg_wording::hint`, the status bar), which hands
+    /// the front end their text, so their ids count as asked for too.
     #[test]
     fn the_qml_words_and_the_ui_entries_are_the_same_set() {
         let mut used = ids_in_qml();
         used.extend(ids_in_native());
-        used.extend(pg_client::keys::Hint::ALL.iter().map(|hint| hint.id().to_string()));
+        for hint in pg_client::keys::Hint::ALL {
+            used.insert(hint.key_id().to_string());
+            used.extend(hint.label_id().map(str::to_string));
+        }
         used.extend([pg_wording::HINT_SEPARATOR, pg_wording::SELECTION_LINE].map(str::to_string));
         let known = entries();
         assert!(!used.is_empty(), "no words.text or words.phrase call found: is the QML folder right?");

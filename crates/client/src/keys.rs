@@ -247,7 +247,9 @@ pub enum Media {
     Video,
 }
 
-/// A label of a key hint line. Its words are the entry `id` of `locales/en/ui.ftl`; `pg_wording::hint` joins them.
+/// A label of a key hint line: a key and, for most, what it does. Each part's words are an entry of `locales/en/ui.ftl`
+/// (`key_id`, `label_id`); a hint line's text joins a key and its label with a space (`pg_wording::hint`), and the viewer's
+/// line shows each one as a chip (`pg_wording::hint_chips`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hint {
     /// Select an item.
@@ -323,32 +325,57 @@ impl Hint {
         Hint::Close,
     ];
 
-    /// The entry of `locales/en/ui.ftl` that words this label.
-    pub fn id(self) -> &'static str {
+    /// The entry of `locales/en/ui.ftl` that words this label's key.
+    pub fn key_id(self) -> &'static str {
         match self {
-            Hint::Select => "ui-hint-select",
-            Hint::View => "ui-hint-view",
-            Hint::Rate => "ui-hint-rate",
-            Hint::Turn => "ui-hint-turn",
-            Hint::Arrows => "ui-hint-arrows",
-            Hint::Filters => "ui-hint-filters",
-            Hint::Borders => "ui-hint-borders",
-            Hint::NotBorder => "ui-hint-not-border",
-            Hint::Resize => "ui-hint-resize",
-            Hint::Step => "ui-hint-step",
-            Hint::Play => "ui-hint-play",
-            Hint::Mute => "ui-hint-mute",
-            Hint::UpFour => "ui-hint-up-four",
-            Hint::DownOne => "ui-hint-down-one",
-            Hint::TurnBack => "ui-hint-turn-back",
-            Hint::TurnOn => "ui-hint-turn-on",
-            Hint::Zoom => "ui-hint-zoom",
-            Hint::OneToOne => "ui-hint-one-to-one",
-            Hint::RealSize => "ui-hint-real-size",
-            Hint::Loupe => "ui-hint-loupe",
-            Hint::Hide => "ui-hint-hide",
-            Hint::Close => "ui-hint-close",
+            Hint::Select => "ui-hint-select-key",
+            Hint::View => "ui-hint-view-key",
+            Hint::Rate => "ui-hint-rate-key",
+            Hint::Turn => "ui-hint-turn-key",
+            Hint::Arrows => "ui-hint-arrows-key",
+            Hint::Filters => "ui-hint-filters-key",
+            Hint::Borders => "ui-hint-borders-key",
+            Hint::NotBorder => "ui-hint-not-border-key",
+            Hint::Resize => "ui-hint-resize-key",
+            Hint::Step => "ui-hint-step-key",
+            Hint::Play => "ui-hint-play-key",
+            Hint::Mute => "ui-hint-mute-key",
+            Hint::UpFour => "ui-hint-up-four-key",
+            Hint::DownOne => "ui-hint-down-one-key",
+            Hint::TurnBack => "ui-hint-turn-back-key",
+            Hint::TurnOn => "ui-hint-turn-on-key",
+            Hint::Zoom => "ui-hint-zoom-key",
+            Hint::OneToOne => "ui-hint-one-to-one-key",
+            Hint::RealSize => "ui-hint-real-size-key",
+            Hint::Loupe => "ui-hint-loupe-key",
+            Hint::Hide => "ui-hint-hide-key",
+            Hint::Close => "ui-hint-close-key",
         }
+    }
+
+    /// The entry that words the text after the key, or `None` for a key alone (the rate keys 4 and 1, the turn keys).
+    pub fn label_id(self) -> Option<&'static str> {
+        Some(match self {
+            Hint::Select => "ui-hint-select-label",
+            Hint::View => "ui-hint-view-label",
+            Hint::Rate => "ui-hint-rate-label",
+            Hint::Turn => "ui-hint-turn-label",
+            Hint::Arrows => "ui-hint-arrows-label",
+            Hint::Filters => "ui-hint-filters-label",
+            Hint::Borders => "ui-hint-borders-label",
+            Hint::NotBorder => "ui-hint-not-border-label",
+            Hint::Resize => "ui-hint-resize-label",
+            Hint::Step => "ui-hint-step-label",
+            Hint::Play => "ui-hint-play-label",
+            Hint::Mute => "ui-hint-mute-label",
+            Hint::Zoom => "ui-hint-zoom-label",
+            Hint::OneToOne => "ui-hint-one-to-one-label",
+            Hint::RealSize => "ui-hint-real-size-label",
+            Hint::Loupe => "ui-hint-loupe-label",
+            Hint::Hide => "ui-hint-hide-label",
+            Hint::Close => "ui-hint-close-label",
+            Hint::UpFour | Hint::DownOne | Hint::TurnBack | Hint::TurnOn => return None,
+        })
     }
 }
 

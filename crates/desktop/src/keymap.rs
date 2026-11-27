@@ -8,7 +8,7 @@
 
 use crate::bridges::keymap_bridge::qobject;
 
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use pg_client::controller::panels::PanelKind;
 use pg_client::keys::{self, Global, GridKey, Key, Media, Mods, Panel, Shown, Viewer};
 
@@ -141,6 +141,14 @@ fn viewer_of(key: i32, modifiers: i32, kind: i32, has_borders: bool) -> (i32, i3
     key_of(key).and_then(|k| keys::viewer(k, mods_of(modifiers), shown)).map_or((-1, 0), viewer_code)
 }
 
+/// The viewer's hint line as chips: its keys and labels (`pg_wording::hint_chips`), as Qt lists.
+fn viewer_chips(kind: i32, has_borders: bool) -> (QStringList, QStringList) {
+    let (keys, labels) = pg_wording::hint_chips(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)));
+    let to_list =
+        |words: Vec<String>| -> QStringList { words.iter().map(|word| QString::from(word.as_str())).collect() };
+    (to_list(keys), to_list(labels))
+}
+
 impl qobject::KeyMap {
     pub(crate) fn viewer_action(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
         viewer_of(key, modifiers, kind, has_borders).0
@@ -158,8 +166,13 @@ impl qobject::KeyMap {
         key_of(key).and_then(keys::panel).map_or(-1, panel_code)
     }
 
-    pub(crate) fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
-        QString::from(&pg_wording::hint(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders))))
+    /// The viewer's hint chips: the keys, in the line's order, and their labels ("" for a key alone) at the same indices.
+    pub(crate) fn viewer_hint_keys(&self, kind: i32, has_borders: bool) -> QStringList {
+        viewer_chips(kind, has_borders).0
+    }
+
+    pub(crate) fn viewer_hint_labels(&self, kind: i32, has_borders: bool) -> QStringList {
+        viewer_chips(kind, has_borders).1
     }
 
     pub(crate) fn global_sequence(&self, code: i32) -> QString {

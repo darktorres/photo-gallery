@@ -22,8 +22,11 @@ QtObject {
     function gridHint(detection) {
         return "";
     }
-    function viewerHint(kind, hasBorders) {
-        return "";
+    function viewerHintKeys(kind, hasBorders) {
+        return [];
+    }
+    function viewerHintLabels(kind, hasBorders) {
+        return [];
     }
     function panelAction(key) {
         return -1;

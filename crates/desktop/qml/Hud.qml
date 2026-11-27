@@ -74,6 +74,7 @@ Item {
     }
 
     Label {
+        id: counterLabel
         textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.top: parent.top
@@ -83,17 +84,55 @@ Item {
         styleColor: "black"
         text: words.count(hud.index + 1) + " / " + words.count(hud.count)
     }
-    Label {
-        textFormat: Text.PlainText
+    // The viewer's key hint: a chip per key, its label beside it. The chips flow right to left, so the list is reversed to
+    // keep the line's reading order from left to right.
+    readonly property var chips: {
+        var keys = keymap.viewerHintKeys(hud.kind, hud.hasBorders);
+        var labels = keymap.viewerHintLabels(hud.kind, hud.hasBorders);
+        var out = [];
+        for (var i = 0; i < keys.length; i++)
+            out.push({ key: keys[i], label: labels[i] });
+        return out.reverse();
+    }
+    Flow {
+        anchors.top: parent.top
+        anchors.topMargin: 6
+        anchors.left: counterLabel.right
+        anchors.leftMargin: 16
         anchors.right: closeButton.left
-        anchors.verticalCenter: closeButton.verticalCenter
-        anchors.rightMargin: 10
-        color: "#999999"
-        style: Text.Outline
-        styleColor: "black"
-        text: keymap.viewerHint(hud.kind, hud.hasBorders)
-        // The hint names the turns by their symbols (⟲ ⟳).
-        font.family: Theme.symbolFamily
+        anchors.rightMargin: 8
+        layoutDirection: Qt.RightToLeft
+        spacing: 5
+        Repeater {
+            model: hud.chips
+            Rectangle {
+                required property var modelData
+                height: 22
+                radius: 4
+                color: Theme.chipFill
+                border.color: Theme.chipBorder
+                width: chipRow.implicitWidth + 12
+                Row {
+                    id: chipRow
+                    anchors.centerIn: parent
+                    spacing: 5
+                    Text {
+                        textFormat: Text.PlainText
+                        text: modelData.key
+                        color: Theme.chipKeyText
+                        // The keys name the turns by their symbols (⟲ ⟳).
+                        font.family: Theme.symbolFamily
+                    }
+                    Text {
+                        visible: modelData.label !== ""
+                        textFormat: Text.PlainText
+                        text: modelData.label
+                        color: Theme.chipLabelText
+                        font.family: Theme.symbolFamily
+                    }
+                }
+            }
+        }
     }
     ToolButton {
         id: closeButton

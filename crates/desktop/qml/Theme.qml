@@ -35,6 +35,11 @@ QtObject {
     readonly property color captionBacking: "#b3000000"
     // The lighter dark backing behind a control over a picture: a rating bar, the video transport, a grid cell's badges.
     readonly property color scrimBacking: "#a0000000"
+    // The viewer's key hint over a picture: each key's chip (its fill and border), the key in it and the label beside it.
+    readonly property color chipFill: "#d9101010"
+    readonly property color chipBorder: "#555555"
+    readonly property color chipKeyText: "#ffffff"
+    readonly property color chipLabelText: "#bbbbbb"
     // The panel's status line and the preview's size.
     readonly property color bodyText: "#cccccc"
     // Quiet text: "No results.", and a caption or a loading line.

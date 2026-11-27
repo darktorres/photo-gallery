@@ -359,10 +359,30 @@ pub const HINT_SEPARATOR: &str = "ui-hint-separator";
 /// The entry of the status bar's selection line: the item's info, then its rating symbol.
 pub const SELECTION_LINE: &str = "ui-selection-line";
 
-/// A key hint line: the words of its labels (`locales/en/ui.ftl`), joined by the separator entry.
+/// A key hint line: each label's key and label (`locales/en/ui.ftl`), a space between them, the lines joined by the separator
+/// entry.
 pub fn hint(labels: &[Hint]) -> String {
-    let words: Vec<String> = labels.iter().map(|label| ui(label.id(), 0.0, "", "")).collect();
+    let words: Vec<String> = labels
+        .iter()
+        .map(|label| {
+            let (key, text) = key_and_label(*label);
+            if text.is_empty() { key } else { format!("{key} {text}") }
+        })
+        .collect();
     words.join(&ui(HINT_SEPARATOR, 0.0, "", ""))
+}
+
+/// A key hint line as chips: each label's key and its label (empty for a key alone), in the line's order. The viewer shows
+/// each key in its own chip, with its label beside it.
+pub fn hint_chips(labels: &[Hint]) -> (Vec<String>, Vec<String>) {
+    labels.iter().map(|label| key_and_label(*label)).unzip()
+}
+
+/// A label's key and the text after it (empty when it has none).
+fn key_and_label(label: Hint) -> (String, String) {
+    let key = ui(label.key_id(), 0.0, "", "");
+    let text = label.label_id().map(|id| ui(id, 0.0, "", "")).unwrap_or_default();
+    (key, text)
 }
 
 /// A Yandex save that ended: `written` files into `folder`, and when some failed, how many and the first failure.
@@ -940,10 +960,32 @@ mod tests {
              B borders · N not a border · Ctrl+wheel or Ctrl+/− resize"
         );
         let still = Shown { has_borders: false, still: true, video: false };
+        let chips = |media| {
+            let (keys, labels) = hint_chips(&keys::viewer_hint(media, still));
+            keys.into_iter().zip(labels).collect::<Vec<(String, String)>>()
+        };
+        let pair = |key: &str, label: &str| (key.to_string(), label.to_string());
         assert_eq!(
-            hint(&keys::viewer_hint(Media::Still, still)),
-            "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · Shift+R ⟳ · pinch or + − zoom · double-click 1:1 · Z real size · L loupe · \
-             B borders · H hide · Esc close"
+            chips(Media::Still),
+            vec![
+                pair("← →", "step"),
+                pair("0–5", "rate"),
+                pair("↑ 4", ""),
+                pair("↓ 1", ""),
+                pair("R ⟲", ""),
+                pair("Shift+R ⟳", ""),
+                pair("pinch or + −", "zoom"),
+                pair("double-click", "1:1"),
+                pair("Z", "real size"),
+                pair("L", "loupe"),
+                pair("B", "borders"),
+                pair("H", "hide"),
+                pair("Esc", "close"),
+            ]
+        );
+        assert_eq!(
+            chips(Media::Video)[..3].to_vec(),
+            vec![pair("← →", "step"), pair("K", "play/pause"), pair("M", "mute")]
         );
         assert_eq!(
             hint(&keys::viewer_hint(Media::Video, still)),

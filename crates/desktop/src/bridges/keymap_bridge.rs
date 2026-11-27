@@ -8,6 +8,8 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     extern "RustQt" {
@@ -33,9 +35,15 @@ pub mod qobject {
         #[cxx_name = "gridHint"]
         fn grid_hint(self: &KeyMap, detection: bool) -> QString;
 
+        /// The viewer's key hint as chips: the keys, and the label after each ("" for a key alone), at the same indices.
+        /// `kind` and `has_borders` as in `viewerAction`.
         #[qinvokable]
-        #[cxx_name = "viewerHint"]
-        fn viewer_hint(self: &KeyMap, kind: i32, has_borders: bool) -> QString;
+        #[cxx_name = "viewerHintKeys"]
+        fn viewer_hint_keys(self: &KeyMap, kind: i32, has_borders: bool) -> QStringList;
+
+        #[qinvokable]
+        #[cxx_name = "viewerHintLabels"]
+        fn viewer_hint_labels(self: &KeyMap, kind: i32, has_borders: bool) -> QStringList;
 
         /// The key sequence of a window shortcut (a `GlobalAction` code), for its `Shortcut`; empty for no code.
         #[qinvokable]

@@ -3,7 +3,7 @@
 [project]
 name = "photo-gallery"
 version = "0.0.0"
-requires-python = "==3.12.*"
+requires-python = "==3.13.*"
 
 [tool.uv]
 # A set of scripts and tools, not an installable package.
@@ -11,8 +11,12 @@ package = false
 # What `uv sync` and `uv run` install by default. The GPU groups (eval, jpeg-decoders) are added with `--group` when needed:
 # a `uv run` without them removes them from the environment.
 default-groups = ["tools", "lint"]
-# The lock covers the platforms the scripts run on: Windows (this machine) and Linux (the container and CI).
-environments = ["sys_platform == 'win32'", "sys_platform == 'linux'"]
+# The lock covers the platforms the scripts run on: 64-bit Windows (this machine) and 64-bit Linux (the container and CI).
+# Not ARM: the cu134 index has no torch wheel for Windows on ARM, which the lock would otherwise need.
+environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 # The eval stack and the ModelOpt quantization pin onnxruntime-gpu differently (1.31.1 for eval, 1.22.0 for ModelOpt 0.48.0
 # on Windows), so they are locked as separate resolutions. Each is installed into its own environment.
 conflicts = [
@@ -60,6 +64,7 @@ eval-linux = [
 # The ONNX quantization of eval/accel.py (NVIDIA ModelOpt, int8 Q/DQ). Its own environment: see `conflicts` above.
 quant = [
     "nvidia-modelopt[onnx]==0.48.0",
+    "torch==2.15.0+cu134",
 ]
 # The JPEG decoder harness (nvImageCodec and its nvJPEG wheel): its own environment, `just jpeg-env`.
 jpeg-decoders = [

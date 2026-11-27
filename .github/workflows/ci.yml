@@ -64,10 +64,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The pinned Python comes first: the pins step and `just setup` and the other recipes run its scripts (the screenshot
-      # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.12.10).
+      # fixture's venv is built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.13.18).
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12.10"
+          python-version: "3.13.18"
 
       # The Justfile's pins, for every later step: QT_VERSION, PG_QT_DIR (the kit the recipes and the desktop crate find qmake
       # in, as a developer's .env sets it), the install-action's tool list and the aqtinstall commit (tools/ci/github_files.py).

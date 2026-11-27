@@ -1,5 +1,5 @@
 # Lint config for the Python scripts (eval/, tools/). Run by `just lint`.
-target-version = "py312"
+target-version = "py313"
 line-length = 130
 src = ["eval", "tools"]  # their modules import each other as first-party (from common import ...)
 # docs/research holds verbatim copies of upstream files (notebooks, pages); they are kept as saved, not linted.

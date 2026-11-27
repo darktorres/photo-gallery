@@ -16,9 +16,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
-if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this guard is for an older Python)
+if sys.version_info < (3, 13):  # noqa: UP036 (the target is the floor; this guard is for an older Python)
     sys.exit(
-        f"pgtools: these tools need Python 3.12 or later (this is {sys.version.split()[0]}): install it, and set PG_PYTHON "
+        f"pgtools: these tools need Python 3.13 or later (this is {sys.version.split()[0]}): install it, and set PG_PYTHON "
         "in .env to its path"
     )
 

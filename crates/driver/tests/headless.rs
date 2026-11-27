@@ -334,6 +334,9 @@ fn a_run_that_was_not_interrupted_finishes_every_scan_it_began() {
     let (dir, home, images) = library("dev-scans-finished", &["a.png", "b.png"]).unwrap();
     let headless = Headless::open(&setup(&home)).unwrap();
     headless.add_folder(&images).unwrap();
+    // The add's own walk must end before the run asks for a rescan: a request for a folder stops the walk in progress
+    // (`route_scans`), and that walk's row stays open for the walk that resumes it. Uninterrupted means no such request.
+    headless.wait_quiet(WAIT).unwrap();
     headless.run(PassMask::ALL, WAIT).unwrap();
     std::fs::write(images.join("c.png"), pg_codec::fixtures::png_rgb(8, 8, &[0; 192]).unwrap()).unwrap();
     headless.run(PassMask::ALL, WAIT).unwrap();

@@ -2,7 +2,7 @@
 
 This report lists the findings of a flow-based review of the desktop UI: the QML front end, the Rust bridges and the controller it drives. The review started from each user action and each path that ends in a write, a notice or a focus change, and traced it through the code it reaches. It was run as a read-only workflow that produced 281 findings across 74 flows.
 
-**Status: validated.** Each finding was checked against the live code at the cited sites, and against the Qt source under `C:\Qt\6.12.0\Src` where a finding depends on Qt behaviour. Verdicts for the 98 open findings: 83 confirmed, 15 partial, 0 refuted. The 183 findings that were fixed, already fixed or not real have been removed. A confirmed verdict means the mechanism is in the cited code. Where a finding also claims a consequence that was not traced, the note says so. Duplicates are marked and point to the finding they repeat.
+**Status: validated.** Each finding was checked against the live code at the cited sites, and against the Qt source under `C:\Qt\6.12.1\Src` where a finding depends on Qt behaviour. Verdicts for the 90 open findings: 77 confirmed, 13 partial, 0 refuted. The 183 findings that were fixed, already fixed or not real have been removed. A confirmed verdict means the mechanism is in the cited code. Where a finding also claims a consequence that was not traced, the note says so. Duplicates are marked and point to the finding they repeat.
 
 ## Method
 
@@ -15,29 +15,29 @@ This report lists the findings of a flow-based review of the desktop UI: the QML
 | Measure                     | Value |
 |-----------------------------|------:|
 | Flows traced                |    74 |
-| Findings open               |    98 |
-| Flows with open findings    |    52 |
+| Findings open               |    90 |
+| Flows with open findings    |    50 |
 | Sites recorded as not flows |    18 |
 
 Sites recorded as not flows were not traced; the mapping output gives a reason for each one.
 
 ## Summary
 
-These counts cover the 98 open findings.
+These counts cover the 90 open findings.
 
 | Severity | Count |
 |----------|------:|
 | high     |     2 |
-| medium   |    23 |
-| low      |    73 |
+| medium   |    20 |
+| low      |    68 |
 
 | Category               | Count |
 |------------------------|------:|
-| missing-feedback       |    28 |
-| wrong-message          |    18 |
-| stale-result           |    15 |
+| missing-feedback       |    26 |
+| wrong-message          |    17 |
+| stale-result           |    14 |
 | unhandled-close        |     7 |
-| focus                  |     5 |
+| focus                  |     3 |
 | double-fire            |     4 |
 | stale-state            |     3 |
 | wrong-target           |     2 |
@@ -45,14 +45,12 @@ These counts cover the 98 open findings.
 | visual-flicker         |     1 |
 | unneeded-relist        |     1 |
 | stuck-error           |     1 |
-| stuck-busy             |     1 |
 | stale-toast            |     1 |
 | stale-open-panel       |     1 |
 | shadowed-key           |     1 |
 | no-window-state        |     1 |
 | missing-start          |     1 |
 | missing-keyboard-path  |     1 |
-| missing-keyboard       |     1 |
 | missing-confirmation   |     1 |
 | misleading-hint        |     1 |
 | keyboard-parity        |     1 |
@@ -60,11 +58,11 @@ These counts cover the 98 open findings.
 
 | Verdict   | Count |
 |-----------|------:|
-| CONFIRMED |    83 |
-| PARTIAL   |    15 |
+| CONFIRMED |    77 |
+| PARTIAL   |    13 |
 | REFUTED   |     0 |
 
-Duplicates: 8 findings repeat a mechanism already recorded under another ID and are marked as such.
+Duplicates: 3 findings repeat a mechanism already recorded under another ID and are marked as such.
 
 ## Citation errors
 
@@ -101,7 +99,7 @@ Several Needs bullets name these mechanisms. Each is defined once here, and each
 | U08 | Grid keyboard keys (through the shell)                    |        1 |
 | U09 | Global shortcuts (inbox, log, dev mode)                   |        1 |
 | U10 | Select a photo by click                                   |        1 |
-| U14 | Grid scrollbar drag                                       |        2 |
+| U14 | Grid scrollbar drag                                       |        1 |
 | U16 | Include subfolders toggle                                 |        1 |
 | U18 | Apply a saved view                                        |        2 |
 | U20 | Delete a saved view                                       |        1 |
@@ -115,32 +113,30 @@ Several Needs bullets name these mechanisms. Each is defined once here, and each
 | U33 | Lane progress polling                                     |        1 |
 | U35 | Save cropped copies (dialog)                              |        2 |
 | U36 | Cut borders from originals (dialog)                       |        1 |
-| U37 | Popups for refused border actions                         |        1 |
 | U38 | Rate a photo in the viewer (star bar, keys)               |        1 |
 | U39 | Turn a photo in the viewer                                |        2 |
 | U40 | Mark or unmark a border (viewer N key, HUD)               |        2 |
 | U41 | Show or hide borders (viewer B key)                       |        1 |
 | U42 | Step through pictures in the viewer (wheel, keys, swipe)  |        1 |
-| U43 | Zoom, pan, fit and 1:1 in the viewer                      |        1 |
 | U44 | Viewer re-render: fit size and region tiles               |        2 |
 | U45 | Loupe (10x under the cursor)                              |        2 |
 | U47 | Video and animation transport                             |        3 |
 | U48 | Find similar from the viewer                              |        3 |
-| U49 | Yandex search results load                                |        3 |
-| U50 | Pick Yandex results, shift-range pick                     |        2 |
+| U49 | Yandex search results load                                |        2 |
+| U50 | Pick Yandex results, shift-range pick                     |        1 |
 | U51 | Select all of a Yandex group                              |        2 |
 | U52 | Yandex full-size preview                                  |        2 |
 | U53 | Save picked Yandex results (dialog)                       |        3 |
 | U54 | Close the Yandex panel and its preview                    |        2 |
-| U55 | Yandex thumbnails settle                                  |        2 |
+| U55 | Yandex thumbnails settle                                  |        1 |
 | U57 | Status bar toast                                          |        2 |
 | U58 | Open the inbox (status bell, shortcut)                    |        1 |
 | U59 | Inbox select and details                                  |        1 |
 | U60 | Copy an inbox entry                                       |        4 |
 | U61 | Dismiss an inbox entry, clear all                         |        4 |
 | U62 | Retry an inbox entry                                      |        3 |
-| U63 | Inbox failed-file list                                    |        2 |
-| U64 | Reveal a file from the inbox                              |        4 |
+| U63 | Inbox failed-file list                                    |        1 |
+| U64 | Reveal a file from the inbox                              |        3 |
 | U65 | Reveal a folder from the inbox                            |        1 |
 | U69 | Log view (dev mode)                                       |        1 |
 | U74 | Grid thumbnails load and cells display                    |        3 |
@@ -233,7 +229,7 @@ Entry: `crates/desktop/src/lib.rs:214 screenshot::schedule(engine)`
 
 ### UI-023 [low/stale-result] Settle check can pass before the library job's first progress is seen — PARTIAL
 
-- Needs: Verify, then fix. Confirm the race needs a scan requested in the same run. Then make the settle check wait for the first lane progress. Test harness only. Files: crates/desktop/cpp/screenshot.cpp, crates/desktop/src/library.rs.
+- Needs: Fix (checked: partly; the race needs an add-folder request in the same run, and the 300 ms quiet gate does not protect the first ready tick). The settle waits for a pending scan request or the first progress. Test harness only. Files: crates/desktop/cpp/screenshot.cpp, crates/desktop/src/library.rs, crates/desktop/src/shell.rs (331-332), crates/desktop/qml/TestHooks.qml (154-155).
 - Verdict: PARTIAL
 - Note: The race needs a job that starts after the start. A plain start (Main.qml:879) requests no scan, so progress stays Idle and the settle check is right to pass. The window only sees a non-idle job when a scan is requested in the same run, for example by the add-folder hook (TestHooks.qml:122, which runs after library.start). The trigger as written (library folders alone) does not reach it.
 - Confidence: medium
@@ -335,25 +331,15 @@ Entry: `crates/desktop/qml/GridCell.qml:182 MouseArea onClicked -> cellClicked (
 
 Entry: `crates/desktop/qml/GalleryGrid.qml:123 onPositionChanged (while pressed)`
 
-### UI-049 [medium/stuck-busy] Scrollbar stays pressed when the drag is released outside the grid — CONFIRMED
-
-- Needs: Verify, then fix. Read Qt's scroll-bar release handling first, then release the press through a grab that always sees the release. Files: crates/desktop/qml/GalleryGrid.qml, Qt quicktemplates/qquickscrollbar.cpp.
-- Verdict: CONFIRMED
-- Note: qquickscrollbar.cpp:317-321 returns before setPressed(false) (line 332) when the release point is outside the vertical padding span. pressed stays true, which holds the Binding at GalleryGrid.qml:119-121 and keeps the readout visible (:133).
-- Confidence: high
-- Trigger: The user drags the scroll handle above the top or below the bottom of the grid (for example to reach the first or last photo, with the pointer over the top bar or status bar) and releases the mouse there. The release point is outside the bar's vertical span.
-- Consequence: gridBar.pressed stays true. The 'file ≈ N of M' readout stays on screen over the right edge of the grid at the bar's last position until the user presses and releases inside the bar's span. The handle keeps its pressed colour and stops following the view on wheel, keys or list reloads, because the Binding on position is disabled while pressed. The bar shows a drag that has already ended.
-- Sites: `crates/desktop/qml/GalleryGrid.qml:121`; `crates/desktop/qml/GalleryGrid.qml:133`; `C:/Qt/6.12.0/Src/qtdeclarative/src/quicktemplates/qquickscrollbar.cpp:320`
-
 ### UI-050 [low/wrong-position] Readout is placed from the logical position, not the drawn handle — PARTIAL
 
-- Needs: Verify, then fix. Check whether position and visual.position differ once minimumSize applies. If so, bind the readout to visual.position. Files: crates/desktop/qml/GalleryGrid.qml, Qt quicktemplates/qquickscrollbar.cpp.
+- Needs: Fix (checked: confirmed). Centre the readout on (visualPosition + visualSize / 2) times the track height, and keep the number on the logical position. Files: crates/desktop/qml/GalleryGrid.qml (readout at 165), Qt quicktemplates/qquickscrollbar.cpp (visualArea, 134-147).
 - Verdict: PARTIAL
 - Note: The readout uses gridBar.position (GalleryGrid.qml:138). The handle is placed from visual.position (qquickscrollbar.cpp:229). I did not check whether position and visual.position differ once minimumSize applies, which is what the 24 px figure depends on.
 - Confidence: high
 - Trigger: A library large enough that the bar's minimumSize (48 px) exceeds its size ratio (roughly contentHeight above height squared over 48, i.e. thousands of files), and any drag.
 - Consequence: The readout's centre sits up to about 24 px above the handle's centre at the top of the track and about 24 px below it at the bottom. The number is correct, but the bubble does not sit on the handle it describes.
-- Sites: `crates/desktop/qml/GalleryGrid.qml:138`; `C:/Qt/6.12.0/Src/qtdeclarative/src/quicktemplates/qquickscrollbar.cpp:229`
+- Sites: `crates/desktop/qml/GalleryGrid.qml:138`; `C:/Qt/6.12.1/Src/qtdeclarative/src/quicktemplates/qquickscrollbar.cpp:229`
 
 ## U16: Include subfolders toggle
 
@@ -475,7 +461,7 @@ Entry: `crates/desktop/qml/LibraryPanel.qml:71 onClicked removeRequested -> Main
 
 ### UI-104 [low/stale-result] Grid keeps listing the removed folder's images until the removal job ends — PARTIAL
 
-- Needs: Verify, then fix. Trace the Started listing query. Then refresh the grid when the removal starts, or hide the folder's rows. Files: crates/desktop/src/library.rs, crates/desktop/qml/Main.qml.
+- Needs: Fix (checked: confirmed; the stale window ends at hide_pages, not at the final publish). Hide the folder's rows when the removal starts, or skip the reload at Begun::Started. Files: crates/desktop/src/library.rs (290-292), crates/desktop/qml/Main.qml (155), crates/library/src/coordinator.rs (959, 1012).
 - Verdict: PARTIAL
 - Note: The removal's final publish is Scanned (coordinator.rs:847), so the grid refreshes only then. Whether the Begun::Started reload still lists the removed folder's files depends on the listing query, which I did not trace.
 - Confidence: medium
@@ -547,7 +533,7 @@ Entry: `crates/desktop/qml/LaneRow.qml:117 onClicked -> pauseRequested (LaneRow.
 
 ### UI-116 [low/wrong-target] Failed link can open the inbox with no entry expanded — PARTIAL
 
-- Needs: Verify, then fix. Trace whether unreadable-file passes write a ledger row. Then disable the link, or record a row. Files: crates/desktop/src/notices.rs, crates/desktop/qml/LaneRow.qml.
+- Needs: Fix (checked: confirmed for an unreadable-only pass). Disable the link when the pass has no ledger row, or give unreadable files a ledger row. Files: crates/desktop/src/notices.rs (174-180, 637-645), crates/desktop/qml/LaneRow.qml, crates/desktop/qml/Main.qml (913).
 - Verdict: PARTIAL
 - Note: The link is enabled by the pass's bit in notices.rs:173 and LaneRow.qml:37, and the lookup at Main.qml:833-834 then finds no row. Whether unreadable files really leave no ledger row was not traced in the runner.
 - Confidence: high
@@ -585,7 +571,7 @@ Entry: `crates/desktop/qml/FilterBar.qml:32 saveCropsRequested (emitted from one
 
 ### UI-128 [low/wrong-message] "Had nothing to crop" also counts changed and missing files — PARTIAL
 
-- Needs: Verify, then fix. Trace what Skipped covers (crates/crop/src/lib.rs:119). Then give changed or missing files their own outcome, separate from nothing-to-crop. Files: crates/crop/src/lib.rs, crates/client/locales/en/text.ftl.
+- Needs: Fix (checked: confirmed). Give changed or missing files their own outcome, separate from nothing-to-crop (crates/crop/src/lib.rs:133, 141, 198, 472; wording at crates/wording/locales/en/text.ftl:238). Files: crates/crop/src/lib.rs, crates/wording/locales/en/text.ftl.
 - Verdict: PARTIAL
 - Note: The wording is confirmed: the notice says "{skipped} had nothing to crop" (text.ftl:209), and crop lib.rs:137 counts every Skipped as skipped. Whether Written::Skipped covers files that changed or went missing (crop lib.rs:119) was not traced.
 - Confidence: high
@@ -606,20 +592,6 @@ Entry: `crates/desktop/qml/FilterBar.qml:39 cutBordersRequested (handler at Filt
 - Trigger: A cut batch rewrites the originals, but the thumbnail cache refuses to forget one or more cut files (store error during forget).
 - Consequence: The inbox shows Cutting the borders failed once per failing file, next to Borders cut from the originals for the same job. The user is told the cut failed when the originals were rewritten, and the thumbnail error is not named as such.
 - Sites: `crates/library/src/passes.rs:48`; `crates/library/src/passes.rs:49`
-
-## U37: Popups for refused border actions
-
-Entry: `crates/desktop/qml/Main.qml:527 (sort refused), :577 (FilterBar bordersBlocked), :578 (nothingToCrop), :664 and :668 (viewer B and N) -> featurePopup.show; Main.qml:751-752 Connections on shell.bordersRefused / optionsRefused (shell_bridge.rs:75, :80)`
-
-### UI-136 [medium/stale-result] Filter bar keeps border review and filter count after detection is turned off — CONFIRMED
-
-- Needs: Verify, then fix. Duplicate of UI-067, which is closed. Confirm the filter bar resyncs on BordersTurnedOff; if it doesn't, drive it from listing state. Files: crates/desktop/src/filters.rs, crates/desktop/src/shell.rs, crates/desktop/qml/FilterBar.qml.
-- Verdict: CONFIRMED (duplicate of UI-067)
-- Note: Duplicate of UI-067, UI-082 and UI-113: BordersTurnedOff drops the review and facets (listing.rs:70-75), and the filter bar's sync runs only from set_query, reload and clear (filters.rs:64, 84-93).
-- Confidence: high
-- Trigger: A border review choice (Marked not a border, which needs detection on) is in the query. The user then turns off Detect borders in the Library panel. The listing drops the border review and facets (listing.rs:70-74), but the filter bar is never resynced.
-- Consequence: The review box keeps showing 'Marked not a border' and the Filters button and Clear state keep counting a filter the list no longer applies. The user sees a filter as active that is not in force. The stale state persists until the next filter edit, which is when sync runs.
-- Sites: `D:/GitHub/photo-gallery/crates/desktop/src/filters.rs:70`; `D:/GitHub/photo-gallery/crates/desktop/src/shell.rs:375`; `D:/GitHub/photo-gallery/crates/desktop/qml/Main.qml:709`; `D:/GitHub/photo-gallery/crates/desktop/qml/Main.qml:318`; `D:/GitHub/photo-gallery/crates/desktop/qml/FilterBar.qml:256`
 
 ## U38: Rate a photo in the viewer (star bar, keys)
 
@@ -651,7 +623,7 @@ Entry: `crates/desktop/qml/Viewer.qml:277-278 keys TurnForward and TurnBack -> t
 
 ### UI-147 [low/stale-result] A turn can be counted twice if a refresh read lands between the catalog write and turn_queued — CONFIRMED
 
-- Needs: Verify. Trace the refresh vs turn_queued order. If it is real, key pending turns by revision. Low severity. Files: crates/desktop/src/gallery/edits.rs, crates/client/src/grid.rs.
+- Needs: Fix (checked: confirmed; the window is narrow). Key pending turns by revision, or stop counting in turn_queued what the refresh read already includes. Files: crates/desktop/src/gallery/edits.rs, crates/client/src/grid.rs.
 - Verdict: CONFIRMED
 - Note: edits.rs:44 adds the turn to pending_turns from the model thread, and turned_request reads that state. refresh_turned applies only when the revision is unchanged (grid.rs:405-408). The interleaving with turn_queued and whether edit() bumps the revision were not fully traced. Low severity, as the finding says.
 - Confidence: low
@@ -665,7 +637,7 @@ Entry: `crates/desktop/qml/Viewer.qml:284 MarkBorder key -> Viewer.qml:114 borde
 
 ### UI-148 [medium/double-fire] Two quick border-mark toggles collapse into one while the first write is pending — CONFIRMED
 
-- Needs: Verify, then fix. Duplicate of UI-036, which is closed. The viewer sends the toggle intent, and the model computes the target. Files: crates/desktop/qml/Viewer.qml, crates/desktop/src/gallery/edits.rs.
+- Needs: Fix (checked: confirmed; the UI-036 fix covers only the grid). Route the viewer's N key and RatingBar's border button through the toggle the grid uses, so the target comes from border_mark_target. Files: crates/desktop/qml/Viewer.qml, crates/desktop/qml/RatingBar.qml, crates/desktop/src/gallery/edits.rs, crates/desktop/src/shell.rs.
 - Verdict: CONFIRMED (duplicate of UI-036)
 - Note: Duplicate of UI-036 extended to the viewer: Viewer.qml:284 sends !borderMarked from the viewer's own viewed value, which is also stale until the write lands. Both presses ask for marked = true, and edits.rs:137 drops the second.
 - Confidence: high
@@ -711,20 +683,6 @@ Entry: `crates/desktop/qml/Viewer.qml:302-313 WheelHandler (notches), :274-275 K
 - Consequence: The hint misleads the user about what the wheel does. Users skip pictures and lose their view position, and cannot find the zoom that the hint promised. The zoom keys are pinch, + and -, and double-click 1:1.
 - Sites: `D:/GitHub/photo-gallery/crates/client/locales/en/ui.ftl:231`; `D:/GitHub/photo-gallery/crates/client/src/keys.rs:304`; `D:/GitHub/photo-gallery/crates/desktop/qml/Viewer.qml:310`
 
-## U43: Zoom, pan, fit and 1:1 in the viewer
-
-Entry: `crates/desktop/qml/Viewer.qml:318-320 PinchHandler -> setZoom; :327-329 DragHandler pan; :349-351 touch pan; :354-362 TapHandler double-tap -> toggleOneToOne (Viewer.qml:221); keys Viewer.qml:279-281 (RealSize, ZoomIn, ZoomOut)`
-
-### UI-160 [medium/wrong-message] Viewer hint says 'wheel zoom' but the wheel steps to the next picture — CONFIRMED
-
-- Needs: Duplicate of UI-158. Same fix.
-- Verdict: CONFIRMED (duplicate of UI-158)
-- Note: Duplicate of UI-158, with the same citations (ui.ftl:231, keys.rs:304, Viewer.qml:310). It is a restatement of the same hint, and it is partial for the same reason.
-- Confidence: high
-- Trigger: Open a still image in the viewer. The hint line reads 'wheel zoom'. The user scrolls the wheel expecting to zoom.
-- Consequence: Each wheel notch moves to the previous or next photo and resets the zoom and pan. The on-screen instruction teaches a gesture that does not work, so the user cannot zoom with the wheel and may lose a zoomed view they were inspecting.
-- Sites: `crates/client/locales/en/ui.ftl:231`; `crates/client/src/keys.rs:304`; `crates/desktop/qml/Viewer.qml:310`; `crates/client/src/text.rs:798`
-
 ## U44: Viewer re-render: fit size and region tiles
 
 Entry: `crates/desktop/qml/Viewer.qml:130-131 onFitWidthChanged/onFitHeightChanged -> fitSettle (Viewer.qml:146-150) -> settleFit (Viewer.qml:140); Viewer.qml:384 ImageLayers onRegionDue`
@@ -765,7 +723,7 @@ Entry: `crates/desktop/qml/Viewer.qml:282 Loupe key -> loupe toggle (Viewer.qml:
 
 ### UI-172 [low/missing-feedback] Full-size decode failure leaves the loupe silently absent — PARTIAL
 
-- Needs: Verify, then fix. Read ImageLayers fullReady, then show a full-decode error through the same status the fit uses. Files: crates/desktop/qml/ImageLayers.qml, crates/desktop/qml/Viewer.qml.
+- Needs: Fix (checked: confirmed). Add a full-decode error to the HUD line, from full.status === Image.Error (ImageLayers.qml:34 fullReady, :127-130), and keep the existing log. Files: crates/desktop/qml/ImageLayers.qml, crates/desktop/qml/Hud.qml.
 - Verdict: PARTIAL
 - Note: A failed full decode would leave the full layer in Error and the loupe absent, and Hud shows only the fit status (Viewer.qml:498). fullReady (ImageLayers.qml:33) was not read, so whether it stays false is not settled.
 - Confidence: medium
@@ -789,7 +747,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 
 ### UI-180 [low/missing-feedback] Animation that cannot be read or decoded fails silently — PARTIAL
 
-- Needs: Verify, then fix. Correct the out-of-range citations (animation.rs:76 and :112). Trace the decode path, then surface the error in the HUD. Files: crates/desktop/src/animation.rs, crates/desktop/qml/Hud.qml.
+- Needs: Fix (checked: partly; animation.rs has 72 lines, so :76 and :112 are out of range). Have Player::start report read and decode failures (crates/render/src/player.rs:79, :96, :114) to AnimationPlayer, and show them in the HUD for animations too. Files: crates/render/src/player.rs, crates/desktop/qml/MediaView.qml, crates/desktop/qml/Hud.qml.
 - Verdict: PARTIAL
 - Note: Citation error: animation.rs:76 and :112 are both past end of file (LINE OUT OF RANGE). The HUD part holds: Hud.qml:96 shows playerError only for Video kind, so an animation failure gets no message. The animation decode path that would set an error was not read, so the failure mechanism is not verified.
 - Confidence: medium
@@ -805,7 +763,7 @@ Entry: `crates/desktop/qml/VideoTransport.qml:57 playAsked, :79 muteAsked, :68 o
 - Confidence: high
 - Trigger: Any playback error from the device or the FFmpeg backend, for example an unopenable file.
 - Consequence: The HUD shows the catalogued prefix followed by Qt's English string (for example Could not open source device.). The text is not catalogued, is not translated, and is not pseudo-localized.
-- Sites: `crates/desktop/qml/MediaView.qml:101`; `crates/desktop/qml/Hud.qml:96`; `crates/client/locales/en/ui.ftl:61`; `C:/Qt/6.12.0/Src/qtmultimedia/src/plugins/multimedia/ffmpeg/playbackengine/qffmpegmediadataholder.cpp:210`
+- Sites: `crates/desktop/qml/MediaView.qml:101`; `crates/desktop/qml/Hud.qml:96`; `crates/client/locales/en/ui.ftl:61`; `C:/Qt/6.12.1/Src/qtmultimedia/src/plugins/multimedia/ffmpeg/playbackengine/qffmpegmediadataholder.cpp:210`
 
 ## U48: Find similar from the viewer
 
@@ -813,7 +771,7 @@ Entry: `crates/desktop/qml/Hud.qml:44 findSimilarAsked (RatingBar.qml:45 same si
 
 ### UI-184 [low/double-fire] Double-clicking the find-similar button opens and immediately closes the panel — CONFIRMED
 
-- Needs: Verify, then fix. Read the panel stacking (YandexPanel.qml:103-104). Then ignore the second click, or make the button toggle. Files: crates/desktop/qml/RatingBar.qml, crates/desktop/qml/YandexPanel.qml.
+- Needs: Fix (checked: confirmed; yandexLoader sits above the viewer). Ignore the second click of a double-click on the find-similar button, or have the panel ignore clicks within the double-click interval of opening. Files: crates/desktop/qml/RatingBar.qml, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED
 - Note: RatingBar.qml:45 opens the panel on the first click (openPanel makes it visible, YandexPanel.qml:42-47). The panel's full-window MouseArea (YandexPanel.qml:105-107) then receives the second click and calls close(). The stacking of the panel over the viewer was not read, but the comment at YandexPanel.qml:103-104 says no click reaches the viewer below.
 - Confidence: medium
@@ -855,16 +813,6 @@ Entry: `crates/desktop/qml/YandexPanel.qml:31-34 show -> yandex.searchFile; comm
 - Consequence: The panel shows 'No results.' as if Yandex found nothing. The user is not told that the results were found and failed to download.
 - Sites: `D:/GitHub/photo-gallery/crates/desktop/src/yandex.rs:261`; `D:/GitHub/photo-gallery/crates/desktop/qml/YandexPanel.qml:255`; `D:/GitHub/photo-gallery/crates/app/src/yandex.rs:462`; `D:/GitHub/photo-gallery/crates/client/src/text.rs:415`
 
-### UI-191 [low/missing-feedback] Results whose files fail are removed from the panel with no note — CONFIRMED
-
-- Needs: Duplicate of UI-186. Same fix.
-- Verdict: CONFIRMED (duplicate of UI-186)
-- Note: Duplicate of UI-186 at the source: images.rs:177-179 marks the result dead and drop_dead removes the tile (yandex.rs:241). No status is set for the removal.
-- Confidence: high
-- Trigger: Some result files fail to download or decode, for example a dead host or a non-image response. Their tiles are removed after the thumbnail attempt, and the group counts drop.
-- Consequence: The panel shows fewer results than Yandex returned, and the status line says nothing about the missing ones, so the user cannot tell that results were lost.
-- Sites: `D:/GitHub/photo-gallery/crates/app/src/yandex/images.rs:178`; `D:/GitHub/photo-gallery/crates/desktop/src/yandex.rs:241`
-
 ### UI-193 [low/focus] No keyboard path to pick or open an individual result — CONFIRMED
 
 - Needs: Fix. Make ResultTile a focusable FocusScope with keys for pick and open. This also fixes UI-196. Files: crates/desktop/qml/ResultTile.qml, crates/desktop/qml/YandexPanel.qml.
@@ -878,16 +826,6 @@ Entry: `crates/desktop/qml/YandexPanel.qml:31-34 show -> yandex.searchFile; comm
 ## U50: Pick Yandex results, shift-range pick
 
 Entry: `crates/desktop/qml/ResultTile.qml:100 onClicked -> toggled (ResultTile.qml:34) -> YandexPanel.qml:223, :245 yandex.togglePick; ResultTile.qml:35 rangeTo -> YandexPanel.qml:224, :246 yandex.pickTo`
-
-### UI-196 [low/missing-keyboard] The result list has no keyboard path to pick, and no keyboard path to open the full-size preview — CONFIRMED
-
-- Needs: Duplicate of UI-193. Same fix.
-- Verdict: CONFIRMED (duplicate of UI-193)
-- Note: Duplicate of UI-193 for the key path: YandexPanel.qml:97-102 handles only Close, and YandexPreview's Pick (YandexPreview.qml:107) is reachable only through a mouse double-click on a tile.
-- Confidence: high
-- Trigger: A keyboard-only user opens the Yandex panel and presses Space, arrow keys or Enter on a result. The panel's Keys handler accepts only the Close action (Escape). ResultTile has no focus or key handling, so the only route to togglePick or the preview is a mouse click or double-click.
-- Consequence: A keyboard user cannot pick any result to save, and cannot reach the preview where Space does pick. The mouse and keyboard paths do not reach the same result.
-- Sites: `crates/desktop/qml/YandexPanel.qml:97`; `crates/desktop/qml/YandexPanel.qml:98`; `crates/desktop/qml/YandexPreview.qml:107`
 
 ### UI-197 [low/unhandled-close] Quitting while a save runs cuts it short with no record of what was saved — CONFIRMED
 
@@ -905,7 +843,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:81 onClicked -> yandex.setPicked(firs
 
 ### UI-198 [medium/wrong-message] Second photo's search is silently dropped while busy; old results stay shown — CONFIRMED
 
-- Needs: Verify, then fix. Duplicate of UI-182, which is closed. A busy search is refused with a status, and the panel's results and target are left alone. Files: crates/desktop/qml/YandexPanel.qml, crates/desktop/src/yandex.rs, crates/app/src/yandex.rs.
+- Needs: Fix (checked: partly; 76fb1c43 already reports the refusal, but the previous photo's results and picks stay). Clear the results and picks when a new photo's search is accepted, so Save never acts on the previous photo's picks. Files: crates/desktop/src/yandex.rs, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED (duplicate of UI-182)
 - Note: Duplicate of UI-182 and UI-188 for the viewer's show path: YandexPanel.qml:31-34 opens the panel and calls searchFile, and search_photo returns on Ok(false) (yandex.rs:141) while busy (app/yandex.rs:425-426) without changing status or results.
 - Confidence: high
@@ -953,7 +891,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:164-170 Save button onClicked -> save
 
 ### UI-206 [low/wrong-message] Picks that die while the folder dialog is open are dropped silently, and if all die the save says Pick at least one image — PARTIAL
 
-- Needs: Verify, then fix. Correct the out-of-range citations (yandex_bridge.rs:449, 453, 455). Trace the empty-pick path. Report dropped picks through the shared outcome path. Files: crates/desktop/src/yandex_bridge.rs.
+- Needs: Fix (checked: confirmed; yandex_bridge.rs:449-455 are out of range, the logic is in crates/desktop/src/yandex.rs:508-531). Check the picks before taking the folder (yandex.rs:508-517), and report dropped picks through the status line in poll (yandex.rs:421-439). Files: crates/desktop/src/yandex.rs, crates/desktop/src/bridges/yandex_bridge.rs.
 - Verdict: PARTIAL
 - Note: Citation error: yandex_bridge.rs:449, 453 and 455 are past the end of the file (LINE OUT OF RANGE). The save path could not be checked at those lines. The general claim that a pick dying while the folder dialog is open is dropped is consistent with drop_dead (yandex.rs:241) and the poll (yandex.rs:372-374), but the empty-set path into "Pick at least one image" was not read.
 - Confidence: medium
@@ -987,7 +925,7 @@ Entry: `crates/desktop/qml/YandexPanel.qml:171 Close button and :107 background 
 
 ### UI-210 [high/stale-result] Refused Find similar leaves the previous photo's results on screen — CONFIRMED
 
-- Needs: Verify, then fix. Duplicate of UI-182, which is closed. Same fix as UI-198. Severity stays high. Files: crates/desktop/qml/YandexPanel.qml, crates/desktop/src/yandex.rs.
+- Needs: Fix (checked: partly; the refusal now sets a status, but the previous photo's results stay). Clear the results and picks, or name the photo in the panel, on refusal. The closed-search case also returns Ok(false), so the status text must cover both. Same fix as UI-198. Severity stays high. Files: crates/desktop/src/yandex.rs, crates/desktop/qml/YandexPanel.qml.
 - Verdict: CONFIRMED (duplicate of UI-182)
 - Note: Duplicate of UI-182 and UI-188 for the close-then-reopen case: YandexPanel.qml:31-34 opens the panel, yandex.rs:141 returns on Ok(false) while busy (app/yandex.rs:425-426), and the panel keeps A's results and state.
 - Confidence: high
@@ -1018,16 +956,6 @@ Entry: `crates/desktop/qml/ResultTile.qml:55 onStatusChanged -> thumbSettled (Re
 - Trigger: The user closes the app while a Yandex result's file is being downloaded for a grid thumbnail (the turn row) or the full-size preview (the original). The provider job is blocked in Images::get -> Fetcher download.
 - Consequence: The window disappears but the process stays alive until the download finishes or its body timeout (15 minutes) fires. That looks like a hang. Catalog connections and the WAL merge in app::shutdown wait too, since they run after drop(engine). The stop comment in yandex.rs says a slow request is left to end with the process, which is not what happens.
 - Sites: `D:/GitHub/photo-gallery/crates/desktop/src/lib.rs:223`; `D:/GitHub/photo-gallery/crates/desktop/cpp/providers.cpp:131`; `D:/GitHub/photo-gallery/crates/desktop/cpp/providers.cpp:135`; `D:/GitHub/photo-gallery/crates/app/src/yandex.rs:100`; `D:/GitHub/photo-gallery/crates/app/src/yandex/images.rs:194`
-
-### UI-214 [low/missing-feedback] Results whose files fail are removed silently; the status line never says so — CONFIRMED
-
-- Needs: Duplicate of UI-186. Same fix.
-- Verdict: CONFIRMED (duplicate of UI-186)
-- Note: Duplicate of UI-186 and UI-191 with the status-line point: yandex.rs:372-374 drops dead results without a status, and YandexPanel.qml:255 shows "No results" when every result is gone and the status is empty.
-- Confidence: high
-- Trigger: After a search finishes, a result's file cannot be fetched or decoded (a dead link). The result is taken off the grid, and a picked one loses its pick. The trigger is a network or host failure, not a user action.
-- Consequence: Group counts and the Save count drop with no message. The status line is empty after a clean search. If every result dies, the panel shows 'No results' although the search found some. A partial result is not reported as partial.
-- Sites: `D:/GitHub/photo-gallery/crates/app/src/yandex/images.rs:178`; `D:/GitHub/photo-gallery/crates/desktop/src/yandex.rs:372`; `D:/GitHub/photo-gallery/crates/app/src/yandex.rs:462`; `D:/GitHub/photo-gallery/crates/desktop/qml/YandexPanel.qml:255`
 
 ## U57: Status bar toast
 
@@ -1073,7 +1001,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:331-337 TapHandler -> panel.select (In
 
 ### UI-228 [low/missing-feedback] A failed Retry or Dismiss write is only logged, so the user gets no explanation — PARTIAL
 
-- Needs: Verify, then fix. Check whether self.lost is shown anywhere. Then report failed writes through the shared outcome path. Files: crates/app/src/inbox.rs, crates/desktop/src/notices.rs.
+- Needs: Fix (checked: confirmed). Report failed Dismiss and Retry writes through the outcome path at the drain error arm (inbox.rs:933-937); NoticesLost counts notices only, so these are silent. Files: crates/app/src/inbox.rs, crates/desktop/src/notices.rs.
 - Verdict: PARTIAL
 - Note: inbox.rs:922-927 forces a refresh, adds to self.lost and logs a warning, which matches the finding. Whether self.lost is shown anywhere in the UI was not read, so "only logged" is not settled.
 - Confidence: high
@@ -1103,7 +1031,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:485 onClicked copyRequested; Ctrl+C at
 - Confidence: medium
 - Trigger: The details of a kept notice are open, and the user clicks in the details text (inboxDetails). The readOnly TextArea takes focus, and Ctrl+C goes to it. The text control handles QKeySequence::Copy by copying only the selection, so the list's Ctrl+C handler never runs. With no selection, nothing is copied. Delete and the arrow keys are shadowed the same way.
 - Consequence: Ctrl+C copies just the selected words, or nothing, where the user expects the entry. The keyboard path to Copy no longer matches the mouse path. Nothing reports the difference.
-- Sites: `crates/desktop/qml/InboxPanel.qml:351`; `crates/desktop/qml/InboxPanel.qml:233`; `C:\Qt\6.12.0\Src\qtdeclarative\src\quick\items\qquicktextcontrol.cpp:833`
+- Sites: `crates/desktop/qml/InboxPanel.qml:351`; `crates/desktop/qml/InboxPanel.qml:233`; `C:\Qt\6.12.1\Src\qtdeclarative\src\quick\items\qquicktextcontrol.cpp:833`
 
 ### UI-235 [low/missing-feedback] Copy gives no confirmation, and a ledger copy can land after the user has pasted — CONFIRMED
 
@@ -1195,7 +1123,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:473 onClicked retrySelected (InboxPane
 
 ### UI-246 [low/stale-result] Thumbnail failures buffered before a Retry can be recorded again after it — PARTIAL
 
-- Needs: Verify, then fix. Trace the flush ordering against Retry (crates/thumbs/src/lib.rs:329, crates/catalog/src/ledger.rs:209). If it is real, order it through the writer. Files: crates/thumbs/src/lib.rs, crates/catalog/src/ledger.rs.
+- Needs: Fix (checked: confirmed; impact narrow, the number of buffered failures is not measured). Order the pass's ledger writes through the writer queue, or have record_failures check the listing sequence, so a late flush cannot undo a Retry. Files: crates/thumbs/src/lib.rs, crates/catalog/src/writers.rs, crates/catalog/src/ledger/failure.rs.
 - Verdict: PARTIAL
 - Note: thumbs lib.rs:329-330 writes the buffered failures on its own connection, and ledger.rs:209 deletes the rows of the pass. The finding says the ordering against Retry was not traced, and that remains open.
 - Confidence: low
@@ -1217,16 +1145,6 @@ Entry: `crates/desktop/qml/InboxPanel.qml:75 requestFiles, from the ledger rows 
 - Consequence: The list keeps showing the cleared file as failed, and the header line 'The newest N of M files' keeps the old total, until a new failure moves the newest serial or the user reselects the entry. The count text in the details updates through body, but the list does not, so the user sees a stale failed-files list.
 - Sites: `crates/desktop/qml/InboxPanel.qml:78`; `crates/desktop/qml/InboxPanel.qml:276`; `crates/catalog/src/inbox.rs:231`; `crates/catalog/src/ledger.rs:188`; `crates/desktop/src/failed_files.rs:129`
 
-### UI-249 [low/focus] Reveal of a failed file has no keyboard path — PARTIAL
-
-- Needs: Verify, then fix. Check whether Tab reaches Reveal (Qt default). Rows become focus scopes with a Reveal key, under the focus policy. Files: crates/desktop/qml/InboxPanel.qml.
-- Verdict: PARTIAL
-- Note: The key-binding half holds: no key in the list's Keys handler reveals a file. The "no keyboard path" half does not: qquickabstractbutton.cpp:105 sets activeFocusOnTab on every AbstractButton, so Tab can reach the Reveal button (InboxPanel.qml:444).
-- Confidence: medium
-- Trigger: A keyboard-only user opens a ledger entry's details and wants to reveal one of its failed files or failed folders.
-- Consequence: Reveal is reachable only with the mouse. The file list is not in the Tab order, its Reveal buttons do not set activeFocusOnTab, and no key binding in the list's Keys handler reveals a row, so the keyboard path does not reach the same result as the mouse path.
-- Sites: `crates/desktop/qml/InboxPanel.qml:396`; `crates/desktop/qml/InboxPanel.qml:444`; `crates/desktop/qml/InboxPanel.qml:213`
-
 ## U64: Reveal a file from the inbox
 
 Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not folder) -> revealRequested (InboxPanel.qml:59) -> Main.qml:839 win.revealFile (Main.qml:351)`
@@ -1243,7 +1161,7 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not fo
 
 ### UI-252 [low/wrong-message] A failed listing read is reported as a missing file — PARTIAL
 
-- Needs: Verify, then fix. Read the reveal branch (shell.rs:447-451). Make reveal use a Result, so a listing failure is not reported as a missing file. Files: crates/desktop/src/shell.rs, crates/desktop/src/gallery/model.rs.
+- Needs: Fix (checked: partly; shell.rs:447-451 is the Ok(None) branch, which this trigger does not reach). At shell.rs:560-566, check whether the listing failed before posting FileNoLongerInLibrary after an empty listing. Files: crates/desktop/src/shell.rs, crates/desktop/src/gallery/model.rs.
 - Verdict: PARTIAL
 - Note: model.rs:100-104 turns a listing error into ListingFailed and an empty list (unwrap_or_default), and applies it with the generation. The reveal branch that then posts FileNoLongerInLibrary (shell.rs:447-451 and the code after it) was not read, so the second notice is not verified.
 - Confidence: high
@@ -1260,16 +1178,6 @@ Entry: `crates/desktop/qml/InboxPanel.qml:448-453 Reveal onClicked (file, not fo
 - Trigger: The user clicks Reveal on a file while the reader is busy (for example behind a running grid listing, which notices.rs says is accepted). The read can take a noticeable time.
 - Consequence: The Reveal button stays enabled with no label change or spinner, and the inbox stays open until the folder is listed. A second click resubmits the request, which supersedes the first safely, but the user has no sign the first click registered.
 - Sites: `crates/desktop/qml/InboxPanel.qml:448`; `crates/desktop/qml/InboxPanel.qml:452`
-
-### UI-254 [low/focus] File Reveal has no keyboard binding in the inbox — PARTIAL
-
-- Needs: Verify, then fix. As UI-249: check Tab reach, then give the rows a Reveal key under the focus policy. Files: crates/desktop/qml/InboxPanel.qml.
-- Verdict: PARTIAL
-- Note: The list's Keys handler (InboxPanel.qml:213) has no reveal key, which holds. The claim that Tab may not reach the button is answered by qquickabstractbutton.cpp:105 (setActiveFocusOnTab(true) on every AbstractButton), so the button can be reached by Tab.
-- Confidence: low
-- Trigger: A keyboard-only user opens the inbox, selects a ledger entry, opens its details, and wants to reveal a failed file.
-- Consequence: The panel's key map (Up/Down/Enter/Space/Delete/Ctrl+C/R) does not reveal a file. The only route is the row's Reveal Button, which is inside a list that disables activeFocusOnTab. Whether Tab reaches the button depends on Qt's default, which was not verified.
-- Sites: `crates/desktop/qml/InboxPanel.qml:213`; `crates/desktop/qml/InboxPanel.qml:396`
 
 ## U65: Reveal a folder from the inbox
 
@@ -1305,7 +1213,7 @@ Entry: `crates/desktop/qml/GridRow.qml:103 Component.onCompleted take and :106 o
 
 ### UI-279 [medium/stuck-error] A transient thumbnail failure leaves the error mark on a readable photo — PARTIAL
 
-- Needs: Verify, then fix. Read Qt's Image re-request after an Error (qquickimage.cpp). Then retry on re-bind, or stop caching the failure as final. Files: crates/desktop/qml/GridCell.qml, crates/desktop/src/providers.rs.
+- Needs: Fix (checked: confirmed; an unchanged source is not re-requested after Error, qquickimagebase.cpp:119-123). Stop caching a transient failure as final (providers.rs:107-135), and re-request when the cell's URL is re-bound or the device pixel ratio changes (qquickimagebase.cpp:426-445). Files: crates/desktop/qml/GridCell.qml, crates/desktop/src/providers.rs.
 - Verdict: PARTIAL
 - Note: GridCell.qml:68 binds the source to the thumbnail URL and :89 shows the error mark when thumb.status is Error. providers.rs:122-132 reports any error as failed(). Whether Qt's Image re-requests an unchanged source after an Error was not read in qquickimage.cpp, and that decides the finding.
 - Confidence: medium

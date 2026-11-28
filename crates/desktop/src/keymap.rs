@@ -8,7 +8,7 @@
 
 use crate::bridges::keymap_bridge::qobject;
 
-use cxx_qt_lib::{QString, QStringList};
+use cxx_qt_lib::QString;
 use pg_client::controller::panels::PanelKind;
 use pg_client::keys::{self, Global, GridKey, Key, Media, Mods, Panel, Shown, Viewer};
 
@@ -141,12 +141,17 @@ fn viewer_of(key: i32, modifiers: i32, kind: i32, has_borders: bool) -> (i32, i3
     key_of(key).and_then(|k| keys::viewer(k, mods_of(modifiers), shown)).map_or((-1, 0), viewer_code)
 }
 
-/// The viewer's hint line as chips: its keys and labels (`pg_wording::hint_chips`), as Qt lists.
-fn viewer_chips(kind: i32, has_borders: bool) -> (QStringList, QStringList) {
-    let (keys, labels) = pg_wording::hint_chips(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)));
-    let to_list =
-        |words: Vec<String>| -> QStringList { words.iter().map(|word| QString::from(word.as_str())).collect() };
-    (to_list(keys), to_list(labels))
+/// The viewer's hint line as chips: its keys and labels (`pg_wording::hint_chips`), at the same indices.
+fn viewer_chips(kind: i32, has_borders: bool) -> (Vec<String>, Vec<String>) {
+    pg_wording::hint_chips(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)))
+}
+
+/// The word at `index` as a Qt string; empty when there is none there.
+fn chip_at(words: &[String], index: i32) -> QString {
+    usize::try_from(index)
+        .ok()
+        .and_then(|i| words.get(i))
+        .map_or_else(QString::default, |word| QString::from(word.as_str()))
 }
 
 impl qobject::KeyMap {
@@ -166,13 +171,19 @@ impl qobject::KeyMap {
         key_of(key).and_then(keys::panel).map_or(-1, panel_code)
     }
 
-    /// The viewer's hint chips: the keys, in the line's order, and their labels ("" for a key alone) at the same indices.
-    pub(crate) fn viewer_hint_keys(&self, kind: i32, has_borders: bool) -> QStringList {
-        viewer_chips(kind, has_borders).0
+    /// How many chips the viewer's hint line has; `viewer_hint_key` and `viewer_hint_label` take an index below it.
+    pub(crate) fn viewer_hint_count(&self, kind: i32, has_borders: bool) -> i32 {
+        i32::try_from(viewer_chips(kind, has_borders).0.len()).unwrap_or(i32::MAX)
     }
 
-    pub(crate) fn viewer_hint_labels(&self, kind: i32, has_borders: bool) -> QStringList {
-        viewer_chips(kind, has_borders).1
+    /// The viewer's hint chip `index`: its key, in the line's order.
+    pub(crate) fn viewer_hint_key(&self, kind: i32, has_borders: bool, index: i32) -> QString {
+        chip_at(&viewer_chips(kind, has_borders).0, index)
+    }
+
+    /// The label after the viewer's hint chip `index` ("" for a key alone).
+    pub(crate) fn viewer_hint_label(&self, kind: i32, has_borders: bool, index: i32) -> QString {
+        chip_at(&viewer_chips(kind, has_borders).1, index)
     }
 
     pub(crate) fn global_sequence(&self, code: i32) -> QString {

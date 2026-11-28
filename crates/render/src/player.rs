@@ -144,7 +144,8 @@ fn fit(frame: Frame, size: Size, resizer: &mut pg_codec::resize::Resizer) -> pg_
         usize::try_from(frame.height).unwrap_or(usize::MAX),
     );
     let mut rgba = Vec::new();
-    resizer.resize_rgba(&frame.rgba, (source_width, source_height), (width, target as usize), &mut rgba)?;
+    let target_rows = usize::try_from(target).unwrap_or(usize::MAX);
+    resizer.resize_rgba(&frame.rgba, (source_width, source_height), (width, target_rows), &mut rgba)?;
     Ok(Frame { width: u32::try_from(width).unwrap_or(u32::MAX), height: target, rgba, delay_ms: frame.delay_ms })
 }
 

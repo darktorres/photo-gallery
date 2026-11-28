@@ -166,9 +166,9 @@ impl Resizer {
 
 /// Each colour times its alpha (rounded), in place: the premultiplied form the kernel averages correctly.
 fn premultiply(rgba: &mut [u8]) {
-    for pixel in rgba.chunks_exact_mut(4) {
-        let alpha = u32::from(pixel[3]);
-        for colour in &mut pixel[..3] {
+    for [r, g, b, a] in rgba.as_chunks_mut::<4>().0 {
+        let alpha = u32::from(*a);
+        for colour in [r, g, b] {
             *colour = u8::try_from((u32::from(*colour) * alpha + 127) / 255).unwrap_or(u8::MAX);
         }
     }
@@ -176,14 +176,13 @@ fn premultiply(rgba: &mut [u8]) {
 
 /// The inverse of [`premultiply`], in place: a colour over its alpha (rounded, clamped); a fully transparent pixel is black.
 fn unpremultiply(rgba: &mut [u8]) {
-    for pixel in rgba.chunks_exact_mut(4) {
-        let alpha = u32::from(pixel[3]);
-        for colour in &mut pixel[..3] {
-            *colour = if alpha == 0 {
-                0
-            } else {
-                u8::try_from((u32::from(*colour) * 255 + alpha / 2) / alpha).unwrap_or(u8::MAX)
-            };
+    for [r, g, b, a] in rgba.as_chunks_mut::<4>().0 {
+        let alpha = u32::from(*a);
+        for colour in [r, g, b] {
+            // A zero alpha has no quotient: the colour of a transparent pixel is black.
+            *colour = (u32::from(*colour) * 255 + alpha / 2)
+                .checked_div(alpha)
+                .map_or(0, |quotient| u8::try_from(quotient).unwrap_or(u8::MAX));
         }
     }
 }
@@ -236,7 +235,11 @@ mod tests {
         let mut rgb = Vec::new();
         let mut rgba = Vec::new();
         for i in 0..w * h {
-            let (r, g, b) = (((i * 37) % 256) as u8, ((i * 91) % 256) as u8, ((i * 53) % 256) as u8);
+            let (r, g, b) = (
+                u8::try_from((i * 37) % 256).unwrap(),
+                u8::try_from((i * 91) % 256).unwrap(),
+                u8::try_from((i * 53) % 256).unwrap(),
+            );
             rgb.extend_from_slice(&[r, g, b]);
             rgba.extend_from_slice(&[r, g, b, 255]);
         }
@@ -244,9 +247,12 @@ mod tests {
         Resizer::new().resize(&Rgb { width: w, height: h, pixels: rgb }, 4, 3, &mut out_rgb).unwrap();
         let mut out_rgba = Vec::new();
         Resizer::new().resize_rgba(&rgba, (w, h), (4, 3), &mut out_rgba).unwrap();
-        let rgb_of_rgba: Vec<u8> = out_rgba.chunks_exact(4).flat_map(|p| p[..3].to_vec()).collect();
+        let rgb_of_rgba: Vec<u8> = out_rgba.as_chunks::<4>().0.iter().flat_map(|&[r, g, b, _]| [r, g, b]).collect();
         assert_eq!(rgb_of_rgba, out_rgb.pixels);
-        assert!(out_rgba.chunks_exact(4).all(|p| p[3] == 255), "the alpha of an opaque picture stays 255");
+        assert!(
+            out_rgba.as_chunks::<4>().0.iter().all(|&[_, _, _, a]| a == 255),
+            "the alpha of an opaque picture stays 255"
+        );
     }
 
     // A transparent pixel's colour does not reach the opaque ones: a white picture with a transparent black half has
@@ -260,12 +266,12 @@ mod tests {
         }
         let mut out = Vec::new();
         Resizer::new().resize_rgba(&rgba, (w, h), (4, 1), &mut out).unwrap();
-        for pixel in out.chunks_exact(4) {
-            if pixel[3] > 0 {
-                assert!(pixel[0] >= 250, "a partly transparent pixel is dark: {pixel:?}");
+        for &[r, g, b, a] in out.as_chunks::<4>().0 {
+            if a > 0 {
+                assert!(r >= 250, "a partly transparent pixel is dark: {:?}", [r, g, b, a]);
             }
         }
-        assert!(out.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255), "the edge is partly transparent");
+        assert!(out.as_chunks::<4>().0.iter().any(|&[_, _, _, a]| a > 0 && a < 255), "the edge is partly transparent");
     }
 
     #[test]

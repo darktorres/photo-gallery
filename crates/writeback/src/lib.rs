@@ -738,7 +738,7 @@ impl Inner {
         // The bytes now in the file: the temp's, or the original's when the temp is gone.
         let data = match copied {
             Some(data) => data,
-            None => std::fs::read(&path).map_err(|e| Error::io(format!("reading {shown}"), e))?,
+            None => std::fs::read(path).map_err(|e| Error::io(format!("reading {shown}"), e))?,
         };
         let rewrite = Rewrite { before: None, after, metadata_only: None };
         catalog.write_done(&written, Self::rewrote(&written, rewrite, &data))?;

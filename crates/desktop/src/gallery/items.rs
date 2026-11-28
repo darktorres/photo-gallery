@@ -41,34 +41,6 @@ impl PlayerTurns {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // An animation is turned by its whole orientation: the mirror, then the quarter turns, for each of the eight EXIF
-    // orientations, with the catalog and pending turns added on. A video is never mirrored (Qt's player turns it).
-    #[test]
-    fn an_animation_is_turned_by_its_orientation_and_the_turns_on_top() {
-        for tag in 1..=8 {
-            let exif = Orientation::new(tag).unwrap();
-            for turned in 0..4 {
-                let got = PlayerTurns::of(MediaType::Animated, exif, Turns::new(turned));
-                let (mirrored, turns) = exif.compose(Turns::new(turned)).parts();
-                assert_eq!((got.mirrored, got.turns), (mirrored, i32::from(turns.get())), "tag {tag}, turned {turned}");
-            }
-        }
-    }
-
-    #[test]
-    fn a_video_takes_the_turns_alone() {
-        for tag in 1..=8 {
-            let exif = Orientation::new(tag).unwrap();
-            let got = PlayerTurns::of(MediaType::Video, exif, Turns::new(3));
-            assert_eq!(got, PlayerTurns { turns: 3, mirrored: false }, "tag {tag}");
-        }
-    }
-}
-
 impl qobject::GalleryModel {
     /// The image's aspect as shown (pending turns included); 1 without its height (`ROLE_IMAGE_ASPECTS`).
     pub(super) fn image_aspect(&self, item: i32) -> f64 {
@@ -262,6 +234,34 @@ impl qobject::GalleryModel {
             Detail::Loaded(line) => line,
             Detail::Loading => QString::from(&pg_wording::ui("ui-loading", 0.0, "", "")),
             Detail::Unavailable => QString::from(&pg_wording::ui("ui-details-unavailable", 0.0, "", "")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // An animation is turned by its whole orientation: the mirror, then the quarter turns, for each of the eight EXIF
+    // orientations, with the catalog and pending turns added on. A video is never mirrored (Qt's player turns it).
+    #[test]
+    fn an_animation_is_turned_by_its_orientation_and_the_turns_on_top() {
+        for tag in 1..=8 {
+            let exif = Orientation::new(tag).unwrap();
+            for turned in 0..4 {
+                let got = PlayerTurns::of(MediaType::Animated, exif, Turns::new(turned));
+                let (mirrored, turns) = exif.compose(Turns::new(turned)).parts();
+                assert_eq!((got.mirrored, got.turns), (mirrored, i32::from(turns.get())), "tag {tag}, turned {turned}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_video_takes_the_turns_alone() {
+        for tag in 1..=8 {
+            let exif = Orientation::new(tag).unwrap();
+            let got = PlayerTurns::of(MediaType::Video, exif, Turns::new(3));
+            assert_eq!(got, PlayerTurns { turns: 3, mirrored: false }, "tag {tag}");
         }
     }
 }

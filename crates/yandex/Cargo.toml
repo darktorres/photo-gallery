@@ -15,3 +15,4 @@ pg-model = { path = "../model" }
 serde_json.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
+url.workspace = true

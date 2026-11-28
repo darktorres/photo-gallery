@@ -156,8 +156,9 @@ class Provider : public QQuickAsyncImageProvider {
 public:
     explicit Provider(ImageKind kind) : m_kind(kind), m_pool(new QThreadPool), m_queue(std::make_shared<Queue>()) {
         // Thumbnails read originals and decode: enough threads to keep the disk queue full (8 in
-        // flight). Full-size images are big; two at a time keeps memory in check. A Yandex picture is a file the search
-        // fetches on demand, so four at a time.
+        // flight). Full-size images are big; two at a time keeps memory in check. A Yandex picture waits on its file's
+        // fetch: the grid asks for one at a time, and the preview for its current and two neighbouring originals, so four
+        // threads are the most that wait at once.
         m_pool->setMaxThreadCount(kind == ImageKind::Thumb ? 8 : kind == ImageKind::Yandex ? 4 : 2);
     }
 

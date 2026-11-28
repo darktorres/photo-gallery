@@ -36,14 +36,17 @@ Fix:
 
 SEC-052, SEC-055, SEC-050/SEC-057 (`pos + 1`). **Read**; ureq APIs checked against the ureq 3.5.2 source.
 
-`Fetcher::download` (`crates/yandex/src/fetch.rs`) GETs whatever URL the page returned, with no scheme, host or address check. Downloads start as results arrive, four at a time (`crates/app/src/yandex/images.rs`), up to 100 MB each, into the decoders. ureq's defaults: 10 redirects, and the `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY` variables are read.
+`Fetcher::download` (`crates/yandex/src/fetch.rs`) GETs whatever URL the page returned, with no scheme, host or address check. Downloads start as results arrive, six at a time from each server (`crates/yandex/src/gate.rs`, `crates/app/src/yandex/images.rs`), up to 100 MB each, into the decoders. ureq's defaults: 10 redirects, and the `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY` variables are read.
 
 Fix:
 
 - **`ResultUrl`** in pg-yandex, private field, built by the parser: http or https, a host, no userinfo. `Fetcher::download` takes `&ResultUrl`.
 - **A resolver that admits public addresses only.** Implement `ureq::unversioned::resolver::Resolver` around `DefaultResolver`; refuse the host when any resolved address is not public, with `ureq::Error::Other`. Install with `Agent::with_parts(config, DefaultConnector::default(), PublicOnly)`. Every redirect hop resolves through it (`run.rs` `connect`), and the TCP connector dials exactly the checked addresses, so DNS rebinding cannot get past it. IP literals and odd forms (a decimal integer host) are covered, since the check is on the resolved result.
 - **`.proxy(None)`.** With a proxy set, ureq does not resolve the target, so the policy would silently stop. A proxy, if ever wanted, is an explicit preference.
-- **`.max_redirects(5)`** on both agents; keep `max_redirects_will_error(true)`.
+- **`.max_redirects(5)`** on the search agent; keep `max_redirects_will_error(true)`. The result files do not use the agent's
+  redirects: `Fetcher::download` requests each hop with `max_redirects(0)` and follows the `Location` itself, with
+  `MAX_REDIRECTS = 5` (`crates/yandex/src/fetch.rs`), so that every hop takes the slot of its own server. Each hop's
+  address is parsed with `ResultUrl::parse` and resolves through the resolver below.
 - **`.https_only(true)`** on the search `Client` only. Many result images are http-only, and https does nothing against a hostile host.
 - **No host allowlist**: results are on third-party hosts.
 - **The address table**, written out (`IpAddr::is_global` is unstable), with a test for each row. IPv4: 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.0.2/24, 192.88.99/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4, 240/4. IPv6: `::/128`, `::1`, `::/96`, `::ffff:0:0/96` (check the embedded v4 with `to_ipv4_mapped`), `64:ff9b::/96` and `64:ff9b:1::/48` (embedded v4), `100::/64`, `2001::/32` (refuse), `2001:db8::/32`, `2002::/16` (embedded v4), `fc00::/7`, `fe80::/10`, `fec0::/10`, `ff00::/8`.

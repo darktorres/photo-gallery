@@ -183,6 +183,7 @@ msg-yandex-no-result = Yandex's search has no such result
 msg-yandex-no-search = There is no search to take a result from
 msg-yandex-no-search-on-screen = Nothing is on screen to save
 msg-yandex-not-called = The request was never made
+msg-yandex-not-web-address = The result's address is not a web address the app can fetch
 msg-yandex-recorded = recorded Yandex session: { $error }
 msg-yandex-undecodable = a result's file is not an image this app can decode: { $reason }
 

@@ -1,5 +1,26 @@
 # Yandex result images: a per-server fetch limit instead of a global `FETCHERS = 4`
 
+## Status
+
+Implemented in the working tree (not yet committed): `crates/yandex/src/{gate,result_url,fetch}.rs`,
+`crates/app/src/yandex/{images,replay,yandex}.rs`, `UnexpectedReason::NotWebAddress`, and the security plan §3 edits.
+
+Where the code departs from the design below:
+
+- **`claim`** (`images.rs`): a request takes its own result out of the queue when a fetch thread could not start for
+  another result. Without it, a request could retry the same front-of-queue job forever. Found by the spawn-failure test.
+- **`ReplayFiles`** is the replay's file-serving half; `Replay` stays the `Source`. `Images::with_spawner` is the test seam.
+- **`Kick::pause`**, the decode backlog (`DECODE_BACKLOG = 8`), and the three-panics rule are as designed.
+
+Tests in place cover the gate (limit, waiters, kicks, cancel), the redirect loop over loopback servers (including the
+exact limit), the scheduler (per-server peak, cross-search handoff, decode backlog, panics, spawn failures, shutdown),
+and the factories sharing one gate.
+
+Not covered by a test: the backoff's timing after a fetch thread fails to start, and a panic inside `Permit::drop`
+(the poisoned-lock recovery is by design, not tested).
+
+Open decisions for the user: redirects cut from 10 to 5, and a 3xx without `Location` now a status error.
+
 ## Context
 
 The Yandex screen prefetches each search's result files with a global `FETCHERS = 4` threads

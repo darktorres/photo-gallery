@@ -25,7 +25,9 @@ use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 use pg_platform::names::{disk_path, rule_path_of, shown};
 use pg_platform::native::PATH_RULES;
-use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
+use pg_yandex::{
+    Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, Gate, OtherSize, PER_SERVER, Similar, Upload, YandexError,
+};
 
 use crate::inbox::Inbox;
 use crate::makers::Makers;
@@ -37,7 +39,7 @@ pub use images::{Fetch, Measured};
 pub mod source;
 pub use source::{Source, SourceError};
 pub mod replay;
-pub use replay::{Recording, Replay};
+pub use replay::{Recording, Replay, ReplayFiles};
 mod save;
 use save::{saved_stem, stem_of, write_new};
 
@@ -79,21 +81,22 @@ pub enum YandexSource {
 /// Makes the connection for one search: [`client()`], or [`replay()`] for a recorded session.
 pub type Factory = Arc<dyn Fn() -> Result<Connection, SourceError> + Send + Sync>;
 
-/// The real Yandex client, made for each search. The default.
-pub fn client() -> Factory {
-    Arc::new(|| -> Result<Connection, SourceError> {
-        Ok(Connection { source: Box::new(Client::new()?), fetch: Arc::new(Fetcher::new()) })
+/// The real Yandex client, made for each search. The default. Its result files are counted by `gate`, which the app shares
+/// across every search (`Yandex::new`).
+pub fn client(gate: Arc<Gate>) -> Factory {
+    Arc::new(move || -> Result<Connection, SourceError> {
+        Ok(Connection { source: Box::new(Client::new()?), fetch: Arc::new(Fetcher::new(gate.clone())) })
     })
 }
 
 /// The recorded session in `dir` (the folder's layout is in the `replay` module), standing in for the client. It is read once, here; when it
-/// can't be read, every search fails with the reason, so nothing is sent to Yandex in its place.
-pub fn replay(dir: &Path) -> Factory {
+/// can't be read, every search fails with the reason, so nothing is sent to Yandex in its place. Its files are counted by `gate`.
+pub fn replay(dir: &Path, gate: Arc<Gate>) -> Factory {
     let recording = Recording::read(dir).map(Arc::new);
     Arc::new(move || match &recording {
         Ok(recording) => Ok(Connection {
             source: Box::new(Replay::new(recording.clone())),
-            fetch: Arc::new(Replay::new(recording.clone())),
+            fetch: Arc::new(ReplayFiles::new(recording.clone(), gate.clone())),
         }),
         Err(why) => Err(SourceError::Recorded(why.clone())),
     })
@@ -116,14 +119,17 @@ const STOP_WAIT: Duration = Duration::from_secs(2);
 
 impl Yandex {
     pub(crate) fn new(source: &YandexSource, prefs: Arc<PrefStore>, makers: Arc<Makers>, inbox: Arc<Inbox>) -> Yandex {
+        // One gate for every search: a stopped search's downloads still hold their slots while they end, so a new search
+        // counts against them, not beside them.
+        let gate = Gate::new(PER_SERVER);
         let factory = match source {
-            YandexSource::Live => client(),
+            YandexSource::Live => client(gate),
             YandexSource::Replay(dir) => {
                 pg_log::info(
                     "yandex",
                     &format!("answering from the recorded session in {}; nothing is sent", dir.display()),
                 );
-                replay(dir)
+                replay(dir, gate)
             }
         };
         Yandex { search: Search::default(), factory, prefs, makers, inbox }
@@ -169,8 +175,8 @@ impl Yandex {
         self.search.kept_image(id)
     }
 
-    /// No search or save starts from now on, and the fetchers take no more results; waits a while for what runs to end.
-    /// False when something still ran after the wait.
+    /// No search or save starts from now on, and the files' fetches take no more results; waits a while for what runs to
+    /// end. False when something still ran after the wait.
     pub(crate) fn stop(&self) -> bool {
         self.search.stop(STOP_WAIT)
     }
@@ -451,8 +457,8 @@ impl Search {
 
     /// Runs `work` (a search or a save, which has set `busy`) on a thread of its own, named `name`. When the system
     /// refuses the thread, `busy` and the status are cleared again, the change is announced, and the error returned:
-    /// nothing ran, so the next search or save may start. Unlike the image fetchers (`yandex/images.rs`, which fall back to
-    /// fetching on demand), a search or a save has no fallback, so its failure is reported.
+    /// nothing ran, so the next search or save may start. Unlike a result file's fetch (`yandex/images.rs`, which fetches
+    /// on demand when no thread can start), a search or a save has no fallback, so its failure is reported.
     fn spawn_worker(&self, name: &str, work: impl FnOnce() + Send + 'static) -> io::Result<bool> {
         let name = name.to_string();
         self.spawn_with(work, |work| thread::Builder::new().name(name).spawn(work).map(drop))
@@ -492,7 +498,7 @@ impl Search {
             s.status = Some(YandexStatus::Working(Phase::Starting));
         }
         self.changes.publish(());
-        // The last search's results leave the screen as this one starts: their fetchers stop now, not when this search ends.
+        // The last search's results leave the screen as this one starts: their fetches stop now, not when this search ends.
         let last = self.pictures.write().unwrap_or_else(PoisonError::into_inner).take();
         if let Some(last) = last {
             last.stop();
@@ -515,7 +521,7 @@ impl Search {
                         found.other.iter().chain(&found.similar).map(|hit| (hit.id, hit.url.clone())).collect();
                     let pictures = Images::new(fetch, check, changes.clone());
                     let last = slot.write().unwrap_or_else(PoisonError::into_inner).replace(pictures.clone());
-                    // The last search's fetchers stop: its results left the screen.
+                    // The last search's fetches stop: its results left the screen.
                     if let Some(last) = last {
                         last.stop();
                     }
@@ -570,9 +576,10 @@ impl Search {
         self.pictures()?.kept(id)
     }
 
-    /// No search or save starts from now on, the fetchers take no more results, and a save stops before its next file.
-    /// Waits up to `wait` for the running search or save to end; false when one still ran after it. The fetchers are not
-    /// waited for: a download in flight is cut short at its next read, and nothing waiting for it is held up (`Images::stop`).
+    /// No search or save starts from now on, the files' fetches take no more results, and a save stops before its next
+    /// file. Waits up to `wait` for the running search or save to end; false when one still ran after it. The fetches are
+    /// not waited for: a download in flight is cut short at its next read, and nothing waiting for it is held up
+    /// (`Images::stop`). No thread of the images is joined.
     pub fn stop(&self, wait: Duration) -> bool {
         lock(&self.shared).closed = true;
         if let Some(pictures) = self.pictures() {
@@ -768,5 +775,20 @@ mod tests {
         let folder = pg_testkit::run_folder("scratch_app", "yandex-missing").unwrap();
         assert!(matches!(read_photo(&folder.join("gone.jpg")), Err(SearchError::Unreadable(_))));
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The searches of one service share one gate: every connection's result files take their slots from it.
+    #[test]
+    fn every_search_of_a_service_counts_its_files_on_one_gate() {
+        let dir = pg_testkit::run_folder("scratch_app", "yandex-gate").unwrap();
+        std::fs::write(dir.join("upload.json"), "{}").unwrap();
+        std::fs::write(dir.join("other_sizes.html"), "").unwrap();
+        let gate = Gate::new(PER_SERVER);
+        let make = replay(&dir, gate.clone());
+        let first = make().unwrap();
+        let second = make().unwrap();
+        assert!(Arc::ptr_eq(first.fetch.gate(), &gate));
+        assert!(Arc::ptr_eq(second.fetch.gate(), &gate));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

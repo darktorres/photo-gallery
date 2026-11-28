@@ -51,6 +51,7 @@ thumbhash = "0.1"
 tiff = "0.11"
 turbojpeg = { version = "1", features = ["cmake"] }
 unic-langid = "0.9"
+url = "2"
 ureq = { version = "3", default-features = false, features = ["native-tls", "cookies"] }
 webp = { version = "0.3", default-features = false } # lossy WebP, encoded and decoded by libwebp (bundled C): pg-codec's
 weezl = "0.2"

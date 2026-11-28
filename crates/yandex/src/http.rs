@@ -28,14 +28,15 @@ const BODY_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// roots (`WebPki`) are the bundled Mozilla list with the system's store off, and a chain the system builds for a site
 /// (i.ytimg.com's) then fails: "unable to find any user-specified roots in the final cert chain".
 pub(crate) fn agent() -> ureq::Agent {
-    let config = ureq::Agent::config_builder()
-        .timeout_global(Some(TIMEOUT))
-        .http_status_as_error(false)
-        .tls_config(
-            TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build(),
-        )
-        .build();
-    ureq::Agent::new_with_config(config)
+    ureq::Agent::new_with_config(agent_config().build())
+}
+
+/// The agent's configuration, before it is built: what [`agent`] builds, and the result files' fetcher adds its pool
+/// settings to (the pool's sizes are the agent's, not a request's).
+pub(crate) fn agent_config() -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
+    ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).http_status_as_error(false).tls_config(
+        TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build(),
+    )
 }
 
 /// `req` with a transfer's bounds in place of the agent's whole-request one (`TIMEOUT`, which the search requests

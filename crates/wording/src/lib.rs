@@ -421,6 +421,7 @@ pub fn yandex_request(e: &RequestError) -> String {
             pg_model::yandex::UnexpectedReason::NoSearch => Message::YandexNoSearch,
             pg_model::yandex::UnexpectedReason::NoSearchOnScreen => Message::YandexNoSearchOnScreen,
             pg_model::yandex::UnexpectedReason::NotCalled => Message::YandexNotCalled,
+            pg_model::yandex::UnexpectedReason::NotWebAddress => Message::YandexNotWebAddress,
         }),
         RequestError::Recorded(error) => render(&Message::YandexRecorded { error: error.clone() }),
         RequestError::Undecodable(reason) => render(&Message::YandexUndecodable { reason: reason.clone() }),

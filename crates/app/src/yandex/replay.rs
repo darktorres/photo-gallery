@@ -21,8 +21,8 @@ use std::sync::atomic::AtomicBool;
 
 use pg_model::format::Format;
 use pg_yandex::{
-    Download, OtherSize, Similar, SimilarPage, Upload, YandexError, is_captcha_page, parse_other_sizes,
-    parse_similar_page, parse_upload, read_similar_pages,
+    Download, Gate, OtherSize, Permit, ResultUrl, Similar, SimilarPage, Upload, YandexError, is_captcha_page,
+    parse_other_sizes, parse_similar_page, parse_upload, read_similar_pages,
 };
 
 use super::images::Fetch;
@@ -107,14 +107,33 @@ impl Source for Replay {
     }
 }
 
-/// The recorded result files stand in for the fetcher's downloads.
-impl Fetch for Replay {
-    fn fetch(&self, url: &str, _cancel: &AtomicBool) -> Result<Download, SourceError> {
+/// The recorded result files, standing in for the fetcher's downloads. They take the slot of their server and give it
+/// straight back, as a download does with its body read: nothing is on the wire, so nothing is counted for long.
+pub struct ReplayFiles {
+    recording: Arc<Recording>,
+    gate: Arc<Gate>,
+}
+
+impl ReplayFiles {
+    /// The recorded files of `recording`, fetched through the slots of `gate`.
+    pub fn new(recording: Arc<Recording>, gate: Arc<Gate>) -> ReplayFiles {
+        ReplayFiles { recording, gate }
+    }
+}
+
+impl Fetch for ReplayFiles {
+    fn gate(&self) -> &Arc<Gate> {
+        &self.gate
+    }
+
+    fn fetch(&self, url: &ResultUrl, permit: Permit, _cancel: &AtomicBool) -> Result<Download, SourceError> {
+        drop(permit);
+        // Keyed by the address as the recording has it: `original` is that text, where `as_str` is the normalised one.
         let bytes = self
             .recording
             .downloads
-            .get(url)
-            .ok_or_else(|| SourceError::Recorded(format!("no recorded result file for {url}")))?;
+            .get(url.original())
+            .ok_or_else(|| SourceError::Recorded(format!("no recorded result file for {}", url.original())))?;
         Ok(Download { bytes: bytes.clone(), format: Format::sniff(bytes) })
     }
 }
@@ -203,7 +222,8 @@ mod tests {
 
         // The save path writes the recorded bytes of the results, from the search's images. The other size's name says
         // the size its file decodes to.
-        let pictures = Images::new(Arc::new(Replay::new(recording)), Arc::new(accept), changes.clone());
+        let files = Arc::new(ReplayFiles::new(recording, Gate::new(pg_yandex::PER_SERVER)));
+        let pictures = Images::new(files, Arc::new(accept), changes.clone());
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
         let hits: Vec<Hit> = found.other.into_iter().chain(found.similar.into_iter().take(1)).collect();
@@ -234,7 +254,7 @@ mod tests {
         let why = Recording::read(&dir).err().unwrap();
         assert!(why.contains("upload.json"), "{why}");
         // The search reports the reason as its request failure; no client is made.
-        let factory = super::super::replay(&dir);
+        let factory = super::super::replay(&dir, Gate::new(pg_yandex::PER_SERVER));
         assert!(matches!(factory(), Err(SourceError::Recorded(_))));
     }
 }

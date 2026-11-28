@@ -50,6 +50,9 @@ pub enum UnexpectedReason {
     NoSearchOnScreen,
     /// The request was never made (the app's stand-in before a search).
     NotCalled,
+    /// A result's address is not a web address the app fetches: no host, a user name in it, or a scheme other than http
+    /// and https.
+    NotWebAddress,
 }
 
 /// Where a search or a save is, while it runs.

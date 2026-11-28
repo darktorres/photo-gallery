@@ -587,6 +587,8 @@ messages! {
     YandexNoSearchOnScreen => "msg-yandex-no-search-on-screen",
     /// Yandex was not called: the search did not run.
     YandexNotCalled => "msg-yandex-not-called",
+    /// A result's address is not an http or https address with a host and no user name.
+    YandexNotWebAddress => "msg-yandex-not-web-address",
     /// A recorded Yandex session (the screenshot fixture's) that can't answer, for `error`.
     YandexRecorded {
         /// The error, as text.

@@ -23,6 +23,7 @@ fn entry(id: i64, w: u32, h: u32, ext: Ext) -> Entry {
         rating: None,
         animated: false,
         orientation: Orientation::UPRIGHT,
+        exif_orientation: Orientation::UPRIGHT,
         cut: [0; 4],
         borders: Borders::Unknown,
     }

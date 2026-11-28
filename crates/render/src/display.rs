@@ -40,6 +40,11 @@ pub fn decode_into(
     decoder.decode_into(bytes, Request { format, exif, min, turns }, image, spare).map_err(Error::Codec)
 }
 
+/// The EXIF orientation the file's own tag holds, without any catalog turns (1 when it holds none, or isn't an image).
+pub fn orientation_of(bytes: &[u8]) -> Orientation {
+    Format::sniff(bytes).map_or(Orientation::UPRIGHT, |format| pg_metadata::orientation(bytes, format))
+}
+
 /// [`decode_into`] as the file stores it: the pixels into `image`, not yet turned. The caller scales them before it turns
 /// them (a thumbnail's resize comes first), by the returned `Info::orientation`, which carries `turns` too.
 pub fn decode_stored_into(

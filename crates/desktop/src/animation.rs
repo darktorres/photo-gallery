@@ -9,17 +9,18 @@ use crate::bridges::animation_bridge::qobject;
 use core::pin::Pin;
 use std::sync::Arc;
 
-use cxx_qt::{CxxQtThread, CxxQtType, Threading};
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
+use pg_client::image::ImageRequest;
 use pg_model::ids::FileId;
-use pg_render::player::{Player, Sink};
+use pg_render::player::{Player, Sink, Size, read_file, shared};
 
-/// An animation's sink: its frames go to the video sink (`Frames`), and the player's failures to the `AnimationPlayer`'s
-/// `playerError`, on the window's thread. A failure of a file that is no longer the one played is dropped there.
+/// An animation's sink: its frames go to the video sink (`Frames`), and the player's failures to `report`, which its owner
+/// makes on the window's thread (an `AnimationPlayer`'s `playerError`, or a result player's): a failure of a run that is no
+/// longer the one played is dropped there.
 pub(crate) struct Watched {
     frames: Frames,
-    player: CxxQtThread<qobject::AnimationPlayer>,
-    file_id: i64,
+    report: Box<dyn Fn(String) + Send + Sync>,
 }
 
 impl Sink for Watched {
@@ -28,8 +29,7 @@ impl Sink for Watched {
     }
 
     fn failed(&self, error: &str) {
-        let (file_id, text) = (self.file_id, error.to_string());
-        let _ = self.player.queue(move |player| player.animation_failed(file_id, &text));
+        (self.report)(error.to_string());
     }
 
     fn close(&self) {
@@ -38,6 +38,16 @@ impl Sink for Watched {
 }
 
 impl qobject::AnimationPlayer {
+    /// The height the frames are shown at (0 for the file's own size): restarts the playback at it.
+    pub(crate) fn set_height_and_restart(mut self: Pin<&mut Self>, height: i32) {
+        if self.height == height {
+            return;
+        }
+        self.as_mut().rust_mut().height = height;
+        self.as_mut().height_changed();
+        self.restart();
+    }
+
     pub(crate) fn set_file_id_and_play(mut self: Pin<&mut Self>, file_id: i64) {
         if file_id == self.file_id {
             return;
@@ -112,18 +122,106 @@ impl qobject::AnimationPlayer {
         if file_id <= 0 || self.sink.is_none() {
             return;
         }
-        let path = match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
-            Ok(path) => path,
-            Err(err) => {
+        let Some(sink) = &self.sink else { return };
+        let player = self.qt_thread();
+        let report = Box::new(move |text: String| {
+            let _ = player.queue(move |player| player.animation_failed(file_id, &text));
+        });
+        let frames = Watched { frames: Frames::of(sink), report };
+        let paused = !self.playing;
+        // The path is looked up and the file read on the player's thread, so a screenful of cells never runs a catalog
+        // query on the window's: a file that can't be found is reported (and logged) as one that can't be read.
+        let load = move || {
+            let path = crate::app::get().catalogs().file_path(FileId::new(file_id)).map_err(|err| {
                 let text = format!("{err:#}");
                 pg_log::warn("animation", &format!("file {file_id}: {text}"));
-                self.as_mut().set_player_error_text(&text);
+                text
+            })?;
+            read_file(path)()
+        };
+        let size = u32::try_from(self.height).ok().filter(|&px| px > 0).map_or(Size::Native, Size::Height);
+        self.as_mut().rust_mut().worker = Some(Player::start_sized(load, Arc::new(frames), paused, size));
+    }
+}
+
+impl qobject::ResultAnimationPlayer {
+    /// The result's URL to play (`image://yandex/<id>/original`): restarts the playback, from the start, playing.
+    pub(crate) fn set_url_and_play(mut self: Pin<&mut Self>, url: QString) {
+        if self.url.to_string() == url.to_string() {
+            return;
+        }
+        self.as_mut().rust_mut().url = url;
+        self.as_mut().url_changed();
+        self.restart();
+    }
+
+    /// # Safety
+    /// `sink` is a live `QVideoSink` (from QML: a `VideoOutput`'s `videoSink`), or null.
+    #[expect(
+        unsafe_code,
+        reason = "FFI: the video sink pointer the Qt media player hands over, kept alive by the caller"
+    )]
+    pub(crate) unsafe fn set_sink(mut self: Pin<&mut Self>, sink: *mut qobject::QVideoSink) {
+        // SAFETY: the caller passes a live sink or null; the reference made of it is weak (QPointer).
+        let sink = (!sink.is_null()).then(|| unsafe { crate::bridges::frame_sink_bridge::ffi::new_sink_ref(sink) });
+        self.as_mut().rust_mut().sink = sink;
+        self.restart();
+    }
+
+    /// The height the frames are shown at (0 for the file's own size): restarts the playback at it.
+    pub(crate) fn set_height_and_play(mut self: Pin<&mut Self>, height: i32) {
+        if self.height == height {
+            return;
+        }
+        self.as_mut().rust_mut().height = height;
+        self.as_mut().height_changed();
+        self.restart();
+    }
+
+    /// A run reported a failure: it is the player's error, unless the run was replaced since (`generation`).
+    fn result_failed(mut self: Pin<&mut Self>, generation: u64, text: &str) {
+        if generation == self.generation {
+            self.as_mut().set_error_text(text);
+        }
+    }
+
+    /// Sets the player's error text (`""` for none), signalling only a change.
+    fn set_error_text(mut self: Pin<&mut Self>, text: &str) {
+        if self.player_error.to_string() != text {
+            self.as_mut().rust_mut().player_error = QString::from(&text.to_string());
+            self.player_error_changed();
+        }
+    }
+
+    /// Stops the playback, then plays the result's original, if there is one and a sink. The file is taken from the
+    /// search's kept download on the player's thread, and never waited for.
+    fn restart(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().worker = None;
+        self.as_mut().rust_mut().generation += 1;
+        let generation = self.generation;
+        self.as_mut().set_error_text("");
+        let url = self.url.to_string();
+        if url.is_empty() || self.sink.is_none() {
+            return;
+        }
+        let id = match ImageRequest::from_url(&url) {
+            Some(ImageRequest::Yandex { id, original: true }) => id,
+            _ => {
+                self.as_mut().set_error_text("it is not a search result's original");
                 return;
             }
         };
         let Some(sink) = &self.sink else { return };
-        let frames = Watched { frames: Frames::of(sink), player: self.qt_thread(), file_id };
-        let paused = !self.playing;
-        self.as_mut().rust_mut().worker = Some(Player::start(path, Arc::new(frames), paused));
+        let player = self.qt_thread();
+        let report = Box::new(move |text: String| {
+            let _ = player.queue(move |player| player.result_failed(generation, &text));
+        });
+        let frames = Watched { frames: Frames::of(sink), report };
+        let load = shared(move || {
+            crate::app::get().yandex().kept_image(id).ok_or_else(|| "the result's file is not kept".to_string())
+        });
+        // A tile's height is a size in pixels (a row's): a non-positive one is the file's own size.
+        let size = u32::try_from(self.height).ok().filter(|&px| px > 0).map_or(Size::Native, Size::Height);
+        self.as_mut().rust_mut().worker = Some(Player::start_sized(load, Arc::new(frames), false, size));
     }
 }

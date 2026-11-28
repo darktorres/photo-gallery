@@ -87,6 +87,7 @@ fn the_cut_is_described_as_shown() {
         rating: None,
         animated: false,
         orientation: pg_model::orientation::Orientation::new(6).unwrap(),
+        exif_orientation: pg_model::orientation::Orientation::new(6).unwrap(),
         cut: [0, 163, 0, 131],
         borders: Borders::Found,
     };

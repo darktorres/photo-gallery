@@ -39,6 +39,9 @@ pub struct Entry {
     pub animated: bool,
     /// Orientation (1–8) of the analysis: what turns the stored pixels upright, the catalog rotation included.
     pub orientation: Orientation,
+    /// The file's own EXIF orientation, without the catalog turns (`analysis.exif_orientation`; the composed one when the
+    /// catalog holds none, as a carried-over one does).
+    pub exif_orientation: Orientation,
     /// Borders found: stored pixels cut from the left, top, right and bottom (`analysis.cut_*`), all 0 for none.
     pub cut: [u32; 4],
     /// Whether the file's borders were looked for, and what came of it.

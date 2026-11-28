@@ -144,7 +144,7 @@ fn each_pass_gives_the_frames_whole_with_their_delays() {
     // Each pass gives the frames whole, with their delays, red and blue first and green last (encoders may merge
     // identical frames into a longer one); a second pass (a loop) gives them again.
     for name in ["anim.webp", "anim.gif", "anim.png"] {
-        let bytes: std::sync::Arc<[u8]> = std::fs::read(dir.join("anim").join(name)).unwrap().into();
+        let bytes = animation::Bytes::from(std::fs::read(dir.join("anim").join(name)).unwrap());
         for _ in 0..2 {
             let frames: Vec<animation::Frame> =
                 animation::frames(bytes.clone()).unwrap().collect::<std::result::Result<_, _>>().unwrap();

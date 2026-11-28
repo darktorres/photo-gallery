@@ -46,6 +46,11 @@ const ROLE_FRAME_WIDTH: i32 = 262;
 const ROLE_FRAME_HEIGHT: i32 = 263;
 /// Whether the row is one of the first group's (the other sizes): the panel's two groups show their own rows by it.
 const ROLE_IS_OTHER: i32 = 264;
+/// The URL of the result's original when it is an animation (`""` for a still): the tile plays it.
+const ROLE_ANIMATION_URL: i32 = 265;
+/// Whether the result's frames are mirrored before their turns, and the quarter turns (its file's EXIF orientation).
+const ROLE_MIRRORED: i32 = 266;
+const ROLE_TURNS: i32 = 267;
 
 /// The height a row of results is laid out at: fixed, at the size the gallery's rows start at. The search makes its grid
 /// pictures at this height. Not the gallery's row height range (`pg_model::size::ROW_HEIGHT`).
@@ -87,14 +92,15 @@ fn hit_size(hit: &Hit) -> (i32, i32) {
     hit.size.map_or((0, 0), |(width, height)| (qt_int(width), qt_int(height)))
 }
 
+/// The URL of the result's original when it is an animation, `""` for a still (what the preview and a tile play).
+fn animation_url(hit: &Hit) -> QString {
+    if hit.animated { QString::from(&original_url(hit.id)) } else { QString::default() }
+}
+
 /// The rows of `items` that `sized` names, with their sizes, in row order. A size for a result that is not shown (an
 /// older search's, or one taken off) names none.
-fn sized_rows(items: &[Hit], sized: &[Measured]) -> Vec<(usize, (u32, u32))> {
-    items
-        .iter()
-        .enumerate()
-        .filter_map(|(row, hit)| sized.iter().find(|m| m.id == hit.id).map(|m| (row, m.size)))
-        .collect()
+fn sized_rows(items: &[Hit], sized: &[Measured]) -> Vec<(usize, Measured)> {
+    items.iter().enumerate().filter_map(|(row, hit)| sized.iter().find(|m| m.id == hit.id).map(|m| (row, *m))).collect()
 }
 
 /// The runs of consecutive results whose ids are in `dead`, as row ranges, in order.
@@ -335,15 +341,18 @@ impl qobject::YandexSearch {
         };
         {
             let mut state = self.as_mut().rust_mut();
-            for &(row, size) in &rows {
+            for &(row, measured) in &rows {
                 if let Some(hit) = state.results.get_mut(row) {
-                    hit.size = Some(size);
+                    hit.size = Some(measured.size);
+                    hit.animated = measured.animated;
+                    hit.orientation = measured.orientation;
                 }
             }
         }
         let root = QModelIndex::default();
         let (top, bottom) = (self.index(qt_int(first), 0, &root), self.index(qt_int(last), 0, &root));
-        self.as_mut().data_changed(&top, &bottom, &QList::from(&[ROLE_IMAGE_WIDTH, ROLE_IMAGE_HEIGHT][..]));
+        let roles = [ROLE_IMAGE_WIDTH, ROLE_IMAGE_HEIGHT, ROLE_ANIMATION_URL, ROLE_MIRRORED, ROLE_TURNS];
+        self.as_mut().data_changed(&top, &bottom, &QList::from(&roles[..]));
         self.as_mut().relayout();
         self.refresh_preview();
     }
@@ -429,7 +438,7 @@ impl qobject::YandexSearch {
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = crate::rows::row_of(self.preview_item).and_then(|i| self.results.get(i).map(|hit| (i, hit)));
         let len = self.results.len();
-        let (url, width, height, picked, prev, next) = match shown {
+        let (url, width, height, picked, prev, next, mirrored, turns, animation) = match shown {
             Some((i, hit)) => {
                 // The result `k` steps from the shown one, wrapping as the preview's ←/→ do.
                 let around = |k: usize| {
@@ -440,6 +449,10 @@ impl qobject::YandexSearch {
                     }
                 };
                 let (width, height) = hit_size(hit);
+                // A result's file is turned by its own EXIF orientation alone (no catalog turns); an animation's URL is
+                // set only when the file is one, so the preview plays it and no still.
+                let (mirrored, turns) = hit.orientation.parts();
+                let animation = animation_url(hit);
                 (
                     QString::from(&original_url(hit.id)),
                     width,
@@ -447,9 +460,14 @@ impl qobject::YandexSearch {
                     self.results.picks().is_picked(i),
                     QString::from(&around(i + len - 1)),
                     QString::from(&around(i + 1)),
+                    mirrored,
+                    i32::from(turns.get()),
+                    animation,
                 )
             }
-            None => (QString::default(), 0, 0, false, QString::default(), QString::default()),
+            None => {
+                (QString::default(), 0, 0, false, QString::default(), QString::default(), false, 0, QString::default())
+            }
         };
         self.as_mut().set_preview_url(url);
         self.as_mut().set_preview_prev_url(prev);
@@ -457,6 +475,10 @@ impl qobject::YandexSearch {
         self.as_mut().set_preview_width(width);
         self.as_mut().set_preview_height(height);
         self.as_mut().set_preview_picked(picked);
+        // The turn is set before the animation's URL: a player starts with its own item's turn, never the last one's.
+        self.as_mut().set_preview_mirrored(mirrored);
+        self.as_mut().set_preview_turns(turns);
+        self.as_mut().set_preview_animation_url(animation);
     }
 
     fn poll(mut self: Pin<&mut Self>) {
@@ -510,6 +532,9 @@ impl qobject::YandexSearch {
             ROLE_FRAME_WIDTH => QVariant::from(&frame.width),
             ROLE_FRAME_HEIGHT => QVariant::from(&frame.height),
             ROLE_IS_OTHER => QVariant::from(&(i < self.results.first().len())),
+            ROLE_ANIMATION_URL => QVariant::from(&animation_url(hit)),
+            ROLE_MIRRORED => QVariant::from(&hit.orientation.parts().0),
+            ROLE_TURNS => QVariant::from(&i32::from(hit.orientation.parts().1.get())),
             _ => QVariant::default(),
         }
     }
@@ -526,6 +551,9 @@ impl qobject::YandexSearch {
             (ROLE_FRAME_WIDTH, "frameWidth"),
             (ROLE_FRAME_HEIGHT, "frameHeight"),
             (ROLE_IS_OTHER, "isOther"),
+            (ROLE_ANIMATION_URL, "animationUrl"),
+            (ROLE_MIRRORED, "mirrored"),
+            (ROLE_TURNS, "turns"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -624,16 +652,25 @@ mod tests {
 
     #[test]
     fn sizes_go_to_the_rows_of_their_results() {
-        let hit = |id: u64| Hit { id, url: String::new(), size: None, label: pg_app::yandex::Label::OtherSize };
+        let hit = |id: u64| Hit {
+            id,
+            url: String::new(),
+            size: None,
+            animated: false,
+            orientation: pg_model::orientation::Orientation::UPRIGHT,
+            label: pg_app::yandex::Label::OtherSize,
+        };
+        let measured = |id: u64, size: (u32, u32)| Measured {
+            id,
+            size,
+            animated: false,
+            orientation: pg_model::orientation::Orientation::UPRIGHT,
+        };
         let items = [hit(10), hit(20), hit(30)];
-        let sized = [
-            Measured { id: 30, size: (810, 1080) },
-            Measured { id: 99, size: (1, 1) },
-            Measured { id: 10, size: (4, 3) },
-        ];
+        let sized = [measured(30, (810, 1080)), measured(99, (1, 1)), measured(10, (4, 3))];
         assert_eq!(
             sized_rows(&items, &sized),
-            [(0, (4, 3)), (2, (810, 1080))],
+            [(0, measured(10, (4, 3))), (2, measured(30, (810, 1080)))],
             "in row order; an unknown id is no row"
         );
         assert!(sized_rows(&items, &[]).is_empty());

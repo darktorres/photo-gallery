@@ -700,7 +700,7 @@ impl Inner {
         write_into(copy.file, copy.data)?;
         let after = stat(path)?;
         let rewrite = Rewrite { before: Some(copy.before), after, metadata_only: copy.new_hash };
-        catalog.write_done(job, Self::rewrote(job, rewrite))?;
+        catalog.write_done(job, Self::rewrote(job, rewrite, copy.data))?;
         Ok(after)
     }
 
@@ -721,10 +721,12 @@ impl Inner {
         let rules = catalog.rules();
         let written = Job { write: carried, ..job.clone() };
         let temp_path = disk_path(rules, temp);
+        let mut copied = None;
         match std::fs::read(&temp_path) {
             Ok(data) => {
                 let file = inplace::open_original(native, shown)?;
                 write_into(file, &data)?;
+                copied = Some(data);
             }
             // A recorded temp is deleted only once the write is recorded, so a missing one was deleted after its copy
             // by an earlier build (which deleted it before recording the write), or by another program (which can't
@@ -733,8 +735,13 @@ impl Inner {
             Err(e) => return Err(Error::io(format!("reading {}", rules.display(temp)), e)),
         }
         let after = stat(path)?;
+        // The bytes now in the file: the temp's, or the original's when the temp is gone.
+        let data = match copied {
+            Some(data) => data,
+            None => std::fs::read(&path).map_err(|e| Error::io(format!("reading {shown}"), e))?,
+        };
         let rewrite = Rewrite { before: None, after, metadata_only: None };
-        catalog.write_done(&written, Self::rewrote(&written, rewrite))?;
+        catalog.write_done(&written, Self::rewrote(&written, rewrite, &data))?;
         let _ = std::fs::remove_file(&temp_path);
         if job.kind() == WriteKind::Rotation {
             self.pixels_changed(job.file_id);
@@ -742,11 +749,12 @@ impl Inner {
         Ok(())
     }
 
-    /// The effect of a job that rewrote its file: the rating it now holds, or the turns it shows.
-    fn rewrote(job: &Job, rewrite: Rewrite) -> WriteEffect {
+    /// The effect of a job that rewrote its file (`data`, the bytes it now holds): the rating it now holds, or the turns
+    /// it shows, with the EXIF orientation tag those bytes carry.
+    fn rewrote(job: &Job, rewrite: Rewrite, data: &[u8]) -> WriteEffect {
         match job.write {
             Write::Rating(rating) => WriteEffect::FileRating { rewrite, rating },
-            Write::Rotation(turns) => WriteEffect::TurnedBack { rewrite, turns },
+            Write::Rotation(turns) => WriteEffect::TurnedBack { rewrite, turns, exif: exif_tag(data) },
         }
     }
 
@@ -769,6 +777,13 @@ fn copy_temp(catalog: &Catalog, job: &Job, error: &pg_jobs::failure::Failed) -> 
 }
 
 /// The job's file as the user sees its path, or its id when the catalog can't say.
+/// The EXIF orientation tag `data` holds (1 when it holds none, or isn't an image): the file's own, without the catalog's
+/// turns, as the analysis stores it.
+fn exif_tag(data: &[u8]) -> pg_model::orientation::Orientation {
+    Format::sniff(data)
+        .map_or(pg_model::orientation::Orientation::UPRIGHT, |format| pg_metadata::orientation(data, format))
+}
+
 fn shown_file(catalog: &Catalog, job: &Job) -> String {
     match catalog.file_path(job.file_id) {
         Ok(Some(path)) => catalog.rules().display(&path),

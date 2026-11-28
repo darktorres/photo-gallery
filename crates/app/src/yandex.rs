@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
 use pg_model::notice::Notice;
+use pg_model::orientation::Orientation;
 use pg_model::size::RowHeight;
 use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, YandexStatus};
 use pg_platform::names::{disk_path, rule_path_of, shown};
@@ -162,6 +163,12 @@ impl Yandex {
         self.search.image(id)
     }
 
+    /// The file of the result `id` of the search on screen, if it is kept; never waits for a download (see
+    /// [`images::Images::kept`]).
+    pub fn kept_image(&self, id: u64) -> Option<Arc<Fetched>> {
+        self.search.kept_image(id)
+    }
+
     /// No search or save starts from now on, and the fetchers take no more results; waits a while for what runs to end.
     /// False when something still ran after the wait.
     pub(crate) fn stop(&self) -> bool {
@@ -179,6 +186,11 @@ pub struct Hit {
     /// The image's size, upright (width, height), in pixels, as its file decodes: `None` until the file is in
     /// ([`Poll::sized`]). The front end sets it.
     pub size: Option<(u32, u32)>,
+    /// Whether the file is an animation, and its EXIF orientation: both as the file comes in (the front end sets them with
+    /// `size`, from [`Poll::sized`]); `false` and upright until then.
+    pub animated: bool,
+    /// The file's EXIF orientation, as the file comes in (see `animated`).
+    pub orientation: Orientation,
     /// Which list it is from, and its place in it: what its saved file's name says.
     pub label: Label,
 }
@@ -338,10 +350,27 @@ fn find_similar<S: Source + ?Sized>(
     };
     // The ids are numbered when the search's results are known (`number`).
     let found = Found {
-        other: other.into_iter().map(|s| Hit { id: 0, url: s.url, size: None, label: Label::OtherSize }).collect(),
+        other: other
+            .into_iter()
+            .map(|s| Hit {
+                id: 0,
+                url: s.url,
+                size: None,
+                animated: false,
+                orientation: Orientation::UPRIGHT,
+                label: Label::OtherSize,
+            })
+            .collect(),
         similar: similar
             .into_iter()
-            .map(|s| Hit { id: 0, url: s.image_url, size: None, label: Label::Similar(s.pos.saturating_add(1)) })
+            .map(|s| Hit {
+                id: 0,
+                url: s.image_url,
+                size: None,
+                animated: false,
+                orientation: Orientation::UPRIGHT,
+                label: Label::Similar(s.pos.saturating_add(1)),
+            })
             .collect(),
     };
     Ok((found, note))
@@ -536,6 +565,11 @@ impl Search {
             .get_known(id)
     }
 
+    /// The file of the result `id`, if it is kept; never waits (`Images::kept`).
+    pub fn kept_image(&self, id: u64) -> Option<Arc<Fetched>> {
+        self.pictures()?.kept(id)
+    }
+
     /// No search or save starts from now on, the fetchers take no more results, and a save stops before its next file.
     /// Waits up to `wait` for the running search or save to end; false when one still ran after it. The fetchers are not
     /// waited for: a download in flight is cut short at its next read, and nothing waiting for it is held up (`Images::stop`).
@@ -658,7 +692,9 @@ mod tests {
     fn a_stopped_search_starts_nothing() {
         let search = Search::default();
         assert!(search.stop(Duration::ZERO), "nothing ran");
-        let check: Check = Arc::new(|_| Ok(images::Picture { grid: Vec::new(), size: (1, 1) }));
+        let check: Check = Arc::new(|_| {
+            Ok(images::Picture { grid: Vec::new(), size: (1, 1), animated: false, orientation: Orientation::UPRIGHT })
+        });
         let make: Factory =
             Arc::new(|| Err(YandexError::Unexpected(pg_model::yandex::UnexpectedReason::NotCalled).into()));
         assert!(matches!(search.start(Path::new("photo.jpg"), make, check), Ok(false)));

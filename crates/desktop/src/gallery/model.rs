@@ -15,9 +15,9 @@ use pg_model::size::ThumbHeight;
 
 use super::qobject;
 use super::roles::{
-    ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH, ROLE_CONTENT_X,
-    ROLE_CONTENT_Y, ROLE_COUNT, ROLE_FIRST, ROLE_HEIGHT, ROLE_IDS, ROLE_IMAGE_ASPECTS, ROLE_NAMES, ROLE_RATINGS,
-    ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS, row_change_roles,
+    ROLE_ANIMATED, ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH,
+    ROLE_CONTENT_X, ROLE_CONTENT_Y, ROLE_COUNT, ROLE_FIRST, ROLE_HEIGHT, ROLE_IDS, ROLE_IMAGE_ASPECTS, ROLE_NAMES,
+    ROLE_PLAYER_MIRRORED, ROLE_PLAYER_TURNS, ROLE_RATINGS, ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS, row_change_roles,
 };
 use crate::bridges::gallery_state::fresh_entry;
 use crate::rows::qt_int;
@@ -62,6 +62,13 @@ impl qobject::GalleryModel {
             ROLE_CONTENT_Y => QVariant::from(&items.map(|i| self.border_box(i).y()).collect::<QList<f64>>()),
             ROLE_CONTENT_WIDTH => QVariant::from(&items.map(|i| self.border_box(i).width()).collect::<QList<f64>>()),
             ROLE_CONTENT_HEIGHT => QVariant::from(&items.map(|i| self.border_box(i).height()).collect::<QList<f64>>()),
+            ROLE_ANIMATED => QVariant::from(
+                &items.map(|i| self.media_type(i) == pg_model::media::MediaType::Animated).collect::<QList<bool>>(),
+            ),
+            ROLE_PLAYER_TURNS => QVariant::from(&items.map(|i| self.player_turns(i).turns).collect::<QList<i32>>()),
+            ROLE_PLAYER_MIRRORED => {
+                QVariant::from(&items.map(|i| self.player_turns(i).mirrored).collect::<QList<bool>>())
+            }
             _ => return None,
         })
     }
@@ -354,8 +361,9 @@ impl qobject::GalleryModel {
             self.as_mut().rust_mut().viewed_kind = kind;
             self.as_mut().viewed_kind_changed();
         }
-        let player_turns = self.player_turns(item);
-        self.as_mut().set_viewed_player_turns(player_turns);
+        let player = self.player_turns(item);
+        self.as_mut().set_viewed_player_turns(player.turns);
+        self.as_mut().set_viewed_player_mirrored(player.mirrored);
         let file_id = self.file_id(item);
         self.as_mut().set_viewed_file_id(file_id);
         let info = self.info(item);

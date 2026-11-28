@@ -13,6 +13,7 @@ use std::thread;
 
 use pg_jobs::events::Bus;
 use pg_model::format::Format;
+use pg_model::orientation::Orientation;
 use pg_model::size::RowHeight;
 use pg_model::turns::Turns;
 use pg_yandex::{Download, Fetcher, YandexError};
@@ -45,17 +46,23 @@ impl Fetch for Fetcher {
 /// not. The app's is `grid_picture`, with its makers and the panel's row height.
 pub type Check = Arc<dyn Fn(&[u8]) -> Result<Picture, &'static str> + Send + Sync>;
 
-/// What [`Check`] makes of a file: its grid picture, and the size of the image the file is.
+/// What [`Check`] makes of a file: its grid picture, the size of the image the file is, whether it is an animation, and
+/// the EXIF orientation its tag holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Picture {
     /// The picture made for the grid.
     pub grid: Vec<u8>,
     /// The image's size, upright, as its bytes decode (width, height), in pixels.
     pub size: (u32, u32),
+    /// Whether the file holds more than one frame (an animation), from its container.
+    pub animated: bool,
+    /// The EXIF orientation the file's tag holds (1 when it holds none).
+    pub orientation: Orientation,
 }
 
-/// A result's file, kept: the file as Yandex's host gave it (what a save writes), its format (a save's extension), its
-/// grid picture (a JPEG as high as the panel's rows, which the grid shows) and its size.
+/// A result's file, kept: the file as Yandex's host gave it (what a save writes, and what the preview plays), its format
+/// (a save's extension), its grid picture (a JPEG as high as the panel's rows, which the grid shows), its size, whether it
+/// is an animation and its EXIF orientation.
 #[derive(Debug)]
 pub struct Fetched {
     /// The downloaded file.
@@ -66,15 +73,31 @@ pub struct Fetched {
     pub grid: Vec<u8>,
     /// The image's size, upright, as the file decodes (width, height), in pixels.
     pub size: (u32, u32),
+    /// Whether the file is an animation.
+    pub animated: bool,
+    /// The EXIF orientation the file's tag holds.
+    pub orientation: Orientation,
 }
 
-/// A result whose file came in: its id, and its image's size, upright (width, height), in pixels.
+impl AsRef<[u8]> for Fetched {
+    /// The file's bytes, as the host gave them: the animation player plays them without a copy.
+    fn as_ref(&self) -> &[u8] {
+        &self.file.bytes
+    }
+}
+
+/// A result whose file came in: its id, its image's size, upright (width, height), in pixels, whether it is an
+/// animation, and its EXIF orientation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Measured {
     /// The result's id (`Hit::id`).
     pub id: u64,
     /// The size of the image its file is.
     pub size: (u32, u32),
+    /// Whether its file is an animation.
+    pub animated: bool,
+    /// The EXIF orientation its file's tag holds.
+    pub orientation: Orientation,
 }
 
 /// Where a result's file is.
@@ -204,8 +227,9 @@ impl Images {
     fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, SourceError> {
         let file = self.fetch.fetch(url, &self.cancel)?;
         let format = file.format.ok_or(SourceError::Undecodable("not a format this app knows"))?;
-        let Picture { grid, size } = (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
-        Ok(Arc::new(Fetched { file, format, grid, size }))
+        let Picture { grid, size, animated, orientation } =
+            (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
+        Ok(Arc::new(Fetched { file, format, grid, size, animated, orientation }))
     }
 
     /// [`Images::fetch_checked`], where a panic (the decoder's, on a malformed file) ends the result as dead: a result
@@ -224,7 +248,12 @@ impl Images {
             let mut t = lock(&self.table);
             let state = match outcome {
                 Ok(fetched) => {
-                    t.sized.push(Measured { id, size: fetched.size });
+                    t.sized.push(Measured {
+                        id,
+                        size: fetched.size,
+                        animated: fetched.animated,
+                        orientation: fetched.orientation,
+                    });
                     State::Ready(fetched)
                 }
                 // Cut short by the close: the file is neither kept nor dead, and nothing is fetched for it any more.
@@ -285,6 +314,15 @@ impl Images {
         }
     }
 
+    /// The file of the result `id` if it is kept, and `None` otherwise. Never waits: unlike [`Images::get`] it starts no
+    /// fetch and waits for none, so a player's thread can take it without a download holding it up.
+    pub fn kept(&self, id: u64) -> Option<Arc<Fetched>> {
+        match lock(&self.table).slots.get(&id).map(|slot| &slot.state) {
+            Some(State::Ready(fetched)) => Some(fetched.clone()),
+            _ => None,
+        }
+    }
+
     /// The file of the result `id`, at the URL it was queued with. An id that no search has is an error.
     pub fn get_known(self: &Arc<Self>, id: u64) -> Result<Arc<Fetched>, SourceError> {
         let url = lock(&self.table)
@@ -310,15 +348,20 @@ impl Images {
 /// gallery's thumbnail pipeline with one of the app's makers, and the image's upright size as the decode read it. The
 /// reason when the bytes are not such an image.
 pub(crate) fn grid_picture(makers: &Makers, bytes: &[u8], height: RowHeight) -> Result<Picture, &'static str> {
-    if Format::sniff(bytes).is_none() {
+    let Some(format) = Format::sniff(bytes) else {
         return Err("the file is not a picture");
-    }
+    };
     // The row's height in pixels, as the maker takes it.
     let px = pg_model::num::index(height.get());
     let made = makers
         .with_maker(|maker| maker.make_sized(bytes, px, Turns::NONE).map_err(|_| "the picture does not decode"))
         .map_err(|_| "no maker")?;
-    made.map(|(grid, size)| Picture { grid, size })
+    made.map(|(grid, size)| Picture {
+        grid,
+        size,
+        animated: pg_render::player::animated(bytes, format),
+        orientation: pg_render::display::orientation_of(bytes),
+    })
 }
 
 #[cfg(test)]
@@ -347,7 +390,7 @@ mod tests {
     }
 
     fn accept(_: &[u8]) -> Result<Picture, &'static str> {
-        Ok(Picture { grid: b"grid".to_vec(), size: (810, 1080) })
+        Ok(Picture { grid: b"grid".to_vec(), size: (810, 1080), animated: false, orientation: Orientation::UPRIGHT })
     }
 
     fn reject(_: &[u8]) -> Result<Picture, &'static str> {
@@ -389,7 +432,10 @@ mod tests {
         let images = images(fetch, accept);
         assert_eq!(images.get(1, "https://a.example/1.jpg").unwrap().size, (810, 1080));
         assert!(images.get(2, "https://gone.example/2.jpg").is_err());
-        assert_eq!(images.take_sized(), [Measured { id: 1, size: (810, 1080) }]);
+        assert_eq!(
+            images.take_sized(),
+            [Measured { id: 1, size: (810, 1080), animated: false, orientation: Orientation::UPRIGHT }]
+        );
         assert!(images.take_sized().is_empty(), "reported once");
         images.get(1, "https://a.example/1.jpg").unwrap();
         assert!(images.take_sized().is_empty(), "a kept file asked for again is not reported again");

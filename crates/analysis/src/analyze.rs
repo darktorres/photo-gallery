@@ -122,6 +122,7 @@ impl Analyzer {
         Ok(Analysis {
             version: IMPORT_VERSION,
             orientation: dims.orientation,
+            exif_orientation: meta.orientation,
             width: dims.width,
             height: dims.height,
             frames: meta.frames,
@@ -222,6 +223,7 @@ fn analyze_video(path: &Path, turns: Turns) -> Result<Analysis> {
         // The stills' orientation includes the catalog turn (`decode_into`); the video's must too, or its stored
         // size and its shown orientation disagree. `width`/`height` above already carry the display matrix.
         orientation: p.orientation.compose(turns),
+        exif_orientation: p.orientation,
         width,
         height,
         frames: p.frames,

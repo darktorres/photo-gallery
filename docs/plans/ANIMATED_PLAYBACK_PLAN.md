@@ -20,13 +20,73 @@ file.
 **Standard: the most proper design, not the least churn.** No ambiguous states, no copies, no hedged parts, and the defects
 found in the code this change rewrites are fixed with it (items 6, 7, 8). Churn across crates is accepted.
 
+## Status
+
+- Done: the three checks (below); item 1's frame count (`pg_metadata::frames`, `pg_render::player::animated`); item 2's
+  `Bytes` type and `frames(Bytes)`; the raw EXIF column (item 8's storage): `analysis.exif_orientation`, written by the
+  analysis (`analyze.rs`) and set exactly at each turn written into a file (`writeback` reads the tag from the bytes it wrote,
+  `queue::write_done` stores it). Read into `Entry.exif_orientation`. No behaviour change yet: the viewer and the grid still
+  turn by `orientation`.
+- Also done: item 6 (`Player::drop` no longer joins the thread; a frame is presented only under the lock that `drop` takes to
+  close, with tests for both); item 2's loader (`Player::start(load, sink, paused)`, `read_file`, and the viewer's catalog
+  path lookup moved onto the player's thread); item 8 in the viewer (`PlayerTurns::of`: an animation is turned by its EXIF
+  orientation, the catalog and pending turns, and mirrored when the orientation is; a video keeps the turns alone; the
+  `TurnedVideoOutput` component turns the frames, with the mirror taken inverse to the turn because QML turns before it
+  mirrors: `tst_turned_video_output.qml` checks the corners). QML: 156 tests pass; desktop: 93 pass.
+- Yandex side, done: item 1 (`animated` and `orientation` on the fetched file, `Measured`, `Hit`); item 2 (`Fetched` is
+  `AsRef<[u8]>`, `Images::kept` and `kept_image`, never waiting); item 3 (`ResultAnimationPlayer`, `ImageRequest::from_url`,
+  the player reads the kept file on its own thread); item 4 (`previewAnimationUrl`, `previewMirrored`, `previewTurns`,
+  set in that order); item 5 (`YandexPreview` shows the still under a turned picture, with the animation drawn over it once
+  a frame is in); item 9 (`resize_rgba` premultiplied, the player's `Size::Height` scaling with tests, the tile's
+  `ResultTile` loader that plays only while on screen, at rest, with the preview closed; roles `animationUrl`, `mirrored`,
+  `turns`).
+- Decision changed from item 7: the still is turned in QML (`YandexPreview`'s picture), not by a C++ shim on the decoded
+  image. cxx-qt-lib 0.10's `QImage` has `flip` but no rotation, so a turn in C++ would need a new Qt binding. The decode
+  stays Qt's, and the turn is the same one the animation gets (`TurnedVideoOutput`'s rule, mirror then turns, with the
+  inverse turn when mirrored).
+- Item 10, done: the viewer's `AnimationPlayer` takes a `height`; the roles `animated`, `playerTurns`, `playerMirrored`
+  (`gallery/roles.rs`, `model.rs`, through `PlayerTurns::of`, the viewer's rule); `GridRow` copies them and gives each cell
+  `itemPlays` (on screen with a row's margin, live, its pictures asked for, not pooled); `GridCell` plays its file over the
+  still, at the row height, with a white backing once a frame is drawn; `GalleryGrid` gives the rows the scroll and
+  `mayPlay` (viewer closed, settled, not moving).
+- Gap, not closed: a modal panel over the grid does not stop the library's cells (the shell's panel state is in Rust, not a
+  QML property). The fix is a QML property from the shell, not a change to the rule.
+- Item 11: `docs/reference/REVERSE_SEARCH.md` has an "Animated results" section.
+- Windowed run (2026-11-28), done on a scratch home with a synthetic session (`--yandex-fixture`: an animated GIF with
+  transparency, an EXIF-6 still, an animated WebP): the preview's GIF animates (3.9% of its pixels change in 400 ms); the
+  still shows upright and turned (its black corner at top-right, as a 90° clockwise turn gives); the Yandex panel's tiles
+  animate (1.3% change, the webp's stripe moves). The run found one defect, fixed: the preview's video output kept the last
+  frame of the previous animation and drew it over the next item's still; it is now hidden until its own frames show.
+- Not done: the full `just lint`
+  (clippy and machete; only the boundary check and `rustfmt` on the touched files ran), and a Rust unit test for
+  `refresh_preview`'s URL and turn (the QML tests cover the preview's side).
+- QML: 174 tests pass. Rust: pg-desktop 93, pg-render 19, pg-codec 34, pg-client, pg-app pass; the desktop build compiles
+  the app's QML; the boundary check passes.
+- The column is a baseline edit (no release yet, so no migration). A catalog carried over by a rebuild copies only the
+  columns the old table had, so its `exif_orientation` is NULL until its files are re-analysed; reads fall back to the
+  composed `orientation` (`coalesce`), which is what the old build used.
+
 ## Run-time checks that gate the design (done first)
 
-1. Does `QImage::from_data` apply EXIF orientation to a JPEG? (Gates item 7: if it does, item 7 is dropped.)
-2. Does `VideoOutput` blend the frame sink's straight-alpha `RGBA8888` frames over what is behind it? (Gates item 5's
-   layering: the poster is hidden once a frame is drawn, so a transparent GIF must show the preview's fill, not black.)
-3. Does `analysis.orientation` already fold in `files.rotation` ("the catalog rotation included", `model/src/analysis.rs`)?
-   (Gates item 8: turns must not be applied twice.)
+Results (2026-11-27):
+
+1. **Does `QImage::from_data` apply EXIF orientation to a JPEG? No.** A synthetic 4×2 JPEG tagged orientation 6 decodes as
+   4×2 (`pg-desktop` test, Qt 6.12.1, offscreen). So item 7 stays: the preview's still is turned by the app.
+2. **Does `VideoOutput` blend straight-alpha frames? Yes, the alpha is honoured.** Offscreen, a `VideoOutput` draws nothing at
+   all (even an opaque frame stays black, under opengl, d3d11 and software), so the answer came from a windowed probe
+   (`scratchpad/probe2`, Qt 6.12.1, the default Windows platform). A frame of 50%-alpha red (200,0,0,128) over black comes
+   out as (143,0,0). A premultiplied read would give 200, and an ignored alpha would give 200; a plain sRGB straight blend
+   gives about 100. So the frame's alpha is applied, and the transparent part shows what is behind it, which is item 5's
+   need. The exact curve is not the sRGB one (143 rather than 100): nothing in the plan depends on it, and the end-to-end
+   check of a transparent GIF over the preview's fill still applies.
+3. **Does `analysis.orientation` already fold in `files.rotation`? Yes, but it goes stale.** Import composes the file's EXIF
+   with the catalog turns (`codec/src/decode.rs:194`), so it includes them. After a rotation is written, the analysis is
+   marked stale and kept with its old `rotation` until the re-import (`catalog/src/queue.rs:409`). A stored orientation
+   therefore cannot be trusted between the rotation and the re-import.
+   **Decision (you chose it):** item 8 uses a stored raw EXIF orientation, with no catalog turns, as a new column of the
+   analysis (catalog schema change and migration). The turns then come from raw + `files.turns` + pending turns, always
+   current.
+
 Method: synthetic files made in the scratch area, a small test or a headless run with a trace; never a search of the machine
 for samples.
 

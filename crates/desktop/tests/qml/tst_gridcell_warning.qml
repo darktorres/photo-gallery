@@ -27,6 +27,11 @@ TestCase {
             itemContentWidth: 0
             itemContentHeight: 0
             rowHeight: 100
+            itemFileId: 0
+            itemAnimated: false
+            itemPlayerTurns: 0
+            itemPlayerMirrored: false
+            itemPlays: false
             itemThumbhashUrl: "image://thumbhash/warning"
             showBorders: false
             current: -1

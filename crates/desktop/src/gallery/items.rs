@@ -11,11 +11,63 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version};
 use pg_model::media::MediaType;
+use pg_model::orientation::Orientation;
 use pg_model::size::ThumbHeight;
+use pg_model::turns::Turns;
 use pg_wording::FoundBorders;
 
 use super::qobject;
 use crate::bridges::gallery_state::Detail;
+
+/// What Qt's players add to show a file upright: the quarter turns clockwise, and whether the frames are mirrored first
+/// (`player_turns`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct PlayerTurns {
+    pub(super) turns: i32,
+    pub(super) mirrored: bool,
+}
+
+impl PlayerTurns {
+    /// The turns and mirror for a file of `media`, with EXIF orientation `exif` and `turned` catalog and pending turns
+    /// (`player_turns`). An animation takes the orientation (its mirror, then the turns); a video keeps the turns alone.
+    pub(super) fn of(media: MediaType, exif: Orientation, turned: Turns) -> PlayerTurns {
+        match media {
+            MediaType::Animated => {
+                let (mirrored, turns) = exif.compose(turned).parts();
+                PlayerTurns { turns: i32::from(turns.get()), mirrored }
+            }
+            _ => PlayerTurns { turns: i32::from(turned.get()), mirrored: false },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // An animation is turned by its whole orientation: the mirror, then the quarter turns, for each of the eight EXIF
+    // orientations, with the catalog and pending turns added on. A video is never mirrored (Qt's player turns it).
+    #[test]
+    fn an_animation_is_turned_by_its_orientation_and_the_turns_on_top() {
+        for tag in 1..=8 {
+            let exif = Orientation::new(tag).unwrap();
+            for turned in 0..4 {
+                let got = PlayerTurns::of(MediaType::Animated, exif, Turns::new(turned));
+                let (mirrored, turns) = exif.compose(Turns::new(turned)).parts();
+                assert_eq!((got.mirrored, got.turns), (mirrored, i32::from(turns.get())), "tag {tag}, turned {turned}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_video_takes_the_turns_alone() {
+        for tag in 1..=8 {
+            let exif = Orientation::new(tag).unwrap();
+            let got = PlayerTurns::of(MediaType::Video, exif, Turns::new(3));
+            assert_eq!(got, PlayerTurns { turns: 3, mirrored: false }, "tag {tag}");
+        }
+    }
+}
 
 impl qobject::GalleryModel {
     /// The image's aspect as shown (pending turns included); 1 without its height (`ROLE_IMAGE_ASPECTS`).
@@ -177,10 +229,14 @@ impl qobject::GalleryModel {
         }
     }
 
-    /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the turns not
-    /// yet written. (A video's own rotation tag is applied by the player.)
-    pub(super) fn player_turns(&self, item: i32) -> i32 {
-        self.entry(item).map_or(0, |e| i32::from(e.turns.plus(e.pending_turns).get()))
+    /// What Qt's players must add to show the file upright. An animation's frames are turned by all of the file's
+    /// orientation: its EXIF tag, the catalog rotation and the turns not yet written (the mirror and the quarter turns
+    /// of `Orientation::parts`). A video's own rotation tag is applied by the player, so a video gets the catalog and
+    /// pending turns alone, never a mirror.
+    pub(super) fn player_turns(&self, item: i32) -> PlayerTurns {
+        self.entry(item).map_or(PlayerTurns::default(), |e| {
+            PlayerTurns::of(e.media_type(), e.exif_orientation, e.turns.plus(e.pending_turns))
+        })
     }
 
     /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file (the

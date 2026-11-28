@@ -20,6 +20,7 @@ use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::media::Kind;
 use pg_model::num::count_u64;
+use pg_model::orientation::Orientation;
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
@@ -272,9 +273,9 @@ impl Catalog {
                 file_rewritten(&tx, job.file_id, rewrite)?;
                 set_file_rating(&tx, job.file_id, rating)?;
             }
-            WriteEffect::TurnedBack { rewrite, turns } => {
+            WriteEffect::TurnedBack { rewrite, turns, exif } => {
                 file_rewritten(&tx, job.file_id, rewrite)?;
-                analysis_turned_back(&tx, job.file_id, turns)?;
+                analysis_turned_back(&tx, job.file_id, turns, exif)?;
             }
             WriteEffect::KeptInCatalog(turns) => add_catalog_rotation(&tx, job.file_id, turns)?,
             WriteEffect::Nothing => {}
@@ -410,9 +411,11 @@ fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result
 /// the file as it is now turned back by them, so they are recorded as made at the catalog rotation that many turns back.
 /// Both are stale anyway (the mtime changed): until the import redoes the analysis and the Placeholders pass redoes the
 /// placeholder (the identity no longer matches), the placeholder shows the file as it is now.
-fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
+fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns, exif: Orientation) -> Result<()> {
     let back = |stored: Turns| Turns::of(i64::from(stored.get()) - i64::from(turns.get()));
     change_turns(tx, ("analysis", "file_id", "rotation"), file_id.get(), back)?;
+    // The file's tag is what the write left in it: exact, where the rest of the analysis is only stale.
+    tx.execute("UPDATE analysis SET exif_orientation = ?2 WHERE file_id = ?1", (file_id.get(), exif.get()))?;
     change_turns(tx, ("placeholders", "file_id", "rotation"), file_id.get(), back)
 }
 
@@ -631,10 +634,17 @@ mod tests {
         c.write_failed(&job, "locked", false).unwrap();
         let job = c.next_write(0).unwrap().unwrap();
         let rewrite = Rewrite { before: None, after: (31, 7), metadata_only: None };
-        c.write_done(&Job { write: three, ..job.clone() }, WriteEffect::TurnedBack { rewrite, turns: Turns::new(3) })
-            .unwrap();
-        // Three turns are in the file: one is left to make the full circle.
+        c.write_done(
+            &Job { write: three, ..job.clone() },
+            WriteEffect::TurnedBack { rewrite, turns: Turns::new(3), exif: Orientation::new(6).unwrap() },
+        )
+        .unwrap();
+        // Three turns are in the file: one is left to make the full circle. The file's tag is what the write left in it.
         assert_eq!(raw::queued(&c, 1, "rotation"), Some(1));
+        let tag = raw::rows_of(&c, "SELECT exif_orientation FROM analysis WHERE file_id = 1", [], |r| {
+            r.get::<_, Option<i64>>(0)
+        });
+        assert_eq!(tag, [Some(6)], "the analysis holds the tag the write left in the file");
         assert_eq!(attempts(&c, 1, "rotation"), 0);
         let rest = c.next_write(0).unwrap().unwrap();
         assert_eq!(rest.temp, None);

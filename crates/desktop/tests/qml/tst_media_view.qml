@@ -26,6 +26,7 @@ TestCase {
             fw: 640
             fh: 480
             playerTurns: 0
+            playerMirrored: false
             playRequests: 0
             fileId: 7
             muted: false

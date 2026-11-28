@@ -21,6 +21,8 @@ Item {
     required property int fw
     required property int fh
     required property int playerTurns
+    // Whether the frames are mirrored left-right before the turns (an animation's EXIF orientation, see TurnedVideoOutput).
+    required property bool playerMirrored
     // Each change asks for a play or pause (Viewer.playRequests counts them).
     required property int playRequests
     onPlayRequestsChanged: togglePlay()
@@ -84,16 +86,12 @@ Item {
         width: media.playScale > 0 ? media.fw * media.playScale : media.width
         height: media.playScale > 0 ? media.fh * media.playScale : media.height
         anchors.centerIn: parent
-        Item {
-            anchors.centerIn: parent
-            width: media.swapsAxes ? parent.height : parent.width
-            height: media.swapsAxes ? parent.width : parent.height
-            rotation: media.playerTurns * 90
-            VideoOutput {
-                id: videoOut
-                anchors.fill: parent
-                fillMode: VideoOutput.PreserveAspectFit
-            }
+        TurnedVideoOutput {
+            id: videoOut
+            anchors.fill: parent
+            swapsAxes: media.swapsAxes
+            turns: media.playerTurns
+            mirrored: media.playerMirrored
         }
     }
 
@@ -104,7 +102,7 @@ Item {
 
     MediaPlayer {
         id: player
-        videoOutput: videoOut
+        videoOutput: videoOut.output
         audioOutput: AudioOutput {
             muted: media.muted
             volume: media.volume

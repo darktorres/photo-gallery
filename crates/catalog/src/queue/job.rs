@@ -58,6 +58,8 @@ pub enum WriteEffect {
         rewrite: Rewrite,
         /// The turns the file now shows.
         turns: Turns,
+        /// The file's EXIF orientation tag as it now holds it (the turns in the tag, or 1 when the pixels were turned).
+        exif: pg_model::orientation::Orientation,
     },
     /// The file can't hold the turns: the catalog keeps them (`files.rotation`).
     KeptInCatalog(Turns),

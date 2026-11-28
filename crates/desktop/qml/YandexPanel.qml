@@ -231,6 +231,7 @@ Rectangle {
             }
 
             WheelFlickable {
+                id: resultsFlick
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -250,6 +251,7 @@ Rectangle {
                     }
                     // The group's block: its results at their frames, which YandexSearch lays out in the panel's width.
                     Item {
+                        id: otherBlock
                         Layout.fillWidth: true
                         Layout.preferredHeight: yandex.otherHeight
                         Repeater {
@@ -257,6 +259,11 @@ Rectangle {
                             ResultTile {
                                 visible: isOther
                                 loadTurn: yandex.thumbTurn
+                                // Animations play only while the list is at rest and the preview is closed.
+                                mayPlay: !resultsFlick.moving && !preview.visible
+                                blockY: otherBlock.y
+                                viewTop: resultsFlick.contentY
+                                viewHeight: resultsFlick.height
                                 onThumbSettled: row => yandex.thumbSettled(row)
                                 onToggled: chosen => yandex.togglePick(chosen)
                                 onRangeTo: chosen => yandex.pickTo(chosen)
@@ -272,6 +279,7 @@ Rectangle {
                         picked: yandex.similarPicked
                     }
                     Item {
+                        id: similarBlock
                         Layout.fillWidth: true
                         Layout.preferredHeight: yandex.similarHeight
                         Repeater {
@@ -279,6 +287,10 @@ Rectangle {
                             ResultTile {
                                 visible: !isOther
                                 loadTurn: yandex.thumbTurn
+                                mayPlay: !resultsFlick.moving && !preview.visible
+                                blockY: similarBlock.y
+                                viewTop: resultsFlick.contentY
+                                viewHeight: resultsFlick.height
                                 onThumbSettled: row => yandex.thumbSettled(row)
                                 onToggled: chosen => yandex.togglePick(chosen)
                                 onRangeTo: chosen => yandex.pickTo(chosen)
@@ -306,6 +318,10 @@ Rectangle {
         imageUrl: yandex.previewUrl
         prevUrl: yandex.previewPrevUrl
         nextUrl: yandex.previewNextUrl
+        // The item's animation ("" for a still), set after its turn: the turn is the file's own (Orientation::parts).
+        animationUrl: yandex.previewAnimationUrl
+        mirrored: yandex.previewMirrored
+        turns: yandex.previewTurns
         onStepRequested: by => yandex.stepPreview(by)
         sizeText: yandex.previewWidth > 0 ? yandex.previewWidth + "×" + yandex.previewHeight : ""
         picked: yandex.previewPicked

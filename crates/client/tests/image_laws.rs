@@ -50,4 +50,12 @@ proptest! {
     fn an_image_request_parse_never_panics(provider in 0usize..4, id in ".*") {
         let _ = ImageRequest::parse(Provider::ALL[provider], &id);
     }
+
+    // A whole URL is read back to the request it was built from, and any text is read or refused, never a panic.
+    #[test]
+    fn a_whole_url_reads_back_to_its_request(id in any::<u64>(), text in ".*") {
+        let request = ImageRequest::Yandex { id, original: true };
+        prop_assert_eq!(ImageRequest::from_url(&request.url()), Some(request));
+        let _ = ImageRequest::from_url(&text);
+    }
 }

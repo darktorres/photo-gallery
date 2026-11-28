@@ -56,6 +56,13 @@ pub mod qobject {
         #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]
+        /// The URL of the preview's item's original when the item is an animation, `""` otherwise: the animation player
+        /// plays it, so "animated" and its URL are one value. Set last (after the turn below) when the preview refreshes.
+        #[qproperty(QString, preview_animation_url, cxx_name = "previewAnimationUrl", READ, WRITE, NOTIFY, FINAL)]
+        /// The mirror and the quarter turns of the preview's item's file (its EXIF orientation, `Orientation::parts`): how
+        /// the animation's frames are turned, as the still is.
+        #[qproperty(bool, preview_mirrored, cxx_name = "previewMirrored", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, preview_turns, cxx_name = "previewTurns", READ, WRITE, NOTIFY, FINAL)]
         type YandexSearch = super::YandexSearchRust;
     }
 

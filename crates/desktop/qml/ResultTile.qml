@@ -8,6 +8,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
+import QtMultimedia
 import pg.gallery
 
 FocusScope {
@@ -48,6 +49,25 @@ FocusScope {
     // The row whose picture may load now: the rows at or before it (YandexSearch.thumbTurn), in order.
     required property int loadTurn
 
+    // The animation: the result's original URL ("" for a still), its file's turn and mirror (Orientation::parts), and
+    // whether the panel lets tiles play now (the list is at rest, and the preview is closed).
+    required property string animationUrl
+    required property bool mirrored
+    required property int turns
+    required property bool mayPlay
+    // The tile's block in the list's content (its group's top), and the list's scroll and height: a tile plays only while
+    // it is on screen (or a row's height from it).
+    required property real blockY
+    required property real viewTop
+    required property real viewHeight
+
+    // The tile's top in the list's content, and whether it is on screen with a row's margin either side.
+    readonly property real contentTop: tile.blockY + tile.frameY
+    readonly property bool onScreen: tile.contentTop + tile.frameHeight >= tile.viewTop - tile.frameHeight
+        && tile.contentTop <= tile.viewTop + tile.viewHeight + tile.frameHeight
+    // The tile plays its animation: an animated result, shown, on screen, with the panel allowing it.
+    readonly property bool playing: tile.visible && tile.animationUrl !== "" && tile.mayPlay && tile.onScreen
+
     signal toggled(int item)
     signal rangeTo(int item)
     signal previewRequested(int item)
@@ -72,6 +92,45 @@ FocusScope {
         onStatusChanged: {
             if (status === Image.Ready || status === Image.Error)
                 tile.thumbSettled(tile.index);
+        }
+    }
+    // An animated result plays over its still while the tile `playing` (the loader's player and output are made then and
+    // dropped after, so only the tiles on screen hold a player). Over a white backing, as the still is flattened onto
+    // white, once a frame is drawn: the still then gives way to the animation.
+    Loader {
+        id: animated
+        anchors.fill: parent
+        active: tile.playing
+        sourceComponent: Component {
+            Item {
+                id: anim
+                anchors.fill: parent
+                property bool drawn: false
+                Rectangle {
+                    anchors.fill: parent
+                    color: "white"
+                    visible: anim.drawn
+                }
+                TurnedVideoOutput {
+                    id: video
+                    anchors.fill: parent
+                    swapsAxes: tile.turns % 2 === 1
+                    turns: tile.turns
+                    mirrored: tile.mirrored
+                    fillMode: VideoOutput.PreserveAspectCrop
+                }
+                ResultAnimationPlayer {
+                    url: tile.animationUrl
+                    height: Math.round(tile.frameHeight)
+                    Component.onCompleted: setSink(video.videoSink)
+                }
+                Connections {
+                    target: video.videoSink
+                    function onVideoFrameChanged() {
+                        anim.drawn = true;
+                    }
+                }
+            }
         }
     }
     // The keyboard's place: a frame while the tile has the focus.

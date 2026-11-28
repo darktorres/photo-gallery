@@ -79,9 +79,11 @@ pub mod qobject {
         #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
         /// The viewer's item's media kind: an image, an animation or a video.
         #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ = read_viewed_kind, NOTIFY, FINAL)]
-        /// The quarter turns Qt's player adds to show the viewer's file upright: its catalog rotation and the turns not
-        /// yet written.
+        /// The quarter turns Qt's player adds to show the viewer's file upright: the catalog rotation, the turns not yet
+        /// written and, for an animation, the file's own orientation (`viewed_player_mirrored` says whether it is mirrored).
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
+        /// Whether the viewer's animation is mirrored left-right before its turns (the file's EXIF orientation).
+        #[qproperty(bool, viewed_player_mirrored, cxx_name = "viewedPlayerMirrored", READ, WRITE, NOTIFY, FINAL)]
         /// The viewer's item's file id in the catalog.
         #[qproperty(i64, viewed_file_id, cxx_name = "viewedFileId", READ, WRITE, NOTIFY, FINAL)]
         /// The viewer's item's URL at full size.

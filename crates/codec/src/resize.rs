@@ -4,7 +4,7 @@
 
 use crate::error::{Error, Result};
 use fast_image_resize::images::{TypedImage, TypedImageRef};
-use fast_image_resize::pixels::U8x3;
+use fast_image_resize::pixels::{U8x3, U8x4};
 use fast_image_resize::{ResizeAlg, ResizeOptions};
 use pg_model::num::f64_to_pixels;
 
@@ -105,6 +105,41 @@ impl Resizer {
         self.run(img, width, height, &options, out)
     }
 
+    /// Resizes straight-alpha RGBA (`src`, `width × height` pixels) to `out_width × out_height` into `out`, with the same
+    /// MKS 2021 kernel. The colours are premultiplied by their alpha before the kernel and divided back after, so a
+    /// transparent pixel's colour (whatever it is) does not darken the opaque pixels it is blended with at an edge.
+    pub fn resize_rgba(
+        &mut self,
+        src: &[u8],
+        (width, height): (usize, usize),
+        (out_width, out_height): (usize, usize),
+        out: &mut Vec<u8>,
+    ) -> Result<()> {
+        let len = width
+            .checked_mul(height)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(|| Error::invalid("image size overflows"))?;
+        let mut premultiplied =
+            src.get(..len).ok_or_else(|| Error::invalid("image pixels shorter than its size"))?.to_vec();
+        premultiply(&mut premultiplied);
+        let dst_len = out_width
+            .checked_mul(out_height)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(|| Error::invalid("output size overflows"))?;
+        out.resize(dst_len, 0);
+        let kernel = mks2021().map_err(|e| Error::resize("the MKS 2021 filter", e))?;
+        let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(kernel));
+        let source = TypedImageRef::<U8x4>::from_buffer(pixels_u32(width)?, pixels_u32(height)?, &premultiplied)
+            .map_err(|e| Error::resize("image pixels shorter than its size", e))?;
+        {
+            let mut target = TypedImage::<U8x4>::from_buffer(pixels_u32(out_width)?, pixels_u32(out_height)?, out)
+                .map_err(|e| Error::resize("resize target buffer", e))?;
+            self.inner.resize_typed(&source, &mut target, &options).map_err(|e| Error::resize("resizing", e))?;
+        }
+        unpremultiply(out);
+        Ok(())
+    }
+
     fn run(&mut self, img: &Rgb, width: usize, height: usize, options: &ResizeOptions, out: &mut Rgb) -> Result<()> {
         let (src_w, src_h) = (pixels_u32(img.width)?, pixels_u32(img.height)?);
         let (dst_w, dst_h) = (pixels_u32(width)?, pixels_u32(height)?);
@@ -126,6 +161,30 @@ impl Resizer {
         }
         (out.width, out.height) = (width, height);
         Ok(())
+    }
+}
+
+/// Each colour times its alpha (rounded), in place: the premultiplied form the kernel averages correctly.
+fn premultiply(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u32::from(pixel[3]);
+        for colour in &mut pixel[..3] {
+            *colour = u8::try_from((u32::from(*colour) * alpha + 127) / 255).unwrap_or(u8::MAX);
+        }
+    }
+}
+
+/// The inverse of [`premultiply`], in place: a colour over its alpha (rounded, clamped); a fully transparent pixel is black.
+fn unpremultiply(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u32::from(pixel[3]);
+        for colour in &mut pixel[..3] {
+            *colour = if alpha == 0 {
+                0
+            } else {
+                u8::try_from((u32::from(*colour) * 255 + alpha / 2) / alpha).unwrap_or(u8::MAX)
+            };
+        }
     }
 }
 
@@ -168,5 +227,50 @@ mod tests {
         Resizer::new().resize(&pair, 1, 1, &mut out).unwrap();
         let v = out.pixels.first().copied().unwrap_or_default();
         assert!((126..=130).contains(&v), "the average of black and white is {v}, expected about 128");
+    }
+
+    // An opaque RGBA picture resizes to the same colours as the RGB one: the premultiplication changes nothing at alpha 255.
+    #[test]
+    fn an_opaque_rgba_resize_is_the_rgb_resize() {
+        let (w, h) = (9, 7);
+        let mut rgb = Vec::new();
+        let mut rgba = Vec::new();
+        for i in 0..w * h {
+            let (r, g, b) = (((i * 37) % 256) as u8, ((i * 91) % 256) as u8, ((i * 53) % 256) as u8);
+            rgb.extend_from_slice(&[r, g, b]);
+            rgba.extend_from_slice(&[r, g, b, 255]);
+        }
+        let mut out_rgb = Rgb::default();
+        Resizer::new().resize(&Rgb { width: w, height: h, pixels: rgb }, 4, 3, &mut out_rgb).unwrap();
+        let mut out_rgba = Vec::new();
+        Resizer::new().resize_rgba(&rgba, (w, h), (4, 3), &mut out_rgba).unwrap();
+        let rgb_of_rgba: Vec<u8> = out_rgba.chunks_exact(4).flat_map(|p| p[..3].to_vec()).collect();
+        assert_eq!(rgb_of_rgba, out_rgb.pixels);
+        assert!(out_rgba.chunks_exact(4).all(|p| p[3] == 255), "the alpha of an opaque picture stays 255");
+    }
+
+    // A transparent pixel's colour does not reach the opaque ones: a white picture with a transparent black half has
+    // no dark edge where the two meet (the premultiplication keeps the colour of an opaque pixel at its own value).
+    #[test]
+    fn a_transparent_edge_keeps_the_colour_of_the_opaque_pixels() {
+        let (w, h) = (8, 1);
+        let mut rgba = Vec::new();
+        for x in 0..w {
+            rgba.extend_from_slice(if x < 4 { &[255, 255, 255, 255] } else { &[0, 0, 0, 0] });
+        }
+        let mut out = Vec::new();
+        Resizer::new().resize_rgba(&rgba, (w, h), (4, 1), &mut out).unwrap();
+        for pixel in out.chunks_exact(4) {
+            if pixel[3] > 0 {
+                assert!(pixel[0] >= 250, "a partly transparent pixel is dark: {pixel:?}");
+            }
+        }
+        assert!(out.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255), "the edge is partly transparent");
+    }
+
+    #[test]
+    fn rgba_resize_checks_its_input_length() {
+        let mut out = Vec::new();
+        assert!(Resizer::new().resize_rgba(&[0; 7], (2, 1), (1, 1), &mut out).is_err());
     }
 }

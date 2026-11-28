@@ -548,6 +548,7 @@ mod tests {
             rating: None,
             animated: false,
             orientation: Orientation::UPRIGHT,
+            exif_orientation: Orientation::UPRIGHT,
             cut: [0; 4],
             borders: Borders::Unknown,
         }

@@ -46,6 +46,7 @@ pub struct GalleryRust {
     /// `viewedKind`'s value, as the domain's type: the bridge's `MediaKind` is read from it (`read_viewed_kind`).
     pub(crate) viewed_kind: MediaType,
     pub(crate) viewed_player_turns: i32,
+    pub(crate) viewed_player_mirrored: bool,
     pub(crate) viewed_file_id: i64,
     pub(crate) viewed_full_url: QString,
     /// The thumbnails' height, once the shell has one: the thumbnail URLs are made for it. None until then, and the rows
@@ -108,6 +109,7 @@ impl Default for GalleryRust {
             viewed_full_height: 0,
             viewed_kind: MediaType::Image,
             viewed_player_turns: 0,
+            viewed_player_mirrored: false,
             viewed_file_id: 0,
             viewed_full_url: QString::default(),
             thumb_height: None,

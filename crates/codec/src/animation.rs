@@ -38,9 +38,33 @@ fn limited<D: ImageDecoder>(mut decoder: D) -> Result<D> {
     Ok(decoder)
 }
 
+/// The bytes of an animation: shared and read-only, so a player holds them without a copy. Made from what holds them (a
+/// file's read, a search's kept download), by [`Bytes::shared`] or `From<Vec<u8>>`.
+#[derive(Clone)]
+pub struct Bytes(Arc<dyn AsRef<[u8]> + Send + Sync>);
+
+impl Bytes {
+    /// The bytes `bytes` holds, shared: no copy.
+    pub fn shared<T: AsRef<[u8]> + Send + Sync + 'static>(bytes: Arc<T>) -> Bytes {
+        Bytes(bytes)
+    }
+}
+
+impl From<Vec<u8>> for Bytes {
+    fn from(bytes: Vec<u8>) -> Bytes {
+        Bytes(Arc::new(bytes))
+    }
+}
+
+impl AsRef<[u8]> for Bytes {
+    fn as_ref(&self) -> &[u8] {
+        (*self.0).as_ref()
+    }
+}
+
 /// One pass over the frames of the animation in `bytes` (a file's content). Loop by calling it again.
-pub fn frames(bytes: Arc<[u8]>) -> Result<impl Iterator<Item = Result<Frame>>> {
-    let format = Format::sniff(&bytes);
+pub fn frames(bytes: Bytes) -> Result<impl Iterator<Item = Result<Frame>>> {
+    let format = Format::sniff(bytes.as_ref());
     let cursor = Cursor::new(bytes);
     let frames = match format {
         Some(Format::Gif) => limited(GifDecoder::new(cursor).map_err(Error::decoder)?)?.into_frames(),
@@ -99,7 +123,7 @@ mod tests {
         let summary: Vec<_> = got.iter().map(|f| (f.width, f.height, f.rgba[0], f.delay_ms)).collect();
         assert_eq!(summary, [(2, 2, 9, 40), (2, 2, 200, 40)]);
 
-        assert!(frames(Arc::from(&b"not an image"[..])).is_err());
+        assert!(frames(b"not an image".to_vec().into()).is_err());
     }
 
     // A GIF whose logical screen (its canvas) is 40,000 x 40,000 is over the cap, and has no frames: it is refused

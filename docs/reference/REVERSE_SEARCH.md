@@ -98,3 +98,14 @@ the Sites list above was the wrong target for group 1:
   (`client.rs:113`), not the browser's real screen metrics. Like the script, a failure on a page after the first
   (in practice the page-1 captcha) ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
   a note; one on the upload or the other sizes is the search's error. A captcha is reported, never retried.
+
+## Animated results
+
+An animated result (GIF, APNG or animated WebP; `pg_render::player::animated`, the catalog's own rule: more than one frame)
+plays in the full-size preview and in its tile, over the still, from the search's kept download (`Fetched.file`, never
+waited for: `Images::kept`). The file is played as Yandex gave it, turned by its own EXIF orientation (`Orientation::parts`:
+the mirror, then the quarter turns; a still is turned the same way in the preview, in QML). A tile plays only while it is on
+screen, the list is at rest and the preview is closed, at its own height (the player scales each frame down to it; a
+frame is never enlarged). The library's grid plays its animated files the same way (`GridCell`; videos keep their still and
+badge, and play in the viewer). Stopping a player never waits for a decode: a drop closes the sink at once, and no frame
+reaches it after that.

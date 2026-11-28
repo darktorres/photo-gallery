@@ -18,6 +18,9 @@ QtObject {
     property int viewedFullHeight: 0
     property int viewedKind: GalleryModel.Image
     property int viewedPlayerTurns: 0
+    // The item the viewer shows (-1: none, and the viewer is closed).
+    property int viewing: -1
+    property bool viewedPlayerMirrored: false
     property int viewedFileId: 0
     property string viewedInfo: ""
     property rect viewedBorderBox: Qt.rect(0, 0, 0, 0)

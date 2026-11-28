@@ -111,6 +111,13 @@ impl ImageRequest {
         format!("image://{}/{}", self.provider().key(), self.id())
     }
 
+    /// The request a whole `image://<provider>/<id>` URL asks for, or `None` when it doesn't read: the one reader of whole
+    /// URLs (`url` builds them), so a front end that holds a URL reads it here.
+    pub fn from_url(url: &str) -> Option<ImageRequest> {
+        let (provider, id) = url.strip_prefix("image://")?.split_once('/')?;
+        ImageRequest::parse(Provider::from_key(provider)?, id)
+    }
+
     /// The request `provider` gets for `id` (the URL's part after the provider's name), or `None` when it doesn't
     /// read. A thumbnail's height is one the cache holds (`ThumbHeight`); another is refused.
     pub fn parse(provider: Provider, id: &str) -> Option<ImageRequest> {

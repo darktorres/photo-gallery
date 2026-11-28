@@ -8,6 +8,7 @@ import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
 import QtQuick.Window
+import QtMultimedia
 import pg.gallery
 
 Rectangle {
@@ -33,6 +34,17 @@ Rectangle {
     // The pictures of the previous and the next result ("" for none), loaded hidden so a step shows its picture at once.
     required property string prevUrl
     required property string nextUrl
+    // The item's animation URL (`""` for a still), and its file's EXIF orientation: the mirror and the quarter turns the
+    // still and the animation are shown with (Orientation::parts; the file's own tag, as a result's has no catalog turns).
+    required property string animationUrl
+    required property bool mirrored
+    required property int turns
+    // Whether the animation has drawn a frame: the still then gives way to it, until the item changes.
+    property bool framesShown: false
+    // A new item (a step, a close, another result) shows its still until its own animation draws.
+    onImageUrlChanged: framesShown = false
+    // Quarter turns swap the picture's sides.
+    readonly property bool swapped: preview.turns % 2 === 1
 
     // The user asked to pick or unpick an item (`-1` for none).
     signal pickRequested(int item)
@@ -109,7 +121,7 @@ Rectangle {
             break;
         case YandexPanel.PanelAction.OneToOne:
             // The 1:1 button's key: the same toggle, where the picture can be zoomed (the button is off where it cannot).
-            if (full.zoomable)
+            if (picture.zoomable)
                 preview.actual = !preview.actual;
             break;
         }
@@ -138,7 +150,7 @@ Rectangle {
         // moment before the search has it. Yandex's stated size is never shown.
         Label {
             textFormat: Text.PlainText
-            text: preview.sizeText !== "" ? preview.sizeText : full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height : ""
+            text: preview.sizeText !== "" ? preview.sizeText : full.status === Image.Ready ? picture.uprightWidth + "×" + picture.uprightHeight : ""
             color: Theme.bodyText
         }
         Label {
@@ -159,7 +171,7 @@ Rectangle {
         }
         Button {
             text: preview.actual ? words.text("ui-fit") : words.text("ui-one-to-one")
-            enabled: full.zoomable
+            enabled: picture.zoomable
             focusPolicy: Qt.NoFocus
             onClicked: preview.actual = !preview.actual
         }
@@ -178,8 +190,8 @@ Rectangle {
         anchors.rightMargin: 12
         anchors.bottomMargin: 12
         clip: true
-        contentWidth: Math.max(width, full.width)
-        contentHeight: Math.max(height, full.height)
+        contentWidth: Math.max(width, picture.width)
+        contentHeight: Math.max(height, picture.height)
         ScrollBar.vertical: ScrollBar {}
         ScrollBar.horizontal: ScrollBar {}
 
@@ -191,30 +203,73 @@ Rectangle {
             onStepped: steps => preview.step(steps)
         }
 
-        Image {
-            id: full
-            // Its size in logical pixels at 1:1, and the scale that fits it to the view, up or down.
-            readonly property real naturalWidth: sourceSize.width / preview.dpr
-            readonly property real naturalHeight: sourceSize.height / preview.dpr
+        // The picture's box is upright: a quarter turn swaps its sides. The still is drawn turned inside it, as the
+        // animation is (TurnedVideoOutput): the stored image is sized by its own pixels, turned and mirrored about its centre.
+        Item {
+            id: picture
+            // Its size in logical pixels at 1:1, upright, and the scale that fits it to the view, up or down.
+            readonly property int uprightWidth: preview.swapped ? full.sourceSize.height : full.sourceSize.width
+            readonly property int uprightHeight: preview.swapped ? full.sourceSize.width : full.sourceSize.height
+            readonly property real naturalWidth: uprightWidth / preview.dpr
+            readonly property real naturalHeight: uprightHeight / preview.dpr
             readonly property real fit: naturalWidth > 0 ? Math.min(previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
             // 1:1 differs from the fit: it is worth a button and a click.
             readonly property bool zoomable: Math.abs(fit - 1) > 0.01
             readonly property real zoom: preview.actual ? 1 : fit
-
-            source: preview.imageUrl
-            asynchronous: true
-            // Across a step the previous picture stays until the next one is decoded (no black flash while it loads).
-            retainWhileLoading: true
-            smooth: true
-            mipmap: true
             width: naturalWidth * zoom
             height: naturalHeight * zoom
             x: Math.max(0, (previewView.width - width) / 2)
             y: Math.max(0, (previewView.height - height) / 2)
 
             TapHandler {
-                onTapped: if (full.zoomable)
+                onTapped: if (picture.zoomable)
                     preview.actual = !preview.actual
+            }
+
+            Image {
+                id: full
+                // The stored picture at the picture's zoom, centred, and turned about its centre (the same rule as
+                // TurnedVideoOutput: the mirror, then the turns, with the inverse turn when mirrored).
+                anchors.centerIn: parent
+                width: sourceSize.width / preview.dpr * picture.zoom
+                height: sourceSize.height / preview.dpr * picture.zoom
+                rotation: (preview.mirrored ? (4 - ((preview.turns % 4) + 4) % 4) % 4 : ((preview.turns % 4) + 4) % 4) * 90
+                transform: Scale {
+                    origin.x: full.width / 2
+                    origin.y: full.height / 2
+                    xScale: preview.mirrored ? -1 : 1
+                }
+                source: preview.imageUrl
+                asynchronous: true
+                // Across a step the previous picture stays until the next one is decoded (no black flash while it loads).
+                retainWhileLoading: true
+                smooth: true
+                mipmap: true
+                // Gives way to the animation's frames once they are drawn.
+                visible: !preview.framesShown
+            }
+            // The animation's frames, turned as the still is, drawn over it once the player has a frame.
+            TurnedVideoOutput {
+                id: video
+                anchors.fill: parent
+                // Only while the animation's frames show: a frame it kept from the last item must not cover this one's still.
+                visible: preview.framesShown
+                swapsAxes: preview.swapped
+                turns: preview.turns
+                mirrored: preview.mirrored
+                fillMode: VideoOutput.PreserveAspectFit
+            }
+            ResultAnimationPlayer {
+                id: animation
+                objectName: "animation"
+                url: preview.animationUrl
+                Component.onCompleted: setSink(video.videoSink)
+            }
+            Connections {
+                target: video.videoSink
+                function onVideoFrameChanged() {
+                    preview.framesShown = true;
+                }
             }
         }
     }

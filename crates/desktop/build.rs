@@ -66,6 +66,7 @@ fn main() -> Result<(), String> {
                 "qml/TestHooks.qml",
                 "qml/ImageLayers.qml",
                 "qml/MediaView.qml",
+                "qml/TurnedVideoOutput.qml",
                 "qml/VideoTransport.qml",
                 "qml/Loupe.qml",
                 "qml/RatingBar.qml",

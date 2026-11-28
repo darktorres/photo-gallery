@@ -47,6 +47,7 @@ Rectangle {
     readonly property int kind: gallery.viewedKind
     // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
     readonly property int playerTurns: gallery.viewedPlayerTurns
+    readonly property bool playerMirrored: gallery.viewedPlayerMirrored
     // The file (its catalog id), for the players and the Yandex search; a line about it for the bar.
     readonly property real fileId: gallery.viewedFileId
     readonly property string info: gallery.viewedInfo
@@ -478,6 +479,7 @@ Rectangle {
                         fw: viewer.fw
                         fh: viewer.fh
                         playerTurns: viewer.playerTurns
+                        playerMirrored: viewer.playerMirrored
                         fileId: viewer.fileId
                         muted: viewer.muted
                         volume: viewer.volume

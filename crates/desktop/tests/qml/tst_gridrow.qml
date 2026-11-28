@@ -55,6 +55,12 @@ TestCase {
                 badges: tc.perCell(() => "")
                 ratings: tc.perCell(() => 0)
                 bordersMarked: tc.perCell(() => false)
+                animated: tc.perCell(() => false)
+                playerTurns: tc.perCell(() => 0)
+                playerMirrored: tc.perCell(() => false)
+                viewTop: 0
+                viewHeight: 100000
+                mayPlay: false
                 imageAspects: tc.perCell(() => 1.5)
                 aspects: tc.perCell(() => 1.5)
                 contentX: tc.perCell(() => 0)
@@ -324,6 +330,18 @@ TestCase {
                 bordersMarked: Array.from({
                     length: st.count
                 }, () => false)
+                animated: Array.from({
+                    length: st.count
+                }, () => false)
+                playerTurns: Array.from({
+                    length: st.count
+                }, () => 0)
+                playerMirrored: Array.from({
+                    length: st.count
+                }, () => false)
+                viewTop: 0
+                viewHeight: 100000
+                mayPlay: false
                 imageAspects: Array.from({
                     length: st.count
                 }, () => 1.5)

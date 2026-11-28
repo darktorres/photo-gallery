@@ -41,6 +41,11 @@ TestCase {
             itemContentWidth: 0
             itemContentHeight: 0
             rowHeight: 100
+            itemFileId: 0
+            itemAnimated: false
+            itemPlayerTurns: 0
+            itemPlayerMirrored: false
+            itemPlays: false
             itemThumbUrl: tc.thumbUrl
             itemThumbhashUrl: "image://thumbhash/fade"
             showBorders: false

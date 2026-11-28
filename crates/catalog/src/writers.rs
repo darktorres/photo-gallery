@@ -442,10 +442,10 @@ impl<'tx> AnalysisWriter<'tx> {
             analysis: tx.prepare_cached(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     format, orientation, width, height, frames, taken, taken_utc, duration_ms, poster_ms, borders_due,
-                    codec)
+                    codec, exif_orientation)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), NULL, ?7, ?8, ?9, ?10, ?11,
                          CASE WHEN ?13 THEN unixepoch(?12, 'unixepoch', 'localtime') ELSE ?12 END,
-                         CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0, ?16)",
+                         CASE WHEN ?13 THEN ?12 END, ?14, ?15, 0, ?16, ?17)",
             )?,
             owe_pairs: tx.prepare_cached("INSERT OR IGNORE INTO pairs_owed(file_id) VALUES (?1)")?,
             owe_hashes: tx.prepare_cached("INSERT OR IGNORE INTO hashes_owed(file_id) VALUES (?1)")?,
@@ -530,6 +530,7 @@ impl<'tx> AnalysisWriter<'tx> {
             video.and_then(|v| (v.duration_ms != Entry::NO_DURATION).then_some(v.duration_ms)),
             video.map(|v| v.poster_ms),
             video.map(|v| v.codec),
+            a.exif_orientation.get(),
         ])?;
         self.touch_file(item.id)?;
         self.owe_hashes.execute([item.id.get()])?;
@@ -1361,6 +1362,7 @@ mod tests {
         let analysis = Analysis {
             version: IMPORT_VERSION,
             orientation: Orientation::UPRIGHT,
+            exif_orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
             frames: 1,
@@ -1484,6 +1486,7 @@ mod tests {
         let analysis = Analysis {
             version: IMPORT_VERSION,
             orientation: Orientation::UPRIGHT,
+            exif_orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
             frames: 1,
@@ -1580,6 +1583,7 @@ mod tests {
             let analysis = Analysis {
                 version: IMPORT_VERSION,
                 orientation: Orientation::from_tag(orientation),
+                exif_orientation: Orientation::from_tag(orientation),
                 width,
                 height,
                 frames: 1,
@@ -1667,6 +1671,7 @@ mod tests {
             analysis: Analysis {
                 version: IMPORT_VERSION,
                 orientation: Orientation::UPRIGHT,
+                exif_orientation: Orientation::UPRIGHT,
                 width: 400,
                 height: 300,
                 frames: 1,
@@ -1688,6 +1693,12 @@ mod tests {
         let tx = c.tx().unwrap();
         assert!(tx.analysis_writer(versions().import).unwrap().store_analysis(&item, stored).unwrap());
         tx.commit().unwrap();
+        // The file's own tag is stored as it was analysed, beside the composed orientation.
+        let stored_tag =
+            crate::fixture::raw::rows_of(c, "SELECT exif_orientation FROM analysis WHERE file_id = ?1", [id], |r| {
+                r.get::<_, Option<i64>>(0)
+            });
+        assert_eq!(stored_tag, [Some(i64::from(stored.exif_orientation.get()))]);
     }
 
     /// Stores `stored` as the import and then the Hashes pass store it.

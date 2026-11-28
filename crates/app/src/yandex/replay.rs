@@ -125,12 +125,13 @@ mod tests {
     use crate::yandex::images::{Images, Picture};
     use crate::yandex::{Hit, Label, find_similar, number, save_all};
     use pg_jobs::events::Bus;
+    use pg_model::orientation::Orientation;
     use pg_model::yandex::{RequestError, Saved, SimilarNote};
     use std::sync::Mutex;
 
     /// Every file decodes, to this size: not the 714×320 the recorded page states.
     fn accept(_: &[u8]) -> Result<Picture, &'static str> {
-        Ok(Picture { grid: Vec::new(), size: (120, 90) })
+        Ok(Picture { grid: Vec::new(), size: (120, 90), animated: false, orientation: Orientation::UPRIGHT })
     }
 
     /// A source that records the order of its calls, to check the search's.

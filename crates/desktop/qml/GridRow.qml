@@ -20,6 +20,14 @@ Item {
     required property list<string> badges
     required property list<int> ratings
     required property list<bool> bordersMarked
+    // Each item's animation: whether it is one, and the turns and mirror it is shown with (the viewer's rule).
+    required property list<bool> animated
+    required property list<int> playerTurns
+    required property list<bool> playerMirrored
+    // The list's scroll (its top and height), and whether the grid lets animations play now (see GalleryGrid).
+    required property real viewTop
+    required property real viewHeight
+    required property bool mayPlay
     required property list<real> imageAspects
     required property list<real> aspects
     required property list<real> contentX
@@ -58,6 +66,14 @@ Item {
     property list<string> shownBadges: []
     property list<int> shownRatings: []
     property list<bool> shownBordersMarked: []
+    property list<bool> shownAnimated: []
+    property list<int> shownPlayerTurns: []
+    property list<bool> shownPlayerMirrored: []
+    // The row's cells play their animations: on screen (a row's margin either side), live and with their pictures asked
+    // for (not pooled), and the grid letting them play. A cell plays while its row does.
+    readonly property bool onScreen: rowItem.y + rowItem.height >= rowItem.viewTop - rowItem.height
+        && rowItem.y <= rowItem.viewTop + rowItem.viewHeight + rowItem.height
+    readonly property bool plays: rowItem.mayPlay && rowItem.onScreen && rowItem.loadStarted && !rowItem.pooled
     property list<real> shownImageAspects: []
     property list<real> shownAspects: []
     property list<real> shownContentX: []
@@ -115,6 +131,9 @@ Item {
         rowItem.shownBadges = rowItem.badges;
         rowItem.shownRatings = rowItem.ratings;
         rowItem.shownBordersMarked = rowItem.bordersMarked;
+        rowItem.shownAnimated = rowItem.animated;
+        rowItem.shownPlayerTurns = rowItem.playerTurns;
+        rowItem.shownPlayerMirrored = rowItem.playerMirrored;
         rowItem.shownImageAspects = rowItem.imageAspects;
         rowItem.shownAspects = rowItem.aspects;
         rowItem.shownContentX = rowItem.contentX;
@@ -140,6 +159,9 @@ Item {
     onBadgesChanged: take()
     onRatingsChanged: take()
     onBordersMarkedChanged: take()
+    onAnimatedChanged: take()
+    onPlayerTurnsChanged: take()
+    onPlayerMirroredChanged: take()
     onImageAspectsChanged: take()
     onAspectsChanged: take()
     onContentXChanged: take()
@@ -178,6 +200,11 @@ Item {
                 rowHeight: rowItem.rowHeight
                 itemThumbUrl: rowItem.shownThumbUrls[index] ?? ""
                 itemThumbhashUrl: rowItem.shownThumbhashUrls[index] ?? ""
+                itemFileId: rowItem.shownIds[index] ?? 0
+                itemAnimated: rowItem.shownAnimated[index] ?? false
+                itemPlayerTurns: rowItem.shownPlayerTurns[index] ?? 0
+                itemPlayerMirrored: rowItem.shownPlayerMirrored[index] ?? false
+                itemPlays: rowItem.plays
                 showBorders: rowItem.showBorders
                 current: rowItem.current
                 onCellClicked: itemIndex => rowItem.cellClicked(itemIndex)

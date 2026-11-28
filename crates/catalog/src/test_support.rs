@@ -131,6 +131,7 @@ pub(crate) fn store_taken(c: &mut Catalog, item: &WorkItem, taken: Option<Taken>
     let analysis = Analysis {
         version: IMPORT_VERSION,
         orientation: Orientation::UPRIGHT,
+        exif_orientation: Orientation::UPRIGHT,
         width: 400,
         height: 300,
         frames: 1,

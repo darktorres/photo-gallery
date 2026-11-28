@@ -106,6 +106,10 @@ Item {
             showBorders: root.showBorders
             current: root.current
             settling: root.settling
+            // Animations play only with the viewer closed, the list settled and at rest (a scroll stops them).
+            viewTop: grid.contentY
+            viewHeight: grid.height
+            mayPlay: root.gallery.viewing < 0 && !root.settling && !grid.moving
             aboveWaiting: root.pendingRevision >= 0 && root.waitsForAbove(index)
             onPendingLoadChanged: root.pendingRevision++
             onIndexChanged: root.pendingRevision++

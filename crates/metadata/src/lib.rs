@@ -96,6 +96,12 @@ impl Meta {
     }
 }
 
+/// How many frames a file holds, from its container alone (no EXIF, no decoding): more than one is an animated GIF, PNG
+/// (APNG) or WebP. The same walk `Meta::read` takes its `frames` from, so the rule is one.
+pub fn frames(bytes: &[u8], format: Format) -> u32 {
+    Container::walk(bytes, format, &mut MetaScratch::default()).frames
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,6 +796,7 @@ mod tests {
     fn frames_of_animations() {
         assert_eq!(frames(&gif(1).unwrap(), Format::Gif), 1);
         assert_eq!(frames(&gif(3).unwrap(), Format::Gif), 3);
+        assert_eq!(super::frames(&gif(3).unwrap(), Format::Gif), 3, "the public reader is the same walk");
 
         assert_eq!(frames(&apng(1).unwrap(), Format::Png), 1);
         assert_eq!(frames(&apng(4).unwrap(), Format::Png), 4);

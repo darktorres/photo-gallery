@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
+import QtMultimedia
 import pg.gallery
 
 Item {
@@ -23,6 +24,13 @@ Item {
     required property real itemContentWidth
     required property real itemContentHeight
     required property real rowHeight
+    // The file the cell shows (its id), and its animation: whether it is one, the turns and mirror it is shown with, and
+    // whether its row may play it now (GridRow.plays).
+    required property real itemFileId
+    required property bool itemAnimated
+    required property int itemPlayerTurns
+    required property bool itemPlayerMirrored
+    required property bool itemPlays
     // The image URLs, made by the model (the grammar is Rust's: pg_client::image): the thumbnail at the thumbnail height,
     // and the placeholder (the row's thumbUrls and thumbhashUrls). Their image key (GalleryModel's image_key) changes
     // when the file is rewritten or turned, so the cell shows the new image.
@@ -118,6 +126,46 @@ Item {
         // (every channel from 128 one lower) in about one run in ten. From 0.999 the final 1 is far outside that
         // tolerance, and the step is invisible.
         opacity: fade < 0.999 ? fade : 1
+    }
+    // An animated image plays over its still while its row plays it (and only then: the player is made and dropped with
+    // it). Over a white backing, as the still is flattened onto white, once a frame is drawn.
+    Loader {
+        id: animated
+        anchors.fill: parent
+        active: cell.itemAnimated && cell.itemPlays && cell.itemFileId > 0
+        sourceComponent: Component {
+            Item {
+                id: anim
+                anchors.fill: parent
+                property bool drawn: false
+                Rectangle {
+                    anchors.fill: parent
+                    color: "white"
+                    visible: anim.drawn
+                }
+                TurnedVideoOutput {
+                    id: video
+                    anchors.fill: parent
+                    swapsAxes: cell.itemPlayerTurns % 2 === 1
+                    turns: cell.itemPlayerTurns
+                    mirrored: cell.itemPlayerMirrored
+                    fillMode: VideoOutput.PreserveAspectCrop
+                }
+                AnimationPlayer {
+                    objectName: "cellAnimation"
+                    fileId: cell.itemFileId
+                    // The thumbnail's height: the frames are as sharp as the still, and small in memory.
+                    height: Math.round(cell.rowHeight)
+                    Component.onCompleted: setSink(video.videoSink)
+                }
+                Connections {
+                    target: video.videoSink
+                    function onVideoFrameChanged() {
+                        anim.drawn = true;
+                    }
+                }
+            }
+        }
     }
     // Asks again for a thumbnail that failed. Qt does not request an unchanged source again after an error (setSource
     // returns when the URL is the same), so the source is set again: a file that was unreadable for a moment (an offline

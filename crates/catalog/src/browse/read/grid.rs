@@ -24,14 +24,15 @@ macro_rules! entry_columns {
     () => {
         "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
     f.turns, coalesce(w.value, 0), r.rating, coalesce(a.frames, 1), coalesce(a.orientation, 1),
-    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL, f.turns_queued"
+    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL, f.turns_queued,
+    coalesce(a.exif_orientation, a.orientation, 1)"
     };
 }
 
 const ENTRY_COLUMNS: &str = entry_columns!();
 
 /// The column after `ENTRY_COLUMNS`: a sort key (`list_grid`).
-const SORT_COLUMN: usize = 17;
+const SORT_COLUMN: usize = 18;
 
 /// What the entries and the filters read besides the file.
 macro_rules! file_joins {
@@ -72,6 +73,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),
         animated: r.get::<_, i64>(9)? > 1,
         orientation: Orientation::from_tag(r.get(10)?),
+        exif_orientation: Orientation::from_tag(r.get(17)?),
         cut,
         borders: match cut_found {
             None => Borders::Unknown,

@@ -781,7 +781,15 @@ mod tests {
             let write = pg_model::write::Write::Rotation(Turns::NONE);
             let job = queue::Job { file_id: id, write, temp: None, attempts: 0 };
             let rewrite = queue::Rewrite { before: Some(before), after, metadata_only };
-            c.write_done(&job, queue::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
+            c.write_done(
+                &job,
+                queue::WriteEffect::TurnedBack {
+                    rewrite,
+                    turns: Turns::NONE,
+                    exif: pg_model::orientation::Orientation::UPRIGHT,
+                },
+            )
+            .unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some(pg_model::analysis::FileHash([0; 32])));
         assert!(!due(&c, id));

@@ -827,7 +827,15 @@ mod tests {
             attempts: 0,
         };
         let rewrite = queue::Rewrite { before: None, after: (10, 100), metadata_only: None };
-        c.write_done(&job, queue::WriteEffect::TurnedBack { rewrite, turns: Turns::new(1) }).unwrap();
+        c.write_done(
+            &job,
+            queue::WriteEffect::TurnedBack {
+                rewrite,
+                turns: Turns::new(1),
+                exif: pg_model::orientation::Orientation::UPRIGHT,
+            },
+        )
+        .unwrap();
         // One turn back is rotation 3 (`analysis_turned_back`): the row takes it, and is the same failure.
         assert_eq!(rotations(&c), [3]);
         assert_eq!(serials(&c, "import"), seen, "the same failure, turned: not news");

@@ -22,8 +22,11 @@ impl FileHash {
 pub struct Analysis {
     /// The version of the producer that made it (pg-analysis's `analyze::IMPORT_VERSION`); an older one's are redone.
     pub version: i64,
-    /// EXIF orientation (1–8) the file asks for (a video's display matrix).
+    /// EXIF orientation (1–8) the file asks for (a video's display matrix), with the catalog turns the analysis was made at.
     pub orientation: Orientation,
+    /// The file's own EXIF orientation (1–8), without the catalog turns: the tag as the file holds it, exact after each
+    /// turn written into the file.
+    pub exif_orientation: Orientation,
     /// Upright full-size dimensions.
     pub width: u32,
     /// Upright full-size height, as `width` is.

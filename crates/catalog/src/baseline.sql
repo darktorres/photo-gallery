@@ -25,6 +25,10 @@ CREATE TABLE analysis(
     format      INTEGER,           -- an image's format::Format::code; NULL for a video
     codec       TEXT,              -- a video's codec, as FFmpeg names it; NULL for an image
     orientation INTEGER,
+    -- The file's own EXIF orientation as its tag holds it, without the catalog turns (`files.turns`): what a turn written
+    -- into the file leaves there (`queue::write_done`), exact at every write. The composed `orientation` above is this
+    -- with the catalog turns the analysis was made at. NULL in a catalog carried over from a schema that lacks it.
+    exif_orientation INTEGER,
     width       INTEGER,           -- upright, full size
     height      INTEGER,
     pdq_quality INTEGER,

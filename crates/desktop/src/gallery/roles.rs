@@ -27,10 +27,15 @@ pub(super) const ROLE_CONTENT_WIDTH: i32 = 268;
 pub(super) const ROLE_CONTENT_HEIGHT: i32 = 269;
 /// A row's height, made from the thumbnail height. Signalled alone when only the height changed.
 pub(super) const ROLE_HEIGHT: i32 = 270;
+/// Whether each item is an animated image (its cell plays it, on screen).
+pub(super) const ROLE_ANIMATED: i32 = 271;
+/// The quarter turns and the mirror each item's animation is shown with (`player_turns`, the viewer's rule).
+pub(super) const ROLE_PLAYER_TURNS: i32 = 272;
+pub(super) const ROLE_PLAYER_MIRRORED: i32 = 273;
 
 /// The roles that name a row's values. The count is last: a row's change names its values in this order, so the count
 /// is the last of them to land (what GridRow's Repeater reads first is then already the new values).
-const VALUE_ROLES: [i32; 14] = [
+const VALUE_ROLES: [i32; 17] = [
     ROLE_IDS,
     ROLE_THUMB_URLS,
     ROLE_THUMBHASH_URLS,
@@ -43,12 +48,15 @@ const VALUE_ROLES: [i32; 14] = [
     ROLE_CONTENT_Y,
     ROLE_CONTENT_WIDTH,
     ROLE_CONTENT_HEIGHT,
+    ROLE_ANIMATED,
+    ROLE_PLAYER_TURNS,
+    ROLE_PLAYER_MIRRORED,
     ROLE_FIRST,
     ROLE_COUNT,
 ];
 
 /// Every role with its name in QML (the model's role names).
-pub(super) const ROLE_NAMES: [(i32, &str); 15] = [
+pub(super) const ROLE_NAMES: [(i32, &str); 18] = [
     (ROLE_FIRST, "first"),
     (ROLE_COUNT, "count"),
     (ROLE_IDS, "ids"),
@@ -63,6 +71,9 @@ pub(super) const ROLE_NAMES: [(i32, &str); 15] = [
     (ROLE_CONTENT_Y, "contentY"),
     (ROLE_CONTENT_WIDTH, "contentWidth"),
     (ROLE_CONTENT_HEIGHT, "contentHeight"),
+    (ROLE_ANIMATED, "animated"),
+    (ROLE_PLAYER_TURNS, "playerTurns"),
+    (ROLE_PLAYER_MIRRORED, "playerMirrored"),
     (ROLE_HEIGHT, "rowHeight"),
 ];
 

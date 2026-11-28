@@ -33,8 +33,10 @@ for samples.
 ## Design
 
 ### 1. "Animated" is a fact about the fetched file, found once, from the container (no decode)
+
 Same rule as the catalog: more than one frame. `pg-render` already depends on `pg-metadata`; `pg-app` reaches both through
 `pg-render`, so `tools/crate-layers.txt` does not change.
+
 - `pg-metadata`: `pub fn frames(bytes, format) -> u32`, the container walk alone (as `pg_metadata::orientation` is the narrow
   read of the orientation), so a fetched result is not parsed for EXIF and XMP as `Meta::read` does. `Meta::read` takes its
   `frames` from the same walk: one rule.
@@ -49,6 +51,7 @@ Same rule as the catalog: more than one frame. `pg-render` already depends on `p
   `Yandex::kept_image(id)`. (`image()` / `get_known` wait on a fetch; the player's loader must not.)
 
 ### 2. Shared bytes end to end; the player's source is a loader
+
 - `pg_codec::animation`: `pub struct Bytes(Arc<dyn AsRef<[u8]> + Send + Sync>)`, cheap to clone, itself `AsRef<[u8]>` (what the
   `Cursor` needs). Made by `Bytes::shared(Arc<T>)` for any `T: AsRef<[u8]> + Send + Sync + 'static` (the search's
   `Arc<Fetched>`: an unsizing coercion, no copy) and `From<Vec<u8>>` (a file read). Not from `Arc<[u8]>`: an unsized slice
@@ -59,11 +62,13 @@ Same rule as the catalog: more than one frame. `pg-render` already depends on `p
   a `Height` animation's frames are scaled before they are shown and before they are kept.
 
 ### 3. One playback core, two QML types (no mixed-source state)
+
 `desktop/src/animation.rs`: a plain-Rust `Playback` holds what both need: the sink, the worker, `playing`, the error text, and a
 generation counter incremented by each `start`. `Watched` (the player's sink) carries the generation and a
 `report: Box<dyn Fn(u64, String) + Send + Sync>` that its owner builds from its own `qt_thread()`, so one `Watched` serves both
 QObject types and a failure from a replaced run is dropped (replacing today's comparison of `file_id`, which is tied to
 `AnimationPlayer`).
+
 - `AnimationPlayer`: plays the catalog file `fileId`, and gains the same `height` property (0 = native size, the viewer's; the
   library's cells set it, item 10). It resolves the file's path in its loader on the player's thread, not on the window's thread in
   `restart()` as today (item 10 says why); an unknown file is a reported failure, as now.
@@ -80,6 +85,7 @@ QObject types and a failure from a replaced run is dropped (replacing today's co
   include): they belong to another change; edit around them.
 
 ### 4. The preview learns "animated" with the item, as one value
+
 `YandexSearch` (`desktop/src/yandex.rs`, `bridges/yandex_bridge.rs`, `bridges/yandex_state.rs`) gets `previewAnimationUrl`
 (the original's URL when the item is animated, `""` otherwise) and, for item 7, `previewMirrored` and `previewTurns`. They are set
 in `refresh_preview()` (which `apply_sizes` already re-runs when a file lands). One URL property, not a flag beside
@@ -88,7 +94,9 @@ a still. The turn is set before the animation URL, so a player never starts with
 `YandexPanel.qml` passes `animationUrl`; "animated" in the preview is `animationUrl !== ""`.
 
 ### 5. `YandexPreview.qml`: the still is the poster, the player draws over it
+
 The viewer's pattern (`ImageLayers` poster, `MediaView` player, the poster gives way on the first frame).
+
 - One `Item { id: picture }` carries the geometry now on `full` (natural size from `full.sourceSize`, `fit`, `zoom`, `x`, `y`,
   `width`, `height`) and the `TapHandler`; `full` (still the source of `sourceSize`, `status`, `progress` and the error) fills it.
   `zoomable`, the 1:1 button, the Flickable's content size and `centre` run off `picture`.
@@ -102,8 +110,10 @@ The viewer's pattern (`ImageLayers` poster, `MediaView` player, the poster gives
 - The hidden prev / next `Image` preloads stay: they warm the fetch and the first frame.
 
 ### 6. Stopping a player never waits for a decode (fix in `pg_render::player`)
+
 Today `Player::drop` joins the player's thread on the window's thread, so a step or a close waits up to one frame's decode (a
 hitch on a large GIF). The thread is the player's own; what must not happen is a frame reaching the sink after the stop.
+
 - `play()` checks `stop` and calls `sink.present` in one critical section under the control lock (`wait_until` returns the
   guard); a frame is a hand-off of a copy, not a decode.
 - `Drop` takes the lock, sets `stop`, notifies, releases it, calls `sink.close()`, and lets the thread end by itself (it holds
@@ -112,8 +122,10 @@ hitch on a large GIF). The thread is the player's own; what must not happen is a
 - Both the viewer's animations and the preview gain it.
 
 ### 7. The preview's stills are upright, as the grid and `sizeText` already are (if check 1 says they are not)
+
 `yandex_picture` applies no EXIF orientation, while the grid picture (`Maker::make_sized`) is upright and `sizeText` is the
 upright size: a JPEG with an EXIF turn would show upright in the grid and turned in the preview.
+
 - Not the app's own decode: the viewer's is opaque `Rgb` (`Rgba::opaque`), which would drop the alpha of a transparent
   PNG / WebP / GIF still. The decode stays Qt's and the orientation is applied to its result.
 - A C++ shim in `cpp/providers.cpp` (cxx-qt-lib's `QImage` has no `mirrored` / `transformed`): `pg::turned(QImage, mirrored,
@@ -125,9 +137,11 @@ upright size: a JPEG with an EXIF turn would show upright in the grid and turned
   pixel as the grid picture.
 
 ### 8. Animations are turned by the file's orientation in the viewer too (if check 3 allows)
+
 `gallery/items.rs` `player_turns` turns a catalog animation by `turns + pending_turns` only: never the file's EXIF orientation,
 and `playerTurns` is quarter turns, so the four mirrored orientations (2, 4, 5, 7) cannot be shown at all, while the grid
 thumbnail and the stills are upright. The preview needs the same rule, so it gets one home.
+
 - Derive turns and mirror from the orientation's `parts()` plus the pending turns, per check 3, so the catalog rotation is not
   applied twice. **Animations only** (`MediaType::Animated`): a video's own rotation is applied by Qt's player, so a video keeps
   `turns + pending_turns` and no mirror, or it would turn twice.
@@ -139,8 +153,10 @@ thumbnail and the stills are upright. The preview needs the same rule, so it get
   eight orientations' on-screen positions, and if QML applies them the other way the component uses the equivalent turn.
 
 ### 9. The Yandex grid tiles play too: only the ones on screen, at tile size (the rules item 10 reuses)
+
 A tile plays its result's animation, from the same original the preview plays. Playing every result's animation at full size is
 not an option (40 tiles of a 128 MB-frame GIF each), so:
+
 - **Only tiles on screen play.** The panel passes its scroll range (`contentY`, the viewport's height, and each group block's
   offset in `sections`) and a tile plays when its frame intersects that range (with a margin of one row), the panel is shown and
   the preview is not open. A tile that scrolls away stops (item 6 is what makes starting and stopping players per scroll safe: no
@@ -171,8 +187,10 @@ not an option (40 tiles of a 128 MB-frame GIF each), so:
 - The preview and the grid never play the same animation at once (the preview covers the grid and stops it).
 
 ### 10. The library's grid plays its animated files too
+
 The same machinery, on the library's `GalleryGrid` (a `ListView` of `GridRow` delegates, each with a `Repeater` of `GridCell`s,
 pooled and reused, `cacheBuffer` 1500). Today an animated file shows its still and a badge (`ROLE_BADGES`, `GridCell.qml`).
+
 - **What plays.** Only `MediaType::Animated` items (a video keeps its badge and still: it has no frame player, and plays in the
   viewer). `AnimationPlayer` plays the cell's catalog file `ids[index]`; its `height` is the thumbnail height the cell's still uses
   (`ThumbHeight`, the one `thumbUrls` is built with), so the animation is as sharp as the still and its frames small.
@@ -200,6 +218,7 @@ pooled and reused, `cacheBuffer` 1500). Today an animated file shows its still a
   sized to the cores (a scheduler, not a memory cap); it is not built before it is seen to be needed.
 
 ### 11. Docs
+
 `docs/reference/REVERSE_SEARCH.md` (or the Yandex section of `crates/README.md`): the grids and the preview play animated results.
 Fix the doc comments in `pg_client::image` and `providers.rs`. `docs/webclient/WEB_CLIENT_DESIGN.md`: the new
 `ResultAnimationPlayer` is a device-class type like `AnimationPlayer` (a browser plays the original file natively). The `GridCell`
@@ -243,6 +262,7 @@ poster-then-player pattern.
 
 Per my notes: native Windows (PowerShell, `QT_DIR` set), `QT_QPA_PLATFORM=offscreen` for QML, a scratch catalog (`PG_HOME` /
 `PG_CATALOG_DIR` / `PG_PREFS`), never `D:/PhotoGallery`, synthetic fixtures only; checks batched after all edits.
+
 1. `cargo check` and `cargo test -p pg-codec -p pg-metadata -p pg-render -p pg-client -p pg-app -p pg-desktop`:
    - player: the existing tests on `read_file`; play from memory with no file; a failing loader (nothing shown, `failed` called,
      sink closed); item 6 (no `present` after `drop`, a slow-presenting sink, `closed` when `drop` returns, `drop` returns while a

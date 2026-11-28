@@ -1,6 +1,7 @@
 # Yandex result images: a per-server fetch limit instead of a global `FETCHERS = 4`
 
 ## Context
+
 The Yandex screen prefetches each search's result files with a global `FETCHERS = 4` threads
 (`crates/app/src/yandex/images.rs:24`, started by `Images::prefetch`). Results sit on many different servers, so a
 global 4 under-uses the network when they are spread out and promises nothing per server. The limit becomes a
@@ -17,6 +18,7 @@ follows redirects inside one call; `get_uri()`/`get_redirect_history()` are know
 limit lives next to the network code.
 
 ## Scope: what the request needs, and what this plan adds
+
 - **Needed for a correct per-server limit:** the `Server` key and `ResultUrl::parse`; the gate; a scheduler that
   picks the next *eligible* result (a full server must not block the queue); a process-wide gate with a wake path
   to other searches' `Images`; on-demand `get` going through the queue; the decode and memory bounds that
@@ -31,12 +33,14 @@ limit lives next to the network code.
 ## Design
 
 ### A. `crates/yandex` (`pg_yandex`)
+
 New files `result_url.rs` (not `url.rs`: a module named `url` makes `use url::Url` ambiguous with the external
 crate) and `gate.rs`; `fetch.rs`, `http.rs`, `lib.rs`, `Cargo.toml` change.
 
 **`ResultUrl` and `Server`** (`result_url.rs`). `docs/plans/SECURITY_HARDENING_FIXES.md` §3 (not yet implemented)
 already calls for a `ResultUrl` in pg-yandex ("http or https, a host, no userinfo", `Fetcher::download` takes it);
 this builds that type so the two plans do not each invent one.
+
 - Private fields; the only constructor is `ResultUrl::parse(&str) -> Option<ResultUrl>`, using the `url` crate once:
   http/https only, a host, **no userinfo**, host lowercased and IDNA-normalised, port explicit or the scheme's
   default; anything else → `None`.
@@ -55,6 +59,7 @@ this builds that type so the two plans do not each invent one.
   "six at a time from each server".
 
 **`Gate`, `Permit`, `Kick`** (`gate.rs`). `pub const PER_SERVER: usize = 6;` is the constant.
+
 - `Gate::new(limit) -> Arc<Gate>`. State: `Mutex<{ counts: BTreeMap<Server, usize>, waiters: BTreeMap<Server,
   usize>, wakers: Vec<Weak<Kick>> }>` + `Condvar`. Every lock is `lock().unwrap_or_else(PoisonError::into_inner)`
   (`Permit::drop` and `Kick::kick` run during unwinds); a map entry is removed when its count reaches 0.
@@ -82,6 +87,7 @@ this builds that type so the two plans do not each invent one.
   `replay(dir, gate)`.
 
 **`Fetcher`** (`fetch.rs`, `http.rs`)
+
 - `Fetcher::new(gate: Arc<Gate>)`; `pub fn gate(&self) -> &Arc<Gate>`. **`impl Default for Fetcher` is deleted**
   (its only caller is `yandex.rs:84`).
 - Its **own agent**: `max_idle_connections_per_host(PER_SERVER)` and `max_idle_connections(IDLE_TOTAL)`, `const
@@ -124,9 +130,11 @@ this builds that type so the two plans do not each invent one.
   helpers like `images.rs:122`.
 
 ### B. `crates/app/src/yandex` (`pg_app`)
+
 `images.rs` is the scheduler (order, promotion, decode bound); `yandex.rs`, `replay.rs` follow the new signatures.
 
 **`Fetch` and the replay**
+
 - `trait Fetch: Send + Sync { fn gate(&self) -> &Arc<Gate>; fn fetch(&self, url: &ResultUrl, permit: Permit, cancel:
   &AtomicBool) -> Result<Download, SourceError>; }` (object-safe). `impl Fetch for Fetcher` forwards. The doc of the
   trait is updated.
@@ -137,6 +145,7 @@ this builds that type so the two plans do not each invent one.
   test (grep: the desktop uses only `YandexSource`), so their signatures change freely.
 
 **`Images` state** (`Table`; `fetchers` is removed, nothing else reads it)
+
 - `Slot { url: ResultUrl, state: State }` (the slot `State` enum `Queued | Fetching | Ready | Dead` is unchanged;
   `Hit` keeps carrying the `String`); `queue: VecDeque<u64>`; `dead`, `sized`, `stopped` as now; **`undecoded:
   usize`** (bodies downloaded and not yet decoded); **`scheduler: SchedulerState { NotStarted, Running, Failed }`**.
@@ -145,7 +154,8 @@ this builds that type so the two plans do not each invent one.
   `thread::Builder`; `ThreadKind { Scheduler, Fetch }` so a test can fail one and not the other, like `spawn_with`,
   `yandex.rs:433`), `backoff: Duration` (250 ms; a test sets a few ms).
 
-**Scheduling**
+**Scheduling in `Images`**
+
 - `next_queued(&self, gate) -> Option<Job>` (`Job { id, url: ResultUrl, permit: Permit }`): under the table lock,
   `None` when stopped **or `undecoded >= DECODE_BACKLOG`**; otherwise the first id in `queue` whose slot is `Queued`
   **and** whose server `gate.try_acquire` grants (a server refused earlier in the same scan is not asked again, so a
@@ -205,6 +215,7 @@ stopped), so its results would stay `Queued` and any `get` would wait forever. T
 live `Images`' scheduler, which also starts the next queued result the moment a redirect hop frees a slot.
 
 ### C. Qt provider pool: no change
+
 The Yandex pool has 4 threads (`providers.cpp:157-161`) and `yandex_picture` (`providers.rs:99-100`) calls the
 blocking `Images::get`. The grid asks for **one picture at a time, in row order** (`ResultTile.qml:62-67` loads
 `tile.thumb` only when `tile.index <= loadTurn`; `settle_turn`, `desktop/src/yandex.rs:123`, advances only when the
@@ -217,6 +228,7 @@ stepping quickly through unfetched previews queues stale requests behind waits u
 `imageWidth` was considered and rejected: a tile with no size would never settle and would hold every later row.)
 
 ### D. New reason, comments, docs
+
 - `UnexpectedReason::NotWebAddress` ("the address is not a web (http or https) address"): variant in
   `crates/model/src/yandex.rs`; matched in `crates/wording/src/lib.rs:391-403` and `crates/wording/src/message.rs`
   (`YandexNotWebAddress`); text in `crates/wording/locales/en/text.ftl` (only the `en` locale exists).
@@ -228,18 +240,24 @@ stepping quickly through unfetched previews queues stale requests behind waits u
   fetchers") is a historical finding and stays.
 
 ## Concurrency invariants (what each test below pins)
-| Event | Who wakes whom |
-|---|---|
-| Permit dropped (download end, hop switch, spawn failure, unwind) | gate condvar (hop waiters) and every subscribed `Kick` (schedulers) |
-| Hop waiter leaves with slots free and no waiters | every subscribed `Kick` |
-| Decode ends (`undecoded` falls) | this `Images`' `Kick` |
-| `prefetch` / `get` promotion | this `Images`' `Kick` |
-| `stop` | `Gate::wake` (lock then notify), decoder mutex + notify, `Kick::close`, `settled.notify_all` |
-| `settle` | `settled.notify_all` (waiting `get`s); `changes.publish` |
+
+| Event                                                            | Who wakes whom                                                                               |
+|------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| Permit dropped (download end, hop switch, spawn failure, unwind) | gate condvar (hop waiters) and every subscribed `Kick` (schedulers)                          |
+| Hop waiter leaves with slots free and no waiters                 | every subscribed `Kick`                                                                      |
+| Decode ends (`undecoded` falls)                                  | this `Images`' `Kick`                                                                        |
+| `prefetch` / `get` promotion                                     | this `Images`' `Kick`                                                                        |
+| `stop`                                                           | `Gate::wake` (lock then notify), decoder mutex + notify, `Kick::close`, `settled.notify_all` |
+| `settle`                                                         | `settled.notify_all` (waiting `get`s); `changes.publish`                                     |
+
 Lock order everywhere: table → gate → kick. Nothing blocks while holding the table lock.
 
-## Tests (synthetic; no network). Positive waits use channels with a timeout, never sleeps.
+## Tests (synthetic; no network)
+
+Positive waits use channels with a timeout, never sleeps.
+
 **`pg_yandex`**
+
 - `ResultUrl::parse`/`Server`: case, default ports, explicit port, userinfo → `None`, IDN, `\`, fragments,
   non-http scheme / no host → `None`; `original()` vs `as_str()`; `join` (relative, absolute, protocol-relative).
 - `Gate`: the limit holds; a permit drop frees and wakes a blocked `acquire`; `cancel` + `wake` ends a blocked
@@ -260,6 +278,7 @@ Lock order everywhere: table → gate → kick. Nothing blocks while holding the
 
 **`pg_app`** (`images.rs`, gating `Fetch` fakes, the spawner seam, `#[cfg(test)]` fault hook that makes `pump` panic
 on its Nth call, and a fake whose `fetch` calls `gate().acquire` itself)
+
 - peak in-flight on one server == 6 with 10 queued; all fetched once released; decodes never exceed 4; with slow
   decodes `undecoded` never exceeds `DECODE_BACKLOG` and the scheduler resumes when a decode ends.
 - a saturated server does not hold up another server's result; order within a server follows the queue.
@@ -282,6 +301,7 @@ on its Nth call, and a fake whose `fetch` calls `gate().acquire` itself)
   (`a.example`, `gone.example`, `i.example`) have servers.
 
 ## Implementation order (each step compiles and passes its own tests)
+
 1. Workspace `url` dependency; `ResultUrl`/`Server` and their tests (additive).
 2. `Gate`/`Permit`/`Kick` and their tests (additive, unused).
 3. `http::agent_config()` (additive).
@@ -292,6 +312,7 @@ on its Nth call, and a fake whose `fetch` calls `gate().acquire` itself)
    semaphore and backlog; the stale comments; the `providers.cpp` comment; the security-plan edits.
 
 ## Verification
+
 Native Windows, checks batched at the end (no full static Qt build): `cargo check`, `cargo test`, `cargo clippy`
 for `pg_yandex`, `pg_app`, `pg_model`, `pg_wording`; the replay-based tests in `crates/app/src/yandex/replay.rs`
 exercise `prefetch` end to end; `python tools/boundaries.py` and `just lint` (clippy, `cargo deny`, cargo-machete:
@@ -299,6 +320,7 @@ the new `url` dependency is used). `Cargo.lock` gains `url` under `pg-yandex`. T
 comment. Any app run uses scratch `PG_HOME`/`PG_CATALOG_DIR`/`PG_PREFS`, never `D:/PhotoGallery`.
 
 ## Consequences to flag, not change
+
 - **No global cap** (the user's choice): threads and memory scale with distinct servers (6 per server). A body can
   be up to 100 MiB, so a 100-result search on 100 hosts could in theory hold ~10 GB in flight. Decodes stay at 4 and
   downloaded-but-undecoded bodies under `DECODE_BACKLOG`, so a single-server search buffers at most that plus 6 in
@@ -308,5 +330,6 @@ comment. Any app run uses scratch `PG_HOME`/`PG_CATALOG_DIR`/`PG_PREFS`, never `
 - Redirects 10 → 5 and the 3xx-without-`Location` error kind (see Scope).
 
 ## Not changed
+
 The search (paced, single thread), the save's logic (it keeps the blocking `get`), `plausibly_image`, the body cap
 and the timeouts, the desktop and QML code.
